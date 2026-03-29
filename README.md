@@ -6,7 +6,7 @@ The phase 01 MVP is intentionally narrow:
 
 - read configured RSS feeds
 - normalize release titles into media metadata
-- match TV and movie items against JSON rules
+- match TV items against JSON rules and movie items against JSON intake policies
 - deduplicate previously handled items with SQLite
 - submit approved candidates to Transmission
 - record outcomes for review and retry

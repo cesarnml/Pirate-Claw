@@ -6,7 +6,7 @@ Build a local CLI that:
 
 - fetches configured RSS feeds
 - normalizes feed items into a common media shape
-- matches items against TV and movie rules from JSON config
+- matches TV items against rules and movie items against intake policies from JSON config
 - deduplicates items using SQLite
 - submits the best match to Transmission
 - records outcomes so later runs can skip duplicates and retry failures
@@ -67,15 +67,15 @@ Each rule should contain:
 
 ## `movies`
 
-Defines tracked movie rules.
+Defines movie intake policies, not per-title tracking rules.
 
-Each rule should contain:
+Each policy should contain:
 
-- `name`
-- `year`
-- optional `pattern`
+- `years`: one or more allowed release years
 - `resolutions`
 - `codecs`
+
+Movie feeds should be curated enough that year + quality policy is meaningful. The config does not target specific movie names in phase 01.
 
 ## `transmission`
 
@@ -95,7 +95,7 @@ Each run should follow the same pipeline:
 3. Fetch each RSS feed.
 4. Parse entries into a common raw feed-item shape.
 5. Normalize titles into structured metadata.
-6. Match each normalized item against TV or movie rules.
+6. Match each normalized item against TV rules or movie intake policies.
 7. Group competing matches by media identity.
 8. Select the best candidate using configured quality preferences.
 9. Skip anything already queued successfully.
@@ -140,11 +140,11 @@ TV identity:
 
 Movie identity:
 
-- normalized title + year
+- stable external release identity such as RSS `guidOrLink`, and later torrent-level identity such as infohash when available
 
 ## Match Result
 
-Represents a rule hit plus ranking metadata.
+Represents a rule or policy hit plus ranking metadata.
 
 Suggested fields:
 

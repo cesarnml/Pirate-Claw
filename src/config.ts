@@ -12,10 +12,8 @@ export type TvRule = {
   codecs: string[];
 };
 
-export type MovieRule = {
-  name: string;
-  year: number;
-  pattern?: string;
+export type MoviePolicy = {
+  years: number[];
   resolutions: string[];
   codecs: string[];
 };
@@ -30,7 +28,7 @@ export type TransmissionConfig = {
 export type AppConfig = {
   feeds: FeedConfig[];
   tv: TvRule[];
-  movies: MovieRule[];
+  movies: MoviePolicy[];
   transmission: TransmissionConfig;
 };
 
@@ -80,7 +78,9 @@ export function validateConfig(input: unknown, path = 'config'): AppConfig {
   return {
     feeds: feeds.map((entry, index) => validateFeed(entry, path, index)),
     tv: tv.map((entry, index) => validateTvRule(entry, path, index)),
-    movies: movies.map((entry, index) => validateMovieRule(entry, path, index)),
+    movies: movies.map((entry, index) =>
+      validateMoviePolicy(entry, path, index),
+    ),
     transmission: validateTransmission(transmission, path),
   };
 }
@@ -114,21 +114,15 @@ function validateTvRule(input: unknown, path: string, index: number): TvRule {
   };
 }
 
-function validateMovieRule(
+function validateMoviePolicy(
   input: unknown,
   path: string,
   index: number,
-): MovieRule {
+): MoviePolicy {
   const rule = expectRecord(input, `${path} movies[${index}]`);
-  const pattern = rule.pattern;
 
   return {
-    name: requireString(rule, 'name', `${path} movies[${index}]`),
-    year: requireNumber(rule, 'year', `${path} movies[${index}]`),
-    pattern:
-      pattern === undefined
-        ? undefined
-        : expectString(pattern, `${path} movies[${index}] pattern`),
+    years: requireNumberArray(rule, 'years', `${path} movies[${index}]`),
     resolutions: requireStringArray(
       rule,
       'resolutions',
@@ -193,16 +187,22 @@ function requireString(
   return expectString(input[key], `${path} ${key}`);
 }
 
-function requireNumber(
+function requireNumberArray(
   input: Record<string, unknown>,
   key: string,
   path: string,
-): number {
+): number[] {
   const value = input[key];
 
-  if (typeof value !== 'number' || Number.isNaN(value)) {
+  if (!Array.isArray(value) || value.length === 0) {
     throw new ConfigError(
-      `Config file "${path}" has invalid "${key}"; expected a number.`,
+      `Config file "${path}" has invalid "${key}"; expected a non-empty array of numbers.`,
+    );
+  }
+
+  if (value.some((item) => typeof item !== 'number' || Number.isNaN(item))) {
+    throw new ConfigError(
+      `Config file "${path}" has invalid "${key}"; expected a non-empty array of numbers.`,
     );
   }
 

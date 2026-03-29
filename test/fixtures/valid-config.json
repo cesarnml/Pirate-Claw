@@ -4,6 +4,11 @@
       "name": "TV Feed",
       "url": "https://example.com/tv.rss",
       "mediaType": "tv"
+    },
+    {
+      "name": "Movie Feed",
+      "url": "https://example.com/movies.rss",
+      "mediaType": "movie"
     }
   ],
   "tv": [
@@ -16,8 +21,7 @@
   ],
   "movies": [
     {
-      "name": "Example Movie",
-      "year": 2024,
+      "years": [2024],
       "resolutions": ["1080p"],
       "codecs": ["x265"]
     }
