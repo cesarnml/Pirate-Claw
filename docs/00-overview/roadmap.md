@@ -2,7 +2,7 @@
 
 This roadmap is intentionally lightweight. It gives future phases a place to land without mixing roadmap planning into ticket specs.
 
-## Phase 01: MVP Queueing
+## Phase 01 MVP
 
 Goal:
 
