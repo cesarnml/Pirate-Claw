@@ -1,4 +1,4 @@
-# Phase 01 MVP Design
+# Phase 01 MVP
 
 ## Goal
 
@@ -24,10 +24,12 @@ Phase 01 ends when an item is successfully queued in Transmission.
 
 ## Runtime And Storage
 
-- Runtime: Node.js with TypeScript
-- Database: SQLite via Node built-ins
+- Runtime: Bun with TypeScript
+- Database: SQLite via Bun's native SQLite support
 - Trigger: manual CLI command
 - Config: JSON file checked in locally or stored beside the app
+
+Use Bun deliberately in phase 01. This repo prefers Bun's integrated runtime, test runner, and SQLite support over a more conservative Node setup.
 
 ## User-Facing Interface
 

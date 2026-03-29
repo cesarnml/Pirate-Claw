@@ -1,4 +1,4 @@
-# TDD Workflow For Phase 01
+# TDD Workflow For This Repo
 
 This repo should use red-green-refactor, not horizontal slicing.
 
@@ -42,7 +42,7 @@ Do not mock:
 - internal normalization helpers
 - internal orchestration functions
 
-## Red-Green-Refactor Pattern For This Repo
+## Red-Green-Refactor Pattern
 
 For each ticket:
 
@@ -67,7 +67,7 @@ Bad sequence:
 - add database later
 - add tests after the entire feature works
 
-## Definition Of Done For Each Ticket
+## Definition Of Done
 
 A ticket is done when:
 
@@ -75,6 +75,7 @@ A ticket is done when:
 - tests are green
 - code only includes the minimum support needed for that behavior
 - README or docs changes needed for that slice are included
+- a short rationale note explains why this was the smallest acceptable path
 - unresolved follow-up work is captured in the next ticket, not hidden in comments
 
 ## Suggested Test Split
@@ -91,5 +92,16 @@ After each ticket, review with these questions:
 
 - what behavior went red first
 - what code was the minimum to go green
+- why was this the smallest acceptable implementation
+- what alternative was considered and why was it rejected
 - what refactor improved clarity without changing behavior
 - what did we intentionally not build yet
+
+## Suggested Rationale Template
+
+Use this short template in PRs, ticket updates, or review notes:
+
+- `Red first:` ...
+- `Why this path:` ...
+- `Alternative considered:` ...
+- `Deferred:` ...
