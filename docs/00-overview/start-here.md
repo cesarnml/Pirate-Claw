@@ -4,10 +4,9 @@ This repo is currently documentation-first. There is no implementation yet.
 
 If you are a new Codex thread, get your bearings in this order:
 
-1. Read `docs/README.md`.
-2. Read `docs/01-product/phase-01-mvp.md`.
-3. Read `docs/02-delivery/phase-01/implementation-plan.md`.
-4. Read `docs/03-engineering/tdd-workflow.md`.
+1. Read `docs/01-product/phase-01-mvp.md`.
+2. Read `docs/02-delivery/phase-01/implementation-plan.md`.
+3. Read `docs/03-engineering/tdd-workflow.md`.
 
 ## What This Project Is
 
