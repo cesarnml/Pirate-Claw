@@ -15,7 +15,7 @@ Phase 01 ends at successful queueing in Transmission. It does not include a web 
 
 ## Status
 
-This repository is currently documentation-first. There is no implementation yet.
+Ticket 01 is implemented: the repository now has a minimal Bun + TypeScript CLI skeleton with JSON config loading and validation for `media-sync run`.
 
 The project is being planned as a small-slice, review-friendly build:
 
@@ -40,6 +40,11 @@ Useful supporting docs:
 - `docs/00-overview/roadmap.md`
 - `docs/02-delivery/issue-tracking.md`
 - `docs/04-decisions/adr-001-use-bun.md`
+
+## Local Development
+
+- `bun test`
+- `bun run ./src/cli.ts run --config ./test/fixtures/valid-config.json`
 
 ## Proposed CLI Surface
 
