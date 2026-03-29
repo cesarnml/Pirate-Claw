@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { dirname } from 'node:path';
 
 const tempDirs: string[] = [];
 const cwd = process.cwd();
 const bunExecutable = process.execPath;
+const cliExecutable = './bin/media-sync';
+const binPath = dirname(bunExecutable);
+const env = {
+  ...process.env,
+  PATH: `${binPath}:${process.env.PATH ?? ''}`,
+};
 
 describe('media-sync run', () => {
   afterEach(async () => {
@@ -17,16 +24,10 @@ describe('media-sync run', () => {
 
   it('loads config passed with --config', async () => {
     const child = Bun.spawn(
-      [
-        bunExecutable,
-        'run',
-        './src/cli.ts',
-        'run',
-        '--config',
-        './test/fixtures/valid-config.json',
-      ],
+      [cliExecutable, 'run', '--config', './test/fixtures/valid-config.json'],
       {
         cwd,
+        env,
         stderr: 'pipe',
         stdout: 'pipe',
       },
@@ -64,6 +65,7 @@ describe('media-sync run', () => {
       [bunExecutable, 'run', './src/cli.ts', 'run', '--config', configPath],
       {
         cwd,
+        env,
         stderr: 'pipe',
         stdout: 'pipe',
       },
@@ -88,6 +90,7 @@ describe('media-sync run', () => {
       [bunExecutable, 'run', './src/cli.ts', 'run', '--config', configPath],
       {
         cwd,
+        env,
         stderr: 'pipe',
         stdout: 'pipe',
       },
@@ -107,6 +110,7 @@ describe('media-sync run', () => {
       [bunExecutable, 'run', './src/cli.ts', 'run', '--config'],
       {
         cwd,
+        env,
         stderr: 'pipe',
         stdout: 'pipe',
       },
@@ -120,12 +124,12 @@ describe('media-sync run', () => {
     expect(stdout).toBe('');
     expect(stderr).toContain('Missing value for --config.');
   });
-
 });
 
 async function mkdtemp(): Promise<string> {
   const child = Bun.spawn(['mktemp', '-d', '-t', 'media-sync-test'], {
     cwd,
+    env,
     stderr: 'pipe',
     stdout: 'pipe',
   });

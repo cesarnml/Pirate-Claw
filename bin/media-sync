@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+CLI_PATH="$SCRIPT_DIR/../src/cli.ts"
+
+if command -v bun >/dev/null 2>&1; then
+  exec bun run "$CLI_PATH" "$@"
+fi
+
+if [ -x "${HOME}/.bun/bin/bun" ]; then
+  exec "${HOME}/.bun/bin/bun" run "$CLI_PATH" "$@"
+fi
+
+echo "bun executable not found in PATH or ~/.bun/bin/bun" >&2
+exit 127
