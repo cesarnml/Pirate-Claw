@@ -52,7 +52,11 @@ describe('media-sync run', () => {
       JSON.stringify({
         feeds: [],
         tv: [],
-        movies: [],
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+        },
       }),
     );
 
@@ -98,6 +102,25 @@ describe('media-sync run', () => {
     expect(stderr).toContain('contains invalid JSON');
   });
 
+  it('fails fast when --config is passed without a value', async () => {
+    const child = Bun.spawn(
+      [bunExecutable, 'run', './src/cli.ts', 'run', '--config'],
+      {
+        cwd,
+        stderr: 'pipe',
+        stdout: 'pipe',
+      },
+    );
+
+    const stdout = await new Response(child.stdout).text();
+    const stderr = await new Response(child.stderr).text();
+    const exitCode = await child.exited;
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Missing value for --config.');
+  });
+
   it('fails fast when movie policy uses the legacy title-based shape', async () => {
     const directory = await mkdtemp();
     const configPath = `${directory}/legacy-movie-shape.json`;
@@ -107,10 +130,52 @@ describe('media-sync run', () => {
       JSON.stringify({
         feeds: [],
         tv: [],
+        movies: {
+          name: 'Example Movie',
+          year: 2024,
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+        },
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+    );
+
+    const child = Bun.spawn(
+      [bunExecutable, 'run', './src/cli.ts', 'run', '--config', configPath],
+      {
+        cwd,
+        stderr: 'pipe',
+        stdout: 'pipe',
+      },
+    );
+
+    const stdout = await new Response(child.stdout).text();
+    const stderr = await new Response(child.stderr).text();
+    const exitCode = await child.exited;
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toContain(
+      'has invalid "years"; expected a non-empty array of numbers',
+    );
+  });
+
+  it('fails fast when movie policy is configured as an array instead of an object', async () => {
+    const directory = await mkdtemp();
+    const configPath = `${directory}/movie-policy-array.json`;
+
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        feeds: [],
+        tv: [],
         movies: [
           {
-            name: 'Example Movie',
-            year: 2024,
+            years: [2024],
             resolutions: ['1080p'],
             codecs: ['x265'],
           },
@@ -138,9 +203,7 @@ describe('media-sync run', () => {
 
     expect(exitCode).toBe(1);
     expect(stdout).toBe('');
-    expect(stderr).toContain(
-      'has invalid "years"; expected a non-empty array of numbers',
-    );
+    expect(stderr).toContain('missing required object section "movies"');
   });
 });
 

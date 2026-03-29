@@ -4,7 +4,7 @@ Size: 2 points
 
 ## Outcome
 
-- match movie items by allowed release year policy
+- match movie items by the global allowed release year policy
 - enforce codec and resolution filters
 - rely on release identity, not movie name intent, for duplicate prevention assumptions
 

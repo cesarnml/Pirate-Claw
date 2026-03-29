@@ -19,13 +19,11 @@
       "codecs": ["x265"]
     }
   ],
-  "movies": [
-    {
-      "years": [2024],
-      "resolutions": ["1080p"],
-      "codecs": ["x265"]
-    }
-  ],
+  "movies": {
+    "years": [2024],
+    "resolutions": ["1080p"],
+    "codecs": ["x265"]
+  },
   "transmission": {
     "url": "http://localhost:9091/transmission/rpc",
     "username": "user",

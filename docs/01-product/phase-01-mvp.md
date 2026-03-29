@@ -67,15 +67,15 @@ Each rule should contain:
 
 ## `movies`
 
-Defines movie intake policies, not per-title tracking rules.
+Defines the global movie intake policy, not per-title tracking rules.
 
-Each policy should contain:
+The policy should contain:
 
 - `years`: one or more allowed release years
 - `resolutions`
 - `codecs`
 
-Movie feeds should be curated enough that year + quality policy is meaningful. The config does not target specific movie names in phase 01.
+Movie feeds should be curated enough that year + quality policy is meaningful. The config does not target specific movie names in phase 01, and `movies` is a single object because movie intake policy is global for the app.
 
 ## `transmission`
 

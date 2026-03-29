@@ -28,7 +28,7 @@ export type TransmissionConfig = {
 export type AppConfig = {
   feeds: FeedConfig[];
   tv: TvRule[];
-  movies: MoviePolicy[];
+  movies: MoviePolicy;
   transmission: TransmissionConfig;
 };
 
@@ -72,15 +72,13 @@ export function validateConfig(input: unknown, path = 'config'): AppConfig {
 
   const feeds = requireArray(input, 'feeds', path);
   const tv = requireArray(input, 'tv', path);
-  const movies = requireArray(input, 'movies', path);
+  const movies = requireRecord(input, 'movies', path);
   const transmission = requireRecord(input, 'transmission', path);
 
   return {
     feeds: feeds.map((entry, index) => validateFeed(entry, path, index)),
     tv: tv.map((entry, index) => validateTvRule(entry, path, index)),
-    movies: movies.map((entry, index) =>
-      validateMoviePolicy(entry, path, index),
-    ),
+    movies: validateMoviePolicy(movies, path),
     transmission: validateTransmission(transmission, path),
   };
 }
@@ -115,20 +113,15 @@ function validateTvRule(input: unknown, path: string, index: number): TvRule {
 }
 
 function validateMoviePolicy(
-  input: unknown,
+  input: Record<string, unknown>,
   path: string,
-  index: number,
 ): MoviePolicy {
-  const rule = expectRecord(input, `${path} movies[${index}]`);
+  const rule = input;
 
   return {
-    years: requireNumberArray(rule, 'years', `${path} movies[${index}]`),
-    resolutions: requireStringArray(
-      rule,
-      'resolutions',
-      `${path} movies[${index}]`,
-    ),
-    codecs: requireStringArray(rule, 'codecs', `${path} movies[${index}]`),
+    years: requireNumberArray(rule, 'years', `${path} movies`),
+    resolutions: requireStringArray(rule, 'resolutions', `${path} movies`),
+    codecs: requireStringArray(rule, 'codecs', `${path} movies`),
   };
 }
 

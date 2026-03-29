@@ -8,9 +8,8 @@ export async function runCli(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const configPath = parseConfigPath(rest);
-
   try {
+    const configPath = parseConfigPath(rest);
     await loadConfig(resolveConfigPath(configPath));
     console.log(`Config loaded from ${resolveConfigPath(configPath)}.`);
     return 0;
