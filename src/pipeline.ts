@@ -3,6 +3,7 @@ import { fetchFeed, type RawFeedItem } from './feed';
 import { matchMovieItem } from './movie-match';
 import { normalizeFeedItem } from './normalize';
 import type {
+  CandidateStateRecord,
   CandidateMatchRecord,
   FeedItemOutcomeRecord,
   FeedItemOutcomeStatus,
@@ -74,43 +75,35 @@ export async function runPipeline(input: {
         continue;
       }
 
-      const submission = await input.downloader.submit({
-        downloadUrl: winner.feedItem.downloadUrl,
-      });
-
-      if (submission.ok) {
-        input.repository.recordCandidateOutcome({
-          runId: run.id,
-          feedItemId: winner.feedItem.id,
-          feedItem: winner.feedItem,
-          match: winner.match,
-          status: 'queued',
-        });
-        input.repository.recordFeedItemOutcome({
-          runId: run.id,
-          feedItemId: winner.feedItem.id,
-          status: 'queued',
-          identityKey: winner.match.identityKey,
-          ruleName: winner.match.ruleName,
-          message: 'Queued in Transmission.',
-        });
-        continue;
-      }
-
-      input.repository.recordCandidateOutcome({
+      await submitCandidate(input.repository, input.downloader, {
         runId: run.id,
         feedItemId: winner.feedItem.id,
         feedItem: winner.feedItem,
         match: winner.match,
-        status: 'failed',
       });
-      input.repository.recordFeedItemOutcome({
+    }
+
+    return finalizeRun(input.repository, run);
+  } catch (error) {
+    input.repository.failRun(run.id);
+    throw error;
+  }
+}
+
+export async function retryFailedCandidates(input: {
+  repository: Repository;
+  downloader: Downloader;
+}): Promise<RunPipelineResult> {
+  const run = input.repository.startRun();
+
+  try {
+    const retryableCandidates = input.repository.listRetryableCandidates();
+
+    for (const candidate of retryableCandidates) {
+      await submitCandidate(input.repository, input.downloader, {
         runId: run.id,
-        feedItemId: winner.feedItem.id,
-        status: 'failed',
-        identityKey: winner.match.identityKey,
-        ruleName: winner.match.ruleName,
-        message: submission.message,
+        feedItem: createRawFeedItem(candidate),
+        match: createCandidateMatchRecord(candidate),
       });
     }
 
@@ -192,6 +185,56 @@ function recordDuplicateOutcome(
   });
 }
 
+export async function submitCandidate(
+  repository: Repository,
+  downloader: Downloader,
+  input: {
+    runId: number;
+    feedItemId?: number;
+    feedItem: RawFeedItem;
+    match: CandidateMatchRecord;
+  },
+): Promise<void> {
+  const submission = await downloader.submit({
+    downloadUrl: input.feedItem.downloadUrl,
+  });
+
+  if (submission.ok) {
+    repository.recordCandidateOutcome({
+      runId: input.runId,
+      feedItemId: input.feedItemId,
+      feedItem: input.feedItem,
+      match: input.match,
+      status: 'queued',
+    });
+    repository.recordFeedItemOutcome({
+      runId: input.runId,
+      feedItemId: input.feedItemId,
+      status: 'queued',
+      identityKey: input.match.identityKey,
+      ruleName: input.match.ruleName,
+      message: 'Queued in Transmission.',
+    });
+    return;
+  }
+
+  repository.recordCandidateOutcome({
+    runId: input.runId,
+    feedItemId: input.feedItemId,
+    feedItem: input.feedItem,
+    match: input.match,
+    status: 'failed',
+  });
+  repository.recordFeedItemOutcome({
+    runId: input.runId,
+    feedItemId: input.feedItemId,
+    status: 'failed',
+    identityKey: input.match.identityKey,
+    ruleName: input.match.ruleName,
+    message: submission.message,
+  });
+}
+
 function finalizeRun(
   repository: Repository,
   run: RunRecord,
@@ -219,6 +262,37 @@ function createEmptyCounts(): Record<FeedItemOutcomeStatus, number> {
     failed: 0,
     skipped_duplicate: 0,
     skipped_no_match: 0,
+  };
+}
+
+function createRawFeedItem(candidate: CandidateStateRecord): RawFeedItem {
+  return {
+    feedName: candidate.feedName,
+    guidOrLink: candidate.guidOrLink,
+    rawTitle: candidate.rawTitle,
+    publishedAt: candidate.publishedAt,
+    downloadUrl: candidate.downloadUrl,
+  };
+}
+
+function createCandidateMatchRecord(
+  candidate: CandidateStateRecord,
+): CandidateMatchRecord {
+  return {
+    ruleName: candidate.ruleName,
+    identityKey: candidate.identityKey,
+    score: candidate.score,
+    reasons: candidate.reasons,
+    item: {
+      mediaType: candidate.mediaType,
+      rawTitle: candidate.rawTitle,
+      normalizedTitle: candidate.normalizedTitle,
+      season: candidate.season,
+      episode: candidate.episode,
+      year: candidate.year,
+      resolution: candidate.resolution,
+      codec: candidate.codec,
+    },
   };
 }
 

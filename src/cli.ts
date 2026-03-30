@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
-import { runPipeline } from './pipeline';
+import { retryFailedCandidates, runPipeline } from './pipeline';
 import {
   createRepository,
   ensureSchema,
@@ -40,6 +40,26 @@ export async function runCli(argv: string[]): Promise<number> {
       return 0;
     }
 
+    if (command === 'retry-failed') {
+      const configPath = parseConfigPath(rest);
+      const resolvedConfigPath = resolveConfigPath(configPath);
+      const config = await loadConfig(resolvedConfigPath);
+      const database = openInitializedWritableDatabase();
+
+      try {
+        const result = await retryFailedCandidates({
+          repository: createRepository(database),
+          downloader: createTransmissionDownloader(config.transmission),
+        });
+
+        console.log(formatRunSummary(result));
+      } finally {
+        database.close();
+      }
+
+      return 0;
+    }
+
     if (command === 'status') {
       const database = openStatusDatabase();
 
@@ -58,7 +78,9 @@ export async function runCli(argv: string[]): Promise<number> {
       return 0;
     }
 
-    console.error('Unknown command. Available commands: "run", "status".');
+    console.error(
+      'Unknown command. Available commands: "run", "status", "retry-failed".',
+    );
     return 1;
   } catch (error) {
     const message =
@@ -68,6 +90,21 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error(message);
     return 1;
   }
+}
+
+function openInitializedWritableDatabase() {
+  if (!existsSync(DEFAULT_DATABASE_PATH)) {
+    throw new Error(`Database not initialized. Run 'media-sync run' first.`);
+  }
+
+  const database = openDatabase();
+
+  if (!hasStatusSchema(database)) {
+    database.close();
+    throw new Error(`Database not initialized. Run 'media-sync run' first.`);
+  }
+
+  return database;
 }
 
 function openStatusDatabase() {

@@ -108,6 +108,7 @@ export type Repository = {
   listFeedItemOutcomes(runId: number): FeedItemOutcomeRecord[];
   listRecentRunSummaries(limit?: number): RunSummaryRecord[];
   listCandidateStates(limit?: number): CandidateStateRecord[];
+  listRetryableCandidates(limit?: number): CandidateStateRecord[];
 };
 
 export const DEFAULT_DATABASE_PATH = 'media-sync.db';
@@ -418,6 +419,36 @@ export function createRepository(database: Database): Repository {
     ORDER BY updated_at DESC, identity_key ASC
     LIMIT ?1`,
   );
+  const listRetryableCandidatesStatement = database.query(
+    `SELECT
+      identity_key AS identityKey,
+      media_type AS mediaType,
+      status,
+      queued_at AS queuedAt,
+      rule_name AS ruleName,
+      score,
+      reasons_json AS reasonsJson,
+      raw_title AS rawTitle,
+      normalized_title AS normalizedTitle,
+      season,
+      episode,
+      year,
+      resolution,
+      codec,
+      feed_name AS feedName,
+      guid_or_link AS guidOrLink,
+      published_at AS publishedAt,
+      download_url AS downloadUrl,
+      first_seen_run_id AS firstSeenRunId,
+      last_seen_run_id AS lastSeenRunId,
+      last_feed_item_id AS lastFeedItemId,
+      updated_at AS updatedAt
+    FROM candidate_state
+    WHERE status = 'failed'
+      AND download_url <> ''
+    ORDER BY updated_at ASC, identity_key ASC
+    LIMIT ?1`,
+  );
 
   return {
     startRun(startedAt = new Date().toISOString()): RunRecord {
@@ -562,6 +593,12 @@ export function createRepository(database: Database): Repository {
     listCandidateStates(limit = 20): CandidateStateRecord[] {
       return (
         listCandidateStatesStatement.all(limit) as CandidateStateRow[]
+      ).map(mapCandidateStateRow);
+    },
+
+    listRetryableCandidates(limit = 1000): CandidateStateRecord[] {
+      return (
+        listRetryableCandidatesStatement.all(limit) as CandidateStateRow[]
       ).map(mapCandidateStateRow);
     },
   };
