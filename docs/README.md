@@ -37,6 +37,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 
 Cross-cutting engineering rules that apply beyond a single phase.
 
+- `snyk-workflow-rationale.md`: rationale for adding Snyk-based security scanning to CI
 - `tdd-workflow.md`: red-green-refactor workflow for this repo
 
 ### `04-decisions`

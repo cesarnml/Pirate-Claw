@@ -7,6 +7,9 @@ on:
       - 'codex/**'
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -25,3 +28,31 @@ jobs:
 
       - name: Run CI
         run: bun run ci
+
+  snyk:
+    name: Snyk Security
+    if: ${{ secrets.SNYK_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Set up Snyk CLI
+        uses: snyk/actions/setup@master
+
+      - name: Scan dependencies
+        run: snyk test --severity-threshold=high
+
+      - name: Scan source code
+        run: snyk code test --severity-threshold=high

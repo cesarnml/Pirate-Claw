@@ -62,6 +62,12 @@ Useful supporting docs:
 - `./bin/media-sync status`
 - `./bin/media-sync retry-failed --config ./test/fixtures/valid-config.json`
 
+## CI
+
+- GitHub Actions runs `bun run ci` on pushes to `main`, pushes to `codex/**`, and pull requests.
+- GitHub Actions also runs Snyk dependency and source-code scans when the repository `SNYK_TOKEN` secret is configured.
+- Snyk currently fails the security job only on `high` severity findings or above.
+
 ## Proposed CLI Surface
 
 The initial command surface is intentionally small:
