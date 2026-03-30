@@ -436,6 +436,8 @@ describe('media-sync retry-failed', () => {
       status: 'failed',
     });
 
+    const retryMeBefore = repository.getCandidateState('movie:retry me|2024');
+
     const retry = await runSimpleCommand(
       directory,
       'retry-failed',
@@ -461,6 +463,7 @@ describe('media-sync retry-failed', () => {
     expect(repository.getCandidateState('movie:retry me|2024')).toMatchObject({
       status: 'queued',
       queuedAt: expect.any(String),
+      lastFeedItemId: retryMeBefore?.lastFeedItemId,
     });
     expect(
       repository.getCandidateState('movie:example movie|2024'),

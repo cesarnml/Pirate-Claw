@@ -102,6 +102,7 @@ export async function retryFailedCandidates(input: {
     for (const candidate of retryableCandidates) {
       await submitCandidate(input.repository, input.downloader, {
         runId: run.id,
+        feedItemId: candidate.lastFeedItemId,
         feedItem: createRawFeedItem(candidate),
         match: createCandidateMatchRecord(candidate),
       });

@@ -334,7 +334,10 @@ export function createRepository(database: Database): Repository {
       published_at = excluded.published_at,
       download_url = excluded.download_url,
       last_seen_run_id = excluded.last_seen_run_id,
-      last_feed_item_id = excluded.last_feed_item_id,
+      last_feed_item_id = COALESCE(
+        excluded.last_feed_item_id,
+        candidate_state.last_feed_item_id
+      ),
       updated_at = excluded.updated_at`,
   );
   const insertFeedItemOutcome = database.query(
