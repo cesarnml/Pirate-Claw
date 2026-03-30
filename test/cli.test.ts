@@ -637,10 +637,9 @@ function seedQueuedMovieCandidate(
     feedItem,
     match: {
       ruleName: 'movie-policy',
-      identityKey:
-        input.rawTitle.includes('Retry')
-          ? 'movie:retry me|2024'
-          : 'movie:example movie|2024',
+      identityKey: input.rawTitle.includes('Retry')
+        ? 'movie:retry me|2024'
+        : 'movie:example movie|2024',
       score: 10,
       reasons: ['year matched'],
       item: {

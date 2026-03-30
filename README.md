@@ -54,7 +54,9 @@ Useful supporting docs:
 
 ## Local Development
 
+- `bun run hooks:install` once per clone to make `git push` run `bun run verify` locally
 - `bun test`
+- `bun run verify`
 - `bun run ci`
 - `./bin/media-sync run --config ./test/fixtures/valid-config.json`
 - `./bin/media-sync status`
