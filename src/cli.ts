@@ -1,4 +1,7 @@
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
+import { runPipeline } from './pipeline';
+import { createRepository, ensureSchema, openDatabase } from './repository';
+import { createTransmissionDownloader } from './transmission';
 
 export async function runCli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -10,8 +13,23 @@ export async function runCli(argv: string[]): Promise<number> {
 
   try {
     const configPath = parseConfigPath(rest);
-    await loadConfig(resolveConfigPath(configPath));
-    console.log(`Config loaded from ${resolveConfigPath(configPath)}.`);
+    const resolvedConfigPath = resolveConfigPath(configPath);
+    const config = await loadConfig(resolvedConfigPath);
+    const database = openDatabase();
+
+    try {
+      ensureSchema(database);
+      const result = await runPipeline({
+        config,
+        repository: createRepository(database),
+        downloader: createTransmissionDownloader(config.transmission),
+      });
+
+      console.log(formatRunSummary(result));
+    } finally {
+      database.close();
+    }
+
     return 0;
   } catch (error) {
     const message =
@@ -21,6 +39,24 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error(message);
     return 1;
   }
+}
+
+function formatRunSummary(result: {
+  runId: number;
+  counts: {
+    queued: number;
+    failed: number;
+    skipped_duplicate: number;
+    skipped_no_match: number;
+  };
+}): string {
+  return [
+    `Run ${result.runId} completed.`,
+    `queued: ${result.counts.queued}`,
+    `failed: ${result.counts.failed}`,
+    `skipped_duplicate: ${result.counts.skipped_duplicate}`,
+    `skipped_no_match: ${result.counts.skipped_no_match}`,
+  ].join('\n');
 }
 
 function formatUnexpectedError(error: unknown): string {
