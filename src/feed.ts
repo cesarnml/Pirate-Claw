@@ -1,3 +1,5 @@
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
+
 import type { FeedConfig } from './config';
 
 export type RawFeedItem = {
@@ -36,14 +38,12 @@ export async function fetchFeed(feed: FeedConfig): Promise<RawFeedItem[]> {
 }
 
 export function parseFeedXml(feed: FeedConfig, xml: string): RawFeedItem[] {
-  const document = new DOMParser().parseFromString(xml, 'application/xml');
-  const parserError = document.querySelector('parsererror');
-
-  if (parserError) {
+  if (XMLValidator.validate(xml) !== true) {
     throw new FeedError(`Feed "${feed.name}" returned malformed RSS XML.`);
   }
 
-  const items = Array.from(document.querySelectorAll('rss > channel > item'));
+  const parsed = xmlParser.parse(xml) as ParsedFeedDocument;
+  const items = toArray(parsed.rss?.channel?.item);
 
   if (items.length === 0) {
     throw new FeedError(`Feed "${feed.name}" did not contain any RSS items.`);
@@ -54,7 +54,7 @@ export function parseFeedXml(feed: FeedConfig, xml: string): RawFeedItem[] {
 
 function parseItem(
   feed: FeedConfig,
-  item: Element,
+  item: ParsedFeedItem,
   index: number,
 ): RawFeedItem {
   const rawTitle = requireText(feed, item, 'title', index);
@@ -74,8 +74,8 @@ function parseItem(
 
 function requireText(
   feed: FeedConfig,
-  item: Element,
-  tagName: string,
+  item: ParsedFeedItem,
+  tagName: keyof ParsedFeedItem,
   index: number,
 ): string {
   const value = optionalText(item, tagName);
@@ -89,8 +89,11 @@ function requireText(
   return value;
 }
 
-function optionalText(item: Element, tagName: string): string | undefined {
-  const value = item.querySelector(tagName)?.textContent?.trim();
+function optionalText(
+  item: ParsedFeedItem,
+  tagName: keyof ParsedFeedItem,
+): string | undefined {
+  const value = textValue(item[tagName]);
   return value && value.length > 0 ? value : undefined;
 }
 
@@ -117,3 +120,50 @@ function formatCause(error: unknown): string {
 
   return String(error);
 }
+
+function textValue(value: ParsedXmlValue | undefined): string | undefined {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    '#text' in value &&
+    typeof value['#text'] === 'string'
+  ) {
+    return value['#text'].trim();
+  }
+
+  return undefined;
+}
+
+function toArray<T>(value: T | T[] | undefined): T[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+type ParsedXmlValue = string | { '#text'?: string; '@_isPermaLink'?: string };
+
+type ParsedFeedItem = {
+  title?: ParsedXmlValue;
+  link?: ParsedXmlValue;
+  guid?: ParsedXmlValue;
+  pubDate?: ParsedXmlValue;
+};
+
+type ParsedFeedDocument = {
+  rss?: {
+    channel?: {
+      item?: ParsedFeedItem | ParsedFeedItem[];
+    };
+  };
+};
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  trimValues: true,
+});
