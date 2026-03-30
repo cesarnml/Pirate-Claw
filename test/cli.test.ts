@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { mkdtemp as createTempDir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const tempDirs: string[] = [];
 const cwd = process.cwd();
@@ -126,17 +129,7 @@ describe('media-sync run', () => {
 });
 
 async function mkdtemp(): Promise<string> {
-  const child = Bun.spawn(['mktemp', '-d', '-t', 'media-sync-test'], {
-    cwd,
-    env,
-    stderr: 'pipe',
-    stdout: 'pipe',
-  });
-  const directory = (await new Response(child.stdout).text()).trim();
-
-  if ((await child.exited) !== 0 || directory.length === 0) {
-    throw new Error('Failed to create temporary directory for test.');
-  }
+  const directory = await createTempDir(join(tmpdir(), 'media-sync-test-'));
 
   tempDirs.push(directory);
   return directory;
