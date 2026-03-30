@@ -375,6 +375,206 @@ describe('media-sync status', () => {
   });
 });
 
+describe('media-sync retry-failed', () => {
+  afterEach(async () => {
+    while (openDatabases.length > 0) {
+      openDatabases.pop()?.close();
+    }
+
+    while (servers.length > 0) {
+      servers.pop()?.stop(true);
+    }
+
+    while (tempDirs.length > 0) {
+      const directory = tempDirs.pop();
+
+      if (directory) {
+        await Bun.$`rm -rf ${directory}`;
+      }
+    }
+  });
+
+  it('retries only failed candidates from SQLite and updates successful retries to queued', async () => {
+    const directory = await mkdtemp();
+    const transmissionServer = startFlakyRetryTransmissionServer();
+    const configPath = join(directory, 'media-sync.config.json');
+    const repository = createTestRepository(join(directory, 'media-sync.db'));
+
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        feeds: [],
+        tv: [],
+        movies: {
+          years: [2024],
+          resolutions: ['2160p', '1080p'],
+          codecs: ['x265'],
+        },
+        transmission: {
+          url: `${transmissionServer.url}/transmission/rpc`,
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+    );
+
+    seedQueuedMovieCandidate(repository, {
+      runId: repository.startRun('2026-03-30T00:00:00.000Z').id,
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+      status: 'queued',
+    });
+
+    seedQueuedMovieCandidate(repository, {
+      runId: repository.startRun('2026-03-30T01:00:00.000Z').id,
+      rawTitle: 'Retry.Me.2024.1080p.WEB.x265-GROUP',
+      guidOrLink: 'https://example.test/releases/retry-me-web',
+      downloadUrl: 'https://example.test/downloads/retry-me-web.torrent',
+      updatedAt: '2026-03-30T01:10:00.000Z',
+      status: 'failed',
+    });
+
+    const retryMeBefore = repository.getCandidateState('movie:retry me|2024');
+
+    const retry = await runSimpleCommand(
+      directory,
+      'retry-failed',
+      '--config',
+      './media-sync.config.json',
+    );
+
+    expect(retry.exitCode).toBe(0);
+    expect(retry.stderr).toBe('');
+    expect(retry.stdout).toContain('Run 3 completed.');
+    expect(retry.stdout).toContain('queued: 1');
+    expect(retry.stdout).toContain('failed: 0');
+    expect(retry.stdout).toContain('skipped_duplicate: 0');
+    expect(retry.stdout).toContain('skipped_no_match: 0');
+    expect(repository.listFeedItemOutcomes(3)).toMatchObject([
+      {
+        status: 'queued',
+        identityKey: 'movie:retry me|2024',
+        ruleName: 'movie-policy',
+        message: 'Queued in Transmission.',
+      },
+    ]);
+    expect(repository.getCandidateState('movie:retry me|2024')).toMatchObject({
+      status: 'queued',
+      queuedAt: expect.any(String),
+      lastFeedItemId: retryMeBefore?.lastFeedItemId,
+    });
+    expect(
+      repository.getCandidateState('movie:example movie|2024'),
+    ).toMatchObject({
+      status: 'queued',
+    });
+    expect(transmissionServer.requestedUrls).toEqual([
+      'https://example.test/downloads/retry-me-web.torrent',
+    ]);
+  });
+
+  it('keeps failed candidates failed when the retry attempt still fails', async () => {
+    const directory = await mkdtemp();
+    const transmissionServer = startTransmissionServer();
+    const configPath = join(directory, 'media-sync.config.json');
+    const repository = createTestRepository(join(directory, 'media-sync.db'));
+
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        feeds: [],
+        tv: [],
+        movies: {
+          years: [2024],
+          resolutions: ['2160p', '1080p'],
+          codecs: ['x265'],
+        },
+        transmission: {
+          url: `${transmissionServer.url}/transmission/rpc`,
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+    );
+
+    seedQueuedMovieCandidate(repository, {
+      runId: repository.startRun('2026-03-30T00:00:00.000Z').id,
+      rawTitle: 'Retry.Me.2024.1080p.WEB.x265-GROUP',
+      guidOrLink: 'https://example.test/releases/retry-me-web',
+      downloadUrl: 'https://example.test/downloads/retry-me-web.torrent',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+      status: 'failed',
+    });
+
+    const retry = await runSimpleCommand(
+      directory,
+      'retry-failed',
+      '--config',
+      './media-sync.config.json',
+    );
+
+    expect(retry.exitCode).toBe(0);
+    expect(retry.stderr).toBe('');
+    expect(retry.stdout).toContain('Run 2 completed.');
+    expect(retry.stdout).toContain('queued: 0');
+    expect(retry.stdout).toContain('failed: 1');
+    expect(repository.listFeedItemOutcomes(2)).toMatchObject([
+      {
+        status: 'failed',
+        identityKey: 'movie:retry me|2024',
+        ruleName: 'movie-policy',
+      },
+    ]);
+    expect(repository.getCandidateState('movie:retry me|2024')).toMatchObject({
+      status: 'failed',
+      queuedAt: undefined,
+    });
+    expect(transmissionServer.requestCount).toBe(2);
+  });
+
+  it('fails without creating a database when retry-failed is run before initialization', async () => {
+    const directory = await mkdtemp();
+    const databasePath = join(directory, 'media-sync.db');
+    const configPath = join(directory, 'media-sync.config.json');
+
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        feeds: [],
+        tv: [],
+        movies: {
+          years: [2024],
+          resolutions: ['2160p', '1080p'],
+          codecs: ['x265'],
+        },
+        transmission: {
+          url: 'http://127.0.0.1:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+    );
+
+    expect(existsSync(databasePath)).toBe(false);
+
+    const retry = await runSimpleCommand(
+      directory,
+      'retry-failed',
+      '--config',
+      './media-sync.config.json',
+    );
+
+    expect(retry.exitCode).toBe(1);
+    expect(retry.stdout).toBe('');
+    expect(retry.stderr).toContain(
+      `Database not initialized. Run 'media-sync run' first.`,
+    );
+    expect(existsSync(databasePath)).toBe(false);
+  });
+});
+
 async function mkdtemp(): Promise<string> {
   const directory = await createTempDir(join(tmpdir(), 'media-sync-test-'));
 
@@ -413,6 +613,52 @@ function createTestRepository(path: string) {
   openDatabases.push(database);
   ensureSchema(database);
   return createRepository(database);
+}
+
+function seedQueuedMovieCandidate(
+  repository: ReturnType<typeof createRepository>,
+  input: {
+    runId: number;
+    rawTitle: string;
+    guidOrLink: string;
+    downloadUrl: string;
+    updatedAt: string;
+    status: 'queued' | 'failed';
+  },
+) {
+  const feedItem = repository.recordFeedItem(input.runId, {
+    feedName: 'Movie Feed',
+    guidOrLink: input.guidOrLink,
+    rawTitle: input.rawTitle,
+    publishedAt: input.updatedAt,
+    downloadUrl: input.downloadUrl,
+  });
+
+  repository.recordCandidateOutcome({
+    runId: input.runId,
+    feedItemId: feedItem.id,
+    feedItem,
+    match: {
+      ruleName: 'movie-policy',
+      identityKey: input.rawTitle.includes('Retry')
+        ? 'movie:retry me|2024'
+        : 'movie:example movie|2024',
+      score: 10,
+      reasons: ['year matched'],
+      item: {
+        mediaType: 'movie',
+        rawTitle: feedItem.rawTitle,
+        normalizedTitle: input.rawTitle.includes('Retry')
+          ? 'retry me'
+          : 'example movie',
+        year: 2024,
+        resolution: '1080p',
+        codec: 'x265',
+      },
+    },
+    status: input.status,
+    updatedAt: input.updatedAt,
+  });
 }
 
 function startFeedServer(): { url: string } {
@@ -484,6 +730,75 @@ function startTransmissionServer(): { url: string; requestCount: number } {
     url: server.url.origin,
     get requestCount() {
       return state.requestCount;
+    },
+  };
+}
+
+function startFlakyRetryTransmissionServer(): {
+  url: string;
+  requestedUrls: string[];
+} {
+  const state = {
+    requestedUrls: [] as string[],
+    attemptsByUrl: new Map<string, number>(),
+  };
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    routes: {
+      '/transmission/rpc': async (request: Request) => {
+        const sessionId = request.headers.get('x-transmission-session-id');
+
+        if (!sessionId) {
+          return new Response(null, {
+            status: 409,
+            headers: {
+              'x-transmission-session-id': 'session-123',
+            },
+          });
+        }
+
+        const body = (await request.json()) as {
+          arguments?: { filename?: string };
+        };
+        const filename = body.arguments?.filename ?? '';
+        state.requestedUrls.push(filename);
+        const nextAttempt = (state.attemptsByUrl.get(filename) ?? 0) + 1;
+
+        state.attemptsByUrl.set(filename, nextAttempt);
+
+        if (filename.includes('retry-me') && nextAttempt === 1) {
+          return Response.json({
+            result: 'success',
+            arguments: {
+              'torrent-added': {
+                id: 52,
+                hashString: 'hash-52',
+                name: 'Retried Torrent',
+              },
+            },
+          });
+        }
+
+        return Response.json({
+          result: 'success',
+          arguments: {
+            'torrent-added': {
+              id: 42,
+              hashString: 'hash-42',
+              name: 'Queued Torrent',
+            },
+          },
+        });
+      },
+    },
+  });
+
+  servers.push(server);
+  return {
+    url: server.url.origin,
+    get requestedUrls() {
+      return [...state.requestedUrls];
     },
   };
 }

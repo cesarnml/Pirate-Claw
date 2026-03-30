@@ -274,6 +274,73 @@ describe('SQLite repository', () => {
       },
     ]);
   });
+
+  it('lists retryable candidates in updated order and excludes queued items', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const firstRun = repository.startRun('2026-03-30T00:00:00.000Z');
+    const queuedFeedItem = repository.recordFeedItem(firstRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T00:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+    });
+    repository.recordCandidateOutcome({
+      runId: firstRun.id,
+      feedItemId: queuedFeedItem.id,
+      feedItem: queuedFeedItem,
+      match: requireMovieMatch(queuedFeedItem.rawTitle),
+      status: 'queued',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+    });
+
+    const secondRun = repository.startRun('2026-03-30T01:00:00.000Z');
+    const olderFailedFeedItem = repository.recordFeedItem(secondRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/retry-me-web',
+      rawTitle: 'Retry.Me.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T01:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/retry-me-web.torrent',
+    });
+    repository.recordCandidateOutcome({
+      runId: secondRun.id,
+      feedItemId: olderFailedFeedItem.id,
+      feedItem: olderFailedFeedItem,
+      match: requireMovieMatch(olderFailedFeedItem.rawTitle),
+      status: 'failed',
+      updatedAt: '2026-03-30T01:10:00.000Z',
+    });
+
+    const thirdRun = repository.startRun('2026-03-30T02:00:00.000Z');
+    const newerFailedFeedItem = repository.recordFeedItem(thirdRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/another-movie-web',
+      rawTitle: 'Another Movie 2024 2160p WEB x265 GROUP',
+      publishedAt: '2026-03-30T02:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/another-movie-web.torrent',
+    });
+    repository.recordCandidateOutcome({
+      runId: thirdRun.id,
+      feedItemId: newerFailedFeedItem.id,
+      feedItem: newerFailedFeedItem,
+      match: requireMovieMatch(newerFailedFeedItem.rawTitle),
+      status: 'failed',
+      updatedAt: '2026-03-30T02:10:00.000Z',
+    });
+
+    expect(repository.listRetryableCandidates()).toMatchObject([
+      {
+        identityKey: 'movie:retry me|2024',
+        status: 'failed',
+        updatedAt: '2026-03-30T01:10:00.000Z',
+      },
+      {
+        identityKey: 'movie:another movie|2024',
+        status: 'failed',
+        updatedAt: '2026-03-30T02:10:00.000Z',
+      },
+    ]);
+  });
 });
 
 function createTestRepository(path: string) {
