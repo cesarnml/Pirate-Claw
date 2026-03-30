@@ -37,6 +37,10 @@ Not committed yet:
 - config editing workflow
 - exact issue tracker choice and workflow depth
 
+Working notes:
+
+- `docs/01-product/phase-02-preliminary-notes.md`
+
 ## Phase 03: Post-Queue Lifecycle
 
 Likely scope:
