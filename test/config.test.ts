@@ -106,4 +106,36 @@ describe('validateConfig', () => {
       ),
     );
   });
+
+  it('fails with a precise tv matchPattern path when regex syntax is invalid', () => {
+    expect(() =>
+      validateConfig({
+        feeds: [
+          {
+            name: 'TV Feed',
+            url: 'https://example.test/tv.rss',
+            mediaType: 'tv',
+          },
+        ],
+        tv: [
+          {
+            name: 'Example Show',
+            matchPattern: '(',
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+          },
+        ],
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+        },
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+    ).toThrow(/Config file "config tv\[0\] matchPattern" has invalid regex syntax:/);
+  });
 });

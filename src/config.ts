@@ -102,7 +102,7 @@ function validateTvRule(input: unknown, path: string, index: number): TvRule {
 
   return {
     name: requireString(rule, 'name', `${path} tv[${index}]`),
-    matchPattern: optionalString(
+    matchPattern: validateOptionalMatchPattern(
       rule.matchPattern,
       `${path} tv[${index}] matchPattern`,
     ),
@@ -205,6 +205,29 @@ function optionalString(input: unknown, path: string): string | undefined {
   }
 
   return expectString(input, path);
+}
+
+function validateOptionalMatchPattern(
+  input: unknown,
+  path: string,
+): string | undefined {
+  const value = optionalString(input, path);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    void new RegExp(value, 'i');
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'invalid regular expression';
+    throw new ConfigError(
+      `Config file "${path}" has invalid regex syntax: ${message}.`,
+    );
+  }
+
+  return value;
 }
 
 function requireNumberArray(
