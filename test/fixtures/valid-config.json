@@ -14,7 +14,6 @@
   "tv": [
     {
       "name": "Example Show",
-      "pattern": "example[ ._-]*show",
       "resolutions": ["1080p"],
       "codecs": ["x265"]
     }

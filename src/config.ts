@@ -7,7 +7,7 @@ export type FeedConfig = {
 
 export type TvRule = {
   name: string;
-  pattern: string;
+  matchPattern?: string;
   resolutions: string[];
   codecs: string[];
 };
@@ -102,13 +102,22 @@ function validateTvRule(input: unknown, path: string, index: number): TvRule {
 
   return {
     name: requireString(rule, 'name', `${path} tv[${index}]`),
-    pattern: requireString(rule, 'pattern', `${path} tv[${index}]`),
-    resolutions: requireStringArray(
+    matchPattern: validateOptionalMatchPattern(
+      rule.matchPattern,
+      `${path} tv[${index}] matchPattern`,
+    ),
+    resolutions: requireNormalizedAllowedStringArray(
       rule,
       'resolutions',
       `${path} tv[${index}]`,
+      supportedResolutions,
     ),
-    codecs: requireStringArray(rule, 'codecs', `${path} tv[${index}]`),
+    codecs: requireNormalizedAllowedStringArray(
+      rule,
+      'codecs',
+      `${path} tv[${index}]`,
+      supportedCodecs,
+    ),
   };
 }
 
@@ -120,8 +129,18 @@ function validateMoviePolicy(
 
   return {
     years: requireNumberArray(rule, 'years', `${path} movies`),
-    resolutions: requireStringArray(rule, 'resolutions', `${path} movies`),
-    codecs: requireStringArray(rule, 'codecs', `${path} movies`),
+    resolutions: requireNormalizedAllowedStringArray(
+      rule,
+      'resolutions',
+      `${path} movies`,
+      supportedResolutions,
+    ),
+    codecs: requireNormalizedAllowedStringArray(
+      rule,
+      'codecs',
+      `${path} movies`,
+      supportedCodecs,
+    ),
   };
 }
 
@@ -180,6 +199,37 @@ function requireString(
   return expectString(input[key], `${path} ${key}`);
 }
 
+function optionalString(input: unknown, path: string): string | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  return expectString(input, path);
+}
+
+function validateOptionalMatchPattern(
+  input: unknown,
+  path: string,
+): string | undefined {
+  const value = optionalString(input, path);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    void new RegExp(value, 'i');
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'invalid regular expression';
+    throw new ConfigError(
+      `Config file "${path}" has invalid regex syntax: ${message}.`,
+    );
+  }
+
+  return value;
+}
+
 function requireNumberArray(
   input: Record<string, unknown>,
   key: string,
@@ -218,6 +268,24 @@ function requireStringArray(
   return value;
 }
 
+function requireNormalizedAllowedStringArray(
+  input: Record<string, unknown>,
+  key: string,
+  path: string,
+  allowedValues: ReadonlySet<string>,
+): string[] {
+  const value = requireStringArray(input, key, path);
+  const normalized = value.map((item) => item.toLowerCase());
+
+  if (normalized.some((item) => !allowedValues.has(item))) {
+    throw new ConfigError(
+      `Config file "${path} ${key}" has invalid value; expected one of ${formatAllowedValues(allowedValues)}.`,
+    );
+  }
+
+  return normalized;
+}
+
 function requireMediaType(
   input: Record<string, unknown>,
   path: string,
@@ -251,6 +319,14 @@ function expectRecord(input: unknown, path: string): Record<string, unknown> {
 
   return input;
 }
+
+function formatAllowedValues(values: ReadonlySet<string>): string {
+  return [...values].map((value) => `"${value}"`).join(', ');
+}
+
+const supportedResolutions = new Set(['2160p', '1080p', '720p', '480p']);
+
+const supportedCodecs = new Set(['x264', 'x265']);
 
 function expectString(input: unknown, path: string): string {
   if (typeof input !== 'string' || input.length === 0) {

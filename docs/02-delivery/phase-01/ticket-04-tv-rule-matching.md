@@ -4,7 +4,7 @@ Size: 2 points
 
 ## Outcome
 
-- match normalized TV items against regex-based rules
+- match normalized TV items against name-based rules with optional regex overrides
 - enforce codec and resolution filters
 
 ## Red

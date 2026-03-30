@@ -44,6 +44,7 @@ Useful supporting docs:
 ## Local Development
 
 - `bun test`
+- `bun run ci`
 - `./bin/media-sync run --config ./test/fixtures/valid-config.json`
 
 ## Proposed CLI Surface

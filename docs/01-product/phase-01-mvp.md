@@ -60,10 +60,10 @@ Defines tracked TV rules.
 
 Each rule should contain:
 
-- `name`
-- `pattern`: case-insensitive regex string
+- `name`: human-readable canonical show name
 - `resolutions`: allowed values such as `1080p`
 - `codecs`: allowed values such as `x265`
+- optional `matchPattern`: case-insensitive regex override when name-based matching is not specific enough
 
 ## `movies`
 

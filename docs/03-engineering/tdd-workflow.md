@@ -93,7 +93,7 @@ Keep the suite small and behavior-focused:
 - do not assume browser-style globals such as `DOMParser` exist in every Bun runtime context
 - avoid shelling out to platform-specific tools like BSD `mktemp` in tests
 - prefer path-aware helpers over manual string slicing for executable paths and `PATH` updates
-- run full `verify` and `test`, not just `typecheck`, before considering a ticket green
+- run `bun run ci`, not just `typecheck`, before considering a ticket green
 
 ## Learning-Oriented Review Prompts
 
