@@ -19,18 +19,19 @@ export class FeedError extends Error {
 
 export async function fetchFeed(feed: FeedConfig): Promise<RawFeedItem[]> {
   let response: Response;
+  const safeFeedUrl = formatFeedUrlForError(feed.url);
 
   try {
     response = await fetch(feed.url);
   } catch (error) {
     throw new FeedError(
-      `Failed to fetch feed "${feed.name}" from ${feed.url}: ${formatCause(error)}.`,
+      `Failed to fetch feed "${feed.name}" from ${safeFeedUrl}: ${formatCause(error)}.`,
     );
   }
 
   if (!response.ok) {
     throw new FeedError(
-      `Failed to fetch feed "${feed.name}" from ${feed.url}: HTTP ${response.status}.`,
+      `Failed to fetch feed "${feed.name}" from ${safeFeedUrl}: HTTP ${response.status}.`,
     );
   }
 
@@ -119,6 +120,18 @@ function formatCause(error: unknown): string {
   }
 
   return String(error);
+}
+
+function formatFeedUrlForError(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    return parsed.toString();
+  } catch {
+    return '<invalid url>';
+  }
 }
 
 function textValue(value: ParsedXmlValue | undefined): string | undefined {
