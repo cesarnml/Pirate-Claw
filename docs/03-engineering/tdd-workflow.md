@@ -86,6 +86,15 @@ Keep the suite small and behavior-focused:
 - focused tests for normalization and matching behavior
 - adapter tests for Transmission handshake and failure paths
 
+## Bun Portability Notes
+
+- prefer Bun-native APIs when they are stable and sufficient for the test
+- use Bun's Node-compat modules for path, fs, and os portability when they produce simpler cross-platform code
+- do not assume browser-style globals such as `DOMParser` exist in every Bun runtime context
+- avoid shelling out to platform-specific tools like BSD `mktemp` in tests
+- prefer path-aware helpers over manual string slicing for executable paths and `PATH` updates
+- run full `verify` and `test`, not just `typecheck`, before considering a ticket green
+
 ## Learning-Oriented Review Prompts
 
 After each ticket, review with these questions:
