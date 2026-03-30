@@ -3,11 +3,7 @@ import { Database } from 'bun:sqlite';
 import type { RawFeedItem } from './feed';
 import type { NormalizedFeedItem } from './normalize';
 
-export type CandidateStatus =
-  | 'queued'
-  | 'failed'
-  | 'skipped_duplicate'
-  | 'skipped_no_match';
+export type CandidateStatus = 'queued' | 'failed' | 'skipped_duplicate';
 
 export type CandidateMatchRecord = {
   ruleName: string;

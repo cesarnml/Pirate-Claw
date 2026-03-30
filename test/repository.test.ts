@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdtemp as createTempDir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,9 +13,14 @@ import {
 } from '../src/repository';
 
 const tempDirs: string[] = [];
+const openDatabases: Database[] = [];
 
 describe('SQLite repository', () => {
   afterEach(async () => {
+    while (openDatabases.length > 0) {
+      openDatabases.pop()?.close();
+    }
+
     while (tempDirs.length > 0) {
       const directory = tempDirs.pop();
 
@@ -143,6 +149,8 @@ describe('SQLite repository', () => {
 
 function createTestRepository(path: string) {
   const database = openDatabase(path);
+
+  openDatabases.push(database);
   ensureSchema(database);
   return createRepository(database);
 }

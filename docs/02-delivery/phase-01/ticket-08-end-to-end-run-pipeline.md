@@ -6,6 +6,7 @@ Size: 3 points
 
 - wire config, feed fetch, normalization, matching, dedupe, and Transmission together
 - choose one best candidate per identity and submit it
+- record `skipped_no_match` with a per-feed-item outcome shape instead of forcing it into `candidate_state`
 
 ## Red
 
