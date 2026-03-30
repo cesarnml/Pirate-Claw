@@ -15,7 +15,7 @@ Phase 01 ends at successful queueing in Transmission. It does not include a web 
 
 ## Status
 
-Ticket 01 is implemented: the repository now has a minimal Bun + TypeScript CLI skeleton with JSON config loading and validation for `media-sync run`.
+Tickets 01-02 are implemented: the repository now has a minimal Bun + TypeScript CLI skeleton with JSON config loading and validation for `media-sync run`, plus an RSS fetch-and-parse entrypoint that converts RSS items into a raw feed-item shape.
 
 The project is being planned as a small-slice, review-friendly build:
 
