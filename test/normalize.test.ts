@@ -80,6 +80,21 @@ describe('normalizeFeedItem', () => {
       },
     },
     {
+      name: 'extracts movie titles when the raw title starts with the year',
+      mediaType: 'movie' as const,
+      rawTitle: '2024.Example.Movie.1080p.WEB.x265-GROUP',
+      expected: {
+        mediaType: 'movie',
+        rawTitle: '2024.Example.Movie.1080p.WEB.x265-GROUP',
+        normalizedTitle: 'Example Movie',
+        season: undefined,
+        episode: undefined,
+        year: 2024,
+        resolution: '1080p',
+        codec: 'x265',
+      },
+    },
+    {
       name: 'returns undefined metadata when only a title is available',
       mediaType: 'tv' as const,
       rawTitle: 'Plain Title Release',

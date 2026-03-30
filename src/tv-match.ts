@@ -1,4 +1,5 @@
 import type { TvRule } from './config';
+import { matchesAllowedQuality, scoreQualityPreference } from './match-policy';
 import type { NormalizedFeedItem } from './normalize';
 
 export type TvMatchResult = {
@@ -59,9 +60,11 @@ function matchRule(
     return false;
   }
 
-  return (
-    rule.resolutions.includes(item.resolution ?? '') &&
-    rule.codecs.includes(item.codec ?? '')
+  return matchesAllowedQuality(
+    item.resolution,
+    item.codec,
+    rule.resolutions,
+    rule.codecs,
   );
 }
 
@@ -92,21 +95,12 @@ function buildIdentityKey(item: NormalizedFeedItem): string {
 }
 
 function scoreMatch(rule: TvRule, item: NormalizedFeedItem): number {
-  const resolutionIndex = rule.resolutions.indexOf(item.resolution ?? '');
-  const codecIndex = rule.codecs.indexOf(item.codec ?? '');
-
-  return (
-    scoreResolution(rule.resolutions.length, resolutionIndex) +
-    scoreCodec(rule.codecs.length, codecIndex)
+  return scoreQualityPreference(
+    item.resolution ?? '',
+    item.codec ?? '',
+    rule.resolutions,
+    rule.codecs,
   );
-}
-
-function scoreResolution(length: number, index: number): number {
-  return (length - index) * 100;
-}
-
-function scoreCodec(length: number, index: number): number {
-  return length - index - 1;
 }
 
 function padNumber(value: number | undefined): string {
