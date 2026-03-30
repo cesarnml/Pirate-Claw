@@ -60,7 +60,11 @@ export function createPipelineCoordinator(input: {
         }
 
         if (input.repository.isCandidateQueued(winner.match.identityKey)) {
-          recordDuplicateOutcome(input.repository, input.run, winner, {
+          recordFeedItemOutcome(input.repository, {
+            runId: input.run.id,
+            feedItemId: winner.feedItem.id,
+            status: 'skipped_duplicate',
+            match: winner.match,
             message: 'Candidate already queued in a previous run.',
           });
           continue;
@@ -170,6 +174,26 @@ function recordDuplicateOutcome(
   });
 }
 
+function recordFeedItemOutcome(
+  repository: Repository,
+  input: {
+    runId: number;
+    feedItemId?: number;
+    status: FeedItemOutcomeStatus;
+    match: CandidateMatchRecord;
+    message: string;
+  },
+): void {
+  repository.recordFeedItemOutcome({
+    runId: input.runId,
+    feedItemId: input.feedItemId,
+    status: input.status,
+    identityKey: input.match.identityKey,
+    ruleName: input.match.ruleName,
+    message: input.message,
+  });
+}
+
 function recordCandidateResult(
   repository: Repository,
   input: SubmissionInput & {
@@ -184,12 +208,11 @@ function recordCandidateResult(
     match: input.match,
     status: input.status,
   });
-  repository.recordFeedItemOutcome({
+  recordFeedItemOutcome(repository, {
     runId: input.runId,
     feedItemId: input.feedItemId,
     status: input.status,
-    identityKey: input.match.identityKey,
-    ruleName: input.match.ruleName,
+    match: input.match,
     message: input.message,
   });
 }

@@ -124,6 +124,53 @@ describe('runPipeline', () => {
       resolution: '2160p',
     });
   });
+
+  it('records a duplicate outcome for previously queued identities without overwriting candidate state', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    seedQueuedTvCandidate(repository);
+
+    const result = await runPipeline({
+      config: createConfig(),
+      repository,
+      downloader: {
+        submit: async () => ({
+          ok: true as const,
+          status: 'queued' as const,
+        }),
+      },
+      fetchFeed: async () => [
+        {
+          feedName: 'TV Feed',
+          guidOrLink: 'https://example.test/releases/example-show-rerun',
+          rawTitle: 'Example.Show.S01E02.1080p.WEB.x265-NEWGROUP',
+          publishedAt: '2026-03-30T01:00:00.000Z',
+          downloadUrl:
+            'https://example.test/downloads/example-show-rerun.torrent',
+        },
+      ],
+    });
+
+    expect(result.counts).toEqual({
+      queued: 0,
+      failed: 0,
+      skipped_duplicate: 1,
+      skipped_no_match: 0,
+    });
+    expect(repository.listFeedItemOutcomes(result.runId)).toMatchObject([
+      {
+        status: 'skipped_duplicate',
+        identityKey: 'tv:example show|s01e02',
+        message: 'Candidate already queued in a previous run.',
+      },
+    ]);
+    expect(
+      repository.getCandidateState('tv:example show|s01e02'),
+    ).toMatchObject({
+      status: 'queued',
+      rawTitle: 'Example.Show.S01E02.1080p.WEB.x265-GROUP',
+      queuedAt: '2026-03-30T00:10:00.000Z',
+    });
+  });
 });
 
 describe('retryFailedCandidates', () => {
@@ -201,6 +248,41 @@ function seedFailedMovieCandidate(repository: Repository): void {
       },
     },
     status: 'failed',
+    updatedAt: '2026-03-30T00:10:00.000Z',
+  });
+  repository.completeRun(run.id, '2026-03-30T00:12:00.000Z');
+}
+
+function seedQueuedTvCandidate(repository: Repository): void {
+  const run = repository.startRun('2026-03-30T00:00:00.000Z');
+  const feedItem = repository.recordFeedItem(run.id, {
+    feedName: 'TV Feed',
+    guidOrLink: 'https://example.test/releases/example-show-original',
+    rawTitle: 'Example.Show.S01E02.1080p.WEB.x265-GROUP',
+    publishedAt: '2026-03-30T00:05:00.000Z',
+    downloadUrl: 'https://example.test/downloads/example-show-original.torrent',
+  });
+
+  repository.recordCandidateOutcome({
+    runId: run.id,
+    feedItemId: feedItem.id,
+    feedItem,
+    match: {
+      ruleName: 'Example Show',
+      identityKey: 'tv:example show|s01e02',
+      score: 10,
+      reasons: ['title matched'],
+      item: {
+        mediaType: 'tv',
+        rawTitle: feedItem.rawTitle,
+        normalizedTitle: 'example show',
+        season: 1,
+        episode: 2,
+        resolution: '1080p',
+        codec: 'x265',
+      },
+    },
+    status: 'queued',
     updatedAt: '2026-03-30T00:10:00.000Z',
   });
   repository.completeRun(run.id, '2026-03-30T00:12:00.000Z');
