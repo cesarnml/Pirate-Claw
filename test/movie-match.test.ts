@@ -68,6 +68,22 @@ describe('matchMovieItem', () => {
     );
   });
 
+  it('does not emit an empty identity key when a release title starts with the year', () => {
+    const item = normalizeFeedItem({
+      mediaType: 'movie',
+      rawTitle: '2024.Example.Movie.1080p.WEB.x265-GROUP',
+    });
+    const policy: MoviePolicy = {
+      years: [2024],
+      resolutions: ['1080p'],
+      codecs: ['x265'],
+    };
+
+    expect(matchMovieItem(item, policy)?.identityKey).toBe(
+      'movie:example movie|2024',
+    );
+  });
+
   it.each([
     {
       name: 'year is not allowed',
