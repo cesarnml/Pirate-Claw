@@ -31,6 +31,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `issue-tracking.md`: naming, sizing, and issue hierarchy
 - `phase-01/implementation-plan.md`: ordered delivery plan for phase 01
 - `phase-01/ticket-*.md`: one file per ticket
+- `phase-01/*-rationale.md`: rationale notes for tickets and the post-phase polish pass
 
 ### `03-engineering`
 

@@ -47,6 +47,16 @@ For each ticket:
 4. capture a short rationale note for reviewers and future threads
 5. stop for review before the next ticket
 
+After a phase or epic is functionally complete, run one bounded polish pass before starting the next phase.
+
+Use that pass to:
+
+- simplify architecture around the completed scope
+- strengthen behavior-level tests around the completed scope
+- update docs for any newly stable interfaces
+
+Do not add next-phase features during this pass.
+
 ## Learning Artifact
 
 Each ticket or PR should include a short rationale section with these prompts:
