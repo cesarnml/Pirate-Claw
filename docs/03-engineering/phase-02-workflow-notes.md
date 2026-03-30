@@ -23,6 +23,28 @@ These are candidate workflow improvements to review before phase 02 planning. Th
   - deferred work
   - verification run
 - Keep a lightweight review standard for AI-generated comments: accept high-signal findings, push back on low-signal or mis-scoped suggestions.
+- Introduce durable ticket tracking outside chat so the next ticket, blocked work, review state, and deferred items are explicit.
+- Evaluate an issue tracker such as Linear only if it reduces coordination overhead instead of adding workflow ceremony.
+- Prefer an MCP-readable project management surface so Codex can read ticket context, status, and deferred work without inferring it from branches and docs.
+
+## Desired Outcome For Ticket Tracking
+
+If phase 02 takes on workflow tooling, the system should answer these questions with low friction:
+
+- what is the next ticket
+- what is in progress
+- what is blocked
+- what was deferred from the current ticket
+- what is in review
+- what metrics are worth tracking per ticket
+
+The minimum useful metrics are:
+
+- cycle time per ticket
+- review iterations per ticket
+- hours per merged ticket
+
+Do not add a tracker that only mirrors the docs. The value should be durable state, explicit deferred-work capture, and better AI/operator visibility.
 
 ## Changes To Avoid For Now
 

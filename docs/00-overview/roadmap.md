@@ -26,12 +26,16 @@ Likely scope:
 - richer run summaries
 - config ergonomics
 - operational logging improvements
+- durable ticket tracking with issue workflow states and deferred-work capture
+- issue-tracker integration such as Linear when it improves delivery signal
+- AI-readable project management context through MCP-backed tooling
 
 Not committed yet:
 
 - exact scheduler mechanism
 - notification model
 - config editing workflow
+- exact issue tracker choice and workflow depth
 
 ## Phase 03: Post-Queue Lifecycle
 
