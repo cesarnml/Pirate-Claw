@@ -15,7 +15,7 @@ Phase 01 ends at successful queueing in Transmission. It does not include a web 
 
 ## Status
 
-Tickets 01-08 are implemented:
+Tickets 01-09 are implemented:
 
 - minimal Bun + TypeScript CLI skeleton with JSON config loading and validation for `media-sync run`
 - RSS fetch-and-parse entrypoint that converts RSS items into a raw feed-item shape
@@ -25,6 +25,7 @@ Tickets 01-08 are implemented:
 - SQLite-backed run history and candidate-state persistence that preserves dedupe and retryability
 - Transmission RPC adapter that negotiates session ids, submits torrent URLs, and returns structured queueing failures without wiring the full run pipeline yet
 - end-to-end `media-sync run` orchestration that fetches feeds, matches candidates, persists per-feed-item outcomes, submits winners, and prints a compact run summary
+- read-only `media-sync status` inspection that reports recent runs and current candidate state from SQLite without creating or migrating the database
 
 The project is being planned as a small-slice, review-friendly build:
 
@@ -55,6 +56,7 @@ Useful supporting docs:
 - `bun test`
 - `bun run ci`
 - `./bin/media-sync run --config ./test/fixtures/valid-config.json`
+- `./bin/media-sync status`
 
 ## Proposed CLI Surface
 

@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, it } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { mkdtemp as createTempDir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
@@ -229,6 +230,151 @@ describe('media-sync run', () => {
   });
 });
 
+describe('media-sync status', () => {
+  afterEach(async () => {
+    while (openDatabases.length > 0) {
+      openDatabases.pop()?.close();
+    }
+
+    while (servers.length > 0) {
+      servers.pop()?.stop(true);
+    }
+
+    while (tempDirs.length > 0) {
+      const directory = tempDirs.pop();
+
+      if (directory) {
+        await Bun.$`rm -rf ${directory}`;
+      }
+    }
+  });
+
+  it('prints recent run summaries and current candidate states without mutating the database', async () => {
+    const directory = await mkdtemp();
+    const repository = createTestRepository(join(directory, 'media-sync.db'));
+
+    const firstRun = repository.startRun('2026-03-30T00:00:00.000Z');
+    repository.recordFeedItemOutcome({
+      runId: firstRun.id,
+      status: 'queued',
+      createdAt: '2026-03-30T00:10:00.000Z',
+    });
+    repository.completeRun(firstRun.id, '2026-03-30T00:12:00.000Z');
+
+    const secondRun = repository.startRun('2026-03-30T01:00:00.000Z');
+    repository.recordFeedItemOutcome({
+      runId: secondRun.id,
+      status: 'failed',
+      createdAt: '2026-03-30T01:10:00.000Z',
+    });
+    repository.recordFeedItemOutcome({
+      runId: secondRun.id,
+      status: 'skipped_duplicate',
+      createdAt: '2026-03-30T01:11:00.000Z',
+    });
+    repository.completeRun(secondRun.id, '2026-03-30T01:12:00.000Z');
+
+    const queuedFeedItem = repository.recordFeedItem(firstRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T00:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+    });
+    repository.recordCandidateOutcome({
+      runId: firstRun.id,
+      feedItemId: queuedFeedItem.id,
+      feedItem: queuedFeedItem,
+      match: {
+        ruleName: 'movie-policy',
+        identityKey: 'movie:example movie|2024',
+        score: 10,
+        reasons: ['year matched'],
+        item: {
+          mediaType: 'movie',
+          rawTitle: queuedFeedItem.rawTitle,
+          normalizedTitle: 'example movie',
+          year: 2024,
+          resolution: '1080p',
+          codec: 'x265',
+        },
+      },
+      status: 'queued',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+    });
+
+    const failedFeedItem = repository.recordFeedItem(secondRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/retry-me-web',
+      rawTitle: 'Retry.Me.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T01:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/retry-me-web.torrent',
+    });
+    repository.recordCandidateOutcome({
+      runId: secondRun.id,
+      feedItemId: failedFeedItem.id,
+      feedItem: failedFeedItem,
+      match: {
+        ruleName: 'movie-policy',
+        identityKey: 'movie:retry me|2024',
+        score: 10,
+        reasons: ['year matched'],
+        item: {
+          mediaType: 'movie',
+          rawTitle: failedFeedItem.rawTitle,
+          normalizedTitle: 'retry me',
+          year: 2024,
+          resolution: '1080p',
+          codec: 'x265',
+        },
+      },
+      status: 'failed',
+      updatedAt: '2026-03-30T01:10:00.000Z',
+    });
+
+    const runsBefore = repository.listRecentRunSummaries();
+    const candidatesBefore = repository.listCandidateStates();
+
+    const status = await runSimpleCommand(directory, 'status');
+
+    expect(status.exitCode).toBe(0);
+    expect(status.stderr).toBe('');
+    expect(status.stdout).toContain('Recent runs');
+    expect(status.stdout).toContain(
+      'Run 2 | status=completed | started=2026-03-30T01:00:00.000Z | completed=2026-03-30T01:12:00.000Z | queued=0 failed=1 skipped_duplicate=1 skipped_no_match=0',
+    );
+    expect(status.stdout).toContain(
+      'Run 1 | status=completed | started=2026-03-30T00:00:00.000Z | completed=2026-03-30T00:12:00.000Z | queued=1 failed=0 skipped_duplicate=0 skipped_no_match=0',
+    );
+    expect(status.stdout).toContain('Candidate states');
+    expect(status.stdout).toContain(
+      'movie:retry me|2024 | status=failed | rule=movie-policy | title=retry me',
+    );
+    expect(status.stdout).toContain(
+      'movie:example movie|2024 | status=queued | rule=movie-policy | title=example movie',
+    );
+
+    expect(repository.listRecentRunSummaries()).toEqual(runsBefore);
+    expect(repository.listCandidateStates()).toEqual(candidatesBefore);
+  });
+
+  it('fails without creating a database when status is run before initialization', async () => {
+    const directory = await mkdtemp();
+    const databasePath = join(directory, 'media-sync.db');
+
+    expect(existsSync(databasePath)).toBe(false);
+
+    const status = await runSimpleCommand(directory, 'status');
+
+    expect(status.exitCode).toBe(1);
+    expect(status.stdout).toBe('');
+    expect(status.stderr).toContain(
+      `Database not initialized. Run 'media-sync run' first.`,
+    );
+    expect(existsSync(databasePath)).toBe(false);
+  });
+});
+
 async function mkdtemp(): Promise<string> {
   const directory = await createTempDir(join(tmpdir(), 'media-sync-test-'));
 
@@ -240,7 +386,14 @@ async function runCliCommand(
   commandCwd: string,
   configPath: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const child = Bun.spawn([cliExecutable, 'run', '--config', configPath], {
+  return runSimpleCommand(commandCwd, 'run', '--config', configPath);
+}
+
+async function runSimpleCommand(
+  commandCwd: string,
+  ...args: string[]
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const child = Bun.spawn([cliExecutable, ...args], {
     cwd: commandCwd,
     env,
     stderr: 'pipe',

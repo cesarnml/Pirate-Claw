@@ -3,7 +3,14 @@
   "ignorePaths": [],
   "dictionaryDefinitions": [],
   "dictionaries": [],
-  "words": ["eztv", "mktemp", "parsererror", "reparsing"],
+  "words": [
+    "AUTOINCREMENT",
+    "bluray",
+    "eztv",
+    "mktemp",
+    "parsererror",
+    "reparsing"
+  ],
   "ignoreWords": [],
   "import": []
 }

@@ -166,6 +166,114 @@ describe('SQLite repository', () => {
       completedAt: '2026-03-30T04:05:00.000Z',
     });
   });
+
+  it('lists recent run summaries with aggregated outcome counts', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const firstRun = repository.startRun('2026-03-30T00:00:00.000Z');
+    repository.recordFeedItemOutcome({
+      runId: firstRun.id,
+      status: 'queued',
+      createdAt: '2026-03-30T00:10:00.000Z',
+    });
+    repository.recordFeedItemOutcome({
+      runId: firstRun.id,
+      status: 'failed',
+      createdAt: '2026-03-30T00:11:00.000Z',
+    });
+    repository.completeRun(firstRun.id, '2026-03-30T00:12:00.000Z');
+
+    const secondRun = repository.startRun('2026-03-30T01:00:00.000Z');
+    repository.recordFeedItemOutcome({
+      runId: secondRun.id,
+      status: 'skipped_duplicate',
+      createdAt: '2026-03-30T01:10:00.000Z',
+    });
+    repository.recordFeedItemOutcome({
+      runId: secondRun.id,
+      status: 'skipped_no_match',
+      createdAt: '2026-03-30T01:11:00.000Z',
+    });
+    repository.completeRun(secondRun.id, '2026-03-30T01:12:00.000Z');
+
+    expect(repository.listRecentRunSummaries()).toEqual([
+      {
+        id: secondRun.id,
+        startedAt: '2026-03-30T01:00:00.000Z',
+        status: 'completed',
+        completedAt: '2026-03-30T01:12:00.000Z',
+        counts: {
+          queued: 0,
+          failed: 0,
+          skipped_duplicate: 1,
+          skipped_no_match: 1,
+        },
+      },
+      {
+        id: firstRun.id,
+        startedAt: '2026-03-30T00:00:00.000Z',
+        status: 'completed',
+        completedAt: '2026-03-30T00:12:00.000Z',
+        counts: {
+          queued: 1,
+          failed: 1,
+          skipped_duplicate: 0,
+          skipped_no_match: 0,
+        },
+      },
+    ]);
+  });
+
+  it('lists candidate states newest first', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const firstRun = repository.startRun('2026-03-30T02:00:00.000Z');
+    const firstFeedItem = repository.recordFeedItem(firstRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T02:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+    });
+    const firstMatch = requireMovieMatch(firstFeedItem.rawTitle);
+    repository.recordCandidateOutcome({
+      runId: firstRun.id,
+      feedItemId: firstFeedItem.id,
+      feedItem: firstFeedItem,
+      match: firstMatch,
+      status: 'queued',
+      updatedAt: '2026-03-30T02:10:00.000Z',
+    });
+
+    const secondRun = repository.startRun('2026-03-30T03:00:00.000Z');
+    const secondFeedItem = repository.recordFeedItem(secondRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/retry-me-web',
+      rawTitle: 'Retry.Me.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T03:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/retry-me-web.torrent',
+    });
+    const secondMatch = requireMovieMatch(secondFeedItem.rawTitle);
+    repository.recordCandidateOutcome({
+      runId: secondRun.id,
+      feedItemId: secondFeedItem.id,
+      feedItem: secondFeedItem,
+      match: secondMatch,
+      status: 'failed',
+      updatedAt: '2026-03-30T03:10:00.000Z',
+    });
+
+    expect(repository.listCandidateStates()).toMatchObject([
+      {
+        identityKey: 'movie:retry me|2024',
+        status: 'failed',
+        updatedAt: '2026-03-30T03:10:00.000Z',
+      },
+      {
+        identityKey: 'movie:example movie|2024',
+        status: 'queued',
+        updatedAt: '2026-03-30T02:10:00.000Z',
+      },
+    ]);
+  });
 });
 
 function createTestRepository(path: string) {

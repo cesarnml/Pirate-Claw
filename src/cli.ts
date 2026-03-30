@@ -1,36 +1,65 @@
+import { existsSync } from 'node:fs';
+
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
 import { runPipeline } from './pipeline';
-import { createRepository, ensureSchema, openDatabase } from './repository';
+import {
+  createRepository,
+  ensureSchema,
+  hasStatusSchema,
+  openDatabase,
+  openDatabaseReadOnly,
+  DEFAULT_DATABASE_PATH,
+  type CandidateStateRecord,
+  type RunSummaryRecord,
+} from './repository';
 import { createTransmissionDownloader } from './transmission';
 
 export async function runCli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
 
-  if (command !== 'run') {
-    console.error('Unknown command. Available commands: "run".');
-    return 1;
-  }
-
   try {
-    const configPath = parseConfigPath(rest);
-    const resolvedConfigPath = resolveConfigPath(configPath);
-    const config = await loadConfig(resolvedConfigPath);
-    const database = openDatabase();
+    if (command === 'run') {
+      const configPath = parseConfigPath(rest);
+      const resolvedConfigPath = resolveConfigPath(configPath);
+      const config = await loadConfig(resolvedConfigPath);
+      const database = openDatabase();
 
-    try {
-      ensureSchema(database);
-      const result = await runPipeline({
-        config,
-        repository: createRepository(database),
-        downloader: createTransmissionDownloader(config.transmission),
-      });
+      try {
+        ensureSchema(database);
+        const result = await runPipeline({
+          config,
+          repository: createRepository(database),
+          downloader: createTransmissionDownloader(config.transmission),
+        });
 
-      console.log(formatRunSummary(result));
-    } finally {
-      database.close();
+        console.log(formatRunSummary(result));
+      } finally {
+        database.close();
+      }
+
+      return 0;
     }
 
-    return 0;
+    if (command === 'status') {
+      const database = openStatusDatabase();
+
+      try {
+        const repository = createRepository(database);
+        console.log(
+          formatStatusReport({
+            runs: repository.listRecentRunSummaries(),
+            candidates: repository.listCandidateStates(),
+          }),
+        );
+      } finally {
+        database.close();
+      }
+
+      return 0;
+    }
+
+    console.error('Unknown command. Available commands: "run", "status".');
+    return 1;
   } catch (error) {
     const message =
       error instanceof ConfigError
@@ -39,6 +68,21 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error(message);
     return 1;
   }
+}
+
+function openStatusDatabase() {
+  if (!existsSync(DEFAULT_DATABASE_PATH)) {
+    throw new Error(`Database not initialized. Run 'media-sync run' first.`);
+  }
+
+  const database = openDatabaseReadOnly();
+
+  if (!hasStatusSchema(database)) {
+    database.close();
+    throw new Error(`Database not initialized. Run 'media-sync run' first.`);
+  }
+
+  return database;
 }
 
 function formatRunSummary(result: {
@@ -57,6 +101,60 @@ function formatRunSummary(result: {
     `skipped_duplicate: ${result.counts.skipped_duplicate}`,
     `skipped_no_match: ${result.counts.skipped_no_match}`,
   ].join('\n');
+}
+
+function formatStatusReport(input: {
+  runs: RunSummaryRecord[];
+  candidates: CandidateStateRecord[];
+}): string {
+  return [
+    'Recent runs',
+    ...formatRecentRuns(input.runs),
+    '',
+    'Candidate states',
+    ...formatCandidateStates(input.candidates),
+  ].join('\n');
+}
+
+function formatRecentRuns(runs: RunSummaryRecord[]): string[] {
+  if (runs.length === 0) {
+    return ['No runs recorded.'];
+  }
+
+  return runs.map(
+    (run) =>
+      `Run ${run.id} | status=${run.status} | started=${run.startedAt} | completed=${run.completedAt ?? '-'} | queued=${run.counts.queued} failed=${run.counts.failed} skipped_duplicate=${run.counts.skipped_duplicate} skipped_no_match=${run.counts.skipped_no_match}`,
+  );
+}
+
+function formatCandidateStates(candidates: CandidateStateRecord[]): string[] {
+  if (candidates.length === 0) {
+    return ['No candidate states recorded.'];
+  }
+
+  return candidates.map((candidate) =>
+    [
+      `${candidate.identityKey} | status=${candidate.status} | rule=${candidate.ruleName} | title=${candidate.normalizedTitle}`,
+      formatCandidateMetadata(candidate),
+      `updated=${candidate.updatedAt} | queued=${candidate.queuedAt ?? '-'}`,
+    ].join('\n'),
+  );
+}
+
+function formatCandidateMetadata(candidate: CandidateStateRecord): string {
+  const details = [
+    `media=${candidate.mediaType}`,
+    candidate.season !== undefined ? `season=${candidate.season}` : undefined,
+    candidate.episode !== undefined
+      ? `episode=${candidate.episode}`
+      : undefined,
+    candidate.year !== undefined ? `year=${candidate.year}` : undefined,
+    candidate.resolution ? `resolution=${candidate.resolution}` : undefined,
+    candidate.codec ? `codec=${candidate.codec}` : undefined,
+    `feed=${candidate.feedName}`,
+  ].filter((value): value is string => value !== undefined);
+
+  return details.join(' | ');
 }
 
 function formatUnexpectedError(error: unknown): string {

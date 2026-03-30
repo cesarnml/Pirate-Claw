@@ -27,6 +27,10 @@ export type RunRecord = {
   completedAt?: string;
 };
 
+export type RunSummaryRecord = RunRecord & {
+  counts: Record<FeedItemOutcomeStatus, number>;
+};
+
 export type FeedItemRecord = RawFeedItem & {
   id: number;
   runId: number;
@@ -102,6 +106,8 @@ export type Repository = {
     input: RecordFeedItemOutcomeInput,
   ): FeedItemOutcomeRecord;
   listFeedItemOutcomes(runId: number): FeedItemOutcomeRecord[];
+  listRecentRunSummaries(limit?: number): RunSummaryRecord[];
+  listCandidateStates(limit?: number): CandidateStateRecord[];
 };
 
 export const DEFAULT_DATABASE_PATH = 'media-sync.db';
@@ -110,8 +116,12 @@ export function openDatabase(path = DEFAULT_DATABASE_PATH): Database {
   return new Database(path, { create: true, strict: true });
 }
 
+export function openDatabaseReadOnly(path = DEFAULT_DATABASE_PATH): Database {
+  return new Database(path, { readonly: true, strict: true });
+}
+
 export function ensureSchema(database: Database): void {
-  database.exec(`
+  database.run(`
     PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS runs (
@@ -174,10 +184,32 @@ export function ensureSchema(database: Database): void {
       .get() as { 1: number } | null | undefined) !== null;
 
   if (!hasRunStatusColumn) {
-    database.exec(
+    database.run(
       `ALTER TABLE runs ADD COLUMN status TEXT NOT NULL DEFAULT 'running'`,
     );
   }
+}
+
+export function hasStatusSchema(database: Database): boolean {
+  const requiredTables = ['runs', 'candidate_state', 'feed_item_outcomes'];
+
+  for (const tableName of requiredTables) {
+    const hasTable =
+      (database
+        .query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1`)
+        .get(tableName) as { 1: number } | null | undefined) !== null;
+
+    if (!hasTable) {
+      return false;
+    }
+  }
+
+  const hasRunStatusColumn =
+    (database
+      .query(`SELECT 1 FROM pragma_table_info('runs') WHERE name = 'status'`)
+      .get() as { 1: number } | null | undefined) !== null;
+
+  return hasRunStatusColumn;
 }
 
 export function createRepository(database: Database): Repository {
@@ -342,6 +374,50 @@ export function createRepository(database: Database): Repository {
     WHERE run_id = ?1
     ORDER BY id ASC`,
   );
+  const listRecentRunSummariesStatement = database.query(
+    `SELECT
+      runs.id,
+      runs.started_at AS startedAt,
+      runs.status,
+      runs.completed_at AS completedAt,
+      COALESCE(SUM(CASE WHEN feed_item_outcomes.status = 'queued' THEN 1 ELSE 0 END), 0) AS queuedCount,
+      COALESCE(SUM(CASE WHEN feed_item_outcomes.status = 'failed' THEN 1 ELSE 0 END), 0) AS failedCount,
+      COALESCE(SUM(CASE WHEN feed_item_outcomes.status = 'skipped_duplicate' THEN 1 ELSE 0 END), 0) AS skippedDuplicateCount,
+      COALESCE(SUM(CASE WHEN feed_item_outcomes.status = 'skipped_no_match' THEN 1 ELSE 0 END), 0) AS skippedNoMatchCount
+    FROM runs
+    LEFT JOIN feed_item_outcomes ON feed_item_outcomes.run_id = runs.id
+    GROUP BY runs.id
+    ORDER BY runs.id DESC
+    LIMIT ?1`,
+  );
+  const listCandidateStatesStatement = database.query(
+    `SELECT
+      identity_key AS identityKey,
+      media_type AS mediaType,
+      status,
+      queued_at AS queuedAt,
+      rule_name AS ruleName,
+      score,
+      reasons_json AS reasonsJson,
+      raw_title AS rawTitle,
+      normalized_title AS normalizedTitle,
+      season,
+      episode,
+      year,
+      resolution,
+      codec,
+      feed_name AS feedName,
+      guid_or_link AS guidOrLink,
+      published_at AS publishedAt,
+      download_url AS downloadUrl,
+      first_seen_run_id AS firstSeenRunId,
+      last_seen_run_id AS lastSeenRunId,
+      last_feed_item_id AS lastFeedItemId,
+      updated_at AS updatedAt
+    FROM candidate_state
+    ORDER BY updated_at DESC, identity_key ASC
+    LIMIT ?1`,
+  );
 
   return {
     startRun(startedAt = new Date().toISOString()): RunRecord {
@@ -476,6 +552,18 @@ export function createRepository(database: Database): Repository {
         listFeedItemOutcomesStatement.all(runId) as FeedItemOutcomeRow[]
       ).map(mapFeedItemOutcomeRow);
     },
+
+    listRecentRunSummaries(limit = 5): RunSummaryRecord[] {
+      return (
+        listRecentRunSummariesStatement.all(limit) as RunSummaryRow[]
+      ).map(mapRunSummaryRow);
+    },
+
+    listCandidateStates(limit = 20): CandidateStateRecord[] {
+      return (
+        listCandidateStatesStatement.all(limit) as CandidateStateRow[]
+      ).map(mapCandidateStateRow);
+    },
   };
 }
 
@@ -510,6 +598,18 @@ function mapRunRow(row: {
     startedAt: row.startedAt,
     status: row.status,
     completedAt: row.completedAt ?? undefined,
+  };
+}
+
+function mapRunSummaryRow(row: RunSummaryRow): RunSummaryRecord {
+  return {
+    ...mapRunRow(row),
+    counts: {
+      queued: Number(row.queuedCount),
+      failed: Number(row.failedCount),
+      skipped_duplicate: Number(row.skippedDuplicateCount),
+      skipped_no_match: Number(row.skippedNoMatchCount),
+    },
   };
 }
 
@@ -580,6 +680,13 @@ type FeedItemRow = {
   rawTitle: string;
   publishedAt: string;
   downloadUrl: string;
+};
+
+type RunSummaryRow = RunRow & {
+  queuedCount: number;
+  failedCount: number;
+  skippedDuplicateCount: number;
+  skippedNoMatchCount: number;
 };
 
 type CandidateStateRow = {
