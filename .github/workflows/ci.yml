@@ -31,28 +31,37 @@ jobs:
 
   snyk:
     name: Snyk Security
-    if: ${{ secrets.SNYK_TOKEN != '' }}
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
     steps:
       - name: Check out repository
+        if: ${{ env.SNYK_TOKEN != '' }}
         uses: actions/checkout@v4
 
       - name: Set up Bun
+        if: ${{ env.SNYK_TOKEN != '' }}
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
 
       - name: Install dependencies
+        if: ${{ env.SNYK_TOKEN != '' }}
         run: bun install --frozen-lockfile
 
       - name: Set up Snyk CLI
+        if: ${{ env.SNYK_TOKEN != '' }}
         uses: snyk/actions/setup@master
 
       - name: Scan dependencies
+        if: ${{ env.SNYK_TOKEN != '' }}
         run: snyk test --severity-threshold=high
 
       - name: Scan source code
+        if: ${{ env.SNYK_TOKEN != '' }}
         run: snyk code test --severity-threshold=high
+
+      - name: Skip when Snyk token is not configured
+        if: ${{ env.SNYK_TOKEN == '' }}
+        run: echo "SNYK_TOKEN is not configured for this workflow run. Skipping Snyk scans."
