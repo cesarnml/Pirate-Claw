@@ -24,7 +24,7 @@ Examples:
 Recommended epic names:
 
 - `Phase 01 MVP`
-- `Phase 02 Automation And Operator Ergonomics`
+- `Phase 02 Real-World Feed Compatibility`
 - `Phase 03 Post-Queue Lifecycle`
 
 ## Point System

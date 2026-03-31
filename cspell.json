@@ -5,11 +5,23 @@
   "dictionaries": [],
   "words": [
     "AUTOINCREMENT",
+    "CDPATH",
     "bluray",
     "eztv",
+    "infohash",
     "mktemp",
+    "NEWGROUP",
+    "overengineering",
     "parsererror",
-    "reparsing"
+    "queueable",
+    "qodo",
+    "Qube",
+    "reparsing",
+    "retryability",
+    "SARIF",
+    "Turso",
+    "upserted",
+    "upserts"
   ],
   "ignoreWords": [],
   "import": []

@@ -1,10 +1,35 @@
 # Phase 02 Preliminary Notes
 
-These notes are intentionally provisional. They capture real-world findings and likely design directions without committing Phase 02 to a full scope or implementation plan yet.
+These notes started as a holding area for real-world feed findings before Phase 02 scope was clear. Phase 02 is now narrowed to a smaller compatibility goal; the older polling and remote-capture ideas remain useful background, but they are not the implementation target for this phase.
+
+## Current Phase 02 Scope
+
+Phase 02 should deliver a minimal real-world working app for local manual invocation of the branded CLI against:
+
+- `https://myrss.org/eztv`
+- `https://atlas.rssly.org/feed`
+
+The current Phase 02 implementation target is:
+
+- prefer RSS `enclosure.url` over `<link>` for queueable download URLs
+- keep `<link>` as fallback when no enclosure URL exists
+- allow movie items to match when year and resolution are valid even if codec is absent
+- rename the operator surface to `pirate-claw` and `pirate-claw.config.json` as the final Phase 02 ticket
+- keep the app manually invoked and locally persisted using the existing SQLite model
+
+## Explicit Phase 03 Deferrals
+
+The following ideas are deferred out of Phase 02:
+
+- polling or scheduling to avoid short feed-retention windows
+- remote feed capture
+- Turso or any other hosted persistence layer
+- importing buffered feed items into local SQLite
+- persistence redesign beyond the current local SQLite behavior
 
 ## Why This Note Exists
 
-Phase 01 is complete, but the exact objectives for Phase 02 are still in flux. A few important findings came out of manual review of a live movie RSS feed and should not be lost in chat history.
+Phase 01 is complete, and a few important findings came out of manual review of live RSS feeds. Those findings still matter because they explain why Phase 02 needs compatibility work before it needs automation.
 
 Reference feed discussed:
 
@@ -37,18 +62,17 @@ Observed on sampled live feed content:
 - For movie feeds like this one, codec omission appears to mean "not explicitly x265" rather than "metadata unavailable at random."
 - A hard codec filter causes Pirate Claw to reject releases that are likely acceptable candidates once year and resolution match.
 - Once-daily direct polling against live feeds is not reliable enough for the target sources.
-- Feed capture should be decoupled from queueing so RSS collection can run frequently while `run` remains manual or less frequent.
+- For Phase 02, this remains a known limitation rather than an implementation target.
+- Any future feed-capture layer should be treated as a later ingestion solution, not bundled into the compatibility slice.
 
-## Likely Phase 02 Direction
+## Earlier Ideas Now Deferred
 
 - Keep movie `years` as a hard filter.
 - Keep movie `resolutions` as a hard filter.
-- Move movie codec handling from a hard rejection rule to a scoring preference.
+- Move movie codec handling from a hard rejection rule to a scoring preference when codec is absent.
 - Prefer explicit preferred-codec hits over unknown codec.
-- Continue to rank among duplicate movie candidates using the scoring rubric so explicit `x265` wins when both candidates are otherwise acceptable.
-- Add a lightweight capture path that records raw feed items frequently for later local processing.
-- If the local machine cannot be relied on to stay online, use a remote poller to collect feed data on a short interval.
-- Prefer a separate data repo as the cheapest hosted persistence layer for captured feed data rather than appending operational snapshots into the application repo.
+- Continue to rank among duplicate movie candidates using the scoring rubric so explicit codec beats unknown codec when both candidates are otherwise acceptable.
+- Defer any capture path, remote poller, or hosted persistence design to Phase 03.
 
 ## Open Questions
 
@@ -114,5 +138,5 @@ Why this is attractive:
 - Prefer enclosure-based download URLs over link-based submission URLs.
 - Treat explicit codec hits as a ranking advantage, not necessarily a mandatory filter, for movie feeds with incomplete codec labeling.
 - Treat short-lived RSS windows as an ingestion problem, not a reason to abandon RSS for source-specific APIs yet.
-- If remote polling is needed because the local machine is not always on, prefer a separate data repo over writing captured feed snapshots into the application repo.
-- Avoid locking this into a full Phase 02 plan until the operator ergonomics and automation goals are clearer.
+- Defer polling, remote capture, Turso, and any ingestion redesign to Phase 03.
+- Treat Phase 02 as a compatibility slice, not an automation phase.

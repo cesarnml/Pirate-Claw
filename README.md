@@ -55,6 +55,8 @@ Useful supporting docs:
 ## Local Development
 
 - `bun run hooks:install` once per clone to make `git push` run `bun run verify` locally
+- `bun run spellcheck`
+- `bun run spellcheck:words` to review unknown-word candidates before adding stable jargon to `cspell.json`
 - `bun test`
 - `bun run test:coverage` for local coverage checks when changing or refactoring tested behavior
 - `bun run verify`
