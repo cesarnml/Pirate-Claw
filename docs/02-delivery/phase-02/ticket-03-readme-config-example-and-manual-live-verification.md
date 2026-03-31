@@ -1,12 +1,11 @@
-# P2.03 README, Config Example, And Manual Live Verification
+# P2.03 README And Real-World Config Example
 
 Size: 2 points
 
 ## Outcome
 
 - document the Phase 02 real-world target feeds and expected behavior
-- provide a concrete local `media-sync.config.json` example for manual testing
-- verify the live end-to-end path against real feeds and a local Transmission instance
+- provide a concrete local config example for manual testing before the branding rename lands
 
 ## Red
 
@@ -19,11 +18,12 @@ Size: 2 points
 - add a concrete config example using:
   - `https://myrss.org/eztv`
   - `https://atlas.rssly.org/feed`
-- capture the manual live-verification command and success criteria
+- capture the planned manual verification prerequisites while deferring the final branded command to the rename ticket
 
 ## Refactor
 
 - keep the README focused on current behavior rather than future polling or ingestion plans
+- avoid documenting a temporary operator surface as the final branded workflow
 
 ## Review Focus
 

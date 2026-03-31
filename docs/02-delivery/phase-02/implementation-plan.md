@@ -10,17 +10,19 @@ Phase 02 is intentionally narrow. The goal is to make Pirate Claw work end-to-en
 
 1. `P2.01 Enclosure-First Feed Parsing`
 2. `P2.02 Movie Matcher Allows Missing Codec`
-3. `P2.03 README, Config Example, And Manual Live Verification`
+3. `P2.03 README And Real-World Config Example`
+4. `P2.04 Rename CLI And Config To Pirate Claw`
 
 ## Ticket Files
 
 - `ticket-01-enclosure-first-feed-parsing.md`
 - `ticket-02-movie-matcher-allows-missing-codec.md`
 - `ticket-03-readme-config-example-and-manual-live-verification.md`
+- `ticket-04-rename-cli-and-config-to-pirate-claw.md`
 
 ## Exit Condition
 
-`media-sync run` can be manually exercised against these target feeds using a valid local `media-sync.config.json` and a real Transmission instance:
+`pirate-claw run` can be manually exercised against these target feeds using a valid local `pirate-claw.config.json` and a real Transmission instance:
 
 - `https://myrss.org/eztv`
 - `https://atlas.rssly.org/feed`
@@ -30,6 +32,7 @@ The expected Phase 02 behavior is:
 - queueable torrent payloads are taken from RSS `enclosure.url` when present
 - `<link>` remains a fallback when no enclosure URL is present
 - movie releases remain eligible when year and resolution match policy even if codec is absent from the title
+- the branded operator surface is `pirate-claw` with `pirate-claw.config.json`
 
 ## Review Rules
 

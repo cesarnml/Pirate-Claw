@@ -4,7 +4,7 @@ These notes started as a holding area for real-world feed findings before Phase 
 
 ## Current Phase 02 Scope
 
-Phase 02 should deliver a minimal real-world working app for local manual invocation of `media-sync run` against:
+Phase 02 should deliver a minimal real-world working app for local manual invocation of the branded CLI against:
 
 - `https://myrss.org/eztv`
 - `https://atlas.rssly.org/feed`
@@ -14,6 +14,7 @@ The current Phase 02 implementation target is:
 - prefer RSS `enclosure.url` over `<link>` for queueable download URLs
 - keep `<link>` as fallback when no enclosure URL exists
 - allow movie items to match when year and resolution are valid even if codec is absent
+- rename the operator surface to `pirate-claw` and `pirate-claw.config.json` as the final Phase 02 ticket
 - keep the app manually invoked and locally persisted using the existing SQLite model
 
 ## Explicit Phase 03 Deferrals

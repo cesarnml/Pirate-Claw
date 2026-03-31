@@ -21,7 +21,7 @@ Exit condition:
 
 Goal:
 
-- make `media-sync run` work end-to-end against real target feeds
+- make the branded CLI work end-to-end against real target feeds
 - use RSS `enclosure.url` as the queueable torrent payload when present
 - keep movie items eligible when year and resolution match but codec is absent
 - preserve the current manual local workflow
@@ -30,6 +30,7 @@ Committed scope:
 
 - real-world compatibility fixes for `https://myrss.org/eztv`
 - real-world compatibility fixes for `https://atlas.rssly.org/feed`
+- rename the operator surface to `pirate-claw` and `pirate-claw.config.json`
 - documentation and manual verification guidance for a valid local config
 
 Explicitly deferred:
