@@ -5,6 +5,7 @@ import {
   createOptions,
   deriveBranchName,
   deriveWorktreePath,
+  findExistingBranch,
   parsePlan,
   resolveReviewFetcher,
   syncStateWithPlan,
@@ -126,6 +127,25 @@ describe('delivery orchestrator', () => {
     expect(deriveWorktreePath('/tmp/pirate_claw', 'P2.03')).toBe(
       '/tmp/pirate_claw_p2_03',
     );
+  });
+
+  it('prefers existing ticket-id branch matches over title-derived names', () => {
+    expect(
+      findExistingBranch(
+        [
+          'codex/p2-02-movie-matcher-missing-codec',
+          'codex/p2-03-readme-config-live-verification',
+          'codex/p2-04-rename-cli-config',
+        ],
+        {
+          id: 'P2.02',
+          slug: 'movie-matcher-allows-missing-codec',
+        },
+      ),
+    ).toEqual({
+      branch: 'codex/p2-02-movie-matcher-missing-codec',
+      source: 'ticket-id',
+    });
   });
 
   it('only allows advance after clean or patched review outcomes', () => {

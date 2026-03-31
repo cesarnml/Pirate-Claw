@@ -57,6 +57,11 @@ type PullRequestSummary = {
   state: string;
 };
 
+type BranchMatch = {
+  branch: string;
+  source: 'ticket-id' | 'derived';
+};
+
 const DEFAULT_REVIEW_WAIT_MINUTES = 5;
 
 export async function runDeliveryOrchestrator(
@@ -206,27 +211,35 @@ export function syncStateWithPlan(
       const previous = existingById.get(definition.id);
       const inferredTicket = inferredById.get(definition.id);
       const previousTicket = ticketDefinitions[index - 1];
+      const resolvedBranch = selectBranchValue(
+        previous?.branch,
+        inferredTicket?.branch,
+        deriveBranchName(definition),
+      );
       const inferredBaseBranch =
         index === 0
           ? 'main'
-          : (existingById.get(previousTicket?.id ?? '')?.branch ??
-            inferredById.get(previousTicket?.id ?? '')?.branch ??
-            deriveBranchName(previousTicket!));
+          : selectBranchValue(
+              existingById.get(previousTicket?.id ?? '')?.branch,
+              inferredById.get(previousTicket?.id ?? '')?.branch,
+              deriveBranchName(previousTicket!),
+            );
 
       return {
         id: definition.id,
         title: definition.title,
         slug: definition.slug,
         ticketFile: definition.ticketFile,
-        status: previous?.status ?? inferredTicket?.status ?? 'pending',
-        branch:
-          previous?.branch ??
-          inferredTicket?.branch ??
-          deriveBranchName(definition),
+        status: selectStatusValue(previous?.status, inferredTicket?.status),
+        branch: resolvedBranch,
         baseBranch:
-          previous?.baseBranch ??
-          inferredTicket?.baseBranch ??
-          inferredBaseBranch,
+          index === 0
+            ? 'main'
+            : selectBranchValue(
+                previous?.baseBranch,
+                inferredTicket?.baseBranch,
+                inferredBaseBranch,
+              ),
         worktreePath:
           previous?.worktreePath ??
           inferredTicket?.worktreePath ??
@@ -243,6 +256,52 @@ export function syncStateWithPlan(
       };
     }),
   };
+}
+
+function selectStatusValue(
+  currentStatus: TicketStatus | undefined,
+  inferredStatus: TicketStatus | undefined,
+): TicketStatus {
+  if (!currentStatus) {
+    return inferredStatus ?? 'pending';
+  }
+
+  if (!inferredStatus) {
+    return currentStatus;
+  }
+
+  return statusRank(inferredStatus) > statusRank(currentStatus)
+    ? inferredStatus
+    : currentStatus;
+}
+
+function statusRank(status: TicketStatus): number {
+  switch (status) {
+    case 'pending':
+      return 0;
+    case 'in_progress':
+      return 1;
+    case 'in_review':
+      return 2;
+    case 'review_fetched':
+      return 3;
+    case 'reviewed':
+      return 4;
+    case 'done':
+      return 5;
+  }
+}
+
+function selectBranchValue(
+  currentBranch: string | undefined,
+  inferredBranch: string | undefined,
+  fallbackBranch: string,
+): string {
+  if (inferredBranch) {
+    return inferredBranch;
+  }
+
+  return currentBranch ?? fallbackBranch;
 }
 
 export function findNextPendingTicket(
@@ -428,29 +487,37 @@ function inferStateFromRepo(
   ticketDefinitions: TicketDefinition[],
   options: OrchestratorOptions,
 ): DeliveryState {
-  const remoteBranches = new Set(
-    runGitLines(cwd, ['git', 'branch', '-r', '--format=%(refname:short)']).map(
-      (line) => line.replace(/^origin\//, ''),
-    ),
-  );
-  const localBranches = new Set(
-    runGitLines(cwd, ['git', 'branch', '--format=%(refname:short)']),
-  );
+  const remoteBranches = runGitLines(cwd, [
+    'git',
+    'branch',
+    '-r',
+    '--format=%(refname:short)',
+  ]).map((line) => line.replace(/^origin\//, ''));
+  const localBranches = runGitLines(cwd, [
+    'git',
+    'branch',
+    '--format=%(refname:short)',
+  ]);
+  const branchCatalog = [...new Set([...localBranches, ...remoteBranches])];
   const pullRequests = listPullRequests(cwd);
 
   const tickets = ticketDefinitions.map((definition, index) => {
-    const branch = deriveBranchName(definition);
+    const branch =
+      findExistingBranch(branchCatalog, definition)?.branch ??
+      deriveBranchName(definition);
     const baseBranch =
-      index === 0 ? 'main' : deriveBranchName(ticketDefinitions[index - 1]!);
-    const branchExists =
-      remoteBranches.has(branch) || localBranches.has(branch);
+      index === 0
+        ? 'main'
+        : (findExistingBranch(branchCatalog, ticketDefinitions[index - 1]!)
+            ?.branch ?? deriveBranchName(ticketDefinitions[index - 1]!));
+    const branchExists = branchCatalog.includes(branch);
     const pr = pullRequests.get(branch);
     const nextBranch = ticketDefinitions[index + 1]
-      ? deriveBranchName(ticketDefinitions[index + 1]!)
+      ? (findExistingBranch(branchCatalog, ticketDefinitions[index + 1]!)
+          ?.branch ?? deriveBranchName(ticketDefinitions[index + 1]!))
       : undefined;
     const nextBranchExists =
-      nextBranch !== undefined &&
-      (remoteBranches.has(nextBranch) || localBranches.has(nextBranch));
+      nextBranch !== undefined && branchCatalog.includes(nextBranch);
 
     let status: TicketStatus = 'pending';
 
@@ -486,6 +553,39 @@ function inferStateFromRepo(
     reviewWaitMinutes: options.reviewWaitMinutes,
     tickets,
   };
+}
+
+export function findExistingBranch(
+  branches: string[],
+  definition: Pick<TicketDefinition, 'id' | 'slug'>,
+): BranchMatch | undefined {
+  const ticketIdToken = definition.id.toLowerCase().replace('.', '-');
+  const ticketIdMatches = branches.filter((branch) => {
+    const normalized = branch.toLowerCase();
+    return (
+      normalized.includes(`/${ticketIdToken}`) ||
+      normalized.includes(`-${ticketIdToken}`) ||
+      normalized.endsWith(ticketIdToken)
+    );
+  });
+
+  if (ticketIdMatches.length > 0) {
+    return {
+      branch: preferCodexBranch(ticketIdMatches),
+      source: 'ticket-id',
+    };
+  }
+
+  const derived = deriveBranchName(definition);
+
+  if (branches.includes(derived)) {
+    return {
+      branch: derived,
+      source: 'derived',
+    };
+  }
+
+  return undefined;
 }
 
 function listPullRequests(cwd: string): Map<string, PullRequestSummary> {
@@ -767,6 +867,10 @@ function runGitLines(cwd: string, cmd: string[]): string[] {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+function preferCodexBranch(branches: string[]): string {
+  return branches.find((branch) => branch.startsWith('codex/')) ?? branches[0]!;
 }
 
 export function buildPullRequestBody(
