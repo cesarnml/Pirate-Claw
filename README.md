@@ -18,7 +18,7 @@ Phase 01 ends at successful queueing in Transmission. It does not include a web 
 Tickets 01-10 are implemented:
 
 - minimal Bun + TypeScript CLI skeleton with JSON config loading and validation for `media-sync run`
-- RSS fetch-and-parse entrypoint that converts RSS items into a raw feed-item shape
+- RSS fetch-and-parse entrypoint that converts RSS items into a raw feed-item shape and prefers `enclosure.url` over `<link>` for queueable downloads
 - title-normalization module that extracts matching metadata for TV and movie releases
 - TV rule matcher that evaluates normalized items against name-based rules with optional regex overrides plus codec and resolution filters
 - movie policy matcher that accepts releases by global year and quality policy without per-title rules

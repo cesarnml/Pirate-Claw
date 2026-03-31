@@ -19,7 +19,7 @@ describe('fetchFeed', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('parses multiple TV-style RSS items and prefers guid over link', async () => {
+  it('parses multiple TV-style RSS items and prefers enclosure url over link', async () => {
     const server = await startFeedServer(200, tvFeedFixture);
     const feed = createFeedConfig('TV Feed', `${server.url}/eztv`, 'tv');
 
@@ -31,19 +31,19 @@ describe('fetchFeed', () => {
         guidOrLink: 'eztv-1001',
         rawTitle: 'Example Show S01E02 1080p WEB h264',
         publishedAt: '2026-03-29T10:15:00.000Z',
-        downloadUrl: 'https://download.example.test/tv/1001',
+        downloadUrl: 'https://torrents.example.test/tv/1001.torrent',
       },
       {
         feedName: 'TV Feed',
         guidOrLink: 'https://download.example.test/tv/1002',
         rawTitle: 'Example Show S01E03 1080p WEB x265',
         publishedAt: '2026-03-29T11:30:00.000Z',
-        downloadUrl: 'https://download.example.test/tv/1002',
+        downloadUrl: 'https://torrents.example.test/tv/1002.torrent',
       },
     ]);
   });
 
-  it('parses multiple movie-style RSS items with standard fields only', async () => {
+  it('parses multiple movie-style RSS items with enclosure-first download urls', async () => {
     const server = await startFeedServer(200, movieFeedFixture);
     const feed = createFeedConfig('Movie Feed', `${server.url}/feed`, 'movie');
 
@@ -55,14 +55,35 @@ describe('fetchFeed', () => {
         guidOrLink: 'atlas-2001',
         rawTitle: 'Example Movie 2024 1080p WEB-DL x265',
         publishedAt: '2026-03-29T06:00:00.000Z',
-        downloadUrl: 'https://download.example.test/movie/2001',
+        downloadUrl: 'https://torrents.example.test/movie/2001.torrent',
       },
       {
         feedName: 'Movie Feed',
         guidOrLink: 'atlas-2002',
         rawTitle: 'Another Movie 2024 2160p WEB-DL x265',
         publishedAt: '2026-03-29T08:45:00.000Z',
-        downloadUrl: 'https://download.example.test/movie/2002',
+        downloadUrl: 'https://torrents.example.test/movie/2002.torrent',
+      },
+    ]);
+  });
+
+  it('falls back to link when an item does not include an enclosure url', async () => {
+    const server = await startFeedServer(200, linkOnlyFeedFixture);
+    const feed = createFeedConfig(
+      'Fallback Feed',
+      `${server.url}/fallback`,
+      'movie',
+    );
+
+    const items = await fetchFeed(feed);
+
+    expect(items).toEqual([
+      {
+        feedName: 'Fallback Feed',
+        guidOrLink: 'fallback-3001',
+        rawTitle: 'Fallback Movie 2024 1080p WEB-DL',
+        publishedAt: '2026-03-29T09:15:00.000Z',
+        downloadUrl: 'https://download.example.test/movie/fallback-3001',
       },
     ]);
   });
@@ -167,12 +188,14 @@ const tvFeedFixture = `<?xml version="1.0" encoding="UTF-8"?>
     <item>
       <title><![CDATA[Example Show S01E02 1080p WEB h264]]></title>
       <link>https://download.example.test/tv/1001</link>
+      <enclosure url="https://torrents.example.test/tv/1001.torrent" type="application/x-bittorrent" />
       <guid isPermaLink="false">eztv-1001</guid>
       <pubDate>Sun, 29 Mar 2026 10:15:00 GMT</pubDate>
     </item>
     <item>
       <title>Example Show S01E03 1080p WEB x265</title>
       <link>https://download.example.test/tv/1002</link>
+      <enclosure url="https://torrents.example.test/tv/1002.torrent" type="application/x-bittorrent" />
       <pubDate>Sun, 29 Mar 2026 11:30:00 GMT</pubDate>
     </item>
   </channel>
@@ -185,14 +208,29 @@ const movieFeedFixture = `<?xml version="1.0" encoding="UTF-8"?>
     <item>
       <title>Example Movie 2024 1080p WEB-DL x265</title>
       <link>https://download.example.test/movie/2001</link>
+      <enclosure url="https://torrents.example.test/movie/2001.torrent" type="application/x-bittorrent" />
       <guid isPermaLink="false">atlas-2001</guid>
       <pubDate>Sun, 29 Mar 2026 06:00:00 GMT</pubDate>
     </item>
     <item>
       <title><![CDATA[Another Movie 2024 2160p WEB-DL x265]]></title>
       <link>https://download.example.test/movie/2002</link>
+      <enclosure url="https://torrents.example.test/movie/2002.torrent" type="application/x-bittorrent" />
       <guid isPermaLink="false">atlas-2002</guid>
       <pubDate>Sun, 29 Mar 2026 08:45:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>`;
+
+const linkOnlyFeedFixture = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fallback Feed</title>
+    <item>
+      <title>Fallback Movie 2024 1080p WEB-DL</title>
+      <link>https://download.example.test/movie/fallback-3001</link>
+      <guid isPermaLink="false">fallback-3001</guid>
+      <pubDate>Sun, 29 Mar 2026 09:15:00 GMT</pubDate>
     </item>
   </channel>
 </rss>`;

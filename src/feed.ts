@@ -60,6 +60,7 @@ function parseItem(
 ): RawFeedItem {
   const rawTitle = requireText(feed, item, 'title', index);
   const link = requireText(feed, item, 'link', index);
+  const enclosureUrl = optionalEnclosureUrl(item);
   const guid = optionalText(item, 'guid');
   const pubDate = requireText(feed, item, 'pubDate', index);
   const publishedAt = normalizePublishedAt(feed, pubDate, index);
@@ -69,14 +70,14 @@ function parseItem(
     guidOrLink: guid ?? link,
     rawTitle,
     publishedAt,
-    downloadUrl: link,
+    downloadUrl: enclosureUrl ?? link,
   };
 }
 
 function requireText(
   feed: FeedConfig,
   item: ParsedFeedItem,
-  tagName: keyof ParsedFeedItem,
+  tagName: ParsedFeedTextTag,
   index: number,
 ): string {
   const value = optionalText(item, tagName);
@@ -92,10 +93,27 @@ function requireText(
 
 function optionalText(
   item: ParsedFeedItem,
-  tagName: keyof ParsedFeedItem,
+  tagName: ParsedFeedTextTag,
 ): string | undefined {
   const value = textValue(item[tagName]);
   return value && value.length > 0 ? value : undefined;
+}
+
+function optionalEnclosureUrl(item: ParsedFeedItem): string | undefined {
+  const enclosure = item.enclosure;
+  const firstEnclosure = Array.isArray(enclosure) ? enclosure[0] : enclosure;
+
+  if (
+    firstEnclosure &&
+    typeof firstEnclosure === 'object' &&
+    '@_url' in firstEnclosure &&
+    typeof firstEnclosure['@_url'] === 'string'
+  ) {
+    const value = firstEnclosure['@_url'].trim();
+    return value.length > 0 ? value : undefined;
+  }
+
+  return undefined;
 }
 
 function normalizePublishedAt(
@@ -160,12 +178,15 @@ function toArray<T>(value: T | T[] | undefined): T[] {
 }
 
 type ParsedXmlValue = string | { '#text'?: string; '@_isPermaLink'?: string };
+type ParsedEnclosure = { '@_url'?: string };
+type ParsedFeedTextTag = 'title' | 'link' | 'guid' | 'pubDate';
 
 type ParsedFeedItem = {
   title?: ParsedXmlValue;
   link?: ParsedXmlValue;
   guid?: ParsedXmlValue;
   pubDate?: ParsedXmlValue;
+  enclosure?: ParsedEnclosure | ParsedEnclosure[];
 };
 
 type ParsedFeedDocument = {
