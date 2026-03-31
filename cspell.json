@@ -21,7 +21,8 @@
     "SARIF",
     "Turso",
     "upserted",
-    "upserts"
+    "upserts",
+    "worktree"
   ],
   "ignoreWords": [],
   "import": []

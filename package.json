@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "hooks:install": "git config core.hooksPath .githooks",
     "lint": "eslint .",
+    "phase02": "bun run ./scripts/phase02.ts",
     "run": "bun run ./src/cli.ts",
     "spellcheck": "cspell lint . --gitignore --no-progress",
     "spellcheck:words": "cspell lint . --gitignore --no-progress --no-summary --no-exit-code --words-only | bun run ./scripts/spellcheck-words.ts",

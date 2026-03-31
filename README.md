@@ -50,6 +50,7 @@ Useful supporting docs:
 
 - `docs/00-overview/roadmap.md`
 - `docs/02-delivery/issue-tracking.md`
+- `docs/03-engineering/phase-02-orchestrator.md`
 - `docs/04-decisions/adr-001-use-bun.md`
 
 ## Local Development
