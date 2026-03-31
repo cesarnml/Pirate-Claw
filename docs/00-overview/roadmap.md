@@ -17,25 +17,27 @@ Exit condition:
 
 - `media-sync run` can successfully queue a matched item in Transmission
 
-## Phase 02: Automation And Operator Ergonomics
+## Phase 02: Real-World Feed Compatibility
 
-Likely scope:
+Goal:
 
-- scheduling
-- safer dry-run and preview modes
-- richer run summaries
-- config ergonomics
-- operational logging improvements
-- durable ticket tracking with issue workflow states and deferred-work capture
-- issue-tracker integration such as Linear when it improves delivery signal
-- AI-readable project management context through MCP-backed tooling
+- make `media-sync run` work end-to-end against real target feeds
+- use RSS `enclosure.url` as the queueable torrent payload when present
+- keep movie items eligible when year and resolution match but codec is absent
+- preserve the current manual local workflow
 
-Not committed yet:
+Committed scope:
 
-- exact scheduler mechanism
-- notification model
-- config editing workflow
-- exact issue tracker choice and workflow depth
+- real-world compatibility fixes for `https://myrss.org/eztv`
+- real-world compatibility fixes for `https://atlas.rssly.org/feed`
+- documentation and manual verification guidance for a valid local config
+
+Explicitly deferred:
+
+- scheduling or polling
+- remote feed capture
+- Turso or other hosted persistence
+- persistence redesign beyond local SQLite
 
 Working notes:
 
