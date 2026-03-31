@@ -1,0 +1,31 @@
+{
+  "feeds": [
+    {
+      "name": "EZTV",
+      "url": "https://myrss.org/eztv",
+      "mediaType": "tv"
+    },
+    {
+      "name": "Atlas Movies",
+      "url": "https://atlas.rssly.org/feed",
+      "mediaType": "movie"
+    }
+  ],
+  "tv": [
+    {
+      "name": "Beyond the Gates",
+      "resolutions": ["720p"],
+      "codecs": ["x265"]
+    }
+  ],
+  "movies": {
+    "years": [2026],
+    "resolutions": ["1080p"],
+    "codecs": ["x265"]
+  },
+  "transmission": {
+    "url": "http://localhost:9091/transmission/rpc",
+    "username": "REPLACE_WITH_YOUR_TRANSMISSION_USERNAME",
+    "password": "REPLACE_WITH_YOUR_TRANSMISSION_PASSWORD"
+  }
+}

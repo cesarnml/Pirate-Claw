@@ -86,7 +86,7 @@ Prerequisites before running against live feeds:
 
 - a reachable Transmission RPC endpoint
 - credentials with permission to add torrents
-- a local config file derived from [`test/fixtures/pirate-claw.config.json`](./test/fixtures/pirate-claw.config.json)
+- a local `pirate-claw.config.json` copied from [`pirate-claw.config.example.json`](./pirate-claw.config.example.json)
 - at least one TV rule narrowed to a show you actually want to queue from the current EZTV feed window
 
 Use this example as a starting point for local verification:
@@ -127,9 +127,9 @@ Use this example as a starting point for local verification:
 
 Suggested manual verification flow:
 
-1. Copy the example config to a local file and replace the Transmission credentials.
+1. Copy [`pirate-claw.config.example.json`](./pirate-claw.config.example.json) to `./pirate-claw.config.json`, then replace the Transmission credentials.
 2. Change `tv[0].name` to a show title that is currently visible in the EZTV feed.
-3. Run `./bin/pirate-claw run --config ./pirate-claw.config.json` or the path to your edited local copy, not the checked-in fixture.
+3. Run `./bin/pirate-claw run --config ./pirate-claw.config.json`.
 4. Confirm queued items in Transmission use torrent payload URLs instead of details-page links.
 5. Use `./bin/pirate-claw status` to inspect the resulting run and candidate-state records.
 
