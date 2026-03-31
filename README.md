@@ -1,104 +1,61 @@
 # Pirate Claw
 
-Pirate Claw is a proposed local CLI for automating media intake from RSS feeds.
+Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-The phase 01 MVP is intentionally narrow:
+It currently supports:
 
-- read configured RSS feeds
-- normalize release titles into media metadata
-- match TV items against JSON rules and movie items against JSON intake policies
-- deduplicate previously handled items with SQLite
-- submit approved candidates to Transmission
-- record outcomes for review and retry
+- RSS feeds for TV and movies
+- title normalization into media metadata
+- TV matching with per-title rules
+- movie matching with global year, resolution, and codec preferences
+- local dedupe and run history in SQLite
+- queueing through Transmission RPC
+- status inspection and retry of failed submissions
 
-Phase 01 ends at successful queueing in Transmission. It does not include a web UI, scheduling, download completion polling, renaming, or Synology archiving.
+## Commands
 
-## Status
+- `pirate-claw run`
+- `pirate-claw status`
+- `pirate-claw retry-failed`
 
-Tickets 01-10 are implemented:
+## Quick Start
 
-- minimal Bun + TypeScript CLI skeleton with JSON config loading and validation for `pirate-claw run`
-- RSS fetch-and-parse entrypoint that converts RSS items into a raw feed-item shape and prefers `enclosure.url` over `<link>` for queueable downloads
-- title-normalization module that extracts matching metadata for TV and movie releases
-- TV rule matcher that evaluates normalized items against name-based rules with optional regex overrides plus codec and resolution filters
-- movie policy matcher that accepts releases by global year and quality policy without per-title rules, including movie titles that omit codec metadata
-- SQLite-backed run history and candidate-state persistence that preserves dedupe and retryability
-- Transmission RPC adapter that negotiates session ids, submits torrent URLs, and returns structured queueing failures without wiring the full run pipeline yet
-- end-to-end `pirate-claw run` orchestration that fetches feeds, matches candidates, persists per-feed-item outcomes, submits winners, and prints a compact run summary
-- read-only `pirate-claw status` inspection that reports recent runs and current candidate state from SQLite without creating or migrating the database
-- `pirate-claw retry-failed` orchestration that re-submits only failed candidate-state rows from SQLite using stored torrent URLs and records a new run summary
+1. Install dependencies with `bun install`.
+2. Copy [`pirate-claw.config.example.json`](./pirate-claw.config.example.json) to `./pirate-claw.config.json`.
+3. Edit your feeds, matching rules, and Transmission credentials.
+4. Make sure the Transmission app is running and local RPC access is enabled.
+5. Run:
 
-The project is being planned as a small-slice, review-friendly build:
+```bash
+./bin/pirate-claw run --config ./pirate-claw.config.json
+```
 
-- Bun + TypeScript is the default runtime stance
-- one ticket at a time
-- red-green-refactor
-- behavior tested through public interfaces
-- each ticket should stay reviewable in roughly 1-3 hours
-- each ticket should include a short rationale explaining why the chosen path was the smallest acceptable solution
+Inspect the current state with:
 
-## Docs
+```bash
+./bin/pirate-claw status
+```
 
-Start here:
+Retry failed submissions with:
 
-1. `docs/00-overview/start-here.md`
-2. `docs/01-product/phase-01-mvp.md`
-3. `docs/02-delivery/phase-01/implementation-plan.md`
-4. `docs/03-engineering/tdd-workflow.md`
+```bash
+./bin/pirate-claw retry-failed --config ./pirate-claw.config.json
+```
 
-Useful supporting docs:
+## Configuration
 
-- `docs/00-overview/roadmap.md`
-- `docs/02-delivery/issue-tracking.md`
-- `docs/03-engineering/delivery-orchestrator.md`
-- `docs/04-decisions/adr-001-use-bun.md`
+Pirate Claw reads a local config file at `pirate-claw.config.json` by default.
 
-## Local Development
+The repo includes a checked-in example at [`pirate-claw.config.example.json`](./pirate-claw.config.example.json). Your real local config stays untracked.
 
-- `bun run hooks:install` once per clone to make `git push` run `bun run verify` locally
-- `bun run spellcheck`
-- `bun run spellcheck:words` to review unknown-word candidates before adding stable jargon to `cspell.json`
-- `bun test`
-- `bun run test:coverage` for local coverage checks when changing or refactoring tested behavior
-- `bun run verify`
-- `bun run ci`
-- `./bin/pirate-claw run --config ./test/fixtures/valid-config.json`
-- `./bin/pirate-claw status`
-- `./bin/pirate-claw retry-failed --config ./test/fixtures/valid-config.json`
+High-level config shape:
 
-## Phase 02 Manual Verification
+- `feeds`: RSS sources to inspect
+- `tv`: per-show rules for title, resolution, and codec
+- `movies`: global movie intake policy
+- `transmission`: local Transmission RPC settings
 
-Phase 02 is a real-world compatibility slice that now uses the branded operator surface: `pirate-claw` with `pirate-claw.config.json`.
-
-Target feeds for local manual verification:
-
-- `https://myrss.org/eztv`
-- `https://atlas.rssly.org/feed`
-
-Expected behavior in the current Phase 02 build:
-
-- queueable torrent URLs come from RSS `enclosure.url` when present, with `<link>` only as a fallback
-- movie items remain eligible when year and resolution match policy even if codec is absent
-- explicit allowed codecs still outrank otherwise equivalent unknown-codec movie releases
-- local SQLite persistence and manual CLI invocation remain the active workflow
-
-Prerequisites before running against live feeds:
-
-- the Transmission app is installed and running locally
-- a reachable Transmission RPC endpoint
-- credentials with permission to add torrents
-- a local `pirate-claw.config.json` copied from [`pirate-claw.config.example.json`](./pirate-claw.config.example.json)
-- at least one TV rule narrowed to a show you actually want to queue from the current EZTV feed window
-
-Transmission local setup checklist:
-
-1. Open the Transmission app before running `pirate-claw`.
-2. In Transmission settings, enable remote access so the local RPC and web interface are available.
-3. Confirm the listening port matches your config. The default example uses `9091`, so the RPC URL is `http://localhost:9091/transmission/rpc`.
-4. If Transmission requires authentication, copy that same username and password into `pirate-claw.config.json`.
-5. If Transmission limits allowed client addresses, keep `127.0.0.1` or `localhost` allowed so Pirate Claw can connect from the same machine.
-
-Use this example as a starting point for local verification:
+Example:
 
 ```json
 {
@@ -116,59 +73,84 @@ Use this example as a starting point for local verification:
   ],
   "tv": [
     {
-      "name": "Replace With A Current EZTV Show",
-      "resolutions": ["2160p", "1080p"],
-      "codecs": ["x265", "x264"]
+      "name": "Beyond the Gates",
+      "resolutions": ["720p"],
+      "codecs": ["x265"]
     }
   ],
   "movies": {
-    "years": [2026, 2025, 2024],
-    "resolutions": ["2160p", "1080p"],
-    "codecs": ["x265", "x264"]
+    "years": [2026],
+    "resolutions": ["1080p"],
+    "codecs": ["x265"]
   },
   "transmission": {
     "url": "http://localhost:9091/transmission/rpc",
-    "username": "user",
-    "password": "pass"
+    "username": "your-user",
+    "password": "your-password"
   }
 }
 ```
 
-Suggested manual verification flow:
+## Transmission Setup
 
-1. Copy [`pirate-claw.config.example.json`](./pirate-claw.config.example.json) to `./pirate-claw.config.json`, then replace the Transmission credentials.
-2. Change `tv[0].name` to a show title that is currently visible in the EZTV feed.
-3. Make sure the Transmission app is still running and its local remote-access settings still match your config.
-4. Run `./bin/pirate-claw run --config ./pirate-claw.config.json`.
-5. Confirm queued items in Transmission use torrent payload URLs instead of details-page links.
-6. Use `./bin/pirate-claw status` to inspect the resulting run and candidate-state records.
+Pirate Claw expects a reachable local Transmission RPC endpoint.
 
-Still deferred after this ticket:
+Before running:
 
-- polling or scheduling
-- remote feed capture or hosted persistence
-- importing buffered feed items into local SQLite
-- the branded rename is complete, but polling and ingestion redesign still remain deferred
+1. Open the Transmission app.
+2. Enable remote access in Transmission settings.
+3. Confirm the listening port matches your config. The default example uses `9091`.
+4. If authentication is enabled, copy the same username and password into `pirate-claw.config.json`.
+5. If Transmission restricts allowed addresses, keep `127.0.0.1` or `localhost` allowed.
 
-## CI
+## Real-World Feed Notes
 
-- GitHub Actions runs `bun run ci` on pushes to `main`, pushes to `codex/**`, and pull requests.
-- GitHub Actions also runs Snyk dependency and source-code scans when the repository `SNYK_TOKEN` secret is configured.
-- Snyk currently fails the security job only on `high` severity findings or above.
+The current build is tuned to work against:
 
-## Proposed CLI Surface
+- `https://myrss.org/eztv`
+- `https://atlas.rssly.org/feed`
 
-The initial command surface is intentionally small:
+Current behavior:
 
-- `pirate-claw run`
-- `pirate-claw status`
-- `pirate-claw retry-failed`
+- queueable torrent URLs come from RSS `enclosure.url` when present
+- `<link>` remains a fallback when no enclosure URL exists
+- movie items can still match when year and resolution fit policy even if codec is missing
+- explicit preferred codecs still outrank otherwise equivalent unknown-codec movie releases
 
-## Principles
+## Local Runtime Files
 
-- keep the core source-agnostic
-- use SQLite for local persistence
-- use Transmission as the first downloader adapter
-- prefer integration-style tests over internal mocking
-- avoid building later-phase modules before the current ticket requires them
-- preserve learning value by capturing why a solution was chosen, what alternatives were rejected, and what was intentionally deferred
+Pirate Claw keeps local operator state out of git:
+
+- `pirate-claw.config.json`
+- `pirate-claw.db`
+
+## Current Scope
+
+Pirate Claw is intentionally still a local operator tool.
+
+Not in scope yet:
+
+- scheduling or polling
+- remote feed capture
+- hosted persistence
+- download completion polling
+- download renaming or organization rules
+- Synology archiving
+- broader ingestion redesign
+
+## Development
+
+Useful local commands:
+
+- `bun test`
+- `bun run test:coverage`
+- `bun run verify`
+- `bun run ci`
+
+If you are working on the repo rather than just using the CLI, start with [`docs/00-overview/start-here.md`](./docs/00-overview/start-here.md).
+
+## License
+
+Licensed under the GNU General Public License v3.0 or later. See [LICENSE](./LICENSE).
+
+This project is intended to be free as in freedom, not merely free of charge.
