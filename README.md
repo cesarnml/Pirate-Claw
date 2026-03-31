@@ -21,7 +21,7 @@ Tickets 01-10 are implemented:
 - RSS fetch-and-parse entrypoint that converts RSS items into a raw feed-item shape and prefers `enclosure.url` over `<link>` for queueable downloads
 - title-normalization module that extracts matching metadata for TV and movie releases
 - TV rule matcher that evaluates normalized items against name-based rules with optional regex overrides plus codec and resolution filters
-- movie policy matcher that accepts releases by global year and quality policy without per-title rules
+- movie policy matcher that accepts releases by global year and quality policy without per-title rules, including movie titles that omit codec metadata
 - SQLite-backed run history and candidate-state persistence that preserves dedupe and retryability
 - Transmission RPC adapter that negotiates session ids, submits torrent URLs, and returns structured queueing failures without wiring the full run pipeline yet
 - end-to-end `media-sync run` orchestration that fetches feeds, matches candidates, persists per-feed-item outcomes, submits winners, and prints a compact run summary

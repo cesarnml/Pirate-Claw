@@ -22,9 +22,8 @@ export function matchMovieItem(
     item.mediaType !== 'movie' ||
     year === undefined ||
     resolution === undefined ||
-    codec === undefined ||
     !policy.years.includes(year) ||
-    !matchesAllowedQuality(resolution, codec, policy.resolutions, policy.codecs)
+    !matchesMovieQuality(resolution, codec, policy)
   ) {
     return undefined;
   }
@@ -32,17 +31,75 @@ export function matchMovieItem(
   return {
     ruleName: MOVIE_POLICY_RULE_NAME,
     identityKey: buildIdentityKey(item),
-    score: scoreQualityPreference(
-      resolution,
-      codec,
-      policy.resolutions,
-      policy.codecs,
-    ),
-    reasons: [`year:${year}`, `resolution:${resolution}`, `codec:${codec}`],
+    score: scoreMovieQualityPreference(resolution, codec, policy),
+    reasons: createReasons(year, resolution, codec),
     item,
   };
 }
 
 function buildIdentityKey(item: NormalizedFeedItem): string {
   return `movie:${item.normalizedTitle.trim().toLowerCase()}|${item.year ?? ''}`;
+}
+
+function matchesMovieQuality(
+  resolution: string,
+  codec: string | undefined,
+  policy: MoviePolicy,
+): boolean {
+  if (!policy.resolutions.includes(resolution)) {
+    return false;
+  }
+
+  if (codec === undefined) {
+    return policy.codecs.length > 0;
+  }
+
+  return matchesAllowedQuality(
+    resolution,
+    codec,
+    policy.resolutions,
+    policy.codecs,
+  );
+}
+
+function scoreMovieQualityPreference(
+  resolution: string,
+  codec: string | undefined,
+  policy: MoviePolicy,
+): number {
+  if (codec === undefined) {
+    const worstAllowedCodec = policy.codecs.at(-1);
+
+    if (worstAllowedCodec === undefined) {
+      return 0;
+    }
+
+    return (
+      scoreQualityPreference(
+        resolution,
+        worstAllowedCodec,
+        policy.resolutions,
+        policy.codecs,
+      ) - 1
+    );
+  }
+
+  return scoreQualityPreference(
+    resolution,
+    codec,
+    policy.resolutions,
+    policy.codecs,
+  );
+}
+
+function createReasons(
+  year: number,
+  resolution: string,
+  codec: string | undefined,
+): string[] {
+  return [
+    `year:${year}`,
+    `resolution:${resolution}`,
+    codec === undefined ? 'codec:unknown' : `codec:${codec}`,
+  ];
 }
