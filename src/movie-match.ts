@@ -51,7 +51,7 @@ function matchesMovieQuality(
   }
 
   if (codec === undefined) {
-    return true;
+    return policy.codecs.length > 0;
   }
 
   return matchesAllowedQuality(
@@ -68,16 +68,16 @@ function scoreMovieQualityPreference(
   policy: MoviePolicy,
 ): number {
   if (codec === undefined) {
-    const bestAllowedCodec = policy.codecs[0];
+    const worstAllowedCodec = policy.codecs.at(-1);
 
-    if (bestAllowedCodec === undefined) {
+    if (worstAllowedCodec === undefined) {
       return 0;
     }
 
     return (
       scoreQualityPreference(
         resolution,
-        bestAllowedCodec,
+        worstAllowedCodec,
         policy.resolutions,
         policy.codecs,
       ) - 1

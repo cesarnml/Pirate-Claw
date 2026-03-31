@@ -127,6 +127,26 @@ describe('matchMovieItem', () => {
     );
   });
 
+  it('keeps lower-preference explicit codecs above unknown-codec releases', () => {
+    const lowerPreferenceCodec = normalizeFeedItem({
+      mediaType: 'movie',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x264-GROUP',
+    });
+    const unknownCodec = normalizeFeedItem({
+      mediaType: 'movie',
+      rawTitle: 'Example.Movie.2024.1080p.WEB-GROUP',
+    });
+    const policy: MoviePolicy = {
+      years: [2024],
+      resolutions: ['1080p'],
+      codecs: ['x265', 'x264'],
+    };
+
+    expect(
+      matchMovieItem(lowerPreferenceCodec, policy)?.score ?? 0,
+    ).toBeGreaterThan(matchMovieItem(unknownCodec, policy)?.score ?? 0);
+  });
+
   it.each([
     {
       name: 'year is not allowed',
@@ -197,6 +217,20 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265'],
+    };
+
+    expect(matchMovieItem(item, policy)).toBeUndefined();
+  });
+
+  it('rejects unknown-codec movies when the policy allows no codecs', () => {
+    const item = normalizeFeedItem({
+      mediaType: 'movie',
+      rawTitle: 'Example.Movie.2024.1080p.WEB-GROUP',
+    });
+    const policy: MoviePolicy = {
+      years: [2024],
+      resolutions: ['1080p'],
+      codecs: [],
     };
 
     expect(matchMovieItem(item, policy)).toBeUndefined();
