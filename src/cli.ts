@@ -1,8 +1,13 @@
 import { existsSync } from 'node:fs';
 
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
-import { retryFailedCandidates, runPipeline } from './pipeline';
 import {
+  reconcileCandidates,
+  retryFailedCandidates,
+  runPipeline,
+} from './pipeline';
+import {
+  type CandidateLifecycleStatus,
   createRepository,
   ensureSchema,
   hasStatusSchema,
@@ -60,6 +65,26 @@ export async function runCli(argv: string[]): Promise<number> {
       return 0;
     }
 
+    if (command === 'reconcile') {
+      const configPath = parseConfigPath(rest);
+      const resolvedConfigPath = resolveConfigPath(configPath);
+      const config = await loadConfig(resolvedConfigPath);
+      const database = openInitializedWritableDatabase();
+
+      try {
+        const result = await reconcileCandidates({
+          repository: createRepository(database),
+          downloader: createTransmissionDownloader(config.transmission),
+        });
+
+        console.log(formatReconcileSummary(result));
+      } finally {
+        database.close();
+      }
+
+      return 0;
+    }
+
     if (command === 'status') {
       const database = openStatusDatabase();
 
@@ -79,7 +104,7 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     console.error(
-      'Unknown command. Available commands: "run", "status", "retry-failed".',
+      'Unknown command. Available commands: "run", "status", "retry-failed", "reconcile".',
     );
     return 1;
   } catch (error) {
@@ -90,6 +115,22 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error(message);
     return 1;
   }
+}
+
+function formatReconcileSummary(result: {
+  trackedCount: number;
+  reconciledCount: number;
+  notFoundCount: number;
+  counts: Record<CandidateLifecycleStatus, number>;
+}): string {
+  return [
+    `Tracked torrents: ${result.trackedCount}`,
+    `reconciled: ${result.reconciledCount}`,
+    `not_found: ${result.notFoundCount}`,
+    `queued: ${result.counts.queued}`,
+    `downloading: ${result.counts.downloading}`,
+    `completed: ${result.counts.completed}`,
+  ].join('\n');
 }
 
 function openInitializedWritableDatabase() {

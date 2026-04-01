@@ -27,8 +27,31 @@ export type SubmissionFailure = {
 
 export type SubmissionResult = SubmissionSuccess | SubmissionFailure;
 
+export type LookupTorrentsInput = {
+  ids?: number[];
+  hashes?: string[];
+};
+
+export type TorrentSnapshot = {
+  torrentId: number;
+  torrentHash: string;
+  torrentName?: string;
+  statusCode?: number;
+  percentDone?: number;
+  doneDate?: string;
+  downloadDir?: string;
+};
+
+export type LookupTorrentsResult =
+  | {
+      ok: true;
+      torrents: TorrentSnapshot[];
+    }
+  | SubmissionFailure;
+
 export type Downloader = {
   submit(input: SubmitDownloadInput): Promise<SubmissionResult>;
+  lookupTorrents?(input: LookupTorrentsInput): Promise<LookupTorrentsResult>;
 };
 
 export function createTransmissionDownloader(
@@ -38,6 +61,9 @@ export function createTransmissionDownloader(
     submit(input) {
       return submitToTransmission(config, input);
     },
+    lookupTorrents(input) {
+      return lookupTorrentsInTransmission(config, input);
+    },
   };
 }
 
@@ -45,7 +71,10 @@ async function submitToTransmission(
   config: TransmissionConfig,
   input: SubmitDownloadInput,
 ): Promise<SubmissionResult> {
-  const firstResponse = await sendRpcRequest(config, input);
+  const firstResponse = await sendRpcRequest(
+    config,
+    buildSubmitRequestBody(config, input),
+  );
 
   if (!firstResponse.ok) {
     return firstResponse.error;
@@ -65,7 +94,11 @@ async function submitToTransmission(
       };
     }
 
-    const retryResponse = await sendRpcRequest(config, input, sessionId);
+    const retryResponse = await sendRpcRequest(
+      config,
+      buildSubmitRequestBody(config, input),
+      sessionId,
+    );
 
     if (!retryResponse.ok) {
       return retryResponse.error;
@@ -97,9 +130,72 @@ async function submitToTransmission(
   return parseSubmissionResult(parsed);
 }
 
+async function lookupTorrentsInTransmission(
+  config: TransmissionConfig,
+  input: LookupTorrentsInput,
+): Promise<LookupTorrentsResult> {
+  const firstResponse = await sendRpcRequest(
+    config,
+    buildLookupRequestBody(input),
+  );
+
+  if (!firstResponse.ok) {
+    return firstResponse.error;
+  }
+
+  let response = firstResponse.response;
+
+  if (response.status === 409) {
+    const sessionId = response.headers.get('x-transmission-session-id');
+
+    if (!sessionId) {
+      return {
+        ok: false,
+        code: 'session_error',
+        message:
+          'Transmission session negotiation failed: missing X-Transmission-Session-Id header.',
+      };
+    }
+
+    const retryResponse = await sendRpcRequest(
+      config,
+      buildLookupRequestBody(input),
+      sessionId,
+    );
+
+    if (!retryResponse.ok) {
+      return retryResponse.error;
+    }
+
+    response = retryResponse.response;
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code: 'http_error',
+      message: `Transmission RPC request failed with HTTP ${response.status}.`,
+    };
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = await response.json();
+  } catch {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message: 'Transmission RPC response was not valid JSON.',
+    };
+  }
+
+  return parseLookupTorrentsResult(parsed);
+}
+
 async function sendRpcRequest(
   config: TransmissionConfig,
-  input: SubmitDownloadInput,
+  body: unknown,
   sessionId?: string,
 ): Promise<
   | {
@@ -115,7 +211,7 @@ async function sendRpcRequest(
     const response = await fetch(config.url, {
       method: 'POST',
       headers: buildHeaders(config, sessionId),
-      body: JSON.stringify(buildRequestBody(config, input)),
+      body: JSON.stringify(body),
     });
 
     return {
@@ -150,7 +246,7 @@ function buildHeaders(
   return headers;
 }
 
-function buildRequestBody(
+function buildSubmitRequestBody(
   config: TransmissionConfig,
   input: SubmitDownloadInput,
 ): {
@@ -165,6 +261,30 @@ function buildRequestBody(
     arguments: {
       filename: input.downloadUrl,
       ...(config.downloadDir ? { 'download-dir': config.downloadDir } : {}),
+    },
+  };
+}
+
+function buildLookupRequestBody(input: LookupTorrentsInput): {
+  method: 'torrent-get';
+  arguments: {
+    ids: Array<number | string>;
+    fields: string[];
+  };
+} {
+  return {
+    method: 'torrent-get',
+    arguments: {
+      ids: [...(input.ids ?? []), ...(input.hashes ?? [])],
+      fields: [
+        'id',
+        'name',
+        'hashString',
+        'status',
+        'percentDone',
+        'doneDate',
+        'downloadDir',
+      ],
     },
   };
 }
@@ -208,6 +328,65 @@ function parseSubmissionResult(parsed: unknown): SubmissionResult {
   };
 }
 
+function parseLookupTorrentsResult(parsed: unknown): LookupTorrentsResult {
+  if (!isTransmissionTorrentGetResponse(parsed)) {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message: 'Transmission RPC response was missing required lookup fields.',
+    };
+  }
+
+  if (parsed.result !== 'success') {
+    return {
+      ok: false,
+      code: 'rpc_error',
+      message: `Transmission rejected torrent lookup: ${parsed.result}.`,
+    };
+  }
+
+  const torrents: TorrentSnapshot[] = [];
+
+  for (const torrent of parsed.arguments.torrents) {
+    if (
+      typeof torrent.id !== 'number' ||
+      typeof torrent.hashString !== 'string'
+    ) {
+      return {
+        ok: false,
+        code: 'invalid_response',
+        message:
+          'Transmission RPC lookup response contained malformed torrent details.',
+      };
+    }
+
+    torrents.push({
+      torrentId: torrent.id,
+      torrentHash: torrent.hashString,
+      torrentName: typeof torrent.name === 'string' ? torrent.name : undefined,
+      statusCode:
+        typeof torrent.status === 'number' ? torrent.status : undefined,
+      percentDone:
+        typeof torrent.percentDone === 'number'
+          ? torrent.percentDone
+          : undefined,
+      doneDate:
+        typeof torrent.doneDate === 'number' && torrent.doneDate > 0
+          ? new Date(torrent.doneDate * 1000).toISOString()
+          : undefined,
+      downloadDir:
+        typeof torrent.downloadDir === 'string'
+          ? torrent.downloadDir
+          : undefined,
+    });
+  }
+
+  return {
+    ok: true,
+    torrents,
+  };
+}
+
 function isTransmissionResponse(value: unknown): value is TransmissionResponse {
   if (!value || typeof value !== 'object') {
     return false;
@@ -228,6 +407,35 @@ function isTransmissionResponse(value: unknown): value is TransmissionResponse {
   return true;
 }
 
+function isTransmissionTorrentGetResponse(
+  value: unknown,
+): value is TransmissionTorrentGetResponse {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  if (!('result' in value) || typeof value.result !== 'string') {
+    return false;
+  }
+
+  if (
+    !('arguments' in value) ||
+    !value.arguments ||
+    typeof value.arguments !== 'object'
+  ) {
+    return false;
+  }
+
+  if (
+    !('torrents' in value.arguments) ||
+    !Array.isArray(value.arguments.torrents)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -240,6 +448,10 @@ type TransmissionTorrent = {
   id?: number;
   name?: string;
   hashString?: string;
+  status?: number;
+  percentDone?: number;
+  doneDate?: number;
+  downloadDir?: string;
 };
 
 type TransmissionResponse = {
@@ -247,5 +459,12 @@ type TransmissionResponse = {
   arguments: {
     'torrent-added'?: TransmissionTorrent;
     'torrent-duplicate'?: TransmissionTorrent;
+  };
+};
+
+type TransmissionTorrentGetResponse = {
+  result: string;
+  arguments: {
+    torrents: TransmissionTorrent[];
   };
 };

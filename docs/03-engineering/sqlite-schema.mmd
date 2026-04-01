@@ -21,9 +21,15 @@ erDiagram
     TEXT media_type
     TEXT status
     TEXT queued_at
+    TEXT lifecycle_status
+    TEXT reconciled_at
     INTEGER transmission_torrent_id
     TEXT transmission_torrent_name
     TEXT transmission_torrent_hash
+    INTEGER transmission_status_code
+    REAL transmission_percent_done
+    TEXT transmission_done_date
+    TEXT transmission_download_dir
     TEXT rule_name
     INTEGER score
     TEXT reasons_json

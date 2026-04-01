@@ -259,6 +259,79 @@ describe('Transmission adapter', () => {
       'Transmission RPC request failed: connect ECONNREFUSED.',
     );
   });
+
+  it('looks up torrent lifecycle details through torrent-get', async () => {
+    const requests: CapturedRequest[] = [];
+    let requestCount = 0;
+    const server = startTransmissionServer(async (request) => {
+      requests.push(await captureRequest(request));
+      requestCount += 1;
+
+      if (requestCount === 1) {
+        return new Response(null, {
+          status: 409,
+          headers: {
+            'x-transmission-session-id': 'session-123',
+          },
+        });
+      }
+
+      return Response.json({
+        result: 'success',
+        arguments: {
+          torrents: [
+            {
+              id: 42,
+              hashString: 'hash-42',
+              name: 'Queued Torrent',
+              status: 4,
+              percentDone: 0.5,
+              doneDate: 0,
+              downloadDir: '/downloads/movies',
+            },
+          ],
+        },
+      });
+    });
+    const downloader = createTransmissionDownloader(
+      createTransmissionConfig(server.url.origin),
+    );
+
+    const result = await downloader.lookupTorrents!({
+      ids: [42],
+      hashes: ['hash-42'],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      torrents: [
+        {
+          torrentId: 42,
+          torrentHash: 'hash-42',
+          torrentName: 'Queued Torrent',
+          statusCode: 4,
+          percentDone: 0.5,
+          doneDate: undefined,
+          downloadDir: '/downloads/movies',
+        },
+      ],
+    });
+    expect(requests[1]!.json).toEqual({
+      method: 'torrent-get',
+      arguments: {
+        ids: [42, 'hash-42'],
+        fields: [
+          'id',
+          'name',
+          'hashString',
+          'status',
+          'percentDone',
+          'doneDate',
+          'downloadDir',
+        ],
+      },
+    });
+  });
 });
 
 function startTransmissionServer(
