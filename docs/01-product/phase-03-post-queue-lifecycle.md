@@ -83,4 +83,3 @@ Phase 03 intentionally leaves several future design pressures unresolved:
 - short-lived RSS windows still create pressure for a later scheduled or always-on deployment mode
 - a future UI likely wants SQLite to act as Pirate Claw's app-facing read model over downloader state and tracking policy
 - final media placement may eventually be handled either by Transmission or by Pirate Claw, but that ownership decision should be revisited only after completion tracking is proven
-

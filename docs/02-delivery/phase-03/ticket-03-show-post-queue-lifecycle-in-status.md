@@ -23,4 +23,3 @@ Phase 03 is only useful to an operator if the reconciled torrent lifecycle can b
 ## Red First Prompt
 
 What user-visible status behavior fails first when reconciled lifecycle state is persisted but not exposed through the CLI?
-

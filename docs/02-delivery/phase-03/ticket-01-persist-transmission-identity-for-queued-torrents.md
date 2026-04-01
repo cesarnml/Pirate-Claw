@@ -23,4 +23,3 @@ Phase 01 and Phase 02 stop at the queue submission result. Phase 03 needs a dura
 ## Red First Prompt
 
 What public behavior fails first when a queued torrent's Transmission identity is not stored for later reconciliation?
-

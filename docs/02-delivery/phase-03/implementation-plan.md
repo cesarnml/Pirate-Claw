@@ -62,4 +62,3 @@ Pause for review if:
 - Transmission lifecycle reconciliation depends on downloader-specific behavior that cannot be expressed through a small boundary extension
 - local lifecycle persistence starts to require a broader ingestion or service architecture redesign
 - status output needs a product-level CLI redesign instead of a targeted extension
-

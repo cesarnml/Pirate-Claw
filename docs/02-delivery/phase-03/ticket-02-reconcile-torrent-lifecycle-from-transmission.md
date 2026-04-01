@@ -24,4 +24,3 @@ Transmission knows the live downloader state, but Pirate Claw currently has no w
 ## Red First Prompt
 
 What public behavior fails first when Pirate Claw cannot reconcile a previously queued torrent against Transmission?
-
