@@ -140,6 +140,9 @@ describe('pirate-claw run', () => {
       repository.getCandidateState('movie:example movie|2024'),
     ).toMatchObject({
       queuedAt: expect.any(String),
+      transmissionTorrentId: 42,
+      transmissionTorrentName: 'Queued Torrent',
+      transmissionTorrentHash: 'hash-42',
     });
     expect(repository.getCandidateState('movie:retry me|2024')).toMatchObject({
       status: 'failed',
@@ -503,6 +506,9 @@ describe('pirate-claw retry-failed', () => {
       status: 'queued',
       queuedAt: expect.any(String),
       lastFeedItemId: retryMeBefore?.lastFeedItemId,
+      transmissionTorrentId: 52,
+      transmissionTorrentName: 'Retried Torrent',
+      transmissionTorrentHash: 'hash-52',
     });
     expect(
       repository.getCandidateState('movie:example movie|2024'),

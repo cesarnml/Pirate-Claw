@@ -48,6 +48,9 @@ describe('SQLite repository', () => {
       feedItem: firstFeedItem,
       match: firstMatch,
       status: 'queued',
+      transmissionTorrentId: 7,
+      transmissionTorrentName: 'Example Movie 2024',
+      transmissionTorrentHash: 'abcdef123456',
       updatedAt: '2026-03-30T00:10:00.000Z',
     });
 
@@ -80,6 +83,9 @@ describe('SQLite repository', () => {
       identityKey: 'movie:example movie|2024',
       status: 'skipped_duplicate',
       queuedAt: '2026-03-30T00:10:00.000Z',
+      transmissionTorrentId: 7,
+      transmissionTorrentName: 'Example Movie 2024',
+      transmissionTorrentHash: 'abcdef123456',
       feedName: 'Movie Feed',
       guidOrLink: 'https://example.test/releases/example-movie-bluray',
       firstSeenRunId: firstRun.id,
@@ -144,6 +150,114 @@ describe('SQLite repository', () => {
       lastFeedItemId: secondFeedItem.id,
     });
     expect(repository.isCandidateQueued(retryMatch.identityKey)).toBe(true);
+  });
+
+  it('adds and preserves Transmission identity columns for queued candidates', async () => {
+    const path = await createDatabasePath();
+    const database = openDatabase(path);
+
+    openDatabases.push(database);
+    database.run(`
+      CREATE TABLE runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        completed_at TEXT
+      );
+
+      CREATE TABLE feed_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER NOT NULL REFERENCES runs(id),
+        feed_name TEXT NOT NULL,
+        guid_or_link TEXT NOT NULL,
+        raw_title TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        download_url TEXT NOT NULL
+      );
+
+      CREATE TABLE candidate_state (
+        identity_key TEXT PRIMARY KEY,
+        media_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        queued_at TEXT,
+        rule_name TEXT NOT NULL,
+        score INTEGER NOT NULL,
+        reasons_json TEXT NOT NULL,
+        raw_title TEXT NOT NULL,
+        normalized_title TEXT NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        year INTEGER,
+        resolution TEXT,
+        codec TEXT,
+        feed_name TEXT NOT NULL,
+        guid_or_link TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        download_url TEXT NOT NULL,
+        first_seen_run_id INTEGER NOT NULL REFERENCES runs(id),
+        last_seen_run_id INTEGER NOT NULL REFERENCES runs(id),
+        last_feed_item_id INTEGER REFERENCES feed_items(id),
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE feed_item_outcomes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER NOT NULL REFERENCES runs(id),
+        feed_item_id INTEGER REFERENCES feed_items(id),
+        status TEXT NOT NULL,
+        identity_key TEXT,
+        rule_name TEXT,
+        message TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+
+    ensureSchema(database);
+    const repository = createRepository(database);
+    const run = repository.startRun('2026-03-30T00:00:00.000Z');
+    const feedItem = repository.recordFeedItem(run.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T00:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+    });
+    const match = requireMovieMatch(feedItem.rawTitle);
+
+    repository.recordCandidateOutcome({
+      runId: run.id,
+      feedItemId: feedItem.id,
+      feedItem,
+      match,
+      status: 'queued',
+      transmissionTorrentId: 7,
+      transmissionTorrentName: 'Example Movie 2024',
+      transmissionTorrentHash: 'abcdef123456',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+    });
+
+    const updatedFeedItem = repository.recordFeedItem(run.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/example-movie-rerun',
+      rawTitle: 'Example Movie 2024 2160p BluRay x265 OTHER',
+      publishedAt: '2026-03-30T00:06:00.000Z',
+      downloadUrl: 'https://example.test/downloads/example-movie-rerun.torrent',
+    });
+
+    const state = repository.recordCandidateOutcome({
+      runId: run.id,
+      feedItemId: updatedFeedItem.id,
+      feedItem: updatedFeedItem,
+      match: requireMovieMatch(updatedFeedItem.rawTitle),
+      status: 'skipped_duplicate',
+      updatedAt: '2026-03-30T00:11:00.000Z',
+    });
+
+    expect(state).toMatchObject({
+      transmissionTorrentId: 7,
+      transmissionTorrentName: 'Example Movie 2024',
+      transmissionTorrentHash: 'abcdef123456',
+    });
   });
 
   it('distinguishes failed runs from completed runs', async () => {

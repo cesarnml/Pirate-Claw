@@ -52,6 +52,9 @@ export type CandidateStateRecord = {
   mediaType: NormalizedFeedItem['mediaType'];
   status: CandidateStatus;
   queuedAt?: string;
+  transmissionTorrentId?: number;
+  transmissionTorrentName?: string;
+  transmissionTorrentHash?: string;
   ruleName: string;
   score: number;
   reasons: string[];
@@ -78,6 +81,9 @@ export type RecordCandidateOutcomeInput = {
   feedItem: RawFeedItem;
   match: CandidateMatchRecord;
   status: CandidateStatus;
+  transmissionTorrentId?: number;
+  transmissionTorrentName?: string;
+  transmissionTorrentHash?: string;
   updatedAt?: string;
 };
 
@@ -147,6 +153,9 @@ export function ensureSchema(database: Database): void {
       media_type TEXT NOT NULL,
       status TEXT NOT NULL,
       queued_at TEXT,
+      transmission_torrent_id INTEGER,
+      transmission_torrent_name TEXT,
+      transmission_torrent_hash TEXT,
       rule_name TEXT NOT NULL,
       score INTEGER NOT NULL,
       reasons_json TEXT NOT NULL,
@@ -189,6 +198,10 @@ export function ensureSchema(database: Database): void {
       `ALTER TABLE runs ADD COLUMN status TEXT NOT NULL DEFAULT 'running'`,
     );
   }
+
+  ensureCandidateStateColumn(database, 'transmission_torrent_id', 'INTEGER');
+  ensureCandidateStateColumn(database, 'transmission_torrent_name', 'TEXT');
+  ensureCandidateStateColumn(database, 'transmission_torrent_hash', 'TEXT');
 }
 
 export function hasStatusSchema(database: Database): boolean {
@@ -266,6 +279,9 @@ export function createRepository(database: Database): Repository {
       media_type AS mediaType,
       status,
       queued_at AS queuedAt,
+      transmission_torrent_id AS transmissionTorrentId,
+      transmission_torrent_name AS transmissionTorrentName,
+      transmission_torrent_hash AS transmissionTorrentHash,
       rule_name AS ruleName,
       score,
       reasons_json AS reasonsJson,
@@ -293,6 +309,9 @@ export function createRepository(database: Database): Repository {
       media_type,
       status,
       queued_at,
+      transmission_torrent_id,
+      transmission_torrent_name,
+      transmission_torrent_hash,
       rule_name,
       score,
       reasons_json,
@@ -313,12 +332,25 @@ export function createRepository(database: Database): Repository {
       updated_at
     ) VALUES (
       ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-      ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22
+      ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+      ?23, ?24, ?25
     )
     ON CONFLICT(identity_key) DO UPDATE SET
       media_type = excluded.media_type,
       status = excluded.status,
       queued_at = COALESCE(candidate_state.queued_at, excluded.queued_at),
+      transmission_torrent_id = COALESCE(
+        candidate_state.transmission_torrent_id,
+        excluded.transmission_torrent_id
+      ),
+      transmission_torrent_name = COALESCE(
+        candidate_state.transmission_torrent_name,
+        excluded.transmission_torrent_name
+      ),
+      transmission_torrent_hash = COALESCE(
+        candidate_state.transmission_torrent_hash,
+        excluded.transmission_torrent_hash
+      ),
       rule_name = excluded.rule_name,
       score = excluded.score,
       reasons_json = excluded.reasons_json,
@@ -400,6 +432,9 @@ export function createRepository(database: Database): Repository {
       media_type AS mediaType,
       status,
       queued_at AS queuedAt,
+      transmission_torrent_id AS transmissionTorrentId,
+      transmission_torrent_name AS transmissionTorrentName,
+      transmission_torrent_hash AS transmissionTorrentHash,
       rule_name AS ruleName,
       score,
       reasons_json AS reasonsJson,
@@ -428,6 +463,9 @@ export function createRepository(database: Database): Repository {
       media_type AS mediaType,
       status,
       queued_at AS queuedAt,
+      transmission_torrent_id AS transmissionTorrentId,
+      transmission_torrent_name AS transmissionTorrentName,
+      transmission_torrent_hash AS transmissionTorrentHash,
       rule_name AS ruleName,
       score,
       reasons_json AS reasonsJson,
@@ -524,6 +562,9 @@ export function createRepository(database: Database): Repository {
         input.match.item.mediaType,
         input.status,
         queuedAt,
+        input.transmissionTorrentId ?? null,
+        input.transmissionTorrentName ?? null,
+        input.transmissionTorrentHash ?? null,
         input.match.ruleName,
         input.match.score,
         JSON.stringify(input.match.reasons),
@@ -619,6 +660,25 @@ function lastInsertedRowId(database: Database): number {
   );
 }
 
+function ensureCandidateStateColumn(
+  database: Database,
+  columnName: string,
+  columnType: 'INTEGER' | 'TEXT',
+): void {
+  const hasColumn =
+    (database
+      .query(
+        `SELECT 1 FROM pragma_table_info('candidate_state') WHERE name = ?1`,
+      )
+      .get(columnName) as { 1: number } | null | undefined) !== null;
+
+  if (!hasColumn) {
+    database.run(
+      `ALTER TABLE candidate_state ADD COLUMN ${columnName} ${columnType}`,
+    );
+  }
+}
+
 function requireRow<T>(row: T | null | undefined, label: string): T {
   if (!row) {
     throw new Error(`Failed to load ${label} row.`);
@@ -671,6 +731,9 @@ function mapCandidateStateRow(row: CandidateStateRow): CandidateStateRecord {
     mediaType: row.mediaType,
     status: row.status,
     queuedAt: row.queuedAt ?? undefined,
+    transmissionTorrentId: row.transmissionTorrentId ?? undefined,
+    transmissionTorrentName: row.transmissionTorrentName ?? undefined,
+    transmissionTorrentHash: row.transmissionTorrentHash ?? undefined,
     ruleName: row.ruleName,
     score: Number(row.score),
     reasons: JSON.parse(row.reasonsJson) as string[],
@@ -734,6 +797,9 @@ type CandidateStateRow = {
   mediaType: NormalizedFeedItem['mediaType'];
   status: CandidateStatus;
   queuedAt: string | null;
+  transmissionTorrentId: number | null;
+  transmissionTorrentName: string | null;
+  transmissionTorrentHash: string | null;
   ruleName: string;
   score: number;
   reasonsJson: string;

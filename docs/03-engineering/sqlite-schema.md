@@ -69,6 +69,7 @@ Important fields:
 - `media_type`
 - `status`: `queued`, `failed`, or `skipped_duplicate`
 - `queued_at`
+- `transmission_torrent_id`, `transmission_torrent_name`, `transmission_torrent_hash`
 - `rule_name`
 - `score`
 - `reasons_json`
@@ -83,6 +84,7 @@ Behavioral role:
 - records the current best-known state for that identity
 - blocks requeueing when a prior candidate was already queued
 - powers `retry-failed` by storing the last retryable failed candidate with its `download_url`
+- retains the downloader identity needed for later lifecycle reconciliation after queueing
 
 ## `feed_item_outcomes`
 
@@ -144,6 +146,7 @@ Important nuance:
 
 - `skipped_no_match` is not a `candidate_state` value because unmatched feed items do not create a durable candidate identity
 - `queued_at` is preserved once set, even if later upserts touch the same identity
+- queued Transmission identity fields are sticky once present, so later duplicate or failure updates do not lose the original downloader pointer
 
 ## Current Invariants
 

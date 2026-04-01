@@ -116,6 +116,9 @@ export async function submitCandidate(
       ...input,
       status: 'queued',
       message: 'Queued in Transmission.',
+      transmissionTorrentId: submission.torrentId,
+      transmissionTorrentName: submission.torrentName,
+      transmissionTorrentHash: submission.torrentHash,
     });
     return;
   }
@@ -199,6 +202,9 @@ function recordCandidateResult(
   input: SubmissionInput & {
     status: 'queued' | 'failed' | 'skipped_duplicate';
     message: string;
+    transmissionTorrentId?: number;
+    transmissionTorrentName?: string;
+    transmissionTorrentHash?: string;
   },
 ): void {
   repository.recordCandidateOutcome({
@@ -207,6 +213,9 @@ function recordCandidateResult(
     feedItem: input.feedItem,
     match: input.match,
     status: input.status,
+    transmissionTorrentId: input.transmissionTorrentId,
+    transmissionTorrentName: input.transmissionTorrentName,
+    transmissionTorrentHash: input.transmissionTorrentHash,
   });
   recordFeedItemOutcome(repository, {
     runId: input.runId,
