@@ -43,6 +43,7 @@ The orchestrator owns process mechanics:
 - idempotent PR open/update behavior for already-pushed ticket branches
 - a 5-minute review wait before fetch
 - saving raw `qodo-code-review` output locally
+- optional Telegram milestone notifications for long-running delivery runs
 - blocking advancement until review has been explicitly recorded
 - refreshing the current PR body from recorded ai-cr follow-up notes immediately before advancing to the next ticket
 
@@ -125,6 +126,26 @@ bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
 After `open-pr`, the orchestrator should surface the review wait window and the earliest meaningful review-fetch time. An immediate lack of AI comments is informational only; the decisive check happens after that window elapses.
+
+## Optional Telegram Notifications
+
+The orchestrator can emit best-effort Telegram notifications for milestone events such as:
+
+- ticket started
+- PR opened
+- review window ready
+- review recorded
+- ticket completed
+- run blocked
+
+Notifications are optional and advisory. They must never block orchestrator progress if delivery to Telegram fails.
+
+Enable them with:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+When those env vars are absent, the notifier stays disabled and the orchestrator behaves normally.
 
 ## Review Artifact Location
 
