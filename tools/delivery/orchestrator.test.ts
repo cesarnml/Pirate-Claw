@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+  buildPullRequestTitle,
   buildTicketHandoff,
   canAdvanceTicket,
   createOptions,
   deriveBranchName,
+  derivePlanKey,
   deriveWorktreePath,
   findExistingBranch,
   parsePlan,
@@ -52,19 +54,25 @@ describe('delivery orchestrator', () => {
     ]);
   });
 
-  it('builds options from a phase alias', () => {
-    expect(createOptions({ phase: 'phase-02' })).toEqual({
-      planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
-      planKey: 'phase-02',
-      statePath: '.codex/delivery/phase-02/state.json',
-      reviewsDirPath: '.codex/delivery/phase-02/reviews',
-      handoffsDirPath: '.codex/delivery/phase-02/handoffs',
+  it('builds options from a plan path', () => {
+    expect(
+      createOptions({
+        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      }),
+    ).toEqual({
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planKey: 'phase-03',
+      statePath: '.codex/delivery/phase-03/state.json',
+      reviewsDirPath: '.codex/delivery/phase-03/reviews',
+      handoffsDirPath: '.codex/delivery/phase-03/handoffs',
       reviewWaitMinutes: 5,
     });
   });
 
   it('syncs state while preserving runtime metadata and inferred branch chaining', () => {
-    const options = createOptions({ phase: 'phase-02' });
+    const options = createOptions({
+      planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
+    });
     const existing: DeliveryState = {
       planKey: 'phase-02',
       planPath: options.planPath,
@@ -195,6 +203,15 @@ describe('delivery orchestrator', () => {
     );
   });
 
+  it('derives plan keys from implementation plan directories', () => {
+    expect(
+      derivePlanKey('docs/02-delivery/phase-03/implementation-plan.md'),
+    ).toBe('phase-03');
+    expect(derivePlanKey('./plans/custom/implementation-plan.md')).toBe(
+      'custom',
+    );
+  });
+
   it('prefers existing ticket-id branch matches over title-derived names', () => {
     expect(
       findExistingBranch(
@@ -244,6 +261,27 @@ describe('delivery orchestrator', () => {
         reviewOutcome: 'needs_patch',
       }),
     ).toBe(false);
+  });
+
+  it('uses the repo delivery PR title format', () => {
+    expect(
+      buildPullRequestTitle(
+        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
+        'feat: add torrent lifecycle reconciliation',
+      ),
+    ).toBe('feat: add torrent lifecycle reconciliation [P3.02]');
+    expect(
+      buildPullRequestTitle(
+        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
+        'feat: add torrent lifecycle reconciliation [P3.02]',
+      ),
+    ).toBe('feat: add torrent lifecycle reconciliation [P3.02]');
+    expect(
+      buildPullRequestTitle({
+        id: 'P3.02',
+        title: 'Reconcile Torrent Lifecycle From Transmission',
+      }),
+    ).toBe('feat: reconcile torrent lifecycle from transmission [P3.02]');
   });
 
   it('prefers an explicit review fetcher environment variable', () => {

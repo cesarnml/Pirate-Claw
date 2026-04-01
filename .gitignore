@@ -1,5 +1,6 @@
 node_modules/
 .vscode/settings.json
 .codex/delivery/
+.codex/analysis/
 pirate-claw.config.json
 pirate-claw.db

@@ -24,12 +24,11 @@ What is phase-specific is:
 - where local state and review artifacts are stored
 - which ticket IDs, titles, and files exist in that plan
 
-So the orchestrator takes either:
+So the orchestrator takes a plan path:
 
-- `--phase phase-02`
-- or `--plan docs/02-delivery/phase-02/implementation-plan.md`
+- `--plan docs/02-delivery/phase-02/implementation-plan.md`
 
-The current `phase-02` alias is just a convenience mapping to the committed plan file.
+That is the canonical interface. The tool is primarily AI-facing, so the explicit plan artifact is more important than a phase nickname.
 
 ## What It Owns
 
@@ -39,7 +38,9 @@ The orchestrator owns process mechanics:
 - durable local state under `.codex/delivery/<plan-key>/`
 - per-ticket handoff artifacts under `.codex/delivery/<plan-key>/handoffs/`
 - deterministic branch and worktree naming
+- bootstrapping fresh Bun ticket work trees before implementation starts
 - stacked PR base chaining
+- idempotent PR open/update behavior for already-pushed ticket branches
 - a 5-minute review wait before fetch
 - saving raw `qodo-code-review` output locally
 - blocking advancement until review has been explicitly recorded
@@ -95,12 +96,6 @@ That inference is intentionally conservative. It reconstructs enough state to re
 Use the generic command:
 
 ```bash
-bun run deliver --phase phase-02 status
-```
-
-or:
-
-```bash
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md status
 ```
 
@@ -114,21 +109,15 @@ Available commands:
 - `record-review <ticket-id> <clean|needs_patch|patched> [note]`
 - `advance [--no-start-next]`
 
-There is also a convenience alias:
-
-```bash
-bun run phase02 status
-```
-
 ## Typical Flow
 
 ```bash
-bun run deliver --phase phase-02 start
-bun run deliver --phase phase-02 open-pr
-bun run deliver --phase phase-02 fetch-review
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md open-pr
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md fetch-review
 # use the qodo-code-review skill to triage the saved review artifact
-bun run deliver --phase phase-02 record-review P2.02 patched "patched the two actionable correctness issues"
-bun run deliver --phase phase-02 advance
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md record-review P2.02 patched "patched the two actionable correctness issues"
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
 ```
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
@@ -152,6 +141,8 @@ State is written under:
 PR descriptions are maintained as delivery metadata, not one-shot text.
 
 - `open-pr` creates the initial PR body
+- `open-pr` uses a human-readable Conventional-Commit-style title plus the delivery ticket suffix, for example `feat: add torrent lifecycle reconciliation [P3.02]`
+- rerunning `open-pr` refreshes the existing PR title/body instead of failing on an already-open branch
 - `record-review` stores the triage result and optional note
 - `advance` refreshes the PR body from that recorded review state, then marks the ticket done and optionally starts the next one
 

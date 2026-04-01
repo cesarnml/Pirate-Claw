@@ -353,12 +353,16 @@ export function resolveReviewFetcher(): string {
 }
 
 export function createOptions(input: {
-  phase?: string;
   planPath?: string;
 }): OrchestratorOptions {
-  const alias = resolvePhaseAlias(input.phase);
-  const planPath = normalizeRepoPath(input.planPath ?? alias.planPath);
-  const planKey = alias.planKey ?? derivePlanKey(planPath);
+  if (!input.planPath) {
+    throw new Error(
+      'Pass --plan <plan-path>. Phase aliases are no longer supported.',
+    );
+  }
+
+  const planPath = normalizeRepoPath(input.planPath);
+  const planKey = derivePlanKey(planPath);
 
   return {
     planPath,
@@ -370,34 +374,12 @@ export function createOptions(input: {
   };
 }
 
-function resolvePhaseAlias(phase?: string): {
-  planPath: string;
-  planKey?: string;
-} {
-  if (!phase) {
-    return {
-      planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
-      planKey: 'phase-02',
-    };
-  }
-
-  if (phase === 'phase-02') {
-    return {
-      planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
-      planKey: 'phase-02',
-    };
-  }
-
-  throw new Error(`Unknown phase alias "${phase}". Pass --plan instead.`);
-}
-
 function parseCliArgs(argv: string[]): {
   command: string;
   positionals: string[];
   flags: Set<string>;
   options: OrchestratorOptions;
 } {
-  let phase: string | undefined;
   let planPath: string | undefined;
   const flags = new Set<string>();
   const positionals: string[] = [];
@@ -405,16 +387,16 @@ function parseCliArgs(argv: string[]): {
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
 
-    if (value === '--phase') {
-      phase = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
     if (value === '--plan') {
       planPath = argv[index + 1];
       index += 1;
       continue;
+    }
+
+    if (value === '--phase') {
+      throw new Error(
+        '--phase has been removed. Pass --plan <plan-path> instead.',
+      );
     }
 
     if (value?.startsWith('--')) {
@@ -435,14 +417,13 @@ function parseCliArgs(argv: string[]): {
     command,
     positionals: rest,
     flags,
-    options: createOptions({ phase, planPath }),
+    options: createOptions({ planPath }),
   };
 }
 
 function getUsage(): string {
   return [
-    'Usage: bun run deliver --phase <phase-key> <command>',
-    '   or: bun run deliver --plan <plan-path> <command>',
+    'Usage: bun run deliver --plan <plan-path> <command>',
     '',
     'Commands:',
     '  sync',
@@ -507,8 +488,10 @@ function inferStateFromRepo(
     'branch',
     '--format=%(refname:short)',
   ]);
-  const branchCatalog = [...new Set([...localBranches, ...remoteBranches])];
   const pullRequests = listPullRequests(cwd);
+  const branchCatalog = [
+    ...new Set([...localBranches, ...remoteBranches, ...pullRequests.keys()]),
+  ];
 
   const tickets = ticketDefinitions.map((definition, index) => {
     const branch =
@@ -520,7 +503,9 @@ function inferStateFromRepo(
         : (findExistingBranch(branchCatalog, ticketDefinitions[index - 1]!)
             ?.branch ?? deriveBranchName(ticketDefinitions[index - 1]!));
     const branchExists = branchCatalog.includes(branch);
-    const pr = pullRequests.get(branch);
+    const pr =
+      pullRequests.get(branch) ??
+      findPullRequestForTicket(pullRequests, definition);
     const nextBranch = ticketDefinitions[index + 1]
       ? (findExistingBranch(branchCatalog, ticketDefinitions[index + 1]!)
           ?.branch ?? deriveBranchName(ticketDefinitions[index + 1]!))
@@ -532,7 +517,7 @@ function inferStateFromRepo(
 
     if (branchExists && nextBranchExists) {
       status = 'done';
-    } else if (branchExists && pr) {
+    } else if (pr) {
       status = 'in_review';
     } else if (branchExists) {
       status = 'in_progress';
@@ -631,6 +616,27 @@ function listPullRequests(cwd: string): Map<string, PullRequestSummary> {
   );
 }
 
+function findPullRequestForTicket(
+  pullRequests: Map<string, PullRequestSummary>,
+  definition: Pick<TicketDefinition, 'id'>,
+): PullRequestSummary | undefined {
+  const ticketIdToken = definition.id.toLowerCase().replace('.', '-');
+
+  for (const [headRefName, summary] of pullRequests.entries()) {
+    const normalized = headRefName.toLowerCase();
+
+    if (
+      normalized.includes(`/${ticketIdToken}`) ||
+      normalized.includes(`-${ticketIdToken}`) ||
+      normalized.endsWith(ticketIdToken)
+    ) {
+      return summary;
+    }
+  }
+
+  return undefined;
+}
+
 async function startTicket(
   state: DeliveryState,
   cwd: string,
@@ -680,6 +686,8 @@ async function startTicket(
     ]);
   }
 
+  await bootstrapWorktreeIfNeeded(target.worktreePath);
+
   const handoff = await writeTicketHandoff(state, cwd, target.id);
 
   return {
@@ -712,32 +720,50 @@ async function openPullRequest(
     throw new Error('No in-progress ticket found to open as a PR.');
   }
 
-  runProcess(target.worktreePath, [
-    'git',
-    'push',
-    '-u',
-    'origin',
-    target.branch,
-  ]);
+  ensureBranchPushed(target.worktreePath, target.branch);
 
-  const title = `${state.planKey}: ${target.title} [${target.id}]`;
+  const title = buildPullRequestTitle(
+    target,
+    readLatestCommitSubject(target.worktreePath),
+  );
   const body = buildPullRequestBody(state, target);
-
-  const prUrl = runProcess(target.worktreePath, [
-    'gh',
-    'pr',
-    'create',
-    '--base',
-    target.baseBranch,
-    '--head',
+  const existingPullRequest = findOpenPullRequest(
+    target.worktreePath,
     target.branch,
-    '--title',
-    title,
-    '--body',
-    body,
-  ]).trim();
+  );
+  let prUrl: string;
+  let prNumber: number;
 
-  const prNumber = parsePullRequestNumber(prUrl);
+  if (existingPullRequest) {
+    runProcess(target.worktreePath, [
+      'gh',
+      'pr',
+      'edit',
+      String(existingPullRequest.number),
+      '--title',
+      title,
+      '--body',
+      body,
+    ]);
+    prUrl = existingPullRequest.url;
+    prNumber = existingPullRequest.number;
+  } else {
+    prUrl = runProcess(target.worktreePath, [
+      'gh',
+      'pr',
+      'create',
+      '--base',
+      target.baseBranch,
+      '--head',
+      target.branch,
+      '--title',
+      title,
+      '--body',
+      body,
+    ]).trim();
+    prNumber = parsePullRequestNumber(prUrl);
+  }
+
   const now = new Date().toISOString();
 
   return {
@@ -945,6 +971,19 @@ export function buildPullRequestBody(
   return lines.join('\n');
 }
 
+export function buildPullRequestTitle(
+  ticket: Pick<TicketState, 'id' | 'title'>,
+  commitSubject?: string,
+): string {
+  const fallbackSubject = `feat: ${ticket.title.toLowerCase()}`;
+  const baseSubject = (commitSubject?.trim() || fallbackSubject).replace(
+    /\s+\[[A-Z0-9.]+\]$/,
+    '',
+  );
+
+  return `${baseSubject} [${ticket.id}]`;
+}
+
 export function buildTicketHandoff(
   state: DeliveryState,
   ticket: Pick<
@@ -1063,6 +1102,80 @@ function updatePullRequestBody(
   ]);
 }
 
+function findOpenPullRequest(
+  cwd: string,
+  branch: string,
+): PullRequestSummary | undefined {
+  const stdout = runProcess(cwd, [
+    'gh',
+    'pr',
+    'list',
+    '--state',
+    'open',
+    '--head',
+    branch,
+    '--json',
+    'number,url,state',
+  ]);
+  const parsed = JSON.parse(stdout) as Array<PullRequestSummary>;
+  return parsed[0];
+}
+
+function readLatestCommitSubject(cwd: string): string {
+  return runProcess(cwd, ['git', 'log', '-1', '--pretty=%s']).trim();
+}
+
+function ensureBranchPushed(cwd: string, branch: string): void {
+  const localSha = runGitLines(cwd, ['git', 'rev-parse', branch])[0];
+  const remoteRef = runProcessResult(cwd, [
+    'git',
+    'ls-remote',
+    '--heads',
+    'origin',
+    branch,
+  ]);
+
+  if (remoteRef.exitCode !== 0) {
+    throw new Error(
+      formatCommandFailure(
+        ['git', 'ls-remote', '--heads', 'origin', branch],
+        remoteRef,
+      ),
+    );
+  }
+
+  const remoteSha = remoteRef.stdout.trim().split(/\s+/)[0] || undefined;
+
+  if (!remoteSha) {
+    runProcess(cwd, ['git', 'push', '-u', 'origin', branch]);
+    return;
+  }
+
+  if (remoteSha !== localSha) {
+    runProcess(cwd, ['git', 'push', 'origin', branch]);
+  }
+
+  const upstream = runProcessResult(cwd, [
+    'git',
+    'branch',
+    '--set-upstream-to',
+    `origin/${branch}`,
+    branch,
+  ]);
+
+  if (
+    upstream.exitCode !== 0 &&
+    !upstream.stderr.includes('is already set up to track')
+  ) {
+    throw new Error(
+      formatCommandFailure(
+        ['git', 'branch', '--set-upstream-to', `origin/${branch}`, branch],
+        upstream,
+      ),
+    );
+  }
+}
+
 function parsePullRequestNumber(prUrl: string): number {
   const match = prUrl.match(/\/pull\/(\d+)$/);
 
@@ -1074,6 +1187,23 @@ function parsePullRequestNumber(prUrl: string): number {
 }
 
 function runProcess(cwd: string, cmd: string[]): string {
+  const result = runProcessResult(cwd, cmd);
+
+  if (result.exitCode !== 0) {
+    throw new Error(formatCommandFailure(cmd, result));
+  }
+
+  return result.stdout;
+}
+
+function runProcessResult(
+  cwd: string,
+  cmd: string[],
+): {
+  exitCode: number;
+  stderr: string;
+  stdout: string;
+} {
   const result = Bun.spawnSync(cmd, {
     cwd,
     stderr: 'pipe',
@@ -1081,26 +1211,41 @@ function runProcess(cwd: string, cmd: string[]): string {
     env: process.env,
   });
 
-  if (result.exitCode !== 0) {
-    throw new Error(
-      [
-        `Command failed: ${cmd.join(' ')}`,
-        new TextDecoder().decode(result.stderr).trim(),
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    );
-  }
+  return {
+    exitCode: result.exitCode,
+    stderr: new TextDecoder().decode(result.stderr).trim(),
+    stdout: new TextDecoder().decode(result.stdout),
+  };
+}
 
-  return new TextDecoder().decode(result.stdout);
+function formatCommandFailure(
+  cmd: string[],
+  result: {
+    stderr: string;
+    stdout: string;
+  },
+): string {
+  return [
+    `Command failed: ${cmd.join(' ')}`,
+    result.stderr.trim(),
+    result.stdout.trim(),
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function normalizeRepoPath(value: string): string {
   return value.replace(/^\.?\//, '');
 }
 
-function derivePlanKey(planPath: string): string {
-  return planPath
+export function derivePlanKey(planPath: string): string {
+  const normalizedPlanPath = normalizeRepoPath(planPath);
+
+  if (basename(normalizedPlanPath).toLowerCase() === 'implementation-plan.md') {
+    return slugify(basename(dirname(normalizedPlanPath)));
+  }
+
+  return normalizedPlanPath
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -1122,6 +1267,28 @@ function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolvePromise) =>
     setTimeout(resolvePromise, milliseconds),
   );
+}
+
+async function bootstrapWorktreeIfNeeded(worktreePath: string): Promise<void> {
+  if (
+    !existsSync(resolve(worktreePath, 'package.json')) ||
+    !existsSync(resolve(worktreePath, 'bun.lock')) ||
+    existsSync(resolve(worktreePath, 'node_modules'))
+  ) {
+    return;
+  }
+
+  runProcess(worktreePath, ['bun', 'install']);
+
+  const packageJson = JSON.parse(
+    await readFile(resolve(worktreePath, 'package.json'), 'utf8'),
+  ) as {
+    scripts?: Record<string, string>;
+  };
+
+  if (packageJson.scripts?.['hooks:install']) {
+    runProcess(worktreePath, ['bun', 'run', 'hooks:install']);
+  }
 }
 
 function formatStatus(state: DeliveryState): string {
