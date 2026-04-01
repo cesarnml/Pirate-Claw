@@ -69,7 +69,9 @@ Important fields:
 - `media_type`
 - `status`: `queued`, `failed`, or `skipped_duplicate`
 - `queued_at`
+- `lifecycle_status`, `reconciled_at`
 - `transmission_torrent_id`, `transmission_torrent_name`, `transmission_torrent_hash`
+- `transmission_status_code`, `transmission_percent_done`, `transmission_done_date`, `transmission_download_dir`
 - `rule_name`
 - `score`
 - `reasons_json`
@@ -85,6 +87,7 @@ Behavioral role:
 - blocks requeueing when a prior candidate was already queued
 - powers `retry-failed` by storing the last retryable failed candidate with its `download_url`
 - retains the downloader identity needed for later lifecycle reconciliation after queueing
+- acts as the local persistence boundary for the latest reconciled Transmission lifecycle snapshot
 
 ## `feed_item_outcomes`
 
@@ -147,6 +150,7 @@ Important nuance:
 - `skipped_no_match` is not a `candidate_state` value because unmatched feed items do not create a durable candidate identity
 - `queued_at` is preserved once set, even if later upserts touch the same identity
 - queued Transmission identity fields are sticky once present, so later duplicate or failure updates do not lose the original downloader pointer
+- `lifecycle_status` and `reconciled_at` reflect the latest successful reconciliation snapshot, separate from the queue-submission `status`
 
 ## Current Invariants
 
@@ -154,6 +158,7 @@ Important nuance:
 - `candidate_state.first_seen_run_id` never changes after the first insert.
 - `candidate_state.last_seen_run_id` moves forward as later runs encounter the same identity.
 - `candidate_state.queued_at` is sticky once a candidate has been queued.
+- reconciliation only targets queued candidates that have at least one durable Transmission identifier.
 - `feed_item_outcomes` is append-only from the application point of view; it records each run decision rather than overwriting history.
 - `listRetryableCandidates` only returns `candidate_state` rows with `status = 'failed'` and a non-empty `download_url`.
 

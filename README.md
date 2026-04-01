@@ -17,6 +17,7 @@ It currently supports:
 - `pirate-claw run`
 - `pirate-claw status`
 - `pirate-claw retry-failed`
+- `pirate-claw reconcile`
 
 ## Quick Start
 
@@ -40,6 +41,12 @@ Retry failed submissions with:
 
 ```bash
 ./bin/pirate-claw retry-failed --config ./pirate-claw.config.json
+```
+
+Reconcile tracked torrents from Transmission with:
+
+```bash
+./bin/pirate-claw reconcile --config ./pirate-claw.config.json
 ```
 
 ## Configuration

@@ -260,6 +260,97 @@ describe('SQLite repository', () => {
     });
   });
 
+  it('persists reconciled lifecycle state and raw Transmission fields', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const run = repository.startRun('2026-03-30T00:00:00.000Z');
+    const feedItem = repository.recordFeedItem(run.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T00:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+    });
+
+    repository.recordCandidateOutcome({
+      runId: run.id,
+      feedItemId: feedItem.id,
+      feedItem,
+      match: requireMovieMatch(feedItem.rawTitle),
+      status: 'queued',
+      transmissionTorrentId: 42,
+      transmissionTorrentName: 'Queued Torrent',
+      transmissionTorrentHash: 'hash-42',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+    });
+
+    const state = repository.recordCandidateReconciliation({
+      identityKey: 'movie:example movie|2024',
+      lifecycleStatus: 'downloading',
+      transmissionTorrentName: 'Queued Torrent',
+      transmissionStatusCode: 4,
+      transmissionPercentDone: 0.5,
+      transmissionDoneDate: undefined,
+      transmissionDownloadDir: '/downloads/movies',
+      reconciledAt: '2026-03-30T00:20:00.000Z',
+    });
+
+    expect(state).toMatchObject({
+      lifecycleStatus: 'downloading',
+      reconciledAt: '2026-03-30T00:20:00.000Z',
+      transmissionStatusCode: 4,
+      transmissionPercentDone: 0.5,
+      transmissionDownloadDir: '/downloads/movies',
+      transmissionTorrentHash: 'hash-42',
+    });
+  });
+
+  it('lists only queued candidates with Transmission identity as reconcilable', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const firstRun = repository.startRun('2026-03-30T00:00:00.000Z');
+    const firstFeedItem = repository.recordFeedItem(firstRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T00:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+    });
+    repository.recordCandidateOutcome({
+      runId: firstRun.id,
+      feedItemId: firstFeedItem.id,
+      feedItem: firstFeedItem,
+      match: requireMovieMatch(firstFeedItem.rawTitle),
+      status: 'queued',
+      transmissionTorrentId: 42,
+      transmissionTorrentHash: 'hash-42',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+    });
+
+    const secondRun = repository.startRun('2026-03-30T01:00:00.000Z');
+    const secondFeedItem = repository.recordFeedItem(secondRun.id, {
+      feedName: 'Movie Feed',
+      guidOrLink: 'https://example.test/releases/retry-me-web',
+      rawTitle: 'Retry.Me.2024.1080p.WEB.x265-GROUP',
+      publishedAt: '2026-03-30T01:05:00.000Z',
+      downloadUrl: 'https://example.test/downloads/retry-me-web.torrent',
+    });
+    repository.recordCandidateOutcome({
+      runId: secondRun.id,
+      feedItemId: secondFeedItem.id,
+      feedItem: secondFeedItem,
+      match: requireMovieMatch(secondFeedItem.rawTitle),
+      status: 'failed',
+      updatedAt: '2026-03-30T01:10:00.000Z',
+    });
+
+    expect(repository.listReconcilableCandidates()).toMatchObject([
+      {
+        identityKey: 'movie:example movie|2024',
+        transmissionTorrentId: 42,
+        transmissionTorrentHash: 'hash-42',
+      },
+    ]);
+  });
+
   it('distinguishes failed runs from completed runs', async () => {
     const repository = createTestRepository(await createDatabasePath());
     const startedRun = repository.startRun('2026-03-30T04:00:00.000Z');
