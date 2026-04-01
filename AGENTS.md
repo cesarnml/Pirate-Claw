@@ -2,7 +2,9 @@
 
 - If the user asks to begin a phase, implement a phase, start a ticket, or continue planned delivery work, first read `docs/00-overview/start-here.md` and `docs/03-engineering/delivery-orchestrator.md`, then surface the repo delivery/orchestration path before coding.
 - For planned phase work in this repo, prefer the delivery orchestrator as the default workflow entrypoint rather than bypassing it with ad hoc implementation.
-- When working from a phase plan, stop at the current ticket boundary unless the user explicitly asks to continue to the next ticket.
+- If the user says `begin phase`, `implement phase`, or equivalent, interpret that as a request to run the full orchestrated stacked-ticket workflow for that phase until blocked, not as a request to stop after the first completed ticket.
+- For phase delivery, do not stop at a completed ticket if the orchestrator can continue. Implement the ticket, verify it, push/open the PR, wait for `qodo-code-review`, patch prudent review findings, refresh the PR state, then advance to the next ticket branch/worktree.
+- Stop only when the current ticket cannot be completed safely, a prerequisite is missing, review triage is ambiguous enough to require user input, the orchestrator cannot advance cleanly, or the user explicitly interrupts the phase run.
 
 - `pr`: if a delivery ticket is clear from branch/docs/diff, use `type: summary [P1.01]`. Otherwise omit the suffix.
 
