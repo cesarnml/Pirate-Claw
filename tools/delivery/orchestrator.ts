@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -53,6 +54,13 @@ export type OrchestratorOptions = {
   reviewsDirPath: string;
   handoffsDirPath: string;
   reviewWaitMinutes: number;
+};
+
+type RepairStateResult = {
+  state: DeliveryState;
+  backupPath?: string;
+  changes: string[];
+  hadExistingState: boolean;
 };
 
 type PullRequestSummary = {
@@ -161,6 +169,17 @@ export async function runDeliveryOrchestrator(
       ...parsed,
       planPath: options.planPath,
     };
+
+    if (parsed.command === 'repair-state') {
+      const repaired = await repairState(cwd, options);
+      console.log(
+        [formatStatus(repaired.state), formatRepairSummary(repaired)]
+          .filter(Boolean)
+          .join('\n\n'),
+      );
+      return 0;
+    }
+
     const state = await loadState(cwd, options);
 
     switch (parsed.command) {
@@ -605,6 +624,7 @@ function getUsage(): string {
     'Commands:',
     '  sync',
     '  status',
+    '  repair-state',
     '  start [ticket-id]',
     '  open-pr [ticket-id]',
     '  fetch-review [ticket-id]',
@@ -627,10 +647,8 @@ async function loadState(
   cwd: string,
   options: OrchestratorOptions,
 ): Promise<DeliveryState> {
-  const planMarkdown = await readFile(resolve(cwd, options.planPath), 'utf8');
-  const ticketDefinitions = parsePlan(planMarkdown, options.planPath);
-  const absoluteStatePath = resolve(cwd, options.statePath);
-  const inferred = inferStateFromRepo(cwd, ticketDefinitions, options);
+  const { absoluteStatePath, inferred, ticketDefinitions } =
+    await loadPlanContext(cwd, options);
 
   if (!existsSync(absoluteStatePath)) {
     return syncStateWithPlan(
@@ -713,6 +731,78 @@ async function listImplementationPlans(cwd: string): Promise<string[]> {
     )
     .filter((planPath) => existsSync(resolve(cwd, planPath)))
     .sort();
+}
+
+async function loadPlanContext(
+  cwd: string,
+  options: OrchestratorOptions,
+): Promise<{
+  absoluteStatePath: string;
+  inferred: DeliveryState;
+  ticketDefinitions: TicketDefinition[];
+}> {
+  const planMarkdown = await readFile(resolve(cwd, options.planPath), 'utf8');
+  const ticketDefinitions = parsePlan(planMarkdown, options.planPath);
+  const absoluteStatePath = resolve(cwd, options.statePath);
+  const inferred = inferStateFromRepo(cwd, ticketDefinitions, options);
+
+  return {
+    absoluteStatePath,
+    inferred,
+    ticketDefinitions,
+  };
+}
+
+async function repairState(
+  cwd: string,
+  options: OrchestratorOptions,
+): Promise<RepairStateResult> {
+  const { absoluteStatePath, inferred, ticketDefinitions } =
+    await loadPlanContext(cwd, options);
+  const repairedState = syncStateWithPlan(
+    undefined,
+    ticketDefinitions,
+    cwd,
+    options,
+    inferred,
+  );
+  const hadExistingState = existsSync(absoluteStatePath);
+
+  if (!hadExistingState) {
+    await saveState(cwd, repairedState);
+
+    return {
+      state: repairedState,
+      changes: [
+        'No prior state file existed; wrote clean state from repo reality.',
+      ],
+      hadExistingState: false,
+    };
+  }
+
+  const existing = JSON.parse(
+    await readFile(absoluteStatePath, 'utf8'),
+  ) as DeliveryState;
+  const changes = summarizeStateDifferences(existing, repairedState);
+  let backupPath: string | undefined;
+
+  if (changes.length > 0) {
+    backupPath = await backupStateFile(absoluteStatePath);
+  }
+
+  await saveState(cwd, repairedState);
+
+  return {
+    state: repairedState,
+    backupPath: backupPath ? relativeToRepo(cwd, backupPath) : undefined,
+    changes:
+      changes.length > 0
+        ? changes
+        : [
+            'Saved state already matched repo reality; rewrote normalized state.',
+          ],
+    hadExistingState: true,
+  };
 }
 
 async function saveState(cwd: string, state: DeliveryState): Promise<void> {
@@ -838,6 +928,74 @@ export function findExistingBranch(
   return undefined;
 }
 
+export function summarizeStateDifferences(
+  existing: DeliveryState,
+  repaired: DeliveryState,
+): string[] {
+  const changes: string[] = [];
+
+  if (existing.planKey !== repaired.planKey) {
+    changes.push(`planKey: ${existing.planKey} -> ${repaired.planKey}`);
+  }
+
+  if (existing.planPath !== repaired.planPath) {
+    changes.push(`planPath: ${existing.planPath} -> ${repaired.planPath}`);
+  }
+
+  for (const repairedTicket of repaired.tickets) {
+    const existingTicket = existing.tickets.find(
+      (candidate) => candidate.id === repairedTicket.id,
+    );
+
+    if (!existingTicket) {
+      changes.push(`${repairedTicket.id}: missing from existing state`);
+      continue;
+    }
+
+    if (existingTicket.status !== repairedTicket.status) {
+      changes.push(
+        `${repairedTicket.id}: status ${existingTicket.status} -> ${repairedTicket.status}`,
+      );
+    }
+
+    if (existingTicket.branch !== repairedTicket.branch) {
+      changes.push(
+        `${repairedTicket.id}: branch ${existingTicket.branch} -> ${repairedTicket.branch}`,
+      );
+    }
+
+    if (existingTicket.baseBranch !== repairedTicket.baseBranch) {
+      changes.push(
+        `${repairedTicket.id}: base ${existingTicket.baseBranch} -> ${repairedTicket.baseBranch}`,
+      );
+    }
+
+    if (existingTicket.worktreePath !== repairedTicket.worktreePath) {
+      changes.push(
+        `${repairedTicket.id}: worktree ${existingTicket.worktreePath} -> ${repairedTicket.worktreePath}`,
+      );
+    }
+
+    if (existingTicket.prUrl !== repairedTicket.prUrl) {
+      changes.push(
+        `${repairedTicket.id}: pr ${existingTicket.prUrl ?? 'none'} -> ${repairedTicket.prUrl ?? 'none'}`,
+      );
+    }
+  }
+
+  for (const existingTicket of existing.tickets) {
+    if (
+      !repaired.tickets.find((candidate) => candidate.id === existingTicket.id)
+    ) {
+      changes.push(
+        `${existingTicket.id}: present in existing state but absent after repair`,
+      );
+    }
+  }
+
+  return changes;
+}
+
 function listPullRequests(cwd: string): Map<string, PullRequestSummary> {
   const stdout = runProcess(cwd, [
     'gh',
@@ -939,6 +1097,7 @@ async function startTicket(
     ]);
   }
 
+  await copyLocalEnvIfPresent(cwd, target.worktreePath);
   await bootstrapWorktreeIfNeeded(target.worktreePath);
 
   const handoff = await writeTicketHandoff(state, cwd, target.id);
@@ -956,6 +1115,20 @@ async function startTicket(
         : ticket,
     ),
   };
+}
+
+export async function copyLocalEnvIfPresent(
+  sourceWorktreePath: string,
+  targetWorktreePath: string,
+): Promise<void> {
+  const sourceEnvPath = resolve(sourceWorktreePath, '.env');
+  const targetEnvPath = resolve(targetWorktreePath, '.env');
+
+  if (!existsSync(sourceEnvPath) || existsSync(targetEnvPath)) {
+    return;
+  }
+
+  await copyFile(sourceEnvPath, targetEnvPath);
 }
 
 async function openPullRequest(
@@ -1802,6 +1975,23 @@ async function sendTelegramMessage(
   }
 }
 
+async function backupStateFile(absoluteStatePath: string): Promise<string> {
+  const backupPath = absoluteStatePath.replace(
+    /\.json$/,
+    `.stale-${new Date()
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace(/\.\d{3}Z$/, 'Z')}.json`,
+  );
+
+  await writeFile(
+    backupPath,
+    await readFile(absoluteStatePath, 'utf8'),
+    'utf8',
+  );
+  return backupPath;
+}
+
 function parsePullRequestNumber(prUrl: string): number {
   const match = prUrl.match(/\/pull\/(\d+)$/);
 
@@ -1947,33 +2137,37 @@ function formatStatus(state: DeliveryState): string {
   ].join('\n');
 }
 
-function deriveRepoDisplayName(cwd: string): string {
-  return basename(resolve(cwd))
-    .replace(/_p\d+(_\d+)?$/, '')
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`)
-    .join(' ');
+function formatRepairSummary(result: RepairStateResult): string {
+  return [
+    'State Repair',
+    result.hadExistingState
+      ? 'Existing state file inspected and rebuilt from repo reality.'
+      : 'Created fresh state from repo reality.',
+    result.backupPath ? `- backup: ${result.backupPath}` : undefined,
+    ...result.changes.map((change) => `- ${change}`),
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join('\n');
 }
 
 export function formatNotificationMessage(
   cwd: string,
   event: DeliveryNotificationEvent,
 ): string {
-  const header = `${deriveRepoDisplayName(cwd)} Delivery`;
+  const header = 'Anton';
 
   switch (event.kind) {
     case 'ticket_started':
       return [
         header,
-        `Started ${event.planKey} ${event.ticketId}`,
+        `${event.ticketId} underway for ${event.planKey}.`,
         event.ticketTitle,
         `Branch: ${event.branch}`,
       ].join('\n');
     case 'pr_opened':
       return [
         header,
-        `PR opened for ${event.planKey} ${event.ticketId}`,
+        `${event.ticketId} is up for review in ${event.planKey}.`,
         event.ticketTitle,
         `Branch: ${event.branch}`,
         `PR: ${event.prUrl}`,
@@ -1981,7 +2175,7 @@ export function formatNotificationMessage(
     case 'review_window_ready':
       return [
         header,
-        `Review window started for ${event.planKey} ${event.ticketId}`,
+        `Review window is open for ${event.ticketId}.`,
         event.ticketTitle,
         `Branch: ${event.branch}`,
         `PR: ${event.prUrl}`,
@@ -1991,7 +2185,7 @@ export function formatNotificationMessage(
     case 'review_recorded':
       return [
         header,
-        `Review recorded for ${event.planKey} ${event.ticketId}`,
+        `${event.ticketId} review triaged.`,
         event.ticketTitle,
         `Branch: ${event.branch}`,
         `Outcome: ${event.outcome}`,
@@ -2003,7 +2197,7 @@ export function formatNotificationMessage(
     case 'ticket_completed':
       return [
         header,
-        `Completed ${event.planKey} ${event.ticketId}`,
+        `${event.ticketId} cleared.`,
         event.ticketTitle,
         `Branch: ${event.branch}`,
         event.prUrl ? `PR: ${event.prUrl}` : undefined,
@@ -2013,7 +2207,7 @@ export function formatNotificationMessage(
     case 'run_blocked':
       return [
         header,
-        `Run blocked${event.planKey ? ` for ${event.planKey}` : ''}`,
+        `Stopped${event.planKey ? ` in ${event.planKey}` : ''}.`,
         event.command ? `Command: ${event.command}` : undefined,
         `Reason: ${event.reason}`,
       ]

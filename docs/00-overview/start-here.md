@@ -88,6 +88,7 @@ When implementing a ticket:
 - keep the ticket end to end
 - test what the user can observe
 - for orchestrated stacked delivery, re-read the handoff artifact and required docs at each ticket boundary instead of relying on prior conversational context
+- during external waits such as AI-review windows, read ahead into the next ticket and nearby seams if it helps maintain momentum, but do not write ahead across ticket boundaries
 - avoid unrelated cleanup during the ticket unless required to land safely
 - update rationale and operator-facing docs when behavior changes
 - stop at the ticket boundary unless the user explicitly says to continue

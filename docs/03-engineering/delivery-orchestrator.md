@@ -38,6 +38,7 @@ The orchestrator owns process mechanics:
 - durable local state under `.codex/delivery/<plan-key>/`
 - per-ticket handoff artifacts under `.codex/delivery/<plan-key>/handoffs/`
 - deterministic branch and worktree naming
+- copying a local `.env` into fresh ticket work trees when the invoking worktree has one
 - bootstrapping fresh Bun ticket work trees before implementation starts
 - stacked PR base chaining
 - idempotent PR open/update behavior for already-pushed ticket branches
@@ -81,6 +82,8 @@ The handoff includes:
 
 This does not automatically create a brand-new Codex thread, but it is the current repo mechanism for reducing reasoning carryover between tickets while preserving stacked branch continuity.
 
+During external waits such as AI-review windows, the worker may read ahead into the next ticket, handoff, and adjacent seams to prepare the next slice. That read-ahead must not turn into write-ahead; implementation for the next ticket still starts only after the current ticket is cleared.
+
 ## Existing Phase 02 Work
 
 Phase 02 was already processed once through a more brittle route before this tool existed.
@@ -106,6 +109,7 @@ Available commands:
 
 - `sync`
 - `status`
+- `repair-state`
 - `start [ticket-id]`
 - `open-pr [ticket-id]`
 - `fetch-review [ticket-id]`
@@ -135,6 +139,8 @@ bun run deliver restack
 ```
 
 from the current child ticket worktree before continuing review. `restack` infers the delivery plan and current ticket from the checked-out branch, fetches `origin`, rebases away the old parent ancestry, and updates the open PR base/body so GitHub review follows the new stack shape. If branch inference is ambiguous, pass `--plan` explicitly.
+
+If local state drifts from repo reality, use `repair-state` to snapshot the stale state file, rebuild clean state from current repo facts, and print the repaired fields before resuming delivery.
 
 ## Optional Telegram Notifications
 

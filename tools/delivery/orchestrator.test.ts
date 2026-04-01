@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'bun:test';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   buildPullRequestTitle,
   buildTicketHandoff,
   canAdvanceTicket,
+  copyLocalEnvIfPresent,
   createOptions,
   deriveBranchName,
   derivePlanKey,
@@ -21,6 +25,7 @@ import {
   resolvePlanPathForBranch,
   resolveNotifier,
   resolveReviewFetcher,
+  summarizeStateDifferences,
   syncStateWithPlan,
   type DeliveryState,
 } from './orchestrator';
@@ -429,7 +434,7 @@ describe('delivery orchestrator', () => {
         ticketTitle: 'Persist Transmission Identity For Queued Torrents',
         branch: 'codex/p3-01-persist-transmission-identity-for-queued-torrents',
       }),
-    ).toContain('Started phase-03 P3.01');
+    ).toContain('Anton\nP3.01 underway for phase-03.');
     expect(
       formatNotificationMessage('/tmp/pirate_claw', {
         kind: 'run_blocked',
@@ -437,7 +442,7 @@ describe('delivery orchestrator', () => {
         command: 'open-pr',
         reason: 'No in-progress ticket found to open as a PR.',
       }),
-    ).toContain('Run blocked for phase-03');
+    ).toContain('Anton\nStopped in phase-03.');
   });
 
   it('surfaces the review wait window after opening a PR', () => {
@@ -540,6 +545,84 @@ describe('delivery orchestrator', () => {
         ],
       }).map((event) => event.kind),
     ).toEqual(['ticket_completed', 'ticket_started']);
+  });
+
+  it('summarizes stale-state mismatches against repo reality', () => {
+    const changes = summarizeStateDifferences(
+      {
+        planKey: 'phase-03',
+        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        statePath: '.codex/delivery/phase-03/state.json',
+        reviewsDirPath: '.codex/delivery/phase-03/reviews',
+        handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+        reviewWaitMinutes: 5,
+        tickets: [
+          {
+            id: 'P3.01',
+            title: 'Persist Transmission Identity For Queued Torrents',
+            slug: 'persist-transmission-identity-for-queued-torrents',
+            ticketFile:
+              'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            status: 'in_review',
+            branch:
+              'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+            baseBranch: 'main',
+            worktreePath: '/tmp/old_p3_01',
+            prUrl: 'https://example.test/pull/20',
+          },
+        ],
+      },
+      {
+        planKey: 'phase-03',
+        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        statePath: '.codex/delivery/phase-03/state.json',
+        reviewsDirPath: '.codex/delivery/phase-03/reviews',
+        handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+        reviewWaitMinutes: 5,
+        tickets: [
+          {
+            id: 'P3.01',
+            title: 'Persist Transmission Identity For Queued Torrents',
+            slug: 'persist-transmission-identity-for-queued-torrents',
+            ticketFile:
+              'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            status: 'pending',
+            branch:
+              'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+            baseBranch: 'main',
+            worktreePath: '/tmp/new_p3_01',
+          },
+        ],
+      },
+    );
+
+    expect(changes).toContain('P3.01: status in_review -> pending');
+    expect(changes).toContain(
+      'P3.01: worktree /tmp/old_p3_01 -> /tmp/new_p3_01',
+    );
+    expect(changes).toContain('P3.01: pr https://example.test/pull/20 -> none');
+  });
+
+  it('copies a local .env into a fresh ticket worktree when missing', async () => {
+    const sourceDir = await mkdtemp(join(tmpdir(), 'orchestrator-source-'));
+    const targetDir = await mkdtemp(join(tmpdir(), 'orchestrator-target-'));
+
+    try {
+      await writeFile(
+        join(sourceDir, '.env'),
+        'TELEGRAM_CHAT_ID=123\n',
+        'utf8',
+      );
+
+      await copyLocalEnvIfPresent(sourceDir, targetDir);
+
+      expect(await readFile(join(targetDir, '.env'), 'utf8')).toBe(
+        'TELEGRAM_CHAT_ID=123\n',
+      );
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true });
+      await rm(targetDir, { recursive: true, force: true });
+    }
   });
 
   it('keeps notification failures best-effort', async () => {
