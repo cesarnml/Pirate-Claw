@@ -2,6 +2,11 @@
 
 - `pr`: if a delivery ticket is clear from branch/docs/diff, use `type: summary [P1.01]`. Otherwise omit the suffix.
 
+## Codex Workflow Defaults
+
+- on a fresh worktree, if `package.json` and `bun.lock` exist and `node_modules` is missing, run `bun install` before deeper repo work
+- before any `git push`, run `bun run verify` when that script exists and fix failures locally before retrying the push
+
 ## Ticket Completion Checklist
 
 Before calling a delivery ticket complete:
