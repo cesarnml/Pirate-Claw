@@ -46,18 +46,31 @@ Working notes:
 
 ## Phase 03: Post-Queue Lifecycle
 
-Likely scope:
+Direction:
 
 - download completion tracking
-- renaming or organization rules
-- library/archive integrations
-- Synology-oriented flows if still desired
+- Transmission lifecycle reconciliation for Pirate Claw-queued torrents
+- richer local status visibility after queueing
+
+Explicitly deferred:
+
+- always-on scheduling or polling
+- file renaming or final media placement rules
+- Plex, Jellyfin, or Synology-specific integrations
+- media-server or library/archive integrations
+- UI work or third-party media metadata integrations
 
 Not committed yet:
 
-- storage layout
-- archive strategy
-- media-server integrations
+- how much raw downloader state should be retained locally
+- long-term service model for NAS deployment
+- final storage and organization strategy after download completion
+
+Future pressure and ideation:
+
+- a later NAS-oriented phase may run Pirate Claw continuously on Synology and poll feeds every 15-30 minutes to avoid short RSS retention windows
+- future product work may persist downloader state in SQLite as the app-facing source for a UI layer while still treating Transmission as the live downloader authority
+- final media placement may be owned either by Transmission or by Pirate Claw once completion tracking is reliable enough to make that boundary explicit
 
 ## Planning Rules
 
