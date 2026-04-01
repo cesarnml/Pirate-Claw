@@ -99,7 +99,14 @@ export async function runDeliveryOrchestrator(
           parsed.positionals[0],
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(
+          [
+            formatStatus(nextState),
+            formatReviewWindowMessage(nextState, parsed.positionals[0]),
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+        );
         return 0;
       }
       case 'fetch-review': {
@@ -434,6 +441,15 @@ function getUsage(): string {
     '  record-review <ticket-id> <clean|needs_patch|patched> [note]',
     '  advance [--no-start-next]',
   ].join('\n');
+}
+
+function findTicketById(
+  state: DeliveryState,
+  ticketId?: string,
+): TicketState | undefined {
+  return ticketId
+    ? state.tickets.find((ticket) => ticket.id === ticketId)
+    : state.tickets.find((ticket) => ticket.status === 'in_review');
 }
 
 async function loadState(
@@ -787,11 +803,7 @@ async function fetchReview(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const target =
-    (ticketId
-      ? state.tickets.find((ticket) => ticket.id === ticketId)
-      : state.tickets.find((ticket) => ticket.status === 'in_review')) ??
-    undefined;
+  const target = findTicketById(state, ticketId);
 
   if (!target || !target.prNumber) {
     throw new Error('No in-review ticket with an open PR was found.');
@@ -1318,6 +1330,34 @@ function formatStatus(state: DeliveryState): string {
         .filter((value): value is string => value !== undefined)
         .join('\n'),
     ),
+  ].join('\n');
+}
+
+export function formatReviewWindowMessage(
+  state: DeliveryState,
+  ticketId?: string,
+): string {
+  const ticket = findTicketById(state, ticketId);
+
+  if (!ticket?.prUrl || !ticket.prOpenedAt) {
+    return '';
+  }
+
+  const openedAt = Date.parse(ticket.prOpenedAt);
+
+  if (Number.isNaN(openedAt)) {
+    return '';
+  }
+
+  const dueAt = new Date(
+    openedAt + state.reviewWaitMinutes * 60_000,
+  ).toISOString();
+
+  return [
+    'AI Review Window',
+    `- wait window: ${state.reviewWaitMinutes} minutes`,
+    `- review due at: ${dueAt}`,
+    `- if no \`qodo-code-review\` feedback appears by then, record the review as \`clean\` and continue`,
   ].join('\n');
 }
 

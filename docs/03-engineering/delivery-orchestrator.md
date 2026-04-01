@@ -56,6 +56,8 @@ That boundary is intentional. The `qodo-code-review` skill already defines the r
 
 So the script fetches and stores review output, but humans or agents still use the skill to decide whether a comment matters.
 
+The absence of `qodo-code-review` comments after the configured wait window is not itself a blocker. In that case, record the review as `clean` and continue unless another real ambiguity or prerequisite issue exists.
+
 When ai-cr triage leads to prudent branch changes, the orchestrator updates the PR body as the final step of `advance`. That timing is intentional: the PR description should reflect the exact branch state that is being handed off before the next ticket starts.
 
 ## Ticket Context Reset
@@ -121,6 +123,8 @@ bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
 ```
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
+
+After `open-pr`, the orchestrator should surface the review wait window and the earliest meaningful review-fetch time. An immediate lack of AI comments is informational only; the decisive check happens after that window elapses.
 
 ## Review Artifact Location
 

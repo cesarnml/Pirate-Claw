@@ -9,6 +9,7 @@ import {
   derivePlanKey,
   deriveWorktreePath,
   findExistingBranch,
+  formatReviewWindowMessage,
   parsePlan,
   resolveReviewFetcher,
   syncStateWithPlan,
@@ -282,6 +283,42 @@ describe('delivery orchestrator', () => {
         title: 'Reconcile Torrent Lifecycle From Transmission',
       }),
     ).toBe('feat: reconcile torrent lifecycle from transmission [P3.02]');
+  });
+
+  it('surfaces the review wait window after opening a PR', () => {
+    const message = formatReviewWindowMessage(
+      {
+        planKey: 'phase-03',
+        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        statePath: '.codex/delivery/phase-03/state.json',
+        reviewsDirPath: '.codex/delivery/phase-03/reviews',
+        handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+        reviewWaitMinutes: 5,
+        tickets: [
+          {
+            id: 'P3.01',
+            title: 'Persist Transmission Identity For Queued Torrents',
+            slug: 'persist-transmission-identity-for-queued-torrents',
+            ticketFile:
+              'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            status: 'in_review',
+            branch:
+              'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+            baseBranch: 'main',
+            worktreePath: '/tmp/p3_01',
+            prUrl: 'https://example.test/pull/20',
+            prNumber: 20,
+            prOpenedAt: '2026-04-01T10:00:00.000Z',
+          },
+        ],
+      },
+      'P3.01',
+    );
+
+    expect(message).toContain('AI Review Window');
+    expect(message).toContain('wait window: 5 minutes');
+    expect(message).toContain('review due at: 2026-04-01T10:05:00.000Z');
+    expect(message).toContain('record the review as `clean` and continue');
   });
 
   it('prefers an explicit review fetcher environment variable', () => {
