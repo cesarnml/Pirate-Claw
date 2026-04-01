@@ -13,6 +13,7 @@ import {
   eventsForRecordReviewCommand,
   eventsForStartCommand,
   findExistingBranch,
+  findTicketByBranch,
   formatNotificationMessage,
   formatReviewWindowMessage,
   notifyBestEffort,
@@ -237,6 +238,49 @@ describe('delivery orchestrator', () => {
       branch: 'codex/p2-02-movie-matcher-missing-codec',
       source: 'ticket-id',
     });
+  });
+
+  it('finds the tracked ticket for the current branch', () => {
+    expect(
+      findTicketByBranch(
+        {
+          planKey: 'phase-03',
+          planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+          statePath: '.codex/delivery/phase-03/state.json',
+          reviewsDirPath: '.codex/delivery/phase-03/reviews',
+          handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+          reviewWaitMinutes: 5,
+          tickets: [
+            {
+              id: 'P3.01',
+              title: 'Persist Transmission Identity For Queued Torrents',
+              slug: 'persist-transmission-identity-for-queued-torrents',
+              ticketFile:
+                'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+              status: 'done',
+              branch:
+                'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+              baseBranch: 'main',
+              worktreePath: '/tmp/p3_01',
+            },
+            {
+              id: 'P3.02',
+              title: 'Reconcile Torrent Lifecycle From Transmission',
+              slug: 'reconcile-torrent-lifecycle-from-transmission',
+              ticketFile:
+                'docs/02-delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
+              status: 'in_review',
+              branch:
+                'codex/p3-02-reconcile-torrent-lifecycle-from-transmission',
+              baseBranch:
+                'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+              worktreePath: '/tmp/p3_02',
+            },
+          ],
+        },
+        'codex/p3-02-reconcile-torrent-lifecycle-from-transmission',
+      )?.id,
+    ).toBe('P3.02');
   });
 
   it('only allows advance after clean or patched review outcomes', () => {

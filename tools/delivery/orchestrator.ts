@@ -61,6 +61,11 @@ type PullRequestSummary = {
   state: string;
 };
 
+type PullRequestDetail = PullRequestSummary & {
+  baseRefName?: string;
+  mergedAt?: string | null;
+};
+
 type BranchMatch = {
   branch: string;
   source: 'ticket-id' | 'derived';
@@ -238,6 +243,16 @@ export async function runDeliveryOrchestrator(
           cwd,
           eventsForAdvanceCommand(state, nextState),
         );
+        return 0;
+      }
+      case 'restack': {
+        const nextState = await restackTicket(
+          state,
+          cwd,
+          parsed.positionals[0],
+        );
+        await saveState(cwd, nextState);
+        console.log(formatStatus(nextState));
         return 0;
       }
       default: {
@@ -425,6 +440,13 @@ export function findNextPendingTicket(
   return state.tickets.find((ticket) => ticket.status === 'pending');
 }
 
+export function findTicketByBranch(
+  state: DeliveryState,
+  branch: string,
+): TicketState | undefined {
+  return state.tickets.find((ticket) => ticket.branch === branch);
+}
+
 export function canAdvanceTicket(ticket: TicketState): boolean {
   return (
     ticket.status === 'reviewed' &&
@@ -559,6 +581,7 @@ function getUsage(): string {
     '  fetch-review [ticket-id]',
     '  record-review <ticket-id> <clean|needs_patch|patched> [note]',
     '  advance [--no-start-next]',
+    '  restack [ticket-id]',
   ].join('\n');
 }
 
@@ -1040,6 +1063,103 @@ async function advanceToNextTicket(
   return nextState;
 }
 
+async function restackTicket(
+  state: DeliveryState,
+  cwd: string,
+  ticketId?: string,
+): Promise<DeliveryState> {
+  ensureCleanWorktree(cwd);
+  const currentBranch = readCurrentBranch(cwd);
+  const target =
+    (ticketId
+      ? state.tickets.find((ticket) => ticket.id === ticketId)
+      : findTicketByBranch(state, currentBranch)) ?? undefined;
+
+  if (!target) {
+    throw new Error(
+      ticketId
+        ? `Unknown ticket ${ticketId}.`
+        : `Current branch ${currentBranch} is not tracked by the delivery plan.`,
+    );
+  }
+
+  if (target.branch !== currentBranch) {
+    throw new Error(
+      `Restack must run from ${target.branch}. Current branch is ${currentBranch}.`,
+    );
+  }
+
+  runProcess(cwd, ['git', 'fetch', 'origin']);
+
+  const targetIndex = state.tickets.findIndex(
+    (ticket) => ticket.id === target.id,
+  );
+  const previous = targetIndex > 0 ? state.tickets[targetIndex - 1] : undefined;
+
+  let nextBaseBranch = 'main';
+  let rebaseTarget = 'origin/main';
+
+  if (previous) {
+    const oldBase = runProcess(cwd, [
+      'git',
+      'merge-base',
+      target.branch,
+      previous.branch,
+    ]).trim();
+
+    if (!oldBase) {
+      throw new Error(
+        `Could not determine the shared ancestor between ${target.branch} and ${previous.branch}.`,
+      );
+    }
+
+    if (!hasMergedPullRequestForBranch(cwd, previous.branch)) {
+      nextBaseBranch = previous.branch;
+      rebaseTarget = previous.branch;
+    }
+
+    runProcess(cwd, ['git', 'rebase', '--onto', rebaseTarget, oldBase]);
+  } else {
+    runProcess(cwd, ['git', 'rebase', 'origin/main']);
+  }
+
+  const nextState: DeliveryState = {
+    ...state,
+    tickets: state.tickets.map((ticket) =>
+      ticket.id === target.id
+        ? {
+            ...ticket,
+            baseBranch: nextBaseBranch,
+          }
+        : ticket,
+    ),
+  };
+  const updatedTarget = nextState.tickets.find(
+    (ticket) => ticket.id === target.id,
+  );
+
+  if (!updatedTarget) {
+    throw new Error(`Unknown ticket ${target.id}.`);
+  }
+
+  const pullRequest = findOpenPullRequest(cwd, target.branch);
+
+  if (pullRequest) {
+    runProcess(cwd, [
+      'gh',
+      'pr',
+      'edit',
+      String(pullRequest.number),
+      '--base',
+      nextBaseBranch,
+      '--body',
+      buildPullRequestBody(nextState, updatedTarget),
+    ]);
+  }
+
+  return nextState;
+}
+
 function runGitLines(cwd: string, cmd: string[]): string[] {
   return runProcess(cwd, cmd)
     .split('\n')
@@ -1425,8 +1545,53 @@ function findOpenPullRequest(
   return parsed[0];
 }
 
+function findMergedPullRequest(
+  cwd: string,
+  branch: string,
+): PullRequestDetail | undefined {
+  const stdout = runProcess(cwd, [
+    'gh',
+    'pr',
+    'list',
+    '--state',
+    'merged',
+    '--head',
+    branch,
+    '--limit',
+    '1',
+    '--json',
+    'number,url,state,baseRefName,mergedAt',
+  ]);
+  const parsed = JSON.parse(stdout) as Array<PullRequestDetail>;
+  return parsed[0];
+}
+
+function hasMergedPullRequestForBranch(cwd: string, branch: string): boolean {
+  return findMergedPullRequest(cwd, branch) !== undefined;
+}
+
 function readLatestCommitSubject(cwd: string): string {
   return runProcess(cwd, ['git', 'log', '-1', '--pretty=%s']).trim();
+}
+
+function readCurrentBranch(cwd: string): string {
+  const branch = runProcess(cwd, ['git', 'branch', '--show-current']).trim();
+
+  if (!branch) {
+    throw new Error('Restack requires an attached branch checkout.');
+  }
+
+  return branch;
+}
+
+function ensureCleanWorktree(cwd: string): void {
+  const status = runProcess(cwd, ['git', 'status', '--short']).trim();
+
+  if (status) {
+    throw new Error(
+      'Restack requires a clean worktree. Commit, stash, or discard local changes first.',
+    );
+  }
 }
 
 function ensureBranchPushed(cwd: string, branch: string): void {
