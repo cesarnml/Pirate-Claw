@@ -8,9 +8,16 @@ import {
   deriveBranchName,
   derivePlanKey,
   deriveWorktreePath,
+  eventsForAdvanceCommand,
+  eventsForOpenPrCommand,
+  eventsForRecordReviewCommand,
+  eventsForStartCommand,
   findExistingBranch,
+  formatNotificationMessage,
   formatReviewWindowMessage,
+  notifyBestEffort,
   parsePlan,
+  resolveNotifier,
   resolveReviewFetcher,
   syncStateWithPlan,
   type DeliveryState,
@@ -285,6 +292,51 @@ describe('delivery orchestrator', () => {
     ).toBe('feat: reconcile torrent lifecycle from transmission [P3.02]');
   });
 
+  it('resolves the notifier from Telegram env vars', () => {
+    const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+    const originalChatId = process.env.TELEGRAM_CHAT_ID;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+
+    expect(resolveNotifier()).toEqual({
+      kind: 'noop',
+      enabled: false,
+    });
+
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    process.env.TELEGRAM_CHAT_ID = 'chat-id';
+
+    expect(resolveNotifier()).toEqual({
+      kind: 'telegram',
+      enabled: true,
+      botToken: 'bot-token',
+      chatId: 'chat-id',
+    });
+
+    process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    process.env.TELEGRAM_CHAT_ID = originalChatId;
+  });
+
+  it('formats notification messages for milestone events', () => {
+    expect(
+      formatNotificationMessage('/tmp/pirate_claw', {
+        kind: 'ticket_started',
+        planKey: 'phase-03',
+        ticketId: 'P3.01',
+        ticketTitle: 'Persist Transmission Identity For Queued Torrents',
+        branch: 'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+      }),
+    ).toContain('Started phase-03 P3.01');
+    expect(
+      formatNotificationMessage('/tmp/pirate_claw', {
+        kind: 'run_blocked',
+        planKey: 'phase-03',
+        command: 'open-pr',
+        reason: 'No in-progress ticket found to open as a PR.',
+      }),
+    ).toContain('Run blocked for phase-03');
+  });
+
   it('surfaces the review wait window after opening a PR', () => {
     const message = formatReviewWindowMessage(
       {
@@ -319,6 +371,102 @@ describe('delivery orchestrator', () => {
     expect(message).toContain('wait window: 5 minutes');
     expect(message).toContain('review due at: 2026-04-01T10:05:00.000Z');
     expect(message).toContain('record the review as `clean` and continue');
+  });
+
+  it('maps orchestrator commands to notification events', () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.codex/delivery/phase-03/state.json',
+      reviewsDirPath: '.codex/delivery/phase-03/reviews',
+      handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+      reviewWaitMinutes: 5,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_review',
+          branch:
+            'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          prUrl: 'https://example.test/pull/20',
+          prNumber: 20,
+          prOpenedAt: '2026-04-01T10:00:00.000Z',
+          reviewOutcome: 'clean',
+        },
+        {
+          id: 'P3.02',
+          title: 'Reconcile Torrent Lifecycle From Transmission',
+          slug: 'reconcile-torrent-lifecycle-from-transmission',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
+          status: 'pending',
+          branch: 'codex/p3-02-reconcile-torrent-lifecycle-from-transmission',
+          baseBranch:
+            'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+          worktreePath: '/tmp/p3_02',
+        },
+      ],
+    };
+
+    expect(
+      eventsForStartCommand(state, 'P3.01').map((event) => event.kind),
+    ).toEqual(['ticket_started']);
+    expect(
+      eventsForOpenPrCommand(state, 'P3.01').map((event) => event.kind),
+    ).toEqual(['pr_opened', 'review_window_ready']);
+    expect(
+      eventsForRecordReviewCommand(state, 'P3.01').map((event) => event.kind),
+    ).toEqual(['review_recorded']);
+    expect(
+      eventsForAdvanceCommand(state, {
+        ...state,
+        tickets: [
+          {
+            ...state.tickets[0]!,
+            status: 'done',
+          },
+          {
+            ...state.tickets[1]!,
+            status: 'in_progress',
+          },
+        ],
+      }).map((event) => event.kind),
+    ).toEqual(['ticket_completed', 'ticket_started']);
+  });
+
+  it('keeps notification failures best-effort', async () => {
+    const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+    const originalChatId = process.env.TELEGRAM_CHAT_ID;
+    const originalFetch = globalThis.fetch;
+
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    process.env.TELEGRAM_CHAT_ID = 'chat-id';
+    globalThis.fetch = (async () =>
+      new Response('nope', { status: 500 })) as unknown as typeof fetch;
+
+    const warning = await notifyBestEffort(
+      resolveNotifier(),
+      '/tmp/pirate_claw',
+      {
+        kind: 'ticket_started',
+        planKey: 'phase-03',
+        ticketId: 'P3.01',
+        ticketTitle: 'Persist Transmission Identity For Queued Torrents',
+        branch: 'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+      },
+    );
+
+    expect(warning).toContain('Notification warning:');
+    expect(warning).toContain('Telegram sendMessage failed with 500');
+
+    process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    process.env.TELEGRAM_CHAT_ID = originalChatId;
+    globalThis.fetch = originalFetch;
   });
 
   it('prefers an explicit review fetcher environment variable', () => {

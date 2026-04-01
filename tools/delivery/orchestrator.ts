@@ -66,14 +66,87 @@ type BranchMatch = {
   source: 'ticket-id' | 'derived';
 };
 
+export type DeliveryNotificationEvent =
+  | {
+      kind: 'ticket_started';
+      planKey: string;
+      ticketId: string;
+      ticketTitle: string;
+      branch: string;
+    }
+  | {
+      kind: 'pr_opened';
+      planKey: string;
+      ticketId: string;
+      ticketTitle: string;
+      branch: string;
+      prUrl: string;
+    }
+  | {
+      kind: 'review_window_ready';
+      planKey: string;
+      ticketId: string;
+      ticketTitle: string;
+      branch: string;
+      prUrl: string;
+      reviewWaitMinutes: number;
+      dueAt: string;
+    }
+  | {
+      kind: 'review_recorded';
+      planKey: string;
+      ticketId: string;
+      ticketTitle: string;
+      branch: string;
+      outcome: ReviewOutcome;
+      note?: string;
+      prUrl?: string;
+    }
+  | {
+      kind: 'ticket_completed';
+      planKey: string;
+      ticketId: string;
+      ticketTitle: string;
+      branch: string;
+      prUrl?: string;
+    }
+  | {
+      kind: 'run_blocked';
+      planKey?: string;
+      command?: string;
+      reason: string;
+    };
+
+type DeliveryNotifier =
+  | {
+      kind: 'noop';
+      enabled: false;
+    }
+  | {
+      kind: 'telegram';
+      enabled: true;
+      botToken: string;
+      chatId: string;
+    };
+
 const DEFAULT_REVIEW_WAIT_MINUTES = 5;
 
 export async function runDeliveryOrchestrator(
   argv: string[],
   cwd: string,
 ): Promise<number> {
+  const notifier = resolveNotifier();
+  let parsed:
+    | {
+        command: string;
+        positionals: string[];
+        flags: Set<string>;
+        options: OrchestratorOptions;
+      }
+    | undefined;
+
   try {
-    const parsed = parseCliArgs(argv);
+    parsed = parseCliArgs(argv);
     const state = await loadState(cwd, parsed.options);
 
     switch (parsed.command) {
@@ -90,6 +163,11 @@ export async function runDeliveryOrchestrator(
         const nextState = await startTicket(state, cwd, parsed.positionals[0]);
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
+        await emitNotificationWarnings(
+          notifier,
+          cwd,
+          eventsForStartCommand(nextState, parsed.positionals[0]),
+        );
         return 0;
       }
       case 'open-pr': {
@@ -106,6 +184,11 @@ export async function runDeliveryOrchestrator(
           ]
             .filter(Boolean)
             .join('\n\n'),
+        );
+        await emitNotificationWarnings(
+          notifier,
+          cwd,
+          eventsForOpenPrCommand(nextState, parsed.positionals[0]),
         );
         return 0;
       }
@@ -138,6 +221,11 @@ export async function runDeliveryOrchestrator(
         );
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
+        await emitNotificationWarnings(
+          notifier,
+          cwd,
+          eventsForRecordReviewCommand(nextState, ticketId),
+        );
         return 0;
       }
       case 'advance': {
@@ -145,6 +233,11 @@ export async function runDeliveryOrchestrator(
         const nextState = await advanceToNextTicket(state, cwd, startNext);
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
+        await emitNotificationWarnings(
+          notifier,
+          cwd,
+          eventsForAdvanceCommand(state, nextState),
+        );
         return 0;
       }
       default: {
@@ -153,6 +246,13 @@ export async function runDeliveryOrchestrator(
       }
     }
   } catch (error) {
+    await emitNotificationWarnings(notifier, cwd, [
+      buildRunBlockedEvent(
+        parsed?.options.planKey,
+        parsed?.command,
+        formatError(error),
+      ),
+    ]);
     console.error(formatError(error));
     return 1;
   }
@@ -357,6 +457,25 @@ export function resolveReviewFetcher(): string {
     codexHome,
     'skills/qodo-pr-review/scripts/fetch_qodo_pr_comments.sh',
   );
+}
+
+export function resolveNotifier(): DeliveryNotifier {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const chatId = process.env.TELEGRAM_CHAT_ID?.trim();
+
+  if (!botToken || !chatId) {
+    return {
+      kind: 'noop',
+      enabled: false,
+    };
+  }
+
+  return {
+    kind: 'telegram',
+    enabled: true,
+    botToken,
+    chatId,
+  };
 }
 
 export function createOptions(input: {
@@ -996,6 +1115,179 @@ export function buildPullRequestTitle(
   return `${baseSubject} [${ticket.id}]`;
 }
 
+function buildTicketStartedEvent(
+  state: DeliveryState,
+  ticket: Pick<TicketState, 'id' | 'title' | 'branch'>,
+): DeliveryNotificationEvent {
+  return {
+    kind: 'ticket_started',
+    planKey: state.planKey,
+    ticketId: ticket.id,
+    ticketTitle: ticket.title,
+    branch: ticket.branch,
+  };
+}
+
+function buildPrOpenedEvent(
+  state: DeliveryState,
+  ticket: Pick<TicketState, 'id' | 'title' | 'branch' | 'prUrl'>,
+): DeliveryNotificationEvent | undefined {
+  if (!ticket.prUrl) {
+    return undefined;
+  }
+
+  return {
+    kind: 'pr_opened',
+    planKey: state.planKey,
+    ticketId: ticket.id,
+    ticketTitle: ticket.title,
+    branch: ticket.branch,
+    prUrl: ticket.prUrl,
+  };
+}
+
+function buildReviewRecordedEvent(
+  state: DeliveryState,
+  ticket: Pick<
+    TicketState,
+    'id' | 'title' | 'branch' | 'reviewOutcome' | 'reviewNote' | 'prUrl'
+  >,
+): DeliveryNotificationEvent | undefined {
+  if (!ticket.reviewOutcome) {
+    return undefined;
+  }
+
+  return {
+    kind: 'review_recorded',
+    planKey: state.planKey,
+    ticketId: ticket.id,
+    ticketTitle: ticket.title,
+    branch: ticket.branch,
+    outcome: ticket.reviewOutcome,
+    note: ticket.reviewNote,
+    prUrl: ticket.prUrl,
+  };
+}
+
+function buildTicketCompletedEvent(
+  state: DeliveryState,
+  ticket: Pick<TicketState, 'id' | 'title' | 'branch' | 'prUrl'>,
+): DeliveryNotificationEvent {
+  return {
+    kind: 'ticket_completed',
+    planKey: state.planKey,
+    ticketId: ticket.id,
+    ticketTitle: ticket.title,
+    branch: ticket.branch,
+    prUrl: ticket.prUrl,
+  };
+}
+
+function buildReviewWindowReadyEvent(
+  state: DeliveryState,
+  ticket: Pick<TicketState, 'id' | 'title' | 'branch' | 'prUrl' | 'prOpenedAt'>,
+): DeliveryNotificationEvent | undefined {
+  if (!ticket.prUrl || !ticket.prOpenedAt) {
+    return undefined;
+  }
+
+  const openedAt = Date.parse(ticket.prOpenedAt);
+
+  if (Number.isNaN(openedAt)) {
+    return undefined;
+  }
+
+  return {
+    kind: 'review_window_ready',
+    planKey: state.planKey,
+    ticketId: ticket.id,
+    ticketTitle: ticket.title,
+    branch: ticket.branch,
+    prUrl: ticket.prUrl,
+    reviewWaitMinutes: state.reviewWaitMinutes,
+    dueAt: new Date(openedAt + state.reviewWaitMinutes * 60_000).toISOString(),
+  };
+}
+
+function buildRunBlockedEvent(
+  planKey: string | undefined,
+  command: string | undefined,
+  reason: string,
+): DeliveryNotificationEvent {
+  return {
+    kind: 'run_blocked',
+    planKey,
+    command,
+    reason,
+  };
+}
+
+export function eventsForStartCommand(
+  state: DeliveryState,
+  ticketId?: string,
+): DeliveryNotificationEvent[] {
+  const ticket = ticketId
+    ? state.tickets.find((candidate) => candidate.id === ticketId)
+    : state.tickets.find((candidate) => candidate.status === 'in_progress');
+
+  return ticket ? [buildTicketStartedEvent(state, ticket)] : [];
+}
+
+export function eventsForOpenPrCommand(
+  state: DeliveryState,
+  ticketId?: string,
+): DeliveryNotificationEvent[] {
+  const ticket = findTicketById(state, ticketId);
+
+  if (!ticket) {
+    return [];
+  }
+
+  return [
+    buildPrOpenedEvent(state, ticket),
+    buildReviewWindowReadyEvent(state, ticket),
+  ].filter((event): event is DeliveryNotificationEvent => event !== undefined);
+}
+
+export function eventsForRecordReviewCommand(
+  state: DeliveryState,
+  ticketId: string,
+): DeliveryNotificationEvent[] {
+  const ticket = state.tickets.find((candidate) => candidate.id === ticketId);
+
+  return ticket
+    ? [buildReviewRecordedEvent(state, ticket)].filter(
+        (event): event is DeliveryNotificationEvent => event !== undefined,
+      )
+    : [];
+}
+
+export function eventsForAdvanceCommand(
+  previousState: DeliveryState,
+  nextState: DeliveryState,
+): DeliveryNotificationEvent[] {
+  const events: DeliveryNotificationEvent[] = [];
+
+  for (const previousTicket of previousState.tickets) {
+    const nextTicket = nextState.tickets.find(
+      (candidate) => candidate.id === previousTicket.id,
+    );
+
+    if (previousTicket.status !== 'done' && nextTicket?.status === 'done') {
+      events.push(buildTicketCompletedEvent(nextState, nextTicket));
+    }
+
+    if (
+      previousTicket.status !== 'in_progress' &&
+      nextTicket?.status === 'in_progress'
+    ) {
+      events.push(buildTicketStartedEvent(nextState, nextTicket));
+    }
+  }
+
+  return events;
+}
+
 export function buildTicketHandoff(
   state: DeliveryState,
   ticket: Pick<
@@ -1188,6 +1480,68 @@ function ensureBranchPushed(cwd: string, branch: string): void {
   }
 }
 
+async function emitNotificationWarnings(
+  notifier: DeliveryNotifier,
+  cwd: string,
+  events: DeliveryNotificationEvent[],
+): Promise<void> {
+  for (const event of events) {
+    const warning = await notifyBestEffort(notifier, cwd, event);
+
+    if (warning) {
+      console.warn(warning);
+    }
+  }
+}
+
+export async function notifyBestEffort(
+  notifier: DeliveryNotifier,
+  cwd: string,
+  event: DeliveryNotificationEvent,
+): Promise<string | undefined> {
+  if (!notifier.enabled) {
+    return undefined;
+  }
+
+  try {
+    await sendTelegramMessage(
+      notifier.botToken,
+      notifier.chatId,
+      formatNotificationMessage(cwd, event),
+    );
+    return undefined;
+  } catch (error) {
+    return `Notification warning: ${formatError(error)}`;
+  }
+}
+
+async function sendTelegramMessage(
+  botToken: string,
+  chatId: string,
+  text: string,
+): Promise<void> {
+  const response = await fetch(
+    `https://api.telegram.org/bot${botToken}/sendMessage`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Telegram sendMessage failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+}
+
 function parsePullRequestNumber(prUrl: string): number {
   const match = prUrl.match(/\/pull\/(\d+)$/);
 
@@ -1331,6 +1685,81 @@ function formatStatus(state: DeliveryState): string {
         .join('\n'),
     ),
   ].join('\n');
+}
+
+function deriveRepoDisplayName(cwd: string): string {
+  return basename(resolve(cwd))
+    .replace(/_p\d+(_\d+)?$/, '')
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`)
+    .join(' ');
+}
+
+export function formatNotificationMessage(
+  cwd: string,
+  event: DeliveryNotificationEvent,
+): string {
+  const header = `${deriveRepoDisplayName(cwd)} Delivery`;
+
+  switch (event.kind) {
+    case 'ticket_started':
+      return [
+        header,
+        `Started ${event.planKey} ${event.ticketId}`,
+        event.ticketTitle,
+        `Branch: ${event.branch}`,
+      ].join('\n');
+    case 'pr_opened':
+      return [
+        header,
+        `PR opened for ${event.planKey} ${event.ticketId}`,
+        event.ticketTitle,
+        `Branch: ${event.branch}`,
+        `PR: ${event.prUrl}`,
+      ].join('\n');
+    case 'review_window_ready':
+      return [
+        header,
+        `Review window started for ${event.planKey} ${event.ticketId}`,
+        event.ticketTitle,
+        `Branch: ${event.branch}`,
+        `PR: ${event.prUrl}`,
+        `Wait: ${event.reviewWaitMinutes} minutes`,
+        `Due: ${event.dueAt}`,
+      ].join('\n');
+    case 'review_recorded':
+      return [
+        header,
+        `Review recorded for ${event.planKey} ${event.ticketId}`,
+        event.ticketTitle,
+        `Branch: ${event.branch}`,
+        `Outcome: ${event.outcome}`,
+        event.note ? `Note: ${event.note}` : undefined,
+        event.prUrl ? `PR: ${event.prUrl}` : undefined,
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join('\n');
+    case 'ticket_completed':
+      return [
+        header,
+        `Completed ${event.planKey} ${event.ticketId}`,
+        event.ticketTitle,
+        `Branch: ${event.branch}`,
+        event.prUrl ? `PR: ${event.prUrl}` : undefined,
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join('\n');
+    case 'run_blocked':
+      return [
+        header,
+        `Run blocked${event.planKey ? ` for ${event.planKey}` : ''}`,
+        event.command ? `Command: ${event.command}` : undefined,
+        `Reason: ${event.reason}`,
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join('\n');
+  }
 }
 
 export function formatReviewWindowMessage(
