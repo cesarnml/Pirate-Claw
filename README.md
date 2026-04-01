@@ -146,6 +146,7 @@ Useful local commands:
 - `bun run test:coverage`
 - `bun run verify`
 - `bun run ci`
+- `bun run deliver restack` to restack the current delivery ticket after its parent PR was squash-merged to `main`
 
 If you are working on the repo rather than just using the CLI, start with [`docs/00-overview/start-here.md`](./docs/00-overview/start-here.md).
 

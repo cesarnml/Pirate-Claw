@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -59,6 +59,11 @@ type PullRequestSummary = {
   number: number;
   url: string;
   state: string;
+};
+
+type PullRequestDetail = PullRequestSummary & {
+  baseRefName?: string;
+  mergedAt?: string | null;
 };
 
 type BranchMatch = {
@@ -141,13 +146,22 @@ export async function runDeliveryOrchestrator(
         command: string;
         positionals: string[];
         flags: Set<string>;
-        options: OrchestratorOptions;
+        planPath?: string;
       }
     | undefined;
 
   try {
     parsed = parseCliArgs(argv);
-    const state = await loadState(cwd, parsed.options);
+    const options = await resolveOptionsForCommand(
+      cwd,
+      parsed.command,
+      parsed.planPath,
+    );
+    parsed = {
+      ...parsed,
+      planPath: options.planPath,
+    };
+    const state = await loadState(cwd, options);
 
     switch (parsed.command) {
       case 'sync': {
@@ -240,6 +254,16 @@ export async function runDeliveryOrchestrator(
         );
         return 0;
       }
+      case 'restack': {
+        const nextState = await restackTicket(
+          state,
+          cwd,
+          parsed.positionals[0],
+        );
+        await saveState(cwd, nextState);
+        console.log(formatStatus(nextState));
+        return 0;
+      }
       default: {
         console.error(getUsage());
         return 1;
@@ -248,7 +272,7 @@ export async function runDeliveryOrchestrator(
   } catch (error) {
     await emitNotificationWarnings(notifier, cwd, [
       buildRunBlockedEvent(
-        parsed?.options.planKey,
+        parsed?.planPath ? derivePlanKey(parsed.planPath) : undefined,
         parsed?.command,
         formatError(error),
       ),
@@ -425,6 +449,13 @@ export function findNextPendingTicket(
   return state.tickets.find((ticket) => ticket.status === 'pending');
 }
 
+export function findTicketByBranch(
+  state: DeliveryState,
+  branch: string,
+): TicketState | undefined {
+  return state.tickets.find((ticket) => ticket.branch === branch);
+}
+
 export function canAdvanceTicket(ticket: TicketState): boolean {
   return (
     ticket.status === 'reviewed' &&
@@ -504,7 +535,7 @@ function parseCliArgs(argv: string[]): {
   command: string;
   positionals: string[];
   flags: Set<string>;
-  options: OrchestratorOptions;
+  planPath?: string;
 } {
   let planPath: string | undefined;
   const flags = new Set<string>();
@@ -543,8 +574,28 @@ function parseCliArgs(argv: string[]): {
     command,
     positionals: rest,
     flags,
-    options: createOptions({ planPath }),
+    planPath,
   };
+}
+
+async function resolveOptionsForCommand(
+  cwd: string,
+  command: string,
+  planPath?: string,
+): Promise<OrchestratorOptions> {
+  if (planPath) {
+    return createOptions({ planPath });
+  }
+
+  if (command !== 'restack') {
+    throw new Error(
+      'Pass --plan <plan-path>. Phase aliases are no longer supported.',
+    );
+  }
+
+  const branch = readCurrentBranch(cwd);
+  const inferredPlanPath = await inferPlanPathFromBranch(cwd, branch);
+  return createOptions({ planPath: inferredPlanPath });
 }
 
 function getUsage(): string {
@@ -559,6 +610,7 @@ function getUsage(): string {
     '  fetch-review [ticket-id]',
     '  record-review <ticket-id> <clean|needs_patch|patched> [note]',
     '  advance [--no-start-next]',
+    '  restack [ticket-id]',
   ].join('\n');
 }
 
@@ -595,6 +647,72 @@ async function loadState(
   ) as DeliveryState;
 
   return syncStateWithPlan(existing, ticketDefinitions, cwd, options, inferred);
+}
+
+export async function inferPlanPathFromBranch(
+  cwd: string,
+  branch: string,
+): Promise<string> {
+  const planPaths = await listImplementationPlans(cwd);
+  const planIndex: Array<{ planPath: string; tickets: TicketDefinition[] }> =
+    [];
+
+  for (const planPath of planPaths) {
+    const markdown = await readFile(resolve(cwd, planPath), 'utf8');
+    planIndex.push({
+      planPath,
+      tickets: parsePlan(markdown, planPath),
+    });
+  }
+
+  return resolvePlanPathForBranch(planIndex, branch);
+}
+
+export function resolvePlanPathForBranch(
+  planIndex: Array<{ planPath: string; tickets: TicketDefinition[] }>,
+  branch: string,
+): string {
+  const matches: string[] = [];
+
+  for (const plan of planIndex) {
+    if (
+      plan.tickets.some(
+        (ticket) => findExistingBranch([branch], ticket)?.branch === branch,
+      )
+    ) {
+      matches.push(plan.planPath);
+    }
+  }
+
+  if (matches.length === 1) {
+    return matches[0]!;
+  }
+
+  if (matches.length === 0) {
+    throw new Error(
+      `Could not infer a delivery plan for ${branch}. Pass --plan <plan-path>.`,
+    );
+  }
+
+  throw new Error(
+    `Multiple delivery plans match ${branch}: ${matches.join(', ')}. Pass --plan <plan-path>.`,
+  );
+}
+
+async function listImplementationPlans(cwd: string): Promise<string[]> {
+  const deliveryRoot = resolve(cwd, 'docs/02-delivery');
+  const entries = await readdir(deliveryRoot, { withFileTypes: true });
+
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) =>
+      relativeToRepo(
+        cwd,
+        resolve(deliveryRoot, entry.name, 'implementation-plan.md'),
+      ),
+    )
+    .filter((planPath) => existsSync(resolve(cwd, planPath)))
+    .sort();
 }
 
 async function saveState(cwd: string, state: DeliveryState): Promise<void> {
@@ -1040,6 +1158,103 @@ async function advanceToNextTicket(
   return nextState;
 }
 
+async function restackTicket(
+  state: DeliveryState,
+  cwd: string,
+  ticketId?: string,
+): Promise<DeliveryState> {
+  ensureCleanWorktree(cwd);
+  const currentBranch = readCurrentBranch(cwd);
+  const target =
+    (ticketId
+      ? state.tickets.find((ticket) => ticket.id === ticketId)
+      : findTicketByBranch(state, currentBranch)) ?? undefined;
+
+  if (!target) {
+    throw new Error(
+      ticketId
+        ? `Unknown ticket ${ticketId}.`
+        : `Current branch ${currentBranch} is not tracked by the delivery plan.`,
+    );
+  }
+
+  if (target.branch !== currentBranch) {
+    throw new Error(
+      `Restack must run from ${target.branch}. Current branch is ${currentBranch}.`,
+    );
+  }
+
+  runProcess(cwd, ['git', 'fetch', 'origin']);
+
+  const targetIndex = state.tickets.findIndex(
+    (ticket) => ticket.id === target.id,
+  );
+  const previous = targetIndex > 0 ? state.tickets[targetIndex - 1] : undefined;
+
+  let nextBaseBranch = 'main';
+  let rebaseTarget = 'origin/main';
+
+  if (previous) {
+    const oldBase = runProcess(cwd, [
+      'git',
+      'merge-base',
+      target.branch,
+      previous.branch,
+    ]).trim();
+
+    if (!oldBase) {
+      throw new Error(
+        `Could not determine the shared ancestor between ${target.branch} and ${previous.branch}.`,
+      );
+    }
+
+    if (!hasMergedPullRequestForBranch(cwd, previous.branch)) {
+      nextBaseBranch = previous.branch;
+      rebaseTarget = previous.branch;
+    }
+
+    runProcess(cwd, ['git', 'rebase', '--onto', rebaseTarget, oldBase]);
+  } else {
+    runProcess(cwd, ['git', 'rebase', 'origin/main']);
+  }
+
+  const nextState: DeliveryState = {
+    ...state,
+    tickets: state.tickets.map((ticket) =>
+      ticket.id === target.id
+        ? {
+            ...ticket,
+            baseBranch: nextBaseBranch,
+          }
+        : ticket,
+    ),
+  };
+  const updatedTarget = nextState.tickets.find(
+    (ticket) => ticket.id === target.id,
+  );
+
+  if (!updatedTarget) {
+    throw new Error(`Unknown ticket ${target.id}.`);
+  }
+
+  const pullRequest = findOpenPullRequest(cwd, target.branch);
+
+  if (pullRequest) {
+    runProcess(cwd, [
+      'gh',
+      'pr',
+      'edit',
+      String(pullRequest.number),
+      '--base',
+      nextBaseBranch,
+      '--body',
+      buildPullRequestBody(nextState, updatedTarget),
+    ]);
+  }
+
+  return nextState;
+}
+
 function runGitLines(cwd: string, cmd: string[]): string[] {
   return runProcess(cwd, cmd)
     .split('\n')
@@ -1425,8 +1640,53 @@ function findOpenPullRequest(
   return parsed[0];
 }
 
+function findMergedPullRequest(
+  cwd: string,
+  branch: string,
+): PullRequestDetail | undefined {
+  const stdout = runProcess(cwd, [
+    'gh',
+    'pr',
+    'list',
+    '--state',
+    'merged',
+    '--head',
+    branch,
+    '--limit',
+    '1',
+    '--json',
+    'number,url,state,baseRefName,mergedAt',
+  ]);
+  const parsed = JSON.parse(stdout) as Array<PullRequestDetail>;
+  return parsed[0];
+}
+
+function hasMergedPullRequestForBranch(cwd: string, branch: string): boolean {
+  return findMergedPullRequest(cwd, branch) !== undefined;
+}
+
 function readLatestCommitSubject(cwd: string): string {
   return runProcess(cwd, ['git', 'log', '-1', '--pretty=%s']).trim();
+}
+
+function readCurrentBranch(cwd: string): string {
+  const branch = runProcess(cwd, ['git', 'branch', '--show-current']).trim();
+
+  if (!branch) {
+    throw new Error('Restack requires an attached branch checkout.');
+  }
+
+  return branch;
+}
+
+function ensureCleanWorktree(cwd: string): void {
+  const status = runProcess(cwd, ['git', 'status', '--short']).trim();
+
+  if (status) {
+    throw new Error(
+      'Restack requires a clean worktree. Commit, stash, or discard local changes first.',
+    );
+  }
 }
 
 function ensureBranchPushed(cwd: string, branch: string): void {

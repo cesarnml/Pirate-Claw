@@ -111,6 +111,7 @@ Available commands:
 - `fetch-review [ticket-id]`
 - `record-review <ticket-id> <clean|needs_patch|patched> [note]`
 - `advance [--no-start-next]`
+- `restack [ticket-id]`
 
 ## Typical Flow
 
@@ -126,6 +127,14 @@ bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
 After `open-pr`, the orchestrator should surface the review wait window and the earliest meaningful review-fetch time. An immediate lack of AI comments is informational only; the decisive check happens after that window elapses.
+
+If a parent ticket was squash-merged onto `main`, run:
+
+```bash
+bun run deliver restack
+```
+
+from the current child ticket worktree before continuing review. `restack` infers the delivery plan and current ticket from the checked-out branch, fetches `origin`, rebases away the old parent ancestry, and updates the open PR base/body so GitHub review follows the new stack shape. If branch inference is ambiguous, pass `--plan` explicitly.
 
 ## Optional Telegram Notifications
 
