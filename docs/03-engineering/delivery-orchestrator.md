@@ -37,6 +37,7 @@ The orchestrator owns process mechanics:
 
 - reading ticket order from the plan
 - durable local state under `.codex/delivery/<plan-key>/`
+- per-ticket handoff artifacts under `.codex/delivery/<plan-key>/handoffs/`
 - deterministic branch and worktree naming
 - stacked PR base chaining
 - a 5-minute review wait before fetch
@@ -55,6 +56,26 @@ That boundary is intentional. The `qodo-code-review` skill already defines the r
 So the script fetches and stores review output, but humans or agents still use the skill to decide whether a comment matters.
 
 When ai-cr triage leads to prudent branch changes, the orchestrator updates the PR body as the final step of `advance`. That timing is intentional: the PR description should reflect the exact branch state that is being handed off before the next ticket starts.
+
+## Ticket Context Reset
+
+The orchestrator also owns the repo-side context reset contract for stacked ticket work.
+
+When a ticket starts, the orchestrator writes a handoff artifact under:
+
+- `.codex/delivery/<plan-key>/handoffs/`
+
+That handoff is the narrow context that the next ticket worker should begin from alongside the current repo state and required docs.
+
+The handoff includes:
+
+- the phase plan path
+- the current ticket id, title, branch, base branch, and worktree path
+- the required docs to re-read before implementation
+- prior ticket PR and review metadata when there is a previous ticket
+- explicit stop conditions for when the worker should pause instead of widening scope
+
+This does not automatically create a brand-new Codex thread, but it is the current repo mechanism for reducing reasoning carryover between tickets while preserving stacked branch continuity.
 
 ## Existing Phase 02 Work
 
@@ -110,11 +131,17 @@ bun run deliver --phase phase-02 record-review P2.02 patched "patched the two ac
 bun run deliver --phase phase-02 advance
 ```
 
+At each ticket boundary, read the generated handoff artifact before continuing implementation.
+
 ## Review Artifact Location
 
 Fetched review output is written under:
 
 - `.codex/delivery/<plan-key>/reviews/`
+
+Generated handoff artifacts are written under:
+
+- `.codex/delivery/<plan-key>/handoffs/`
 
 State is written under:
 

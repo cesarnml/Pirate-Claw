@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+  buildTicketHandoff,
   canAdvanceTicket,
   createOptions,
   deriveBranchName,
@@ -57,6 +58,7 @@ describe('delivery orchestrator', () => {
       planKey: 'phase-02',
       statePath: '.codex/delivery/phase-02/state.json',
       reviewsDirPath: '.codex/delivery/phase-02/reviews',
+      handoffsDirPath: '.codex/delivery/phase-02/handoffs',
       reviewWaitMinutes: 5,
     });
   });
@@ -68,6 +70,7 @@ describe('delivery orchestrator', () => {
       planPath: options.planPath,
       statePath: options.statePath,
       reviewsDirPath: options.reviewsDirPath,
+      handoffsDirPath: options.handoffsDirPath,
       reviewWaitMinutes: 5,
       tickets: [
         {
@@ -80,6 +83,8 @@ describe('delivery orchestrator', () => {
           branch: 'codex/p2-01-enclosure-first-feed-parsing',
           baseBranch: 'main',
           worktreePath: '/tmp/p2_01',
+          handoffPath: '.codex/delivery/phase-02/handoffs/p2-01-handoff.md',
+          handoffGeneratedAt: '2026-04-01T00:00:00.000Z',
           prNumber: 14,
           prUrl: 'https://example.test/pull/14',
         },
@@ -115,6 +120,67 @@ describe('delivery orchestrator', () => {
       branch: 'codex/p2-02-movie-matcher-allows-missing-codec',
       baseBranch: 'codex/p2-01-enclosure-first-feed-parsing',
     });
+  });
+
+  it('builds a handoff artifact that resets context and carries forward prior review state', () => {
+    const handoff = buildTicketHandoff(
+      {
+        planKey: 'phase-02',
+        planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
+        statePath: '.codex/delivery/phase-02/state.json',
+        reviewsDirPath: '.codex/delivery/phase-02/reviews',
+        handoffsDirPath: '.codex/delivery/phase-02/handoffs',
+        reviewWaitMinutes: 5,
+        tickets: [
+          {
+            id: 'P2.01',
+            title: 'Enclosure-First Feed Parsing',
+            slug: 'enclosure-first-feed-parsing',
+            ticketFile:
+              'docs/02-delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
+            status: 'done',
+            branch: 'codex/p2-01-enclosure-first-feed-parsing',
+            baseBranch: 'main',
+            worktreePath: '/tmp/p2_01',
+            prUrl: 'https://example.test/pull/14',
+            reviewArtifactPath:
+              '.codex/delivery/phase-02/reviews/P2.01-qodo.txt',
+            reviewOutcome: 'patched',
+            reviewNote: 'patched the two actionable correctness issues',
+          },
+          {
+            id: 'P2.02',
+            title: 'Movie Matcher Allows Missing Codec',
+            slug: 'movie-matcher-allows-missing-codec',
+            ticketFile:
+              'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+            status: 'pending',
+            branch: 'codex/p2-02-movie-matcher-allows-missing-codec',
+            baseBranch: 'codex/p2-01-enclosure-first-feed-parsing',
+            worktreePath: '/tmp/p2_02',
+          },
+        ],
+      },
+      {
+        id: 'P2.02',
+        title: 'Movie Matcher Allows Missing Codec',
+        ticketFile:
+          'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+        branch: 'codex/p2-02-movie-matcher-allows-missing-codec',
+        baseBranch: 'codex/p2-01-enclosure-first-feed-parsing',
+        worktreePath: '/tmp/p2_02',
+      },
+    );
+
+    expect(handoff).toContain('# Ticket Handoff');
+    expect(handoff).toContain('## Required Reads');
+    expect(handoff).toContain('docs/00-overview/start-here.md');
+    expect(handoff).toContain('Start from the current repository state');
+    expect(handoff).toContain('Previous PR: https://example.test/pull/14');
+    expect(handoff).toContain('Review outcome: `patched`');
+    expect(handoff).toContain(
+      'Review artifact: `.codex/delivery/phase-02/reviews/P2.01-qodo.txt`',
+    );
   });
 
   it('derives deterministic branch and worktree names', () => {

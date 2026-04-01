@@ -64,6 +64,7 @@ If you are doing workflow or delivery-tooling work:
 
 1. Read [`docs/02-delivery/phase-implementation-guidance.md`](../02-delivery/phase-implementation-guidance.md).
 2. Read [`docs/03-engineering/delivery-orchestrator.md`](../03-engineering/delivery-orchestrator.md) if the work touches stacked delivery flow.
+3. If continuing an orchestrated ticket, read the generated handoff artifact under `.codex/delivery/<plan-key>/handoffs/` before implementing.
 
 ## Planning Workflow
 
@@ -86,6 +87,7 @@ When implementing a ticket:
 - land one small real behavior at a time
 - keep the ticket end to end
 - test what the user can observe
+- for orchestrated stacked delivery, re-read the handoff artifact and required docs at each ticket boundary instead of relying on prior conversational context
 - avoid unrelated cleanup during the ticket unless required to land safely
 - update rationale and operator-facing docs when behavior changes
 - stop at the ticket boundary unless the user explicitly says to continue

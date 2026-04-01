@@ -25,6 +25,8 @@ export type TicketState = TicketDefinition & {
   branch: string;
   baseBranch: string;
   worktreePath: string;
+  handoffPath?: string;
+  handoffGeneratedAt?: string;
   prNumber?: number;
   prUrl?: string;
   prOpenedAt?: string;
@@ -39,6 +41,7 @@ export type DeliveryState = {
   planPath: string;
   statePath: string;
   reviewsDirPath: string;
+  handoffsDirPath: string;
   reviewWaitMinutes: number;
   tickets: TicketState[];
 };
@@ -48,6 +51,7 @@ export type OrchestratorOptions = {
   planKey: string;
   statePath: string;
   reviewsDirPath: string;
+  handoffsDirPath: string;
   reviewWaitMinutes: number;
 };
 
@@ -206,6 +210,7 @@ export function syncStateWithPlan(
     planPath: options.planPath,
     statePath: options.statePath,
     reviewsDirPath: options.reviewsDirPath,
+    handoffsDirPath: options.handoffsDirPath,
     reviewWaitMinutes: options.reviewWaitMinutes,
     tickets: ticketDefinitions.map((definition, index) => {
       const previous = existingById.get(definition.id);
@@ -244,6 +249,9 @@ export function syncStateWithPlan(
           previous?.worktreePath ??
           inferredTicket?.worktreePath ??
           deriveWorktreePath(cwd, definition.id),
+        handoffPath: previous?.handoffPath ?? inferredTicket?.handoffPath,
+        handoffGeneratedAt:
+          previous?.handoffGeneratedAt ?? inferredTicket?.handoffGeneratedAt,
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
@@ -357,6 +365,7 @@ export function createOptions(input: {
     planKey,
     statePath: `.codex/delivery/${planKey}/state.json`,
     reviewsDirPath: `.codex/delivery/${planKey}/reviews`,
+    handoffsDirPath: `.codex/delivery/${planKey}/handoffs`,
     reviewWaitMinutes: DEFAULT_REVIEW_WAIT_MINUTES,
   };
 }
@@ -535,6 +544,8 @@ function inferStateFromRepo(
       branch,
       baseBranch,
       worktreePath: deriveWorktreePath(cwd, definition.id),
+      handoffPath: undefined,
+      handoffGeneratedAt: undefined,
       prNumber: pr?.number,
       prUrl: pr?.url,
       prOpenedAt: undefined,
@@ -550,6 +561,7 @@ function inferStateFromRepo(
     planPath: options.planPath,
     statePath: options.statePath,
     reviewsDirPath: options.reviewsDirPath,
+    handoffsDirPath: options.handoffsDirPath,
     reviewWaitMinutes: options.reviewWaitMinutes,
     tickets,
   };
@@ -668,10 +680,19 @@ async function startTicket(
     ]);
   }
 
+  const handoff = await writeTicketHandoff(state, cwd, target.id);
+
   return {
     ...state,
     tickets: state.tickets.map((ticket) =>
-      ticket.id === target.id ? { ...ticket, status: 'in_progress' } : ticket,
+      ticket.id === target.id
+        ? {
+            ...ticket,
+            status: 'in_progress',
+            handoffPath: handoff.relativePath,
+            handoffGeneratedAt: handoff.generatedAt,
+          }
+        : ticket,
     ),
   };
 }
@@ -924,6 +945,106 @@ export function buildPullRequestBody(
   return lines.join('\n');
 }
 
+export function buildTicketHandoff(
+  state: DeliveryState,
+  ticket: Pick<
+    TicketState,
+    'id' | 'title' | 'ticketFile' | 'branch' | 'baseBranch' | 'worktreePath'
+  >,
+): string {
+  const ticketIndex = state.tickets.findIndex(
+    (candidate) => candidate.id === ticket.id,
+  );
+  const previous = ticketIndex > 0 ? state.tickets[ticketIndex - 1] : undefined;
+  const requiredReads = [
+    'docs/00-overview/start-here.md',
+    state.planPath,
+    ticket.ticketFile,
+    'docs/03-engineering/delivery-orchestrator.md',
+  ];
+  const lines = [
+    '# Ticket Handoff',
+    '',
+    `Phase plan: ${state.planPath}`,
+    `Ticket: ${ticket.id} ${ticket.title}`,
+    `Branch: ${ticket.branch}`,
+    `Base branch: ${ticket.baseBranch}`,
+    `Worktree: ${ticket.worktreePath}`,
+    '',
+    '## Required Reads',
+    '',
+    ...requiredReads.map((path) => `- \`${path}\``),
+    '',
+    '## Context Reset Contract',
+    '',
+    '- Re-read the required docs before implementing.',
+    '- Start from the current repository state and this handoff artifact, not from prior chat assumptions.',
+    '- Carry forward only explicit review notes, review artifacts, and committed branch state.',
+  ];
+
+  if (previous) {
+    lines.push('', '## Carry Forward From Previous Ticket', '');
+    lines.push(`- Previous ticket: \`${previous.id} ${previous.title}\``);
+    lines.push(`- Previous branch: \`${previous.branch}\``);
+
+    if (previous.prUrl) {
+      lines.push(`- Previous PR: ${previous.prUrl}`);
+    }
+
+    if (previous.reviewOutcome) {
+      lines.push(`- Review outcome: \`${previous.reviewOutcome}\``);
+    }
+
+    if (previous.reviewNote) {
+      lines.push(`- Review note: ${previous.reviewNote}`);
+    }
+
+    if (previous.reviewArtifactPath) {
+      lines.push(`- Review artifact: \`${previous.reviewArtifactPath}\``);
+    }
+  }
+
+  lines.push('', '## Stop Conditions', '');
+  lines.push(
+    '- Stop if the current ticket cannot be completed safely or prerequisite state is missing.',
+  );
+  lines.push(
+    '- Stop if review triage is ambiguous enough to require user input.',
+  );
+  lines.push(
+    '- Stop if the work requires a broader redesign beyond the ticket scope.',
+  );
+
+  return lines.join('\n') + '\n';
+}
+
+async function writeTicketHandoff(
+  state: DeliveryState,
+  cwd: string,
+  ticketId: string,
+): Promise<{ relativePath: string; generatedAt: string }> {
+  const ticket = state.tickets.find((candidate) => candidate.id === ticketId);
+
+  if (!ticket) {
+    throw new Error(`Unknown ticket ${ticketId}.`);
+  }
+
+  const absolutePath = resolve(
+    cwd,
+    state.handoffsDirPath,
+    `${ticket.id.toLowerCase().replace('.', '-')}-handoff.md`,
+  );
+  const generatedAt = new Date().toISOString();
+
+  await mkdir(dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, buildTicketHandoff(state, ticket), 'utf8');
+
+  return {
+    relativePath: relativeToRepo(cwd, absolutePath),
+    generatedAt,
+  };
+}
+
 function updatePullRequestBody(
   state: DeliveryState,
   ticket: TicketState,
@@ -1009,6 +1130,7 @@ function formatStatus(state: DeliveryState): string {
     `plan_key=${state.planKey}`,
     `plan=${state.planPath}`,
     `state=${state.statePath}`,
+    `handoffs=${state.handoffsDirPath}`,
     `review_wait_minutes=${state.reviewWaitMinutes}`,
     '',
     ...state.tickets.map((ticket) =>
@@ -1016,6 +1138,7 @@ function formatStatus(state: DeliveryState): string {
         `${ticket.id} | status=${ticket.status} | branch=${ticket.branch} | base=${ticket.baseBranch}`,
         `title=${ticket.title}`,
         `worktree=${ticket.worktreePath}`,
+        ticket.handoffPath ? `handoff=${ticket.handoffPath}` : undefined,
         ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
         ticket.reviewArtifactPath
           ? `review_artifact=${ticket.reviewArtifactPath}`
