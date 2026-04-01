@@ -151,6 +151,7 @@ Important nuance:
 - `queued_at` is preserved once set, even if later upserts touch the same identity
 - queued Transmission identity fields are sticky once present, so later duplicate or failure updates do not lose the original downloader pointer
 - `lifecycle_status` and `reconciled_at` reflect the latest successful reconciliation snapshot, separate from the queue-submission `status`
+- `completed` is sticky once observed from Transmission, while torrents that disappear before any completed observation become `missing_from_transmission`
 
 ## Current Invariants
 

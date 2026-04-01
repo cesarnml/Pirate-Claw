@@ -38,6 +38,7 @@ Inspect the current state with:
 ```
 
 When a torrent has been reconciled from Transmission, `status` shows the latest known lifecycle and brief downloader detail alongside the stored candidate state.
+If a tracked torrent later disappears from Transmission before completion, `status` surfaces it as `missing_from_transmission`; once a torrent has been observed completed, that completed state stays sticky locally.
 
 Retry failed submissions with:
 

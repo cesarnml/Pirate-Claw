@@ -5,7 +5,11 @@ import type { NormalizedFeedItem } from './normalize';
 
 export type CandidateStatus = 'queued' | 'failed' | 'skipped_duplicate';
 export type RunStatus = 'running' | 'completed' | 'failed';
-export type CandidateLifecycleStatus = 'queued' | 'downloading' | 'completed';
+export type CandidateLifecycleStatus =
+  | 'queued'
+  | 'downloading'
+  | 'completed'
+  | 'missing_from_transmission';
 
 export type FeedItemOutcomeStatus =
   | 'queued'

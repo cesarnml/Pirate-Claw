@@ -25,7 +25,6 @@ export type FetchFeedFn = (feed: FeedConfig) => Promise<RawFeedItem[]>;
 export type ReconcileCandidatesResult = {
   trackedCount: number;
   reconciledCount: number;
-  notFoundCount: number;
   counts: Record<CandidateLifecycleStatus, number>;
 };
 
@@ -106,7 +105,6 @@ export async function reconcileCandidates(input: {
     return {
       trackedCount: 0,
       reconciledCount: 0,
-      notFoundCount: 0,
       counts: createEmptyReconcileCounts(),
     };
   }
@@ -136,27 +134,27 @@ export async function reconcileCandidates(input: {
   );
   const counts = createEmptyReconcileCounts();
   let reconciledCount = 0;
-  let notFoundCount = 0;
 
   for (const candidate of candidates) {
     const torrent = matchTorrent(candidate, torrentsById, torrentsByHash);
+    const lifecycleStatus = deriveLifecycleStatus(candidate, torrent);
 
-    if (!torrent) {
-      notFoundCount += 1;
-      continue;
-    }
-
-    const lifecycleStatus = deriveLifecycleStatus(torrent);
-
-    input.repository.recordCandidateReconciliation({
-      identityKey: candidate.identityKey,
-      lifecycleStatus,
-      transmissionTorrentName: torrent.torrentName,
-      transmissionStatusCode: torrent.statusCode,
-      transmissionPercentDone: torrent.percentDone,
-      transmissionDoneDate: torrent.doneDate,
-      transmissionDownloadDir: torrent.downloadDir,
-    });
+    input.repository.recordCandidateReconciliation(
+      torrent
+        ? {
+            identityKey: candidate.identityKey,
+            lifecycleStatus,
+            transmissionTorrentName: torrent.torrentName,
+            transmissionStatusCode: torrent.statusCode,
+            transmissionPercentDone: torrent.percentDone,
+            transmissionDoneDate: torrent.doneDate,
+            transmissionDownloadDir: torrent.downloadDir,
+          }
+        : {
+            identityKey: candidate.identityKey,
+            lifecycleStatus,
+          },
+    );
 
     counts[lifecycleStatus] += 1;
     reconciledCount += 1;
@@ -165,7 +163,6 @@ export async function reconcileCandidates(input: {
   return {
     trackedCount: candidates.length,
     reconciledCount,
-    notFoundCount,
     counts,
   };
 }
@@ -195,6 +192,7 @@ function createEmptyReconcileCounts(): Record<
     queued: 0,
     downloading: 0,
     completed: 0,
+    missing_from_transmission: 0,
   };
 }
 
@@ -219,8 +217,15 @@ function matchTorrent(
 }
 
 function deriveLifecycleStatus(
-  torrent: Pick<TorrentSnapshot, 'percentDone' | 'statusCode'>,
+  candidate: Pick<CandidateStateRecord, 'lifecycleStatus'>,
+  torrent?: Pick<TorrentSnapshot, 'percentDone' | 'statusCode'>,
 ): CandidateLifecycleStatus {
+  if (!torrent) {
+    return candidate.lifecycleStatus === 'completed'
+      ? 'completed'
+      : 'missing_from_transmission';
+  }
+
   if (torrent.percentDone !== undefined && torrent.percentDone >= 1) {
     return 'completed';
   }

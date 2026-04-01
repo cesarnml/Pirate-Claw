@@ -120,16 +120,15 @@ export async function runCli(argv: string[]): Promise<number> {
 function formatReconcileSummary(result: {
   trackedCount: number;
   reconciledCount: number;
-  notFoundCount: number;
   counts: Record<CandidateLifecycleStatus, number>;
 }): string {
   return [
     `Tracked torrents: ${result.trackedCount}`,
     `reconciled: ${result.reconciledCount}`,
-    `not_found: ${result.notFoundCount}`,
     `queued: ${result.counts.queued}`,
     `downloading: ${result.counts.downloading}`,
     `completed: ${result.counts.completed}`,
+    `missing_from_transmission: ${result.counts.missing_from_transmission}`,
   ].join('\n');
 }
 

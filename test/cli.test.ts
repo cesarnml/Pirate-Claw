@@ -712,8 +712,8 @@ describe('pirate-claw reconcile', () => {
     expect(reconcile.stderr).toBe('');
     expect(reconcile.stdout).toContain('Tracked torrents: 1');
     expect(reconcile.stdout).toContain('reconciled: 1');
-    expect(reconcile.stdout).toContain('not_found: 0');
     expect(reconcile.stdout).toContain('downloading: 1');
+    expect(reconcile.stdout).toContain('missing_from_transmission: 0');
 
     expect(
       repository.getCandidateState('movie:example movie|2024'),
@@ -724,6 +724,90 @@ describe('pirate-claw reconcile', () => {
       transmissionPercentDone: 0.5,
       transmissionDownloadDir: '/downloads/movies',
     });
+  });
+
+  it('marks missing torrents explicitly unless completion was already observed', async () => {
+    const directory = await mkdtemp();
+    const transmissionServer = startMissingTransmissionLifecycleServer();
+    const configPath = join(directory, 'pirate-claw.config.json');
+    const repository = createTestRepository(join(directory, 'pirate-claw.db'));
+
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        feeds: [],
+        tv: [],
+        movies: {
+          years: [2024],
+          resolutions: ['2160p', '1080p'],
+          codecs: ['x265'],
+        },
+        transmission: {
+          url: `${transmissionServer.url}/transmission/rpc`,
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+    );
+
+    seedQueuedMovieCandidate(repository, {
+      runId: repository.startRun('2026-03-30T00:00:00.000Z').id,
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x265-GROUP',
+      guidOrLink: 'https://example.test/releases/example-movie-web',
+      downloadUrl: 'https://example.test/downloads/example-movie-web.torrent',
+      updatedAt: '2026-03-30T00:10:00.000Z',
+      status: 'queued',
+      transmissionTorrentId: 42,
+      transmissionTorrentHash: 'hash-42',
+      transmissionTorrentName: 'Queued Torrent',
+    });
+    repository.recordCandidateReconciliation({
+      identityKey: 'movie:example movie|2024',
+      lifecycleStatus: 'completed',
+      reconciledAt: '2026-03-30T01:00:00.000Z',
+    });
+
+    seedQueuedMovieCandidate(repository, {
+      runId: repository.startRun('2026-03-30T00:30:00.000Z').id,
+      rawTitle: 'Retry.Me.2024.1080p.WEB.x265-GROUP',
+      guidOrLink: 'https://example.test/releases/retry-me-web',
+      downloadUrl: 'https://example.test/downloads/retry-me-web.torrent',
+      updatedAt: '2026-03-30T00:40:00.000Z',
+      status: 'queued',
+      transmissionTorrentId: 52,
+      transmissionTorrentHash: 'hash-52',
+      transmissionTorrentName: 'Retry Me',
+    });
+
+    const reconcile = await runSimpleCommand(
+      directory,
+      'reconcile',
+      '--config',
+      './pirate-claw.config.json',
+    );
+
+    expect(reconcile.exitCode).toBe(0);
+    expect(reconcile.stdout).toContain('completed: 1');
+    expect(reconcile.stdout).toContain('missing_from_transmission: 1');
+
+    expect(
+      repository.getCandidateState('movie:example movie|2024'),
+    ).toMatchObject({
+      lifecycleStatus: 'completed',
+    });
+    expect(repository.getCandidateState('movie:retry me|2024')).toMatchObject({
+      lifecycleStatus: 'missing_from_transmission',
+    });
+
+    const status = await runSimpleCommand(directory, 'status');
+
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout).toContain(
+      'movie:retry me|2024 | status=missing_from_transmission | rule=movie-policy | title=retry me',
+    );
+    expect(status.stdout).toContain(
+      'movie:example movie|2024 | status=completed | rule=movie-policy | title=example movie',
+    );
   });
 });
 
@@ -1009,6 +1093,37 @@ function startTransmissionLifecycleServer(): { url: string } {
               hashString: 'hash-42',
               name: 'Queued Torrent',
             },
+          },
+        });
+      },
+    },
+  });
+
+  servers.push(server);
+  return { url: server.url.origin };
+}
+
+function startMissingTransmissionLifecycleServer(): { url: string } {
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    routes: {
+      '/transmission/rpc': async (request: Request) => {
+        const sessionId = request.headers.get('x-transmission-session-id');
+
+        if (!sessionId) {
+          return new Response(null, {
+            status: 409,
+            headers: {
+              'x-transmission-session-id': 'session-123',
+            },
+          });
+        }
+
+        return Response.json({
+          result: 'success',
+          arguments: {
+            torrents: [],
           },
         });
       },
