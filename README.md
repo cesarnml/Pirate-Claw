@@ -37,6 +37,8 @@ Inspect the current state with:
 ./bin/pirate-claw status
 ```
 
+When a torrent has been reconciled from Transmission, `status` shows the latest known lifecycle and brief downloader detail alongside the stored candidate state.
+
 Retry failed submissions with:
 
 ```bash

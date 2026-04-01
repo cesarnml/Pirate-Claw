@@ -210,11 +210,11 @@ function formatCandidateStates(candidates: CandidateStateRecord[]): string[] {
     return ['No candidate states recorded.'];
   }
 
-  return candidates.map((candidate) =>
+  return sortCandidatesForStatus(candidates).map((candidate) =>
     [
-      `${candidate.identityKey} | status=${candidate.status} | rule=${candidate.ruleName} | title=${candidate.normalizedTitle}`,
+      `${candidate.identityKey} | status=${candidate.lifecycleStatus ?? candidate.status} | rule=${candidate.ruleName} | title=${candidate.normalizedTitle}`,
       formatCandidateMetadata(candidate),
-      `updated=${candidate.updatedAt} | queued=${candidate.queuedAt ?? '-'}`,
+      `updated=${candidate.updatedAt} | queued=${candidate.queuedAt ?? '-'} | reconciled=${candidate.reconciledAt ?? '-'}`,
     ].join('\n'),
   );
 }
@@ -229,10 +229,31 @@ function formatCandidateMetadata(candidate: CandidateStateRecord): string {
     candidate.year !== undefined ? `year=${candidate.year}` : undefined,
     candidate.resolution ? `resolution=${candidate.resolution}` : undefined,
     candidate.codec ? `codec=${candidate.codec}` : undefined,
+    candidate.transmissionPercentDone !== undefined
+      ? `progress=${Math.round(candidate.transmissionPercentDone * 100)}%`
+      : undefined,
+    candidate.transmissionTorrentName
+      ? `torrent=${candidate.transmissionTorrentName}`
+      : undefined,
     `feed=${candidate.feedName}`,
   ].filter((value): value is string => value !== undefined);
 
   return details.join(' | ');
+}
+
+function sortCandidatesForStatus(
+  candidates: CandidateStateRecord[],
+): CandidateStateRecord[] {
+  return [...candidates].sort((left, right) => {
+    const leftTime = Date.parse(left.reconciledAt ?? left.updatedAt);
+    const rightTime = Date.parse(right.reconciledAt ?? right.updatedAt);
+
+    if (leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+
+    return left.identityKey.localeCompare(right.identityKey);
+  });
 }
 
 function formatUnexpectedError(error: unknown): string {

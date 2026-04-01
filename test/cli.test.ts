@@ -344,6 +344,13 @@ describe('pirate-claw status', () => {
       status: 'queued',
       updatedAt: '2026-03-30T00:10:00.000Z',
     });
+    repository.recordCandidateReconciliation({
+      identityKey: 'movie:example movie|2024',
+      lifecycleStatus: 'downloading',
+      transmissionTorrentName: 'Queued Torrent',
+      transmissionPercentDone: 0.5,
+      reconciledAt: '2026-03-30T02:10:00.000Z',
+    });
 
     const failedFeedItem = repository.recordFeedItem(secondRun.id, {
       feedName: 'Movie Feed',
@@ -373,6 +380,13 @@ describe('pirate-claw status', () => {
       status: 'failed',
       updatedAt: '2026-03-30T01:10:00.000Z',
     });
+    repository.recordCandidateReconciliation({
+      identityKey: 'movie:retry me|2024',
+      lifecycleStatus: 'queued',
+      transmissionTorrentName: 'Retry Me',
+      transmissionPercentDone: 0,
+      reconciledAt: '2026-03-30T01:20:00.000Z',
+    });
 
     const runsBefore = repository.listRecentRunSummaries();
     const candidatesBefore = repository.listCandidateStates();
@@ -390,10 +404,22 @@ describe('pirate-claw status', () => {
     );
     expect(status.stdout).toContain('Candidate states');
     expect(status.stdout).toContain(
-      'movie:retry me|2024 | status=failed | rule=movie-policy | title=retry me',
+      'movie:example movie|2024 | status=downloading | rule=movie-policy | title=example movie',
     );
     expect(status.stdout).toContain(
-      'movie:example movie|2024 | status=queued | rule=movie-policy | title=example movie',
+      'progress=50% | torrent=Queued Torrent | feed=Movie Feed',
+    );
+    expect(status.stdout).toContain(
+      'updated=2026-03-30T00:10:00.000Z | queued=2026-03-30T00:10:00.000Z | reconciled=2026-03-30T02:10:00.000Z',
+    );
+    expect(status.stdout).toContain(
+      'movie:retry me|2024 | status=queued | rule=movie-policy | title=retry me',
+    );
+
+    expect(
+      status.stdout.indexOf('movie:example movie|2024 | status=downloading'),
+    ).toBeLessThan(
+      status.stdout.indexOf('movie:retry me|2024 | status=queued'),
     );
 
     expect(repository.listRecentRunSummaries()).toEqual(runsBefore);
