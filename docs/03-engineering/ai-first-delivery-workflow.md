@@ -30,6 +30,8 @@ The repo-local `ai-code-review` skill owns the judgment:
 
 The boundary is implemented as repo-local hooks under `.agents/skills/ai-code-review/`: a fetcher that normalizes multi-vendor AI review into structured data, and a triager hook that turns that data into a final outcome plus concise rationale.
 
+The normalized artifact now carries reviewed-commit provenance and native GitHub inline-thread identity when available. That lets the PR body distinguish current-head review from stale-history review, and it lets patched inline findings be resolved in the GitHub PR UI without vendor-specific logic.
+
 That boundary matters. AI is used aggressively, but not blindly.
 
 There is also a Telegram notifier for long-running flow milestones. It can send concise updates when a PR opens, when AI review starts, and when review is recorded.

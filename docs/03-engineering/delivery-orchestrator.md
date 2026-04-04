@@ -47,6 +47,7 @@ The orchestrator owns process mechanics:
 - optional Telegram milestone notifications for long-running delivery runs
 - blocking advancement until review has been explicitly recorded or auto-recorded as `clean` after the final polling check
 - refreshing the current PR body from recorded ai-cr follow-up notes immediately before advancing to the next ticket
+- resolving native GitHub inline review threads for patched AI-review findings when the saved review artifact exposes a resolvable thread identity
 
 It does **not** own AI-review detection heuristics or triage judgment.
 
@@ -61,7 +62,7 @@ So the orchestrator only consumes the skill hook contracts:
 - fetcher:
   - `detected=false`: keep polling, or auto-record `clean` on the final check
   - `detected=true`: save structured and rendered artifacts, then call the triager hook
-  - preserves vendor identity and inline-comment resolution/outdated metadata in the saved `json` artifact
+  - preserves vendor identity, reviewed head SHA, native thread identity when available, and inline-comment resolution/outdated metadata in the saved `json` artifact
 - triager:
   - returns `clean`, `needs_patch`, or `patched`
   - returns the final note plus concise action and non-action summaries
@@ -205,7 +206,9 @@ PR descriptions are maintained as delivery metadata, not one-shot text.
 - `open-pr` uses a human-readable Conventional-Commit-style title plus the delivery ticket suffix, for example `feat: add torrent lifecycle reconciliation [P3.02]`
 - rerunning `open-pr` refreshes the existing PR title/body instead of failing on an already-open branch
 - `record-review` stores the triage result and optional note
+- `record-review ... patched` also makes a best-effort attempt to resolve mapped native GitHub inline review threads for patched findings
 - `poll-review` auto-records `clean` when no `ai-code-review` feedback is detected by the final check and refreshes the PR body immediately
+- PR-body AI-review notes now distinguish current-head review from stale-history review when the reviewed SHA no longer matches the branch head
 - `advance` refreshes the PR body from that recorded review state, then marks the ticket done and optionally starts the next one
 
 This matters because the repo squash-merges PRs onto `main`, so the PR body needs to mention prudent ai-cr follow-up work before the stack moves on.

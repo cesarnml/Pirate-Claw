@@ -41,10 +41,13 @@ export type TicketState = TicketDefinition & {
   reviewArtifactJsonPath?: string;
   reviewActionSummary?: string;
   reviewFetchedAt?: string;
+  reviewHeadSha?: string;
   reviewNonActionSummary?: string;
+  reviewComments?: AiReviewComment[];
   reviewOutcome?: ReviewOutcome;
   reviewNote?: string;
   reviewIncompleteAgents?: string[];
+  reviewThreadResolutions?: AiReviewThreadResolution[];
   reviewVendors?: string[];
 };
 
@@ -217,7 +220,23 @@ type AiReviewComment = {
   kind: AiReviewCommentKind;
   line?: number;
   path?: string;
+  threadId?: string;
+  threadViewerCanResolve?: boolean;
   updatedAt?: string;
+  url?: string;
+  vendor: string;
+};
+
+type AiReviewThreadResolutionStatus =
+  | 'resolved'
+  | 'already_resolved'
+  | 'failed'
+  | 'unresolvable';
+
+type AiReviewThreadResolution = {
+  message?: string;
+  status: AiReviewThreadResolutionStatus;
+  threadId: string;
   url?: string;
   vendor: string;
 };
@@ -227,6 +246,7 @@ type AiReviewFetcherResult = {
   artifactText: string;
   comments: AiReviewComment[];
   detected: boolean;
+  reviewedHeadSha?: string;
   vendors: string[];
 };
 
@@ -241,6 +261,10 @@ type AiReviewTriagerResult = {
 type PollReviewDependencies = {
   fetcher?: (worktreePath: string, prNumber: number) => AiReviewFetcherResult;
   now?: () => number;
+  resolveThreads?: (
+    worktreePath: string,
+    comments: AiReviewComment[],
+  ) => AiReviewThreadResolution[];
   sleep?: (milliseconds: number) => Promise<void>;
   triager?: (
     worktreePath: string,
@@ -257,11 +281,14 @@ type StandaloneAiReviewResult = {
   artifactJsonPath?: string;
   artifactTextPath?: string;
   incompleteAgents?: string[];
+  comments?: AiReviewComment[];
   note: string;
   nonActionSummary?: string;
   outcome: ReviewResult;
   prNumber: number;
   prUrl: string;
+  reviewedHeadSha?: string;
+  threadResolutions?: AiReviewThreadResolution[];
   vendors: string[];
 };
 
@@ -269,6 +296,7 @@ type StandalonePullRequest = {
   body: string;
   createdAt: string;
   headRefName: string;
+  headRefOid: string;
   number: number;
   title: string;
   url: string;
@@ -703,14 +731,20 @@ export function syncStateWithPlan(
           previous?.reviewActionSummary ?? inferredTicket?.reviewActionSummary,
         reviewFetchedAt:
           previous?.reviewFetchedAt ?? inferredTicket?.reviewFetchedAt,
+        reviewHeadSha: previous?.reviewHeadSha ?? inferredTicket?.reviewHeadSha,
         reviewNonActionSummary:
           previous?.reviewNonActionSummary ??
           inferredTicket?.reviewNonActionSummary,
         reviewIncompleteAgents:
           previous?.reviewIncompleteAgents ??
           inferredTicket?.reviewIncompleteAgents,
+        reviewComments:
+          previous?.reviewComments ?? inferredTicket?.reviewComments,
         reviewOutcome: previous?.reviewOutcome ?? inferredTicket?.reviewOutcome,
         reviewNote: previous?.reviewNote ?? inferredTicket?.reviewNote,
+        reviewThreadResolutions:
+          previous?.reviewThreadResolutions ??
+          inferredTicket?.reviewThreadResolutions,
         reviewVendors: previous?.reviewVendors ?? inferredTicket?.reviewVendors,
       };
     }),
@@ -1211,9 +1245,12 @@ function inferStateFromRepo(
       reviewArtifactJsonPath: undefined,
       reviewActionSummary: undefined,
       reviewFetchedAt: undefined,
+      reviewHeadSha: undefined,
       reviewNonActionSummary: undefined,
+      reviewComments: undefined,
       reviewOutcome: undefined,
       reviewNote: undefined,
+      reviewThreadResolutions: undefined,
       reviewVendors: undefined,
     };
   });
@@ -1374,12 +1411,13 @@ function resolveStandalonePullRequest(
     'view',
     ...(target ? [target] : []),
     '--json',
-    'number,url,title,body,headRefName,createdAt',
+    'number,url,title,body,headRefName,headRefOid,createdAt',
   ]);
   const parsed = JSON.parse(stdout) as {
     body: string;
     createdAt: string;
     headRefName: string;
+    headRefOid: string;
     number: number;
     title: string;
     url: string;
@@ -1572,7 +1610,9 @@ export async function openPullRequest(
     target,
     readLatestCommitSubject(target.worktreePath),
   );
-  const body = buildPullRequestBody(state, target);
+  const body = buildPullRequestBody(state, target, {
+    currentHeadSha: readHeadSha(target.worktreePath),
+  });
   const existingPullRequest = findOpenPullRequest(
     target.worktreePath,
     target.branch,
@@ -1779,6 +1819,10 @@ export function parseAiReviewFetcherOutput(
       kind: entry.kind,
       line: parseOptionalNumber(entry.line),
       path: parseOptionalString(entry.path),
+      threadId: parseOptionalString(entry.thread_id),
+      threadViewerCanResolve: parseOptionalBoolean(
+        entry.thread_viewer_can_resolve,
+      ),
       updatedAt: parseOptionalString(entry.updated_at),
       url: parseOptionalString(entry.url),
       vendor: entry.vendor,
@@ -1795,6 +1839,7 @@ export function parseAiReviewFetcherOutput(
     artifactText: parsed.artifact_text,
     comments,
     detected: parsed.detected,
+    reviewedHeadSha: parseOptionalString(parsed.reviewed_head_sha),
     vendors: parsed.vendors,
   };
 }
@@ -1933,6 +1978,143 @@ type PollForAiReviewResult =
       effectiveMaxWaitMinutes: number;
     };
 
+function summarizeReviewMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  return normalized.length > 180
+    ? `${normalized.slice(0, 177).trimEnd()}...`
+    : normalized;
+}
+
+export function parseResolveReviewThreadOutput(output: string): {
+  message?: string;
+  resolved: boolean;
+} {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(output);
+  } catch (error) {
+    throw new Error(
+      `GitHub review-thread resolution must emit JSON. ${formatError(error)}`.trim(),
+      {
+        cause: error,
+      },
+    );
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error(
+      'GitHub review-thread resolution output must be a JSON object.',
+    );
+  }
+
+  if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+    const firstError = parsed.errors.find(isRecord);
+    return {
+      resolved: false,
+      message: summarizeReviewMessage(
+        typeof firstError?.message === 'string'
+          ? firstError.message
+          : 'GitHub reported a review-thread resolution error.',
+      ),
+    };
+  }
+
+  const thread =
+    isRecord(parsed.data) &&
+    isRecord(parsed.data.resolveReviewThread) &&
+    isRecord(parsed.data.resolveReviewThread.thread)
+      ? parsed.data.resolveReviewThread.thread
+      : undefined;
+
+  if (thread?.isResolved === true) {
+    return { resolved: true };
+  }
+
+  return {
+    resolved: false,
+    message: 'GitHub did not confirm that the review thread was resolved.',
+  };
+}
+
+function resolveNativeReviewThreads(
+  worktreePath: string,
+  comments: AiReviewComment[],
+): AiReviewThreadResolution[] {
+  const resolutions: AiReviewThreadResolution[] = [];
+  const seen = new Set<string>();
+
+  for (const comment of comments) {
+    if (
+      comment.channel !== 'inline_review' ||
+      comment.kind !== 'finding' ||
+      comment.isOutdated === true ||
+      comment.isResolved === true ||
+      !comment.threadId ||
+      seen.has(comment.threadId)
+    ) {
+      continue;
+    }
+
+    seen.add(comment.threadId);
+
+    if (comment.threadViewerCanResolve === false) {
+      resolutions.push({
+        status: 'unresolvable',
+        threadId: comment.threadId,
+        url: comment.url,
+        vendor: comment.vendor,
+        message: 'GitHub did not expose this review thread as resolvable.',
+      });
+      continue;
+    }
+
+    try {
+      const response = runProcess(worktreePath, [
+        'gh',
+        'api',
+        'graphql',
+        '-F',
+        `threadId=${comment.threadId}`,
+        '-f',
+        'query=mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }',
+      ]);
+      const parsed = parseResolveReviewThreadOutput(response);
+
+      if (!parsed.resolved) {
+        resolutions.push({
+          status: 'failed',
+          threadId: comment.threadId,
+          url: comment.url,
+          vendor: comment.vendor,
+          message: parsed.message,
+        });
+        continue;
+      }
+
+      resolutions.push({
+        status: 'resolved',
+        threadId: comment.threadId,
+        url: comment.url,
+        vendor: comment.vendor,
+      });
+    } catch (error) {
+      const message = summarizeReviewMessage(formatError(error));
+      resolutions.push({
+        status: message.includes('already resolved')
+          ? 'already_resolved'
+          : 'failed',
+        threadId: comment.threadId,
+        url: comment.url,
+        vendor: comment.vendor,
+        message,
+      });
+    }
+  }
+
+  return resolutions;
+}
+
 async function pollForAiReview(
   worktreePath: string,
   prNumber: number,
@@ -2035,6 +2217,7 @@ async function writeAiReviewArtifacts(
           note: agent.note ?? null,
         })),
         detected: result.detected,
+        reviewed_head_sha: result.reviewedHeadSha ?? null,
         vendors: result.vendors,
         comments: result.comments.map((comment) => ({
           author_login: comment.authorLogin,
@@ -2046,10 +2229,13 @@ async function writeAiReviewArtifacts(
           kind: comment.kind,
           line: comment.line ?? null,
           path: comment.path ?? null,
+          thread_id: comment.threadId ?? null,
+          thread_viewer_can_resolve: comment.threadViewerCanResolve ?? null,
           updated_at: comment.updatedAt ?? null,
           url: comment.url ?? null,
           vendor: comment.vendor,
         })),
+        thread_resolutions: [],
       },
       null,
       2,
@@ -2062,6 +2248,31 @@ async function writeAiReviewArtifacts(
     artifactJsonPath,
     artifactTextPath,
   };
+}
+
+async function writeAiReviewThreadResolutions(
+  artifactJsonPath: string | undefined,
+  resolutions: AiReviewThreadResolution[],
+): Promise<void> {
+  if (!artifactJsonPath) {
+    return;
+  }
+
+  const existing = JSON.parse(
+    await readFile(artifactJsonPath, 'utf8'),
+  ) as Record<string, unknown>;
+  existing.thread_resolutions = resolutions.map((resolution) => ({
+    message: resolution.message ?? null,
+    status: resolution.status,
+    thread_id: resolution.threadId,
+    url: resolution.url ?? null,
+    vendor: resolution.vendor,
+  }));
+  await writeFile(
+    artifactJsonPath,
+    JSON.stringify(existing, null, 2) + '\n',
+    'utf8',
+  );
 }
 
 export async function pollReview(
@@ -2078,6 +2289,8 @@ export async function pollReview(
 
   const now = dependencies.now ?? Date.now;
   const triager = dependencies.triager ?? runAiReviewTriager;
+  const resolveThreads =
+    dependencies.resolveThreads ?? resolveNativeReviewThreads;
   const updatePullRequestBodyFn =
     dependencies.updatePullRequestBody ?? updatePullRequestBody;
   const { pollWindowStartedAt, pollWindowStartedAtIso } =
@@ -2101,6 +2314,16 @@ export async function pollReview(
       detectedReview,
     );
     const triage = triager(target.worktreePath, artifacts.artifactJsonPath);
+    const reviewThreadResolutions =
+      triage.outcome === 'patched'
+        ? resolveThreads(target.worktreePath, detectedReview.comments)
+        : [];
+    if (reviewThreadResolutions.length > 0) {
+      await writeAiReviewThreadResolutions(
+        artifacts.artifactJsonPath,
+        reviewThreadResolutions,
+      );
+    }
     const reviewVendors =
       triage.vendors.length > 0 ? triage.vendors : detectedReview.vendors;
     const nextStatus =
@@ -2114,6 +2337,7 @@ export async function pollReview(
               prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
               status: nextStatus,
               reviewActionSummary: triage.actionSummary,
+              reviewComments: detectedReview.comments,
               reviewArtifactJsonPath: relativeToRepo(
                 cwd,
                 artifacts.artifactJsonPath,
@@ -2123,6 +2347,7 @@ export async function pollReview(
                 artifacts.artifactTextPath,
               ),
               reviewFetchedAt: new Date(now()).toISOString(),
+              reviewHeadSha: detectedReview.reviewedHeadSha,
               reviewNonActionSummary: triage.nonActionSummary,
               reviewOutcome:
                 triage.outcome === 'clean' || triage.outcome === 'patched'
@@ -2138,6 +2363,10 @@ export async function pollReview(
               reviewIncompleteAgents:
                 reviewPollResult.status === 'partial_timeout'
                   ? reviewPollResult.incompleteAgents
+                  : undefined,
+              reviewThreadResolutions:
+                reviewThreadResolutions.length > 0
+                  ? reviewThreadResolutions
                   : undefined,
               reviewVendors,
             }
@@ -2172,8 +2401,10 @@ export async function pollReview(
             prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
             status: 'reviewed',
             reviewActionSummary: undefined,
+            reviewComments: undefined,
             reviewArtifactJsonPath: undefined,
             reviewArtifactPath: undefined,
+            reviewHeadSha: undefined,
             reviewNonActionSummary: undefined,
             reviewOutcome: 'clean',
             reviewNote: reviewPollResult.incompleteAgents?.length
@@ -2183,6 +2414,7 @@ export async function pollReview(
                 )
               : formatNoAiReviewFeedbackNote(state.reviewPollMaxWaitMinutes),
             reviewIncompleteAgents: reviewPollResult.incompleteAgents,
+            reviewThreadResolutions: undefined,
             reviewVendors: [],
           }
         : ticket,
@@ -2236,6 +2468,16 @@ async function runStandaloneAiReview(
       detectedReview,
     );
     const triage = runAiReviewTriager(cwd, artifacts.artifactJsonPath);
+    const threadResolutions =
+      triage.outcome === 'patched'
+        ? resolveNativeReviewThreads(cwd, detectedReview.comments)
+        : [];
+    if (threadResolutions.length > 0) {
+      await writeAiReviewThreadResolutions(
+        artifacts.artifactJsonPath,
+        threadResolutions,
+      );
+    }
     const standaloneResult: StandaloneAiReviewResult = {
       actionSummary: triage.actionSummary,
       artifactJsonPath: relativeToRepo(cwd, artifacts.artifactJsonPath),
@@ -2251,6 +2493,7 @@ async function runStandaloneAiReview(
               reviewPollResult.incompleteAgents,
             )
           : triage.note,
+      comments: detectedReview.comments,
       nonActionSummary: triage.nonActionSummary,
       outcome:
         triage.outcome === 'needs_patch'
@@ -2258,6 +2501,9 @@ async function runStandaloneAiReview(
           : triage.outcome,
       prNumber: pullRequest.number,
       prUrl: pullRequest.url,
+      reviewedHeadSha: detectedReview.reviewedHeadSha,
+      threadResolutions:
+        threadResolutions.length > 0 ? threadResolutions : undefined,
       vendors:
         triage.vendors.length > 0 ? triage.vendors : detectedReview.vendors,
     };
@@ -2351,6 +2597,16 @@ export async function recordReview(
   ticketId: string,
   outcome: ReviewResult,
   note?: string,
+  dependencies: {
+    resolveThreads?: (
+      worktreePath: string,
+      comments: AiReviewComment[],
+    ) => AiReviewThreadResolution[];
+    updatePullRequestBody?: (
+      state: DeliveryState,
+      ticket: TicketState,
+    ) => void | Promise<void>;
+  } = {},
 ): Promise<DeliveryState> {
   const target = state.tickets.find((ticket) => ticket.id === ticketId);
 
@@ -2368,7 +2624,30 @@ export async function recordReview(
     );
   }
 
-  return {
+  const resolveThreads =
+    dependencies.resolveThreads ?? resolveNativeReviewThreads;
+  const reviewThreadResolutions =
+    outcome === 'patched' &&
+    target.reviewThreadResolutions &&
+    target.reviewThreadResolutions.length > 0
+      ? target.reviewThreadResolutions
+      : outcome === 'patched' && target.reviewComments
+        ? resolveThreads(target.worktreePath, target.reviewComments)
+        : target.reviewThreadResolutions;
+  if (
+    outcome === 'patched' &&
+    reviewThreadResolutions &&
+    reviewThreadResolutions.length > 0
+  ) {
+    await writeAiReviewThreadResolutions(
+      target.reviewArtifactJsonPath
+        ? resolve(cwd, target.reviewArtifactJsonPath)
+        : undefined,
+      reviewThreadResolutions,
+    );
+  }
+
+  const nextState: DeliveryState = {
     ...state,
     tickets: state.tickets.map((ticket) =>
       ticket.id === ticketId
@@ -2383,10 +2662,29 @@ export async function recordReview(
                 ? outcome
                 : undefined,
             reviewNote: note ?? ticket.reviewNote,
+            reviewThreadResolutions:
+              outcome === 'patched' ? reviewThreadResolutions : undefined,
           }
         : ticket,
     ),
   };
+  const updatedTarget = nextState.tickets.find(
+    (ticket) => ticket.id === ticketId,
+  );
+
+  if (updatedTarget) {
+    const updatePullRequestBodyFn =
+      dependencies.updatePullRequestBody ?? updatePullRequestBody;
+    try {
+      await updatePullRequestBodyFn(nextState, updatedTarget);
+    } catch (error) {
+      console.warn(
+        `Review was recorded locally for ${updatedTarget.id}, but PR body update failed: ${formatError(error)}`,
+      );
+    }
+  }
+
+  return nextState;
 }
 
 async function advanceToNextTicket(
@@ -2519,7 +2817,9 @@ async function restackTicket(
       '--base',
       nextBaseBranch,
       '--body',
-      buildPullRequestBody(nextState, updatedTarget),
+      buildPullRequestBody(nextState, updatedTarget, {
+        currentHeadSha: readHeadSha(updatedTarget.worktreePath),
+      }),
     ]);
   }
 
@@ -2537,6 +2837,227 @@ function preferCodexBranch(branches: string[]): string {
   return branches.find((branch) => branch.startsWith('codex/')) ?? branches[0]!;
 }
 
+function shortenSha(sha: string | undefined): string | undefined {
+  return sha ? sha.slice(0, 12) : undefined;
+}
+
+function summarizeReviewComment(body: string): string {
+  const normalized = body.replace(/\s+/g, ' ').trim();
+  return normalized.length > 140
+    ? `${normalized.slice(0, 137).trimEnd()}...`
+    : normalized;
+}
+
+function formatReviewCommentLocation(comment: AiReviewComment): string {
+  if (!comment.path) {
+    return '';
+  }
+
+  return comment.line
+    ? ` \`${comment.path}:${comment.line}\``
+    : ` \`${comment.path}\``;
+}
+
+function formatReviewThreadLink(url: string | undefined): string {
+  return url ? ` [thread](${url})` : '';
+}
+
+function formatResolutionSuffix(
+  resolution: AiReviewThreadResolution | undefined,
+): string {
+  if (!resolution) {
+    return '';
+  }
+
+  switch (resolution.status) {
+    case 'resolved':
+      return '; native GitHub thread resolved';
+    case 'already_resolved':
+      return '; native GitHub thread was already resolved';
+    case 'unresolvable':
+      return '; native GitHub thread could not be resolved automatically';
+    case 'failed':
+      return resolution.message
+        ? `; native GitHub thread resolution failed: ${summarizeReviewMessage(resolution.message)}`
+        : '; native GitHub thread resolution failed';
+  }
+}
+
+function describeReviewComment(
+  comment: AiReviewComment,
+  context: 'current' | 'history',
+  status: TicketStatus | ReviewResult,
+  resolution: AiReviewThreadResolution | undefined,
+): string {
+  if (context === 'history') {
+    return 'stale history';
+  }
+
+  if (comment.isOutdated) {
+    return 'outdated';
+  }
+
+  if (comment.isResolved) {
+    return 'already resolved';
+  }
+
+  if (comment.kind === 'summary') {
+    return 'summary only';
+  }
+
+  if (comment.kind === 'unknown') {
+    return 'manual judgment';
+  }
+
+  if (status === 'patched') {
+    return `patched${formatResolutionSuffix(resolution)}`;
+  }
+
+  if (status === 'needs_patch') {
+    return 'follow-up pending';
+  }
+
+  if (status === 'operator_input_needed') {
+    return 'operator input needed';
+  }
+
+  return 'finding';
+}
+
+function buildReviewCommentBullets(
+  comments: AiReviewComment[] | undefined,
+  context: 'current' | 'history',
+  status: TicketStatus | ReviewResult,
+  threadResolutions: AiReviewThreadResolution[] | undefined,
+): string[] {
+  if (!comments || comments.length === 0) {
+    return [];
+  }
+
+  const resolutionByThreadId = new Map(
+    (threadResolutions ?? []).map((resolution) => [
+      resolution.threadId,
+      resolution,
+    ]),
+  );
+
+  return comments.map((comment) => {
+    const description = describeReviewComment(
+      comment,
+      context,
+      status,
+      comment.threadId ? resolutionByThreadId.get(comment.threadId) : undefined,
+    );
+    return `- [${comment.vendor}] ${description}: ${summarizeReviewComment(comment.body)}${formatReviewCommentLocation(comment)}${formatReviewThreadLink(comment.url)}`;
+  });
+}
+
+function buildAiReviewDetailLines(input: {
+  actionSummary?: string;
+  comments?: AiReviewComment[];
+  currentHeadSha?: string;
+  maxWaitMinutes: number;
+  nonActionSummary?: string;
+  note?: string;
+  outcome?: ReviewResult;
+  reviewedHeadSha?: string;
+  status?: TicketStatus;
+  threadResolutions?: AiReviewThreadResolution[];
+  vendors?: string[];
+}): string[] {
+  const lines: string[] = [];
+  const reviewStatus = input.outcome ?? input.status;
+
+  if (
+    !reviewStatus ||
+    (reviewStatus !== 'clean' &&
+      reviewStatus !== 'patched' &&
+      reviewStatus !== 'needs_patch' &&
+      reviewStatus !== 'operator_input_needed')
+  ) {
+    return lines;
+  }
+
+  const appliesToCurrentHead =
+    !!input.reviewedHeadSha &&
+    !!input.currentHeadSha &&
+    input.reviewedHeadSha === input.currentHeadSha;
+
+  if (input.reviewedHeadSha) {
+    lines.push(`- reviewed commit: \`${shortenSha(input.reviewedHeadSha)}\``);
+  }
+
+  if (input.currentHeadSha) {
+    lines.push(
+      `- current branch head: \`${shortenSha(input.currentHeadSha)}\``,
+    );
+  }
+
+  if (reviewStatus === 'clean') {
+    lines.push(
+      input.note === formatNoAiReviewFeedbackNote(input.maxWaitMinutes)
+        ? `- No \`ai-code-review\` feedback was detected during the ${input.maxWaitMinutes}-minute polling window.`
+        : '- `ai-code-review` triage found no prudent follow-up changes.',
+    );
+  } else if (reviewStatus === 'needs_patch') {
+    lines.push(
+      '- `ai-code-review` triage found actionable follow-up work that still needs patching.',
+    );
+  } else if (reviewStatus === 'patched') {
+    lines.push(
+      '- `ai-code-review` triage led to prudent follow-up patches that are now included in this branch.',
+    );
+  } else {
+    lines.push(
+      '- `ai-code-review` stopped for operator input before follow-up could be completed safely.',
+    );
+  }
+
+  if (input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead) {
+    lines.push(
+      '- no current-SHA `ai-code-review` status is recorded for the current branch head; the latest recorded review is shown below as stale history.',
+    );
+  }
+
+  if (input.note) {
+    lines.push(`- follow-up note: ${input.note}`);
+  }
+
+  if (input.vendors && input.vendors.length > 0) {
+    lines.push(
+      `- vendors: ${input.vendors.map((vendor) => `\`${vendor}\``).join(', ')}`,
+    );
+  }
+
+  if (input.actionSummary) {
+    lines.push(`- action summary: ${input.actionSummary}`);
+  }
+
+  if (input.nonActionSummary) {
+    lines.push(`- non-action summary: ${input.nonActionSummary}`);
+  }
+
+  const bullets = buildReviewCommentBullets(
+    input.comments,
+    appliesToCurrentHead || !input.reviewedHeadSha ? 'current' : 'history',
+    reviewStatus,
+    input.threadResolutions,
+  );
+
+  if (bullets.length > 0) {
+    lines.push(
+      '',
+      appliesToCurrentHead || !input.reviewedHeadSha
+        ? '### Review Items'
+        : '### Stale Review History',
+      '',
+      ...bullets,
+    );
+  }
+
+  return lines;
+}
+
 export function buildPullRequestBody(
   state: DeliveryState,
   ticket: Pick<
@@ -2548,12 +3069,21 @@ export function buildPullRequestBody(
     | 'internalReviewCompletedAt'
     | 'reviewActionSummary'
     | 'reviewIncompleteAgents'
+    | 'reviewComments'
+    | 'reviewHeadSha'
+    | 'reviewIncompleteAgents'
+    | 'reviewComments'
+    | 'reviewHeadSha'
     | 'status'
     | 'reviewOutcome'
     | 'reviewNote'
     | 'reviewNonActionSummary'
+    | 'reviewThreadResolutions'
     | 'reviewVendors'
   >,
+  options: {
+    currentHeadSha?: string;
+  } = {},
 ): string {
   const lines = [
     '## Summary',
@@ -2575,51 +3105,21 @@ export function buildPullRequestBody(
     ticket.status === 'operator_input_needed'
   ) {
     lines.push('', '## AI Review Follow-Up', '');
-
-    if (ticket.reviewOutcome === 'clean') {
-      lines.push(
-        ticket.reviewNote ===
-          formatNoAiReviewFeedbackNote(state.reviewPollMaxWaitMinutes)
-          ? `- No \`ai-code-review\` feedback was detected during the ${state.reviewPollMaxWaitMinutes}-minute polling window.`
-          : '- `ai-code-review` triage found no prudent follow-up changes.',
-      );
-    }
-
-    if (ticket.status === 'needs_patch') {
-      lines.push(
-        '- `ai-code-review` triage found actionable follow-up work that still needs patching.',
-      );
-    }
-
-    if (ticket.reviewOutcome === 'patched') {
-      lines.push(
-        '- `ai-code-review` triage led to prudent follow-up patches that are now included in this branch.',
-      );
-    }
-
-    if (ticket.status === 'operator_input_needed') {
-      lines.push(
-        '- `ai-code-review` stopped for operator input before follow-up could be completed safely.',
-      );
-    }
-
-    if (ticket.reviewNote) {
-      lines.push(`- follow-up note: ${ticket.reviewNote}`);
-    }
-
-    if (ticket.reviewVendors && ticket.reviewVendors.length > 0) {
-      lines.push(
-        `- vendors: ${ticket.reviewVendors.map((vendor) => `\`${vendor}\``).join(', ')}`,
-      );
-    }
-
-    if (ticket.reviewActionSummary) {
-      lines.push(`- action summary: ${ticket.reviewActionSummary}`);
-    }
-
-    if (ticket.reviewNonActionSummary) {
-      lines.push(`- non-action summary: ${ticket.reviewNonActionSummary}`);
-    }
+    lines.push(
+      ...buildAiReviewDetailLines({
+        actionSummary: ticket.reviewActionSummary,
+        comments: ticket.reviewComments,
+        currentHeadSha: options.currentHeadSha,
+        maxWaitMinutes: state.reviewPollMaxWaitMinutes,
+        nonActionSummary: ticket.reviewNonActionSummary,
+        note: ticket.reviewNote,
+        outcome: ticket.reviewOutcome,
+        reviewedHeadSha: ticket.reviewHeadSha,
+        status: ticket.status,
+        threadResolutions: ticket.reviewThreadResolutions,
+        vendors: ticket.reviewVendors,
+      }),
+    );
 
     if (ticket.reviewIncompleteAgents?.length) {
       lines.push(
@@ -3025,7 +3525,9 @@ function updatePullRequestBody(
     'edit',
     String(ticket.prNumber),
     '--body',
-    buildPullRequestBody(state, ticket),
+    buildPullRequestBody(state, ticket, {
+      currentHeadSha: readHeadSha(ticket.worktreePath),
+    }),
   ]);
 }
 
@@ -3035,47 +3537,35 @@ export function buildStandaloneAiReviewSection(
     | 'actionSummary'
     | 'artifactJsonPath'
     | 'artifactTextPath'
+    | 'comments'
     | 'note'
     | 'nonActionSummary'
     | 'outcome'
+    | 'reviewedHeadSha'
+    | 'threadResolutions'
     | 'vendors'
   >,
+  options: {
+    currentHeadSha?: string;
+  } = {},
 ): string {
   const lines = [STANDALONE_AI_REVIEW_SECTION_START, '## AI Review', ''];
-
-  if (result.outcome === 'clean') {
-    lines.push(
-      result.note ===
-        formatNoAiReviewFeedbackNote(DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES)
-        ? '- no `ai-code-review` feedback was detected during the 8-minute polling window.'
-        : '- detected `ai-code-review` feedback did not merit follow-up changes.',
-    );
-  } else if (result.outcome === 'operator_input_needed') {
-    lines.push(
-      '- `ai-code-review` completed, but follow-up still needs operator attention.',
-    );
-  } else {
-    lines.push(
-      '- `ai-code-review` triage led to prudent follow-up patches that are now included in the branch.',
-    );
-  }
+  lines.push(
+    ...buildAiReviewDetailLines({
+      actionSummary: result.actionSummary,
+      comments: result.comments,
+      currentHeadSha: options.currentHeadSha,
+      maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+      nonActionSummary: result.nonActionSummary,
+      note: result.note,
+      outcome: result.outcome,
+      reviewedHeadSha: result.reviewedHeadSha,
+      threadResolutions: result.threadResolutions,
+      vendors: result.vendors,
+    }),
+  );
 
   lines.push(`- outcome: \`${result.outcome}\``);
-  lines.push(`- note: ${result.note}`);
-
-  if (result.vendors.length > 0) {
-    lines.push(
-      `- vendors: ${result.vendors.map((vendor) => `\`${vendor}\``).join(', ')}`,
-    );
-  }
-
-  if (result.actionSummary) {
-    lines.push(`- action summary: ${result.actionSummary}`);
-  }
-
-  if (result.nonActionSummary) {
-    lines.push(`- non-action summary: ${result.nonActionSummary}`);
-  }
 
   if (result.artifactJsonPath) {
     lines.push(`- artifact (json): \`${result.artifactJsonPath}\``);
@@ -3113,7 +3603,9 @@ function updateStandalonePullRequestBody(
 ): void {
   const nextBody = mergeStandaloneAiReviewSection(
     pullRequest.body,
-    buildStandaloneAiReviewSection(result),
+    buildStandaloneAiReviewSection(result, {
+      currentHeadSha: pullRequest.headRefOid,
+    }),
   );
 
   runProcess(cwd, [
@@ -3172,6 +3664,10 @@ function hasMergedPullRequestForBranch(cwd: string, branch: string): boolean {
 
 function readLatestCommitSubject(cwd: string): string {
   return runProcess(cwd, ['git', 'log', '-1', '--pretty=%s']).trim();
+}
+
+function readHeadSha(cwd: string): string {
+  return runProcess(cwd, ['git', 'rev-parse', 'HEAD']).trim();
 }
 
 function readCurrentBranch(cwd: string): string {

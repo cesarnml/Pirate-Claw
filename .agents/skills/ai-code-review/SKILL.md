@@ -29,6 +29,7 @@ The only contract between them is the repo-local helper script output:
   - `agents: [{"agent":"coderabbit","state":"started|completed|findings_detected",...}]`
   - `detected: true|false`
   - `artifact_text: "<normalized text summary>"`
+  - `reviewed_head_sha?: "<pull request head sha at fetch time>"`
   - `vendors: ["coderabbit", "qodo", ...]`
   - `comments: [...]`
 - triager:
@@ -52,7 +53,7 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
    - comments from bot or vendor identities that correspond to AI review
    - comments whose wording explicitly identifies them as AI-generated code review
    - ordinary human drive-by comments do not count as AI review
-   - preserve inline comment resolution/outdated state so stale bot comments do not block the flow by default
+   - preserve reviewed head SHA plus inline comment resolution/outdated state and native thread identity so stale bot comments do not block the flow by default
 5. Return the fetcher contract to the orchestrator when this is being used inside `poll-review`:
 
 - `detected=false` means keep polling or auto-clean at the end
@@ -71,6 +72,7 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
 - run the smallest relevant verification
 - commit the patch changes in the current repo
 - push the current branch so the PR updates automatically
+- when the originating AI finding came from a native GitHub inline review thread and the thread is still resolvable, mark that thread resolved in the PR UI
 
 ## Output expectations
 
@@ -81,4 +83,5 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
 - Group by unresolved issue, not by raw API payload.
 - Include file and line when available.
 - Call out stale or already-addressed comments explicitly instead of blindly implementing them.
+- Make current-head review versus stale-history review explicit when the reviewed SHA no longer matches the branch head.
 - Only stop for operator input when the right action is genuinely ambiguous.

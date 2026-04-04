@@ -29,7 +29,9 @@ fi
 repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 owner="${repo%%/*}"
 name="${repo##*/}"
-pr_json="$(gh pr view "$pr_number" --json number,title,url,headRefName,baseRefName,isDraft,state,comments,reviews)"
+pr_json="$(gh pr view "$pr_number" --json number,title,url,headRefName,headRefOid,baseRefName,isDraft,state,comments,reviews)"
+temp_dir="$(mktemp -d)"
+trap 'rm -rf "$temp_dir"' EXIT
 
 review_comments_json="$(
   gh api --paginate "repos/$repo/pulls/$pr_number/comments?per_page=100" \
@@ -42,35 +44,190 @@ else
   review_comments_json='[]'
 fi
 
-review_threads_json="$(
-  gh api graphql \
-    -F owner="$owner" \
-    -F name="$name" \
-    -F number="$pr_number" \
-    -f query='
-      query($owner: String!, $name: String!, $number: Int!) {
-        repository(owner: $owner, name: $name) {
-          pullRequest(number: $number) {
-            reviewThreads(first: 100) {
-              nodes {
-                isResolved
-                isOutdated
-                comments(first: 50) {
-                  nodes {
-                    databaseId
-                    url
+fetch_review_threads_page() {
+  local after_cursor="${1:-}"
+
+  if [[ -n "$after_cursor" ]]; then
+    gh api graphql \
+      -F owner="$owner" \
+      -F name="$name" \
+      -F number="$pr_number" \
+      -F after="$after_cursor" \
+      -f query='
+        query($owner: String!, $name: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100, after: $after) {
+                nodes {
+                  id
+                  isResolved
+                  isOutdated
+                  viewerCanResolve
+                  comments(first: 100) {
+                    nodes {
+                      databaseId
+                      url
+                    }
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
                   }
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
                 }
               }
             }
           }
         }
-      }
-    ' \
-    --jq '.data.repository.pullRequest.reviewThreads.nodes'
-)"
+      '
+  else
+    gh api graphql \
+      -F owner="$owner" \
+      -F name="$name" \
+      -F number="$pr_number" \
+      -f query='
+        query($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  isOutdated
+                  viewerCanResolve
+                  comments(first: 100) {
+                    nodes {
+                      databaseId
+                      url
+                    }
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
+                  }
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }
+          }
+        }
+      '
+  fi
+}
 
-if [[ -z "$review_threads_json" ]]; then
+fetch_thread_comments_page() {
+  local thread_id="$1"
+  local after_cursor="${2:-}"
+
+  if [[ -n "$after_cursor" ]]; then
+    gh api graphql \
+      -F threadId="$thread_id" \
+      -F after="$after_cursor" \
+      -f query='
+        query($threadId: ID!, $after: String) {
+          node(id: $threadId) {
+            ... on PullRequestReviewThread {
+              comments(first: 100, after: $after) {
+                nodes {
+                  databaseId
+                  url
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }
+          }
+        }
+      '
+  else
+    gh api graphql \
+      -F threadId="$thread_id" \
+      -f query='
+        query($threadId: ID!) {
+          node(id: $threadId) {
+            ... on PullRequestReviewThread {
+              comments(first: 100) {
+                nodes {
+                  databaseId
+                  url
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }
+          }
+        }
+      '
+  fi
+}
+
+thread_pages_file="$temp_dir/review-thread-pages.jsonl"
+: >"$thread_pages_file"
+thread_cursor=""
+
+while :; do
+  thread_page_json="$(fetch_review_threads_page "$thread_cursor")"
+  thread_nodes_json="$(printf '%s' "$thread_page_json" | jq '.data.repository.pullRequest.reviewThreads.nodes')"
+
+  if [[ "$thread_nodes_json" != "[]" ]]; then
+    printf '%s\n' "$thread_nodes_json" >>"$thread_pages_file"
+  fi
+
+  thread_has_next="$(printf '%s' "$thread_page_json" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false')"
+  if [[ "$thread_has_next" != "true" ]]; then
+    break
+  fi
+
+  thread_cursor="$(printf '%s' "$thread_page_json" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // ""')"
+done
+
+if [[ -s "$thread_pages_file" ]]; then
+  review_threads_json="$(jq -s 'add // []' "$thread_pages_file")"
+else
+  review_threads_json='[]'
+fi
+
+expanded_threads_file="$temp_dir/expanded-review-threads.jsonl"
+: >"$expanded_threads_file"
+while IFS= read -r thread_json; do
+  [[ -z "$thread_json" ]] && continue
+
+  thread_id="$(printf '%s' "$thread_json" | jq -r '.id')"
+  comment_pages_file="$(mktemp "$temp_dir/thread-comments.XXXXXX.jsonl")"
+  comment_nodes_json="$(printf '%s' "$thread_json" | jq '.comments.nodes // []')"
+  printf '%s\n' "$comment_nodes_json" >"$comment_pages_file"
+  comment_has_next="$(printf '%s' "$thread_json" | jq -r '.comments.pageInfo.hasNextPage // false')"
+  comment_cursor="$(printf '%s' "$thread_json" | jq -r '.comments.pageInfo.endCursor // ""')"
+
+  while [[ "$comment_has_next" == "true" ]]; do
+    comment_page_json="$(fetch_thread_comments_page "$thread_id" "$comment_cursor")"
+    page_nodes_json="$(printf '%s' "$comment_page_json" | jq '.data.node.comments.nodes // []')"
+    printf '%s\n' "$page_nodes_json" >>"$comment_pages_file"
+    comment_has_next="$(printf '%s' "$comment_page_json" | jq -r '.data.node.comments.pageInfo.hasNextPage // false')"
+    comment_cursor="$(printf '%s' "$comment_page_json" | jq -r '.data.node.comments.pageInfo.endCursor // ""')"
+  done
+
+  comment_nodes_json="$(jq -s 'add // []' "$comment_pages_file")"
+  rm -f "$comment_pages_file"
+  expanded_thread_json="$(
+    printf '%s' "$thread_json" | jq --argjson nodes "$comment_nodes_json" '.comments = { nodes: $nodes }'
+  )"
+  printf '%s\n' "$expanded_thread_json" >>"$expanded_threads_file"
+done < <(printf '%s' "$review_threads_json" | jq -c '.[]')
+
+if [[ -s "$expanded_threads_file" ]]; then
+  review_threads_json="$(jq -s '.' "$expanded_threads_file")"
+else
   review_threads_json='[]'
 fi
 
@@ -82,6 +239,7 @@ jq -n \
       tostring
       | gsub("\r"; "")
       | gsub("\\s+"; " ")
+      | gsub("^ +| +$"; "")
       | ascii_downcase;
 
     def author_login:
@@ -109,7 +267,7 @@ jq -n \
 
     def looks_like_summary_noise_text:
       (body_text | normalize_text) as $body
-      | ($body | test("review summary by|walkthroughs|file changes|looking for bugs\\?|finishing touches|summary of changes"));
+      | ($body | test("review summary by|code review by|walkthroughs|file changes|looking for bugs\\?|finishing touches|summary of changes|rule violations|bugs \\("));
 
     def vendor_name:
       (author_login | ascii_downcase) as $login
@@ -130,7 +288,9 @@ jq -n \
           | map(
               . + {
                 __thread_is_outdated: ($thread.isOutdated // false),
-                __thread_is_resolved: ($thread.isResolved // false)
+                __thread_is_resolved: ($thread.isResolved // false),
+                __thread_id: ($thread.id // null),
+                __thread_viewer_can_resolve: ($thread.viewerCanResolve // null)
               }
             )
         )
@@ -139,10 +299,12 @@ jq -n \
     def thread_lookup:
       (enrich_threads)
       | map({
+          thread_id: (.__thread_id // null),
           key_db: (if .databaseId then (.databaseId | tostring) else null end),
           key_url: (.url // null),
           is_outdated: .__thread_is_outdated,
-          is_resolved: .__thread_is_resolved
+          is_resolved: .__thread_is_resolved,
+          viewer_can_resolve: (.__thread_viewer_can_resolve // null)
         })
       | map(select(.key_db != null or .key_url != null));
 
@@ -158,14 +320,17 @@ jq -n \
             )
           | .[0]) as $match
       | {
+          thread_id: ($match.thread_id // null),
           is_outdated: ($match.is_outdated // false),
-          is_resolved: ($match.is_resolved // false)
+          is_resolved: ($match.is_resolved // false),
+          viewer_can_resolve: ($match.viewer_can_resolve // null)
         };
 
     def comment_kind($channel):
       (body_text | normalize_text) as $body
       | if $channel == "inline_review" then
           if (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then "unknown" else "finding" end
+        elif $channel == "review_summary" and ($body | length) == 0 then "summary"
         elif looks_like_started_text or looks_like_summary_noise_text then "summary"
         elif ($body | test("summary|overall|overview|high level|high-level|general feedback|looks good|no major issues|quick recap")) then "summary"
         elif ($body | test("should|could|must|consider|missing|bug|issue|incorrect|guard|handle|return|null|undefined|race|rename|suggestion:|nit:|nitpick")) then "finding"
@@ -185,6 +350,8 @@ jq -n \
       | (comment_thread_state) as $thread_state
       | if $vendor == null then
           empty
+        elif $channel == "review_summary" and ((body_text | normalize_text) | length) == 0 then
+          empty
         else
           {
             vendor: $vendor,
@@ -194,6 +361,8 @@ jq -n \
             body: body_text,
             path: $path,
             line: $line,
+            thread_id: ($thread_state.thread_id // null),
+            thread_viewer_can_resolve: ($thread_state.viewer_can_resolve // null),
             url: (.html_url // .url // ""),
             updated_at: (.updated_at // .submittedAt // .updatedAt // .createdAt // ""),
             is_outdated: ($thread_state.is_outdated // false),
@@ -209,7 +378,11 @@ jq -n \
     | map(review_entry("review_summary"; null; null)) as $review_summaries
     | $review_comments
     | map(review_entry("inline_review"; (.path // null); (.line // .original_line // null))) as $inline_comments
-    | ($issue_comments + $review_summaries + $inline_comments) as $matches
+    | (
+        ($inline_comments | sort_by((.is_outdated // false), (.is_resolved // false), .vendor, .path, .line))
+        + ($issue_comments | sort_by(.vendor, .updated_at))
+        + ($review_summaries | sort_by(.vendor, .updated_at))
+      ) as $matches
     | ($matches | map(.vendor) | unique | sort) as $vendors
     | (
         $matches
@@ -236,12 +409,14 @@ jq -n \
     | {
         agents: $agents,
         detected: ($matches | length > 0),
+        reviewed_head_sha: ($pr.headRefOid // null),
         artifact_text:
           (
             [
               "PR #\($pr.number): \($pr.title)",
               "URL: \($pr.url)",
               "Branch: \($pr.headRefName) -> \($pr.baseRefName)",
+              "Reviewed head SHA: \($pr.headRefOid // "unknown")",
               "State: \($pr.state)\(if $pr.isDraft then " (draft)" else "" end)",
               "Detected AI review comments: \($matches | length)",
               "Detected AI review agents: \($agents | length)",
@@ -251,7 +426,7 @@ jq -n \
             + (
               if ($agents | length) > 0 then
                 ["Agent states:"]
-                + ($agents | map("- \(.agent): \(.state)\(if (.findingsCount // 0) > 0 then \" (\(.findingsCount) findings)\" else \"\" end)"))
+                + ($agents | map("- \(.agent): \(.state)\(if (.findingsCount // 0) > 0 then " (\(.findingsCount) findings)" else "" end)"))
                 + [""]
               else
                 []
@@ -262,6 +437,7 @@ jq -n \
               | map(
                   "- [\(.kind)][\(.vendor)][\(.channel)][\(.derived_state)] \(.author_login)"
                   + (if .path then " on \(.path):\(.line // 0)" else "" end)
+                  + (if .thread_id then " [thread \(.thread_id)]" else "" end)
                   + (if .is_resolved then " [resolved]" else "" end)
                   + (if .is_outdated then " [outdated]" else "" end)
                   + (if .updated_at != "" then " at \(.updated_at)" else "" end)
