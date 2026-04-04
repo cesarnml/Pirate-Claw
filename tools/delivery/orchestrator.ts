@@ -1258,6 +1258,9 @@ export function parseAiReviewFetcherOutput(
   } catch (error) {
     throw new Error(
       `AI review fetcher must emit JSON. ${formatError(error)}\n${output.trim()}`.trim(),
+      {
+        cause: error,
+      },
     );
   }
 
