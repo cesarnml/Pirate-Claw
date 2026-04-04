@@ -430,7 +430,7 @@ describe('delivery orchestrator', () => {
         branch: 'codex/p2-02-movie-matcher-missing-codec',
         baseBranch: 'codex/p2-01-enclosure-first-feed-parsing',
         worktreePath: '/tmp/p2_02',
-        reviewOutcome: 'needs_patch',
+        reviewOutcome: undefined,
       }),
     ).toBe(false);
   });
@@ -513,15 +513,15 @@ describe('delivery orchestrator', () => {
         kind: 'standalone_review_recorded',
         prNumber: 32,
         prUrl: 'https://example.test/pull/32',
-        outcome: 'needs_patch',
+        outcome: 'operator_input_needed',
         note: 'Actionable AI review findings were detected and still need follow-up.',
       }),
-    ).not.toContain('https://example.test/pull/32');
+    ).toContain('AI review complete.');
   });
 
   it('merges the standalone ai review section into a pr body', () => {
     const section = buildStandaloneAiReviewSection({
-      outcome: 'needs_patch',
+      outcome: 'operator_input_needed',
       note: 'Actionable AI review findings were detected.',
       vendors: ['coderabbit', 'qodo'],
       actionSummary: 'Flagged 2 finding comments for follow-up.',
@@ -688,8 +688,8 @@ describe('delivery orchestrator', () => {
         tickets: [
           {
             ...state.tickets[0]!,
-            status: 'review_fetched',
-            reviewOutcome: 'needs_patch',
+            status: 'needs_patch',
+            reviewOutcome: undefined,
             reviewNote:
               'Actionable AI review findings were detected and still need follow-up.',
           },
@@ -983,7 +983,7 @@ describe('delivery orchestrator', () => {
 
       expect(sleeps).toEqual([120000, 240000]);
       expect(fetchCount).toBe(2);
-      expect(nextState.tickets[0]?.status).toBe('review_fetched');
+      expect(nextState.tickets[0]?.status).toBe('needs_patch');
       expect(nextState.tickets[0]?.reviewArtifactJsonPath).toBe(
         '.codex/delivery/phase-03/reviews/P3.01-ai-review.json',
       );

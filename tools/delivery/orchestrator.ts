@@ -7,11 +7,16 @@ export type TicketStatus =
   | 'pending'
   | 'in_progress'
   | 'in_review'
-  | 'review_fetched'
+  | 'needs_patch'
+  | 'operator_input_needed'
   | 'reviewed'
   | 'done';
 
-export type ReviewOutcome = 'clean' | 'needs_patch' | 'patched';
+export type ReviewOutcome = 'clean' | 'patched';
+export type ReviewResult =
+  | ReviewOutcome
+  | 'needs_patch'
+  | 'operator_input_needed';
 
 export type TicketDefinition = {
   id: string;
@@ -123,7 +128,7 @@ export type DeliveryNotificationEvent =
       ticketId: string;
       ticketTitle: string;
       branch: string;
-      outcome: ReviewOutcome;
+      outcome: ReviewResult;
       note?: string;
       prUrl?: string;
     }
@@ -146,7 +151,7 @@ export type DeliveryNotificationEvent =
       kind: 'standalone_review_recorded';
       prNumber: number;
       prUrl: string;
-      outcome: ReviewOutcome;
+      outcome: ReviewResult;
       note?: string;
     }
   | {
@@ -216,7 +221,7 @@ type AiReviewTriagerResult = {
   actionSummary?: string;
   note: string;
   nonActionSummary?: string;
-  outcome: ReviewOutcome;
+  outcome: ReviewResult;
   vendors: string[];
 };
 
@@ -240,7 +245,7 @@ type StandaloneAiReviewResult = {
   artifactTextPath?: string;
   note: string;
   nonActionSummary?: string;
-  outcome: ReviewOutcome;
+  outcome: ReviewResult;
   prNumber: number;
   prUrl: string;
   vendors: string[];
@@ -367,11 +372,11 @@ export async function runDeliveryOrchestrator(
         if (
           !ticketId ||
           (outcome !== 'clean' &&
-            outcome !== 'needs_patch' &&
-            outcome !== 'patched')
+            outcome !== 'patched' &&
+            outcome !== 'operator_input_needed')
         ) {
           throw new Error(
-            'Usage: bun run deliver --plan <plan-path> record-review <ticket-id> <clean|needs_patch|patched> [note]',
+            'Usage: bun run deliver --plan <plan-path> record-review <ticket-id> <clean|patched|operator_input_needed> [note]',
           );
         }
 
@@ -708,12 +713,14 @@ function statusRank(status: TicketStatus): number {
       return 1;
     case 'in_review':
       return 2;
-    case 'review_fetched':
+    case 'needs_patch':
       return 3;
-    case 'reviewed':
+    case 'operator_input_needed':
       return 4;
-    case 'done':
+    case 'reviewed':
       return 5;
+    case 'done':
+      return 6;
   }
 }
 
@@ -916,7 +923,7 @@ function getUsage(): string {
     '  start [ticket-id]',
     '  open-pr [ticket-id]',
     '  poll-review [ticket-id]',
-    '  record-review <ticket-id> <clean|needs_patch|patched> [note]',
+    '  record-review <ticket-id> <clean|patched|operator_input_needed> [note]',
     '  advance [--no-start-next]',
     '  restack [ticket-id]',
   ].join('\n');
@@ -1852,7 +1859,7 @@ export async function pollReview(
     const reviewVendors =
       triage.vendors.length > 0 ? triage.vendors : detectedReview.vendors;
     const nextStatus =
-      triage.outcome === 'needs_patch' ? 'review_fetched' : 'reviewed';
+      triage.outcome === 'needs_patch' ? 'needs_patch' : 'reviewed';
     const nextState: DeliveryState = {
       ...state,
       tickets: state.tickets.map((ticket) =>
@@ -1872,7 +1879,10 @@ export async function pollReview(
               ),
               reviewFetchedAt: new Date(now()).toISOString(),
               reviewNonActionSummary: triage.nonActionSummary,
-              reviewOutcome: triage.outcome,
+              reviewOutcome:
+                triage.outcome === 'clean' || triage.outcome === 'patched'
+                  ? triage.outcome
+                  : undefined,
               reviewNote: triage.note,
               reviewVendors,
             }
@@ -1969,7 +1979,10 @@ async function runStandaloneAiReview(
       artifactTextPath: relativeToRepo(cwd, artifacts.artifactTextPath),
       note: triage.note,
       nonActionSummary: triage.nonActionSummary,
-      outcome: triage.outcome,
+      outcome:
+        triage.outcome === 'needs_patch'
+          ? 'operator_input_needed'
+          : triage.outcome,
       prNumber: pullRequest.number,
       prUrl: pullRequest.url,
       vendors:
@@ -2054,7 +2067,7 @@ async function recordReview(
   state: DeliveryState,
   cwd: string,
   ticketId: string,
-  outcome: ReviewOutcome,
+  outcome: ReviewResult,
   note?: string,
 ): Promise<DeliveryState> {
   const target = state.tickets.find((ticket) => ticket.id === ticketId);
@@ -2063,7 +2076,11 @@ async function recordReview(
     throw new Error(`Unknown ticket ${ticketId}.`);
   }
 
-  if (target.status !== 'review_fetched' && target.status !== 'in_review') {
+  if (
+    target.status !== 'needs_patch' &&
+    target.status !== 'in_review' &&
+    target.status !== 'operator_input_needed'
+  ) {
     throw new Error(
       `Ticket ${ticketId} must be in review before recording an outcome.`,
     );
@@ -2075,8 +2092,14 @@ async function recordReview(
       ticket.id === ticketId
         ? {
             ...ticket,
-            status: 'reviewed',
-            reviewOutcome: outcome,
+            status:
+              outcome === 'operator_input_needed'
+                ? 'operator_input_needed'
+                : 'reviewed',
+            reviewOutcome:
+              outcome === 'clean' || outcome === 'patched'
+                ? outcome
+                : undefined,
             reviewNote: note,
           }
         : ticket,
@@ -2241,6 +2264,7 @@ export function buildPullRequestBody(
     | 'ticketFile'
     | 'baseBranch'
     | 'reviewActionSummary'
+    | 'status'
     | 'reviewOutcome'
     | 'reviewNote'
     | 'reviewNonActionSummary'
@@ -2255,7 +2279,11 @@ export function buildPullRequestBody(
     `- stacked base branch: \`${ticket.baseBranch}\``,
   ];
 
-  if (ticket.reviewOutcome) {
+  if (
+    ticket.reviewOutcome ||
+    ticket.status === 'needs_patch' ||
+    ticket.status === 'operator_input_needed'
+  ) {
     lines.push('', '## AI Review Follow-Up', '');
 
     if (ticket.reviewOutcome === 'clean') {
@@ -2267,7 +2295,7 @@ export function buildPullRequestBody(
       );
     }
 
-    if (ticket.reviewOutcome === 'needs_patch') {
+    if (ticket.status === 'needs_patch') {
       lines.push(
         '- `ai-code-review` triage found actionable follow-up work that still needs patching.',
       );
@@ -2276,6 +2304,12 @@ export function buildPullRequestBody(
     if (ticket.reviewOutcome === 'patched') {
       lines.push(
         '- `ai-code-review` triage led to prudent follow-up patches that are now included in this branch.',
+      );
+    }
+
+    if (ticket.status === 'operator_input_needed') {
+      lines.push(
+        '- `ai-code-review` stopped for operator input before follow-up could be completed safely.',
       );
     }
 
@@ -2351,10 +2385,24 @@ function buildReviewRecordedEvent(
   state: DeliveryState,
   ticket: Pick<
     TicketState,
-    'id' | 'title' | 'branch' | 'reviewOutcome' | 'reviewNote' | 'prUrl'
+    | 'id'
+    | 'title'
+    | 'branch'
+    | 'reviewOutcome'
+    | 'reviewNote'
+    | 'prUrl'
+    | 'status'
   >,
 ): DeliveryNotificationEvent | undefined {
-  if (!ticket.reviewOutcome) {
+  const outcome =
+    ticket.reviewOutcome ??
+    (ticket.status === 'needs_patch'
+      ? 'needs_patch'
+      : ticket.status === 'operator_input_needed'
+        ? 'operator_input_needed'
+        : undefined);
+
+  if (!outcome) {
     return undefined;
   }
 
@@ -2364,7 +2412,7 @@ function buildReviewRecordedEvent(
     ticketId: ticket.id,
     ticketTitle: ticket.title,
     branch: ticket.branch,
-    outcome: ticket.reviewOutcome,
+    outcome,
     note: ticket.reviewNote,
     prUrl: ticket.prUrl,
   };
@@ -2478,8 +2526,8 @@ export function eventsForPollReviewCommand(
     : (state.tickets.find((candidate) => candidate.status === 'in_review') ??
       state.tickets.find(
         (candidate) =>
-          candidate.status === 'review_fetched' &&
-          candidate.reviewOutcome !== undefined,
+          candidate.status === 'needs_patch' ||
+          candidate.status === 'operator_input_needed',
       ) ??
       state.tickets.find(
         (candidate) =>
@@ -2489,8 +2537,12 @@ export function eventsForPollReviewCommand(
 
   if (
     !ticket ||
-    (ticket.status !== 'reviewed' && ticket.status !== 'review_fetched') ||
-    !ticket.reviewOutcome
+    (ticket.status !== 'reviewed' &&
+      ticket.status !== 'needs_patch' &&
+      ticket.status !== 'operator_input_needed') ||
+    (!ticket.reviewOutcome &&
+      ticket.status !== 'needs_patch' &&
+      ticket.status !== 'operator_input_needed')
   ) {
     return [];
   }
@@ -2702,9 +2754,9 @@ export function buildStandaloneAiReviewSection(
         ? '- no `ai-code-review` feedback was detected during the 8-minute polling window.'
         : '- detected `ai-code-review` feedback did not merit follow-up changes.',
     );
-  } else if (result.outcome === 'needs_patch') {
+  } else if (result.outcome === 'operator_input_needed') {
     lines.push(
-      '- `ai-code-review` detected actionable or ambiguous follow-up work that still needs attention.',
+      '- `ai-code-review` completed, but follow-up still needs operator attention.',
     );
   } else {
     lines.push(
@@ -3206,6 +3258,7 @@ export function formatNotificationMessage(
     case 'standalone_review_recorded':
       return [
         standaloneHeader,
+        'AI review complete.',
         `Outcome: ${event.outcome}`,
         event.note ? `Note: ${event.note}` : undefined,
       ]

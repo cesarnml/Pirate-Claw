@@ -37,6 +37,8 @@ The only contract between them is the repo-local helper script output:
   - `non_action_summary?: "<what was ignored and why>"`
   - `vendors: [...]`
 
+When the triager returns `needs_patch`, the orchestrator treats that as an intermediate follow-up state. The follow-up should conclude as either `patched` or `operator_input_needed`, not stop permanently at `needs_patch`.
+
 Use this skill when the orchestrator has saved an AI review artifact or when you need to inspect recent AI review comments on a PR in this repo.
 
 ## Workflow

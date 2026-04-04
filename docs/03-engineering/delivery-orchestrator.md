@@ -69,7 +69,7 @@ So the orchestrator only consumes the skill hook contracts:
 
 The absence of `ai-code-review` comments after the final 8-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
 
-When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket stays blocked for follow-up with the saved artifacts and triage note. PR body updates remain best-effort in either case.
+When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket moves into an intermediate `needs_patch` state with the saved artifacts and triage note. From there the follow-up must conclude as either `patched` or `operator_input_needed`. PR body updates remain best-effort in either case.
 
 ## Ticket Context Reset
 
@@ -125,7 +125,7 @@ Available commands:
 - `start [ticket-id]`
 - `open-pr [ticket-id]`
 - `poll-review [ticket-id]`
-- `record-review <ticket-id> <clean|needs_patch|patched> [note]`
+- `record-review <ticket-id> <clean|patched|operator_input_needed> [note]`
 - `advance [--no-start-next]`
 - `restack [ticket-id]`
 
@@ -135,7 +135,7 @@ Available commands:
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md open-pr
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-review
-# if the triager hook leaves the ticket at needs_patch, follow up and then record the final outcome
+# if the triager hook leaves the ticket in needs_patch, follow up and then record the final outcome
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md record-review P2.02 patched "patched the two actionable correctness issues"
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
 ```
