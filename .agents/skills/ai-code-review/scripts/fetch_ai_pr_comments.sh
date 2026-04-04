@@ -111,7 +111,7 @@ jq -n \
 
     def looks_like_summary_noise_text:
       (body_text | normalize_text) as $body
-      | ($body | test("review summary by|walkthroughs|file changes|looking for bugs\\?|finishing touches|summary of changes"));
+      | ($body | test("review summary by|code review by|walkthroughs|file changes|looking for bugs\\?|finishing touches|summary of changes|rule violations|bugs \\("));
 
     def vendor_name:
       (author_login | ascii_downcase) as $login
@@ -175,6 +175,7 @@ jq -n \
       | if $channel == "inline_review" then
           if (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then "unknown" else "finding" end
         elif $channel == "review_summary" and ($body | length) == 0 then "summary"
+        elif looks_like_started_text or looks_like_summary_noise_text then "summary"
         elif looks_like_started_text or looks_like_summary_noise_text then "summary"
         elif ($body | test("summary|overall|overview|high level|high-level|general feedback|looks good|no major issues|quick recap")) then "summary"
         elif ($body | test("should|could|must|consider|missing|bug|issue|incorrect|guard|handle|return|null|undefined|race|rename|suggestion:|nit:|nitpick")) then "finding"
