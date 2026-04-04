@@ -575,7 +575,7 @@ describe('delivery orchestrator', () => {
         note: 'External AI review completed without prudent follow-up changes.',
         vendors: ['qodo'],
       }),
-    ).toContain('did not merit follow-up changes');
+    ).toContain('triage found no prudent follow-up changes');
   });
 
   it('does not include external summary-only noise in the ticket pr body', () => {

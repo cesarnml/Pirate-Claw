@@ -740,11 +740,6 @@ export function syncStateWithPlan(
           inferredTicket?.reviewIncompleteAgents,
         reviewComments:
           previous?.reviewComments ?? inferredTicket?.reviewComments,
-        reviewIncompleteAgents:
-          previous?.reviewIncompleteAgents ??
-          inferredTicket?.reviewIncompleteAgents,
-        reviewComments:
-          previous?.reviewComments ?? inferredTicket?.reviewComments,
         reviewOutcome: previous?.reviewOutcome ?? inferredTicket?.reviewOutcome,
         reviewNote: previous?.reviewNote ?? inferredTicket?.reviewNote,
         reviewThreadResolutions:
@@ -2368,19 +2363,6 @@ export async function pollReview(
               reviewIncompleteAgents:
                 reviewPollResult.status === 'partial_timeout'
                   ? reviewPollResult.incompleteAgents
-              reviewThreadResolutions:
-                reviewThreadResolutions.length > 0
-                  ? reviewThreadResolutions
-              reviewNote:
-                reviewPollResult.status === 'partial_timeout'
-                  ? formatPartialAiReviewTimeoutNote(
-                      reviewPollResult.effectiveMaxWaitMinutes,
-                      reviewPollResult.incompleteAgents,
-                    )
-                  : triage.note,
-              reviewIncompleteAgents:
-                reviewPollResult.status === 'partial_timeout'
-                  ? reviewPollResult.incompleteAgents
                   : undefined,
               reviewThreadResolutions:
                 reviewThreadResolutions.length > 0
@@ -2425,14 +2407,6 @@ export async function pollReview(
             reviewHeadSha: undefined,
             reviewNonActionSummary: undefined,
             reviewOutcome: 'clean',
-            reviewNote: reviewPollResult.incompleteAgents?.length
-              ? formatIncompleteAiReviewWithoutFindingsNote(
-                  reviewPollResult.effectiveMaxWaitMinutes,
-                  reviewPollResult.incompleteAgents,
-                )
-              : formatNoAiReviewFeedbackNote(state.reviewPollMaxWaitMinutes),
-            reviewIncompleteAgents: reviewPollResult.incompleteAgents,
-            reviewThreadResolutions: undefined,
             reviewNote: reviewPollResult.incompleteAgents?.length
               ? formatIncompleteAiReviewWithoutFindingsNote(
                   reviewPollResult.effectiveMaxWaitMinutes,
