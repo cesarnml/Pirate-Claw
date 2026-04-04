@@ -2063,7 +2063,7 @@ async function writeStandaloneAiReviewNote(
   );
 }
 
-async function recordReview(
+export async function recordReview(
   state: DeliveryState,
   cwd: string,
   ticketId: string,
@@ -2100,7 +2100,7 @@ async function recordReview(
               outcome === 'clean' || outcome === 'patched'
                 ? outcome
                 : undefined,
-            reviewNote: note,
+            reviewNote: note ?? ticket.reviewNote,
           }
         : ticket,
     ),

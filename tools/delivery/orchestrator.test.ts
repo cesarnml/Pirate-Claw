@@ -31,6 +31,7 @@ import {
   parseAiReviewTriagerOutput,
   parsePlan,
   pollReview,
+  recordReview,
   resolvePlanPathForBranch,
   resolveNotifier,
   resolveReviewFetcher,
@@ -1207,6 +1208,48 @@ describe('delivery orchestrator', () => {
     });
 
     expect(sleeps).toEqual([120000]);
+  });
+
+  it('preserves the triage note when recording a final review outcome without a new note', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.codex/delivery/phase-03/state.json',
+      reviewsDirPath: '.codex/delivery/phase-03/reviews',
+      handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'needs_patch',
+          branch:
+            'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          reviewNote:
+            'Actionable AI review findings were detected and still need follow-up.',
+        },
+      ],
+    };
+
+    const nextState = await recordReview(
+      state,
+      '/tmp/pirate_claw',
+      'P3.01',
+      'patched',
+    );
+
+    expect(nextState.tickets[0]).toMatchObject({
+      status: 'reviewed',
+      reviewOutcome: 'patched',
+      reviewNote:
+        'Actionable AI review findings were detected and still need follow-up.',
+    });
   });
 
   it('keeps notification failures best-effort', async () => {
