@@ -175,6 +175,7 @@ jq -n \
       | if $channel == "inline_review" then
           if (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then "unknown" else "finding" end
         elif looks_like_started_text or looks_like_summary_noise_text then "summary"
+        elif looks_like_started_text or looks_like_summary_noise_text then "summary"
         elif ($body | test("summary|overall|overview|high level|high-level|general feedback|looks good|no major issues|quick recap")) then "summary"
         elif ($body | test("should|could|must|consider|missing|bug|issue|incorrect|guard|handle|return|null|undefined|race|rename|suggestion:|nit:|nitpick")) then "finding"
         else "unknown"
