@@ -42,39 +42,191 @@ else
   review_comments_json='[]'
 fi
 
-review_threads_json="$(
-  gh api graphql \
-    -F owner="$owner" \
-    -F name="$name" \
-    -F number="$pr_number" \
-    -f query='
-      query($owner: String!, $name: String!, $number: Int!) {
-        repository(owner: $owner, name: $name) {
-          pullRequest(number: $number) {
-            reviewThreads(first: 100) {
-              nodes {
-                id
-                isResolved
-                isOutdated
-                viewerCanResolve
-                comments(first: 50) {
-                  nodes {
-                    databaseId
-                    url
+fetch_review_threads_page() {
+  local after_cursor="${1:-}"
+
+  if [[ -n "$after_cursor" ]]; then
+    gh api graphql \
+      -F owner="$owner" \
+      -F name="$name" \
+      -F number="$pr_number" \
+      -F after="$after_cursor" \
+      -f query='
+        query($owner: String!, $name: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100, after: $after) {
+                nodes {
+                  id
+                  isResolved
+                  isOutdated
+                  viewerCanResolve
+                  comments(first: 100) {
+                    nodes {
+                      databaseId
+                      url
+                    }
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
                   }
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
                 }
               }
             }
           }
         }
-      }
-    ' \
-    --jq '.data.repository.pullRequest.reviewThreads.nodes'
-)"
+      '
+  else
+    gh api graphql \
+      -F owner="$owner" \
+      -F name="$name" \
+      -F number="$pr_number" \
+      -f query='
+        query($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  isOutdated
+                  viewerCanResolve
+                  comments(first: 100) {
+                    nodes {
+                      databaseId
+                      url
+                    }
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
+                  }
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }
+          }
+        }
+      '
+  fi
+}
 
-if [[ -z "$review_threads_json" ]]; then
-  review_threads_json='[]'
-fi
+fetch_thread_comments_page() {
+  local thread_id="$1"
+  local after_cursor="${2:-}"
+
+  if [[ -n "$after_cursor" ]]; then
+    gh api graphql \
+      -F threadId="$thread_id" \
+      -F after="$after_cursor" \
+      -f query='
+        query($threadId: ID!, $after: String) {
+          node(id: $threadId) {
+            ... on PullRequestReviewThread {
+              comments(first: 100, after: $after) {
+                nodes {
+                  databaseId
+                  url
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }
+          }
+        }
+      '
+  else
+    gh api graphql \
+      -F threadId="$thread_id" \
+      -f query='
+        query($threadId: ID!) {
+          node(id: $threadId) {
+            ... on PullRequestReviewThread {
+              comments(first: 100) {
+                nodes {
+                  databaseId
+                  url
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }
+          }
+        }
+      '
+  fi
+}
+
+review_threads_json='[]'
+thread_cursor=""
+
+while :; do
+  thread_page_json="$(fetch_review_threads_page "$thread_cursor")"
+  thread_nodes_json="$(printf '%s' "$thread_page_json" | jq '.data.repository.pullRequest.reviewThreads.nodes')"
+
+  if [[ "$thread_nodes_json" != "[]" ]]; then
+    review_threads_json="$(
+      jq -n \
+        --argjson existing "$review_threads_json" \
+        --argjson nodes "$thread_nodes_json" \
+        '$existing + $nodes'
+    )"
+  fi
+
+  thread_has_next="$(printf '%s' "$thread_page_json" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false')"
+  if [[ "$thread_has_next" != "true" ]]; then
+    break
+  fi
+
+  thread_cursor="$(printf '%s' "$thread_page_json" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // ""')"
+done
+
+expanded_review_threads_json='[]'
+while IFS= read -r thread_json; do
+  [[ -z "$thread_json" ]] && continue
+
+  thread_id="$(printf '%s' "$thread_json" | jq -r '.id')"
+  comment_nodes_json="$(printf '%s' "$thread_json" | jq '.comments.nodes // []')"
+  comment_has_next="$(printf '%s' "$thread_json" | jq -r '.comments.pageInfo.hasNextPage // false')"
+  comment_cursor="$(printf '%s' "$thread_json" | jq -r '.comments.pageInfo.endCursor // ""')"
+
+  while [[ "$comment_has_next" == "true" ]]; do
+    comment_page_json="$(fetch_thread_comments_page "$thread_id" "$comment_cursor")"
+    page_nodes_json="$(printf '%s' "$comment_page_json" | jq '.data.node.comments.nodes // []')"
+    comment_nodes_json="$(
+      jq -n \
+        --argjson existing "$comment_nodes_json" \
+        --argjson nodes "$page_nodes_json" \
+        '$existing + $nodes'
+    )"
+    comment_has_next="$(printf '%s' "$comment_page_json" | jq -r '.data.node.comments.pageInfo.hasNextPage // false')"
+    comment_cursor="$(printf '%s' "$comment_page_json" | jq -r '.data.node.comments.pageInfo.endCursor // ""')"
+  done
+
+  expanded_thread_json="$(
+    printf '%s' "$thread_json" | jq --argjson nodes "$comment_nodes_json" '.comments = { nodes: $nodes }'
+  )"
+  expanded_review_threads_json="$(
+    jq -n \
+      --argjson existing "$expanded_review_threads_json" \
+      --argjson thread "$expanded_thread_json" \
+      '$existing + [$thread]'
+  )"
+done < <(printf '%s' "$review_threads_json" | jq -c '.[]')
+
+review_threads_json="$expanded_review_threads_json"
 
 jq -n \
   --argjson pr "$pr_json" \
