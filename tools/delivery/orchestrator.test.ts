@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  buildStandaloneAiReviewSection,
   buildReviewPollCheckMinutes,
   buildPullRequestTitle,
   buildTicketHandoff,
@@ -22,6 +23,7 @@ import {
   findTicketByBranch,
   formatNotificationMessage,
   formatReviewWindowMessage,
+  mergeStandaloneAiReviewSection,
   notifyBestEffort,
   parseDotEnv,
   parseGitWorktreeList,
@@ -495,6 +497,33 @@ describe('delivery orchestrator', () => {
         reason: 'No in-progress ticket found to open as a PR.',
       }),
     ).toContain('Anton\nStopped in phase-03.');
+    expect(
+      formatNotificationMessage('/tmp/pirate_claw', {
+        kind: 'standalone_review_started',
+        prNumber: 32,
+        prUrl: 'https://example.test/pull/32',
+        reviewPollIntervalMinutes: 2,
+        reviewPollMaxWaitMinutes: 8,
+      }),
+    ).toContain('Standalone AI review started for PR #32.');
+  });
+
+  it('merges the standalone ai review section into a pr body', () => {
+    const section = buildStandaloneAiReviewSection({
+      outcome: 'needs_patch',
+      note: 'AI review feedback detected.',
+      artifactPath: '.codex/ai-review/pr-32/review.txt',
+    });
+
+    expect(
+      mergeStandaloneAiReviewSection('## Summary\n- existing body', section),
+    ).toContain('<!-- codex-ai-review:start -->');
+    expect(
+      mergeStandaloneAiReviewSection(
+        '## Summary\n- existing body\n\n<!-- codex-ai-review:start -->\nold\n<!-- codex-ai-review:end -->\n',
+        section,
+      ),
+    ).not.toContain('\nold\n');
   });
 
   it('surfaces the review wait window after opening a PR', () => {

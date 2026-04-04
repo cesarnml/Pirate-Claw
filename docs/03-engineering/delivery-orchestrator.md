@@ -87,6 +87,8 @@ This does not automatically create a brand-new Codex thread, but it is the curre
 
 During external waits such as AI-review windows, the worker may read ahead into the next ticket, handoff, and adjacent seams to prepare the next slice. That read-ahead must not turn into write-ahead; implementation for the next ticket still starts only after the current ticket is cleared.
 
+That policy applies only to ticket-linked delivery PRs. Standalone manual `ai-review` runs for non-ticket PRs do not have a next-ticket boundary, so there is no analogous look-ahead rule there.
+
 ## Existing Phase 02 Work
 
 Phase 02 was already processed once through a more brittle route before this tool existed.
@@ -113,6 +115,7 @@ Available commands:
 - `sync`
 - `status`
 - `repair-state`
+- `ai-review [--pr <number>]`
 - `start [ticket-id]`
 - `open-pr [ticket-id]`
 - `poll-review [ticket-id]`
@@ -129,6 +132,13 @@ bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-rev
 # if ai review comments were found, use the ai-code-review skill to triage the saved review artifact
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md record-review P2.02 patched "patched the two actionable correctness issues"
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
+```
+
+For a non-ticket PR, run the manual standalone path:
+
+```bash
+bun run deliver ai-review
+# or: bun run deliver ai-review --pr 32
 ```
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.

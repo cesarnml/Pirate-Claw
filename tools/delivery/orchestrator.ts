@@ -65,7 +65,12 @@ type RepairStateResult = {
 };
 
 type PullRequestSummary = {
+  baseRefName?: string;
+  body?: string;
+  createdAt?: string;
+  headRefName?: string;
   number: number;
+  title?: string;
   url: string;
   state: string;
 };
@@ -127,6 +132,20 @@ export type DeliveryNotificationEvent =
       prUrl?: string;
     }
   | {
+      kind: 'standalone_review_started';
+      prNumber: number;
+      prUrl: string;
+      reviewPollIntervalMinutes: number;
+      reviewPollMaxWaitMinutes: number;
+    }
+  | {
+      kind: 'standalone_review_recorded';
+      prNumber: number;
+      prUrl: string;
+      outcome: ReviewOutcome;
+      note?: string;
+    }
+  | {
       kind: 'run_blocked';
       planKey?: string;
       command?: string;
@@ -149,6 +168,8 @@ const DEFAULT_REVIEW_POLL_INTERVAL_MINUTES = 2;
 const DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
 const NO_AI_REVIEW_FEEDBACK_NOTE =
   'No AI review feedback was detected within the 8-minute polling window.';
+const STANDALONE_AI_REVIEW_SECTION_START = '<!-- codex-ai-review:start -->';
+const STANDALONE_AI_REVIEW_SECTION_END = '<!-- codex-ai-review:end -->';
 
 type AiReviewFetcherResult = {
   detected: boolean;
@@ -165,6 +186,23 @@ type PollReviewDependencies = {
   ) => void | Promise<void>;
 };
 
+type StandaloneAiReviewResult = {
+  artifactPath?: string;
+  note: string;
+  outcome: ReviewOutcome;
+  prNumber: number;
+  prUrl: string;
+};
+
+type StandalonePullRequest = {
+  body: string;
+  createdAt: string;
+  headRefName: string;
+  number: number;
+  title: string;
+  url: string;
+};
+
 export async function runDeliveryOrchestrator(
   argv: string[],
   cwd: string,
@@ -177,11 +215,24 @@ export async function runDeliveryOrchestrator(
         positionals: string[];
         flags: Set<string>;
         planPath?: string;
+        prNumber?: number;
       }
     | undefined;
 
   try {
     parsed = parseCliArgs(argv);
+    if (parsed.command === 'ai-review') {
+      const result = await runStandaloneAiReview(
+        cwd,
+        notifier,
+        parsed.prNumber,
+      );
+      console.log(formatStandaloneAiReviewResult(result));
+      await emitNotificationWarnings(notifier, cwd, [
+        buildStandaloneReviewRecordedEvent(result),
+      ]);
+      return 0;
+    }
     const options = await resolveOptionsForCommand(
       cwd,
       parsed.command,
@@ -706,8 +757,10 @@ function parseCliArgs(argv: string[]): {
   positionals: string[];
   flags: Set<string>;
   planPath?: string;
+  prNumber?: number;
 } {
   let planPath: string | undefined;
+  let prNumber: number | undefined;
   const flags = new Set<string>();
   const positionals: string[] = [];
 
@@ -716,6 +769,18 @@ function parseCliArgs(argv: string[]): {
 
     if (value === '--plan') {
       planPath = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (value === '--pr') {
+      const rawNumber = argv[index + 1];
+
+      if (!rawNumber || Number.isNaN(Number(rawNumber))) {
+        throw new Error('Pass --pr <number>.');
+      }
+
+      prNumber = Number(rawNumber);
       index += 1;
       continue;
     }
@@ -745,6 +810,7 @@ function parseCliArgs(argv: string[]): {
     positionals: rest,
     flags,
     planPath,
+    prNumber,
   };
 }
 
@@ -773,6 +839,7 @@ function getUsage(): string {
     'Usage: bun run deliver --plan <plan-path> <command>',
     '',
     'Commands:',
+    '  ai-review [--pr <number>]',
     '  sync',
     '  status',
     '  repair-state',
@@ -1171,12 +1238,38 @@ function listPullRequests(cwd: string): Map<string, PullRequestSummary> {
     parsed.map((pr) => [
       pr.headRefName,
       {
+        headRefName: pr.headRefName,
         number: pr.number,
         url: pr.url,
         state: pr.state,
       } satisfies PullRequestSummary,
     ]),
   );
+}
+
+function resolveStandalonePullRequest(
+  cwd: string,
+  prNumber?: number,
+): StandalonePullRequest {
+  const target = prNumber ? String(prNumber) : undefined;
+  const stdout = runProcess(cwd, [
+    'gh',
+    'pr',
+    'view',
+    ...(target ? [target] : []),
+    '--json',
+    'number,url,title,body,headRefName,createdAt',
+  ]);
+  const parsed = JSON.parse(stdout) as {
+    body: string;
+    createdAt: string;
+    headRefName: string;
+    number: number;
+    title: string;
+    url: string;
+  };
+
+  return parsed;
 }
 
 function findPullRequestForTicket(
@@ -1502,6 +1595,105 @@ export async function pollReview(
 
   await updatePullRequestBodyFn(nextState, updatedTarget);
   return nextState;
+}
+
+async function runStandaloneAiReview(
+  cwd: string,
+  notifier: DeliveryNotifier,
+  prNumber?: number,
+): Promise<StandaloneAiReviewResult> {
+  const pullRequest = resolveStandalonePullRequest(cwd, prNumber);
+
+  await emitNotificationWarnings(notifier, cwd, [
+    buildStandaloneReviewStartedEvent(pullRequest.number, pullRequest.url),
+  ]);
+
+  const fetcher = runAiReviewFetcher;
+  const openedAt = Date.parse(pullRequest.createdAt);
+
+  for (const checkMinute of buildReviewPollCheckMinutes(
+    DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
+    DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+  )) {
+    if (!Number.isNaN(openedAt)) {
+      const dueAt = openedAt + checkMinute * 60_000;
+      const remaining = dueAt - Date.now();
+
+      if (remaining > 0) {
+        await sleep(remaining);
+      }
+    }
+
+    const result = fetcher(cwd, pullRequest.number);
+
+    if (!result.detected) {
+      continue;
+    }
+
+    const artifactPath = resolve(
+      cwd,
+      '.codex/ai-review',
+      `pr-${pullRequest.number}`,
+      'review.txt',
+    );
+    await mkdir(dirname(artifactPath), { recursive: true });
+    await writeFile(artifactPath, result.artifact, 'utf8');
+
+    const standaloneResult: StandaloneAiReviewResult = {
+      artifactPath: relativeToRepo(cwd, artifactPath),
+      note: 'AI review feedback detected. Use the repo-local ai-code-review skill to triage the saved artifact.',
+      outcome: 'needs_patch',
+      prNumber: pullRequest.number,
+      prUrl: pullRequest.url,
+    };
+    await writeStandaloneAiReviewNote(
+      cwd,
+      pullRequest.number,
+      standaloneResult,
+    );
+    updateStandalonePullRequestBody(cwd, pullRequest, standaloneResult);
+    return standaloneResult;
+  }
+
+  const standaloneResult: StandaloneAiReviewResult = {
+    note: NO_AI_REVIEW_FEEDBACK_NOTE,
+    outcome: 'clean',
+    prNumber: pullRequest.number,
+    prUrl: pullRequest.url,
+  };
+  await writeStandaloneAiReviewNote(cwd, pullRequest.number, standaloneResult);
+  updateStandalonePullRequestBody(cwd, pullRequest, standaloneResult);
+  return standaloneResult;
+}
+
+async function writeStandaloneAiReviewNote(
+  cwd: string,
+  prNumber: number,
+  result: StandaloneAiReviewResult,
+): Promise<void> {
+  const notePath = resolve(
+    cwd,
+    '.codex/ai-review',
+    `pr-${prNumber}`,
+    'note.md',
+  );
+  await mkdir(dirname(notePath), { recursive: true });
+  await writeFile(
+    notePath,
+    [
+      '# AI Review Note',
+      '',
+      `- PR: ${result.prUrl}`,
+      `- Outcome: \`${result.outcome}\``,
+      `- Note: ${result.note}`,
+      result.artifactPath
+        ? `- Artifact: \`${result.artifactPath}\``
+        : undefined,
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join('\n') + '\n',
+    'utf8',
+  );
 }
 
 async function recordReview(
@@ -1920,6 +2112,31 @@ export function eventsForPollReviewCommand(
   );
 }
 
+function buildStandaloneReviewStartedEvent(
+  prNumber: number,
+  prUrl: string,
+): DeliveryNotificationEvent {
+  return {
+    kind: 'standalone_review_started',
+    prNumber,
+    prUrl,
+    reviewPollIntervalMinutes: DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
+    reviewPollMaxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+  };
+}
+
+function buildStandaloneReviewRecordedEvent(
+  result: StandaloneAiReviewResult,
+): DeliveryNotificationEvent {
+  return {
+    kind: 'standalone_review_recorded',
+    prNumber: result.prNumber,
+    prUrl: result.prUrl,
+    outcome: result.outcome,
+    note: result.note,
+  };
+}
+
 export function eventsForAdvanceCommand(
   previousState: DeliveryState,
   nextState: DeliveryState,
@@ -2061,6 +2278,69 @@ function updatePullRequestBody(
     String(ticket.prNumber),
     '--body',
     buildPullRequestBody(state, ticket),
+  ]);
+}
+
+export function buildStandaloneAiReviewSection(
+  result: Pick<StandaloneAiReviewResult, 'artifactPath' | 'note' | 'outcome'>,
+): string {
+  const lines = [STANDALONE_AI_REVIEW_SECTION_START, '## AI Review', ''];
+
+  if (result.outcome === 'clean') {
+    lines.push(
+      '- no `ai-code-review` feedback was detected during the 8-minute polling window.',
+    );
+  } else {
+    lines.push(
+      '- `ai-code-review` detected feedback and saved a review artifact for triage.',
+    );
+  }
+
+  lines.push(`- outcome: \`${result.outcome}\``);
+  lines.push(`- note: ${result.note}`);
+
+  if (result.artifactPath) {
+    lines.push(`- artifact: \`${result.artifactPath}\``);
+  }
+
+  lines.push(STANDALONE_AI_REVIEW_SECTION_END);
+  return lines.join('\n');
+}
+
+export function mergeStandaloneAiReviewSection(
+  body: string,
+  section: string,
+): string {
+  const pattern = new RegExp(
+    `${STANDALONE_AI_REVIEW_SECTION_START}[\\s\\S]*?${STANDALONE_AI_REVIEW_SECTION_END}`,
+  );
+
+  if (pattern.test(body)) {
+    return body.replace(pattern, section);
+  }
+
+  return body.trimEnd().length > 0
+    ? `${body.trimEnd()}\n\n${section}\n`
+    : `${section}\n`;
+}
+
+function updateStandalonePullRequestBody(
+  cwd: string,
+  pullRequest: StandalonePullRequest,
+  result: StandaloneAiReviewResult,
+): void {
+  const nextBody = mergeStandaloneAiReviewSection(
+    pullRequest.body,
+    buildStandaloneAiReviewSection(result),
+  );
+
+  runProcess(cwd, [
+    'gh',
+    'pr',
+    'edit',
+    String(pullRequest.number),
+    '--body',
+    nextBody,
   ]);
 }
 
@@ -2476,6 +2756,23 @@ export function formatNotificationMessage(
       ]
         .filter((line): line is string => line !== undefined)
         .join('\n');
+    case 'standalone_review_started':
+      return [
+        header,
+        `Standalone AI review started for PR #${event.prNumber}.`,
+        `PR: ${event.prUrl}`,
+        `Cadence: every ${event.reviewPollIntervalMinutes} minutes up to ${event.reviewPollMaxWaitMinutes} minutes`,
+      ].join('\n');
+    case 'standalone_review_recorded':
+      return [
+        header,
+        `Standalone AI review recorded for PR #${event.prNumber}.`,
+        `Outcome: ${event.outcome}`,
+        event.note ? `Note: ${event.note}` : undefined,
+        `PR: ${event.prUrl}`,
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join('\n');
     case 'run_blocked':
       return [
         header,
@@ -2523,6 +2820,20 @@ export function formatReviewWindowMessage(
     `- final check at: ${finalCheckAt}`,
     '- if no `ai-code-review` feedback is detected by the final check, the orchestrator records `clean` and continues',
   ].join('\n');
+}
+
+function formatStandaloneAiReviewResult(
+  result: StandaloneAiReviewResult,
+): string {
+  return [
+    'Standalone AI Review',
+    `pr=${result.prUrl}`,
+    `outcome=${result.outcome}`,
+    result.artifactPath ? `artifact=${result.artifactPath}` : undefined,
+    `note=${result.note}`,
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join('\n');
 }
 
 function formatError(error: unknown): string {
