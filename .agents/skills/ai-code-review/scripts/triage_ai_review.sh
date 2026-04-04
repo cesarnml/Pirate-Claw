@@ -29,9 +29,11 @@ fi
 jq '
   .vendors as $vendors
   | (.comments // []) as $comments
-  | ($comments | map(select(.kind == "finding"))) as $findings
+  | ($comments | map(select((.kind == "finding") and (.is_outdated != true) and (.is_resolved != true)))) as $findings
+  | ($comments | map(select((.kind == "finding") and ((.is_outdated == true) or (.is_resolved == true))))) as $stale_findings
   | ($comments | map(select(.kind == "summary"))) as $summaries
-  | ($comments | map(select(.kind == "unknown"))) as $unknowns
+  | ($comments | map(select((.kind == "unknown") and (.is_outdated != true) and (.is_resolved != true)))) as $unknowns
+  | ($comments | map(select((.kind == "unknown") and ((.is_outdated == true) or (.is_resolved == true))))) as $stale_unknowns
   | if ($findings | length) > 0 then
       {
         outcome: "needs_patch",
@@ -41,6 +43,8 @@ jq '
           (
             [
               (if ($summaries | length) > 0 then "Ignored \($summaries | length) summary comment(s)." else empty end),
+              (if ($stale_findings | length) > 0 then "Ignored \($stale_findings | length) resolved or outdated finding comment(s)." else empty end),
+              (if ($stale_unknowns | length) > 0 then "Ignored \($stale_unknowns | length) resolved or outdated unclear comment(s)." else empty end),
               (if ($unknowns | length) > 0 then "Left \($unknowns | length) unclear comment(s) for manual judgment." else empty end)
             ] | join(" ")
           ),
@@ -53,11 +57,11 @@ jq '
         action_summary: "Escalated \($unknowns | length) unclear comment(s) for follow-up.",
         non_action_summary:
           (
-            if ($summaries | length) > 0 then
-              "Ignored \($summaries | length) summary comment(s)."
-            else
-              null
-            end
+            [
+              (if ($summaries | length) > 0 then "Ignored \($summaries | length) summary comment(s)." else empty end),
+              (if ($stale_findings | length) > 0 then "Ignored \($stale_findings | length) resolved or outdated finding comment(s)." else empty end),
+              (if ($stale_unknowns | length) > 0 then "Ignored \($stale_unknowns | length) resolved or outdated unclear comment(s)." else empty end)
+            ] | join(" ")
           ),
         vendors: $vendors
       }
@@ -68,11 +72,12 @@ jq '
         action_summary: null,
         non_action_summary:
           (
-            if ($summaries | length) > 0 then
-              "Ignored \($summaries | length) summary comment(s)."
-            else
-              "No actionable AI review comments were detected."
-            end
+            [
+              (if ($summaries | length) > 0 then "Ignored \($summaries | length) summary comment(s)." else empty end),
+              (if ($stale_findings | length) > 0 then "Ignored \($stale_findings | length) resolved or outdated finding comment(s)." else empty end),
+              (if ($stale_unknowns | length) > 0 then "Ignored \($stale_unknowns | length) resolved or outdated unclear comment(s)." else empty end),
+              (if ($summaries | length) == 0 and ($stale_findings | length) == 0 and ($stale_unknowns | length) == 0 then "No actionable AI review comments were detected." else empty end)
+            ] | join(" ")
           ),
         vendors: $vendors
       }

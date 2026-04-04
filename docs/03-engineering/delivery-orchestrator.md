@@ -61,6 +61,7 @@ So the orchestrator only consumes the skill hook contracts:
 - fetcher:
   - `detected=false`: keep polling, or auto-record `clean` on the final check
   - `detected=true`: save structured and rendered artifacts, then call the triager hook
+  - preserves vendor identity and inline-comment resolution/outdated metadata in the saved `json` artifact
 - triager:
   - returns `clean`, `needs_patch`, or `patched`
   - returns the final note plus concise action and non-action summaries

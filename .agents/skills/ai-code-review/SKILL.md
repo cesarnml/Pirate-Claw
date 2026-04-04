@@ -49,6 +49,7 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
    - comments from bot or vendor identities that correspond to AI review
    - comments whose wording explicitly identifies them as AI-generated code review
    - ordinary human drive-by comments do not count as AI review
+   - preserve inline comment resolution/outdated state so stale bot comments do not block the flow by default
 5. Return the fetcher contract to the orchestrator when this is being used inside `poll-review`:
    - `detected=false` means keep polling or auto-clean at the end
    - `detected=true` means save the artifacts and hand off to judgment

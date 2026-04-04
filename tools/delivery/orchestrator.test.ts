@@ -532,6 +532,24 @@ describe('delivery orchestrator', () => {
     ).not.toContain('\nold\n');
   });
 
+  it('renders final standalone ai review outcomes accurately', () => {
+    expect(
+      buildStandaloneAiReviewSection({
+        outcome: 'patched',
+        note: 'Patched the prudent AI review follow-up.',
+        vendors: ['coderabbit'],
+      }),
+    ).toContain('triage led to prudent follow-up patches');
+
+    expect(
+      buildStandaloneAiReviewSection({
+        outcome: 'clean',
+        note: 'Detected AI review comments were summary-only and did not merit follow-up changes.',
+        vendors: ['qodo'],
+      }),
+    ).toContain('did not merit follow-up changes');
+  });
+
   it('surfaces the review wait window after opening a PR', () => {
     const message = formatReviewWindowMessage(
       {
@@ -656,6 +674,21 @@ describe('delivery orchestrator', () => {
       }).map((event) => event.kind),
     ).toEqual(['review_recorded']);
     expect(
+      eventsForPollReviewCommand({
+        ...state,
+        tickets: [
+          {
+            ...state.tickets[0]!,
+            status: 'review_fetched',
+            reviewOutcome: 'needs_patch',
+            reviewNote:
+              'Actionable AI review findings were detected and still need follow-up.',
+          },
+          state.tickets[1]!,
+        ],
+      }).map((event) => event.kind),
+    ).toEqual(['review_recorded']);
+    expect(
       eventsForAdvanceCommand(state, {
         ...state,
         tickets: [
@@ -773,6 +806,8 @@ describe('delivery orchestrator', () => {
               author_login: 'coderabbitai',
               author_type: 'Bot',
               body: 'Guard the null return here.',
+              is_outdated: false,
+              is_resolved: false,
               path: 'src/example.ts',
               line: 42,
               url: 'https://example.test/comment/1',
@@ -801,6 +836,8 @@ describe('delivery orchestrator', () => {
           authorLogin: 'coderabbitai',
           authorType: 'Bot',
           body: 'Guard the null return here.',
+          isOutdated: false,
+          isResolved: false,
           path: 'src/example.ts',
           line: 42,
           url: 'https://example.test/comment/1',
@@ -962,6 +999,7 @@ describe('delivery orchestrator', () => {
           ),
         ),
       ).toMatchObject({
+        artifact_text: 'normalized ai review artifact',
         detected: true,
         vendors: ['coderabbit', 'qodo'],
       });

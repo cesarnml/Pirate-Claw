@@ -26,6 +26,8 @@ if [[ -z "$pr_number" ]]; then
 fi
 
 repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+owner="${repo%%/*}"
+name="${repo##*/}"
 pr_json="$(gh pr view "$pr_number" --json number,title,url,headRefName,baseRefName,isDraft,state,comments,reviews)"
 
 review_comments_json="$(
@@ -39,9 +41,42 @@ else
   review_comments_json='[]'
 fi
 
+review_threads_json="$(
+  gh api graphql \
+    -F owner="$owner" \
+    -F name="$name" \
+    -F number="$pr_number" \
+    -f query='
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100) {
+              nodes {
+                isResolved
+                isOutdated
+                comments(first: 50) {
+                  nodes {
+                    databaseId
+                    url
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ' \
+    --jq '.data.repository.pullRequest.reviewThreads.nodes'
+)"
+
+if [[ -z "$review_threads_json" ]]; then
+  review_threads_json='[]'
+fi
+
 jq -n \
   --argjson pr "$pr_json" \
-  --argjson review_comments "$review_comments_json" '
+  --argjson review_comments "$review_comments_json" \
+  --argjson review_threads "$review_threads_json" '
     def normalize_text:
       tostring
       | gsub("\r"; "")
@@ -78,9 +113,50 @@ jq -n \
         else null
         end;
 
+    def enrich_threads:
+      $review_threads
+      | map(
+          . as $thread
+          | (.comments.nodes // [])
+          | map(
+              . + {
+                __thread_is_outdated: ($thread.isOutdated // false),
+                __thread_is_resolved: ($thread.isResolved // false)
+              }
+            )
+        )
+      | add;
+
+    def thread_lookup:
+      (enrich_threads)
+      | map({
+          key_db: (if .databaseId then (.databaseId | tostring) else null end),
+          key_url: (.url // null),
+          is_outdated: .__thread_is_outdated,
+          is_resolved: .__thread_is_resolved
+        })
+      | map(select(.key_db != null or .key_url != null));
+
+    def comment_thread_state:
+      . as $comment
+      | (thread_lookup) as $lookup
+      | ($lookup
+          | map(
+              select(
+                (.key_db != null and .key_db == (($comment.databaseId // null) | tostring))
+                or (.key_url != null and .key_url == ($comment.html_url // $comment.url // ""))
+              )
+            )
+          | .[0]) as $match
+      | {
+          is_outdated: ($match.is_outdated // false),
+          is_resolved: ($match.is_resolved // false)
+        };
+
     def comment_kind($channel):
       (body_text | normalize_text) as $body
-      | if $channel == "inline_review" then "finding"
+      | if $channel == "inline_review" then
+          if (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then "unknown" else "finding" end
         elif ($body | test("summary|overall|overview|high level|high-level|general feedback|looks good|no major issues|quick recap")) then "summary"
         elif ($body | test("should|could|must|consider|missing|bug|issue|incorrect|guard|handle|return|null|undefined|race|rename|suggestion:|nit:|nitpick")) then "finding"
         else "unknown"
@@ -88,6 +164,7 @@ jq -n \
 
     def review_entry($channel; $path; $line):
       (vendor_name) as $vendor
+      | (comment_thread_state) as $thread_state
       | if $vendor == null then
           empty
         else
@@ -101,6 +178,8 @@ jq -n \
             line: $line,
             url: (.html_url // .url // ""),
             updated_at: (.updated_at // .submittedAt // .updatedAt // .createdAt // ""),
+            is_outdated: ($thread_state.is_outdated // false),
+            is_resolved: ($thread_state.is_resolved // false),
             kind: comment_kind($channel)
           }
         end;
@@ -131,6 +210,8 @@ jq -n \
               | map(
                   "- [\(.kind)][\(.vendor)][\(.channel)] \(.author_login)"
                   + (if .path then " on \(.path):\(.line // 0)" else "" end)
+                  + (if .is_resolved then " [resolved]" else "" end)
+                  + (if .is_outdated then " [outdated]" else "" end)
                   + (if .updated_at != "" then " at \(.updated_at)" else "" end)
                   + "\n  "
                   + (.body | gsub("\r"; "") | gsub("\n"; "\n  "))

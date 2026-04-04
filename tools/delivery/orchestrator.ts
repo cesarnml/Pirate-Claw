@@ -185,6 +185,8 @@ type AiReviewComment = {
   authorType: string;
   body: string;
   channel: AiReviewCommentChannel;
+  isOutdated?: boolean;
+  isResolved?: boolean;
   kind: AiReviewCommentKind;
   line?: number;
   path?: string;
@@ -1570,6 +1572,10 @@ function parseOptionalNumber(value: unknown): number | undefined {
     : undefined;
 }
 
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 export function parseAiReviewFetcherOutput(
   output: string,
 ): AiReviewFetcherResult {
@@ -1643,6 +1649,8 @@ export function parseAiReviewFetcherOutput(
       authorType: entry.author_type,
       body: entry.body,
       channel: entry.channel,
+      isOutdated: parseOptionalBoolean(entry.is_outdated),
+      isResolved: parseOptionalBoolean(entry.is_resolved),
       kind: entry.kind,
       line: parseOptionalNumber(entry.line),
       path: parseOptionalString(entry.path),
@@ -1767,6 +1775,7 @@ async function writeAiReviewArtifacts(
     artifactJsonPath,
     JSON.stringify(
       {
+        artifact_text: result.artifactText,
         detected: result.detected,
         vendors: result.vendors,
         comments: result.comments.map((comment) => ({
@@ -1774,6 +1783,8 @@ async function writeAiReviewArtifacts(
           author_type: comment.authorType,
           body: comment.body,
           channel: comment.channel,
+          is_outdated: comment.isOutdated ?? null,
+          is_resolved: comment.isResolved ?? null,
           kind: comment.kind,
           line: comment.line ?? null,
           path: comment.path ?? null,
@@ -2457,11 +2468,20 @@ export function eventsForPollReviewCommand(
     : (state.tickets.find((candidate) => candidate.status === 'in_review') ??
       state.tickets.find(
         (candidate) =>
+          candidate.status === 'review_fetched' &&
+          candidate.reviewOutcome !== undefined,
+      ) ??
+      state.tickets.find(
+        (candidate) =>
           candidate.status === 'reviewed' &&
           candidate.reviewOutcome !== undefined,
       ));
 
-  if (!ticket || ticket.status !== 'reviewed' || !ticket.reviewOutcome) {
+  if (
+    !ticket ||
+    (ticket.status !== 'reviewed' && ticket.status !== 'review_fetched') ||
+    !ticket.reviewOutcome
+  ) {
     return [];
   }
 
@@ -2667,11 +2687,18 @@ export function buildStandaloneAiReviewSection(
 
   if (result.outcome === 'clean') {
     lines.push(
-      '- no `ai-code-review` feedback was detected during the 8-minute polling window.',
+      result.note ===
+        formatNoAiReviewFeedbackNote(DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES)
+        ? '- no `ai-code-review` feedback was detected during the 8-minute polling window.'
+        : '- detected `ai-code-review` feedback did not merit follow-up changes.',
+    );
+  } else if (result.outcome === 'needs_patch') {
+    lines.push(
+      '- `ai-code-review` detected actionable or ambiguous follow-up work that still needs attention.',
     );
   } else {
     lines.push(
-      '- `ai-code-review` detected feedback and saved a review artifact for triage.',
+      '- `ai-code-review` triage led to prudent follow-up patches that are now included in the branch.',
     );
   }
 
