@@ -157,7 +157,8 @@ Useful local commands:
 - `bun run verify`
 - `bun run ci`
 - `bun run deliver restack` to restack the current delivery ticket after its parent PR was squash-merged to `main`
-- `bun run deliver --plan <plan-path> poll-review` to run the orchestrator's 2/4/6/8-minute `ai-code-review` polling loop for the active PR
+- `bun run deliver --plan <plan-path> poll-review` to run the orchestrator's 2/4/6/8-minute `ai-code-review` polling loop for the active PR and persist reviewed-SHA provenance plus vendor-attributed review artifacts
+- `bun run deliver --plan <plan-path> record-review <ticket-id> patched ...` to record patched follow-up and make a best-effort attempt to resolve mapped native GitHub inline review threads
 
 The review hooks and triage guidance for that flow live in the repo-local skill at [`./.agents/skills/ai-code-review/SKILL.md`](./.agents/skills/ai-code-review/SKILL.md). The orchestrator consumes repo-local fetcher and triager scripts there, not a Codex-specific runtime.
 

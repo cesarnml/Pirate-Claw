@@ -1983,6 +1983,65 @@ type PollForAiReviewResult =
       effectiveMaxWaitMinutes: number;
     };
 
+function summarizeReviewMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  return normalized.length > 180
+    ? `${normalized.slice(0, 177).trimEnd()}...`
+    : normalized;
+}
+
+export function parseResolveReviewThreadOutput(output: string): {
+  message?: string;
+  resolved: boolean;
+} {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(output);
+  } catch (error) {
+    throw new Error(
+      `GitHub review-thread resolution must emit JSON. ${formatError(error)}`.trim(),
+      {
+        cause: error,
+      },
+    );
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error(
+      'GitHub review-thread resolution output must be a JSON object.',
+    );
+  }
+
+  if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+    const firstError = parsed.errors.find(isRecord);
+    return {
+      resolved: false,
+      message: summarizeReviewMessage(
+        typeof firstError?.message === 'string'
+          ? firstError.message
+          : 'GitHub reported a review-thread resolution error.',
+      ),
+    };
+  }
+
+  const thread =
+    isRecord(parsed.data) &&
+    isRecord(parsed.data.resolveReviewThread) &&
+    isRecord(parsed.data.resolveReviewThread.thread)
+      ? parsed.data.resolveReviewThread.thread
+      : undefined;
+
+  if (thread?.isResolved === true) {
+    return { resolved: true };
+  }
+
+  return {
+    resolved: false,
+    message: 'GitHub did not confirm that the review thread was resolved.',
+  };
+}
+
 function resolveNativeReviewThreads(
   worktreePath: string,
   comments: AiReviewComment[],
@@ -2016,7 +2075,7 @@ function resolveNativeReviewThreads(
     }
 
     try {
-      runProcess(worktreePath, [
+      const response = runProcess(worktreePath, [
         'gh',
         'api',
         'graphql',
@@ -2025,6 +2084,19 @@ function resolveNativeReviewThreads(
         '-f',
         'query=mutation($threadId: ID!) { resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } } }',
       ]);
+      const parsed = parseResolveReviewThreadOutput(response);
+
+      if (!parsed.resolved) {
+        resolutions.push({
+          status: 'failed',
+          threadId: comment.threadId,
+          url: comment.url,
+          vendor: comment.vendor,
+          message: parsed.message,
+        });
+        continue;
+      }
+
       resolutions.push({
         status: 'resolved',
         threadId: comment.threadId,
@@ -2032,7 +2104,7 @@ function resolveNativeReviewThreads(
         vendor: comment.vendor,
       });
     } catch (error) {
-      const message = formatError(error);
+      const message = summarizeReviewMessage(formatError(error));
       resolutions.push({
         status: message.includes('already resolved')
           ? 'already_resolved'
@@ -2581,9 +2653,13 @@ export async function recordReview(
   const resolveThreads =
     dependencies.resolveThreads ?? resolveNativeReviewThreads;
   const reviewThreadResolutions =
-    outcome === 'patched' && target.reviewComments
-      ? resolveThreads(target.worktreePath, target.reviewComments)
-      : target.reviewThreadResolutions;
+    outcome === 'patched' &&
+    target.reviewThreadResolutions &&
+    target.reviewThreadResolutions.length > 0
+      ? target.reviewThreadResolutions
+      : outcome === 'patched' && target.reviewComments
+        ? resolveThreads(target.worktreePath, target.reviewComments)
+        : target.reviewThreadResolutions;
   if (
     outcome === 'patched' &&
     reviewThreadResolutions &&
@@ -2828,7 +2904,7 @@ function formatResolutionSuffix(
       return '; native GitHub thread could not be resolved automatically';
     case 'failed':
       return resolution.message
-        ? `; native GitHub thread resolution failed: ${resolution.message}`
+        ? `; native GitHub thread resolution failed: ${summarizeReviewMessage(resolution.message)}`
         : '; native GitHub thread resolution failed';
   }
 }

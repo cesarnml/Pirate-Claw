@@ -30,6 +30,7 @@ import {
   parseDotEnv,
   parseGitWorktreeList,
   parseAiReviewFetcherOutput,
+  parseResolveReviewThreadOutput,
   parseAiReviewTriagerOutput,
   parsePlan,
   pollReview,
@@ -1114,6 +1115,34 @@ describe('delivery orchestrator', () => {
     );
   });
 
+  it('parses native review-thread resolution responses', () => {
+    expect(
+      parseResolveReviewThreadOutput(
+        JSON.stringify({
+          data: {
+            resolveReviewThread: {
+              thread: {
+                id: 'thread_example_1',
+                isResolved: true,
+              },
+            },
+          },
+        }),
+      ),
+    ).toEqual({ resolved: true });
+
+    expect(
+      parseResolveReviewThreadOutput(
+        JSON.stringify({
+          errors: [{ message: 'thread is already resolved' }],
+        }),
+      ),
+    ).toEqual({
+      resolved: false,
+      message: 'thread is already resolved',
+    });
+  });
+
   it('waits for all detected agents before triage and saves the artifact', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
@@ -1635,6 +1664,78 @@ describe('delivery orchestrator', () => {
         },
       ],
     });
+  });
+
+  it('reuses existing thread resolutions instead of resolving twice', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.codex/delivery/phase-03/state.json',
+      reviewsDirPath: '.codex/delivery/phase-03/reviews',
+      handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'needs_patch',
+          branch:
+            'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          reviewComments: [
+            {
+              vendor: 'coderabbit',
+              channel: 'inline_review',
+              authorLogin: 'coderabbitai',
+              authorType: 'Bot',
+              body: 'Guard the null return here.',
+              kind: 'finding',
+              threadId: 'thread_example_1',
+              url: 'https://example.test/comment/1',
+            },
+          ],
+          reviewThreadResolutions: [
+            {
+              status: 'resolved',
+              threadId: 'thread_example_1',
+              url: 'https://example.test/comment/1',
+              vendor: 'coderabbit',
+            },
+          ],
+        },
+      ],
+    };
+    let resolveCalls = 0;
+
+    const nextState = await recordReview(
+      state,
+      '/tmp/pirate_claw',
+      'P3.01',
+      'patched',
+      undefined,
+      {
+        resolveThreads: () => {
+          resolveCalls += 1;
+          return [];
+        },
+        updatePullRequestBody: async () => {},
+      },
+    );
+
+    expect(resolveCalls).toBe(0);
+    expect(nextState.tickets[0]?.reviewThreadResolutions).toEqual([
+      {
+        status: 'resolved',
+        threadId: 'thread_example_1',
+        url: 'https://example.test/comment/1',
+        vendor: 'coderabbit',
+      },
+    ]);
   });
 
   it('keeps notification failures best-effort', async () => {
