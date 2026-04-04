@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 export type TicketStatus =
   | 'pending'
   | 'in_progress'
+  | 'internally_reviewed'
   | 'in_review'
   | 'needs_patch'
   | 'operator_input_needed'
@@ -32,6 +33,7 @@ export type TicketState = TicketDefinition & {
   worktreePath: string;
   handoffPath?: string;
   handoffGeneratedAt?: string;
+  internalReviewCompletedAt?: string;
   prNumber?: number;
   prUrl?: string;
   prOpenedAt?: string;
@@ -42,6 +44,7 @@ export type TicketState = TicketDefinition & {
   reviewNonActionSummary?: string;
   reviewOutcome?: ReviewOutcome;
   reviewNote?: string;
+  reviewIncompleteAgents?: string[];
   reviewVendors?: string[];
 };
 
@@ -188,6 +191,15 @@ const DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
 const STANDALONE_AI_REVIEW_SECTION_START = '<!-- ai-review:start -->';
 const STANDALONE_AI_REVIEW_SECTION_END = '<!-- ai-review:end -->';
 
+export type AiReviewAgentState = 'started' | 'completed' | 'findings_detected';
+
+export type AiReviewAgentResult = {
+  agent: string;
+  state: AiReviewAgentState;
+  findingsCount?: number;
+  note?: string;
+};
+
 type AiReviewCommentChannel =
   | 'issue_comment'
   | 'review_summary'
@@ -211,6 +223,7 @@ type AiReviewComment = {
 };
 
 type AiReviewFetcherResult = {
+  agents: AiReviewAgentResult[];
   artifactText: string;
   comments: AiReviewComment[];
   detected: boolean;
@@ -243,6 +256,7 @@ type StandaloneAiReviewResult = {
   actionSummary?: string;
   artifactJsonPath?: string;
   artifactTextPath?: string;
+  incompleteAgents?: string[];
   note: string;
   nonActionSummary?: string;
   outcome: ReviewResult;
@@ -331,6 +345,15 @@ export async function runDeliveryOrchestrator(
           cwd,
           eventsForStartCommand(nextState, parsed.positionals[0]),
         );
+        return 0;
+      }
+      case 'internal-review': {
+        const nextState = await recordInternalReview(
+          state,
+          parsed.positionals[0],
+        );
+        await saveState(cwd, nextState);
+        console.log(formatStatus(nextState));
         return 0;
       }
       case 'open-pr': {
@@ -665,6 +688,9 @@ export function syncStateWithPlan(
         handoffPath: previous?.handoffPath ?? inferredTicket?.handoffPath,
         handoffGeneratedAt:
           previous?.handoffGeneratedAt ?? inferredTicket?.handoffGeneratedAt,
+        internalReviewCompletedAt:
+          previous?.internalReviewCompletedAt ??
+          inferredTicket?.internalReviewCompletedAt,
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
@@ -680,6 +706,9 @@ export function syncStateWithPlan(
         reviewNonActionSummary:
           previous?.reviewNonActionSummary ??
           inferredTicket?.reviewNonActionSummary,
+        reviewIncompleteAgents:
+          previous?.reviewIncompleteAgents ??
+          inferredTicket?.reviewIncompleteAgents,
         reviewOutcome: previous?.reviewOutcome ?? inferredTicket?.reviewOutcome,
         reviewNote: previous?.reviewNote ?? inferredTicket?.reviewNote,
         reviewVendors: previous?.reviewVendors ?? inferredTicket?.reviewVendors,
@@ -711,16 +740,18 @@ function statusRank(status: TicketStatus): number {
       return 0;
     case 'in_progress':
       return 1;
-    case 'in_review':
+    case 'internally_reviewed':
       return 2;
-    case 'needs_patch':
+    case 'in_review':
       return 3;
-    case 'operator_input_needed':
+    case 'needs_patch':
       return 4;
-    case 'reviewed':
+    case 'operator_input_needed':
       return 5;
-    case 'done':
+    case 'reviewed':
       return 6;
+    case 'done':
+      return 7;
   }
 }
 
@@ -821,9 +852,9 @@ export function createOptions(input: {
   return {
     planPath,
     planKey,
-    statePath: `.codex/delivery/${planKey}/state.json`,
-    reviewsDirPath: `.codex/delivery/${planKey}/reviews`,
-    handoffsDirPath: `.codex/delivery/${planKey}/handoffs`,
+    statePath: `.agents/delivery/${planKey}/state.json`,
+    reviewsDirPath: `.agents/delivery/${planKey}/reviews`,
+    handoffsDirPath: `.agents/delivery/${planKey}/handoffs`,
     reviewPollIntervalMinutes: DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
     reviewPollMaxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
   };
@@ -921,6 +952,7 @@ function getUsage(): string {
     '  status',
     '  repair-state',
     '  start [ticket-id]',
+    '  internal-review [ticket-id]',
     '  open-pr [ticket-id]',
     '  poll-review [ticket-id]',
     '  record-review <ticket-id> <clean|patched|operator_input_needed> [note]',
@@ -935,7 +967,10 @@ function findTicketById(
 ): TicketState | undefined {
   return ticketId
     ? state.tickets.find((ticket) => ticket.id === ticketId)
-    : state.tickets.find((ticket) => ticket.status === 'in_review');
+    : (state.tickets.find((ticket) => ticket.status === 'in_review') ??
+        state.tickets.find(
+          (ticket) => ticket.status === 'operator_input_needed',
+        ));
 }
 
 async function loadState(
@@ -1457,9 +1492,8 @@ export async function copyLocalEnvIfPresent(
   await copyFile(sourceEnvPath, targetEnvPath);
 }
 
-async function openPullRequest(
+export async function recordInternalReview(
   state: DeliveryState,
-  cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
   const target =
@@ -1469,7 +1503,67 @@ async function openPullRequest(
     undefined;
 
   if (!target) {
-    throw new Error('No in-progress ticket found to open as a PR.');
+    throw new Error(
+      'No in-progress ticket found to mark as internally reviewed.',
+    );
+  }
+
+  if (target.status === 'internally_reviewed') {
+    return state;
+  }
+
+  if (target.status !== 'in_progress') {
+    throw new Error(
+      `Ticket ${target.id} must be in progress before internal review can be recorded.`,
+    );
+  }
+
+  const completedAt = new Date().toISOString();
+
+  return {
+    ...state,
+    tickets: state.tickets.map((ticket) =>
+      ticket.id === target.id
+        ? {
+            ...ticket,
+            status: 'internally_reviewed',
+            internalReviewCompletedAt: completedAt,
+          }
+        : ticket,
+    ),
+  };
+}
+
+export async function openPullRequest(
+  state: DeliveryState,
+  cwd: string,
+  ticketId?: string,
+): Promise<DeliveryState> {
+  const target =
+    (ticketId
+      ? state.tickets.find((ticket) => ticket.id === ticketId)
+      : (state.tickets.find(
+          (ticket) => ticket.status === 'internally_reviewed',
+        ) ?? state.tickets.find((ticket) => ticket.status === 'in_review'))) ??
+    undefined;
+
+  if (!target) {
+    throw new Error('No internally reviewed ticket found to open as a PR.');
+  }
+
+  if (target.status === 'in_progress') {
+    throw new Error(
+      `Ticket ${target.id} must complete internal review before opening a PR.`,
+    );
+  }
+
+  if (
+    target.status !== 'internally_reviewed' &&
+    target.status !== 'in_review'
+  ) {
+    throw new Error(
+      `Ticket ${target.id} is not in a PR-openable state. Current status: ${target.status}.`,
+    );
   }
 
   ensureBranchPushed(target.worktreePath, target.branch);
@@ -1525,6 +1619,7 @@ async function openPullRequest(
         ? {
             ...ticket,
             status: 'in_review',
+            internalReviewCompletedAt: ticket.internalReviewCompletedAt,
             prUrl,
             prNumber,
             prOpenedAt: now,
@@ -1611,11 +1706,24 @@ export function parseAiReviewFetcherOutput(
 
   if (!isRecord(parsed)) {
     throw new Error(
-      'AI review fetcher output must be a JSON object with `detected`, `artifact_text`, `vendors`, and `comments` fields.',
+      'AI review fetcher output must be a JSON object with `agents`, `detected`, `artifact_text`, `vendors`, and `comments` fields.',
     );
   }
 
   if (
+    !Array.isArray(parsed.agents) ||
+    !parsed.agents.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.agent === 'string' &&
+        (entry.state === 'started' ||
+          entry.state === 'completed' ||
+          entry.state === 'findings_detected') &&
+        (typeof entry.findingsCount === 'undefined' ||
+          parseOptionalNumber(entry.findingsCount) !== undefined) &&
+        (typeof entry.note === 'undefined' ||
+          parseOptionalString(entry.note) !== undefined),
+    ) ||
     typeof parsed.detected !== 'boolean' ||
     typeof parsed.artifact_text !== 'string' ||
     !Array.isArray(parsed.vendors) ||
@@ -1623,7 +1731,7 @@ export function parseAiReviewFetcherOutput(
     !Array.isArray(parsed.comments)
   ) {
     throw new Error(
-      'AI review fetcher output must be JSON with boolean `detected`, string `artifact_text`, string[] `vendors`, and array `comments` fields.',
+      'AI review fetcher output must be JSON with `agents`, boolean `detected`, string `artifact_text`, string[] `vendors`, and array `comments` fields.',
     );
   }
 
@@ -1678,6 +1786,12 @@ export function parseAiReviewFetcherOutput(
   });
 
   return {
+    agents: parsed.agents.map((entry) => ({
+      agent: entry.agent as string,
+      state: entry.state as AiReviewAgentState,
+      findingsCount: parseOptionalNumber(entry.findingsCount),
+      note: parseOptionalString(entry.note),
+    })),
     artifactText: parsed.artifact_text,
     comments,
     detected: parsed.detected,
@@ -1747,6 +1861,78 @@ function runAiReviewTriager(
   return parseAiReviewTriagerOutput(output);
 }
 
+function isTerminalReviewAgent(
+  agent: Pick<AiReviewAgentResult, 'state'>,
+): boolean {
+  return agent.state === 'completed' || agent.state === 'findings_detected';
+}
+
+function hasActionableReviewFindings(result: AiReviewFetcherResult): boolean {
+  return result.agents.some((agent) => agent.state === 'findings_detected');
+}
+
+function hasInFlightReviewAgents(result: AiReviewFetcherResult): boolean {
+  return result.agents.some((agent) => agent.state === 'started');
+}
+
+function allDetectedAgentsReadyForTriage(
+  result: AiReviewFetcherResult,
+): boolean {
+  return (
+    result.agents.length > 0 &&
+    result.agents.every((agent) => isTerminalReviewAgent(agent))
+  );
+}
+
+function listIncompleteReviewAgents(result: AiReviewFetcherResult): string[] {
+  return result.agents
+    .filter((agent) => agent.state === 'started')
+    .map((agent) => agent.agent);
+}
+
+function formatReviewAgentList(agents: string[]): string {
+  return agents.join(', ');
+}
+
+function formatPartialAiReviewTimeoutNote(
+  maxWaitMinutes: number,
+  agents: string[],
+): string {
+  return `AI review reached the ${maxWaitMinutes}-minute limit while waiting on: ${formatReviewAgentList(agents)}. Triage the captured findings and rerun manually if needed.`;
+}
+
+function formatIncompleteAiReviewWithoutFindingsNote(
+  maxWaitMinutes: number,
+  agents: string[],
+): string {
+  return `AI review reached the ${maxWaitMinutes}-minute limit while waiting on: ${formatReviewAgentList(agents)}. No actionable findings were captured. Rerun manually if needed.`;
+}
+
+function computeExtendedReviewPollMaxWaitMinutes(
+  intervalMinutes: number,
+  maxWaitMinutes: number,
+): number {
+  return maxWaitMinutes + intervalMinutes;
+}
+
+type PollForAiReviewResult =
+  | {
+      status: 'triage_ready';
+      result: AiReviewFetcherResult;
+      effectiveMaxWaitMinutes: number;
+    }
+  | {
+      status: 'partial_timeout';
+      result: AiReviewFetcherResult;
+      incompleteAgents: string[];
+      effectiveMaxWaitMinutes: number;
+    }
+  | {
+      status: 'clean_timeout';
+      incompleteAgents?: string[];
+      effectiveMaxWaitMinutes: number;
+    };
+
 async function pollForAiReview(
   worktreePath: string,
   prNumber: number,
@@ -1754,15 +1940,19 @@ async function pollForAiReview(
   maxWaitMinutes: number,
   pollWindowStartedAt: number,
   dependencies: Pick<PollReviewDependencies, 'fetcher' | 'now' | 'sleep'> = {},
-): Promise<AiReviewFetcherResult | undefined> {
+): Promise<PollForAiReviewResult> {
   const now = dependencies.now ?? Date.now;
   const sleepFn = dependencies.sleep ?? sleep;
   const fetcher = dependencies.fetcher ?? runAiReviewFetcher;
-
-  for (const checkMinute of buildReviewPollCheckMinutes(
+  const checks = buildReviewPollCheckMinutes(intervalMinutes, maxWaitMinutes);
+  const extendedMaxWaitMinutes = computeExtendedReviewPollMaxWaitMinutes(
     intervalMinutes,
     maxWaitMinutes,
-  )) {
+  );
+  let extended = false;
+
+  for (let index = 0; index < checks.length; index += 1) {
+    const checkMinute = checks[index]!;
     const dueAt = pollWindowStartedAt + checkMinute * 60_000;
     const remaining = dueAt - now();
 
@@ -1772,12 +1962,57 @@ async function pollForAiReview(
 
     const result = fetcher(worktreePath, prNumber);
 
-    if (result.detected) {
-      return result;
+    if (!result.detected) {
+      continue;
+    }
+
+    if (allDetectedAgentsReadyForTriage(result)) {
+      return {
+        status: 'triage_ready',
+        result,
+        effectiveMaxWaitMinutes: extended
+          ? extendedMaxWaitMinutes
+          : maxWaitMinutes,
+      };
+    }
+
+    if (
+      !extended &&
+      checkMinute === maxWaitMinutes &&
+      hasInFlightReviewAgents(result)
+    ) {
+      checks.push(extendedMaxWaitMinutes);
+      extended = true;
+      continue;
+    }
+
+    if (
+      checkMinute === extendedMaxWaitMinutes &&
+      hasInFlightReviewAgents(result)
+    ) {
+      const incompleteAgents = listIncompleteReviewAgents(result);
+
+      if (hasActionableReviewFindings(result)) {
+        return {
+          status: 'partial_timeout',
+          result,
+          incompleteAgents,
+          effectiveMaxWaitMinutes: extendedMaxWaitMinutes,
+        };
+      }
+
+      return {
+        status: 'clean_timeout',
+        incompleteAgents,
+        effectiveMaxWaitMinutes: extendedMaxWaitMinutes,
+      };
     }
   }
 
-  return undefined;
+  return {
+    status: 'clean_timeout',
+    effectiveMaxWaitMinutes: maxWaitMinutes,
+  };
 }
 
 async function writeAiReviewArtifacts(
@@ -1793,6 +2028,12 @@ async function writeAiReviewArtifacts(
     JSON.stringify(
       {
         artifact_text: result.artifactText,
+        agents: result.agents.map((agent) => ({
+          agent: agent.agent,
+          state: agent.state,
+          findingsCount: agent.findingsCount ?? null,
+          note: agent.note ?? null,
+        })),
         detected: result.detected,
         vendors: result.vendors,
         comments: result.comments.map((comment) => ({
@@ -1841,7 +2082,7 @@ export async function pollReview(
     dependencies.updatePullRequestBody ?? updatePullRequestBody;
   const { pollWindowStartedAt, pollWindowStartedAtIso } =
     resolveReviewPollWindowStart(target.prOpenedAt, now);
-  const detectedReview = await pollForAiReview(
+  const reviewPollResult = await pollForAiReview(
     target.worktreePath,
     target.prNumber,
     state.reviewPollIntervalMinutes,
@@ -1850,7 +2091,11 @@ export async function pollReview(
     dependencies,
   );
 
-  if (detectedReview) {
+  if (
+    reviewPollResult.status === 'triage_ready' ||
+    reviewPollResult.status === 'partial_timeout'
+  ) {
+    const detectedReview = reviewPollResult.result;
     const artifacts = await writeAiReviewArtifacts(
       resolve(cwd, state.reviewsDirPath, `${target.id}-ai-review`),
       detectedReview,
@@ -1883,7 +2128,17 @@ export async function pollReview(
                 triage.outcome === 'clean' || triage.outcome === 'patched'
                   ? triage.outcome
                   : undefined,
-              reviewNote: triage.note,
+              reviewNote:
+                reviewPollResult.status === 'partial_timeout'
+                  ? formatPartialAiReviewTimeoutNote(
+                      reviewPollResult.effectiveMaxWaitMinutes,
+                      reviewPollResult.incompleteAgents,
+                    )
+                  : triage.note,
+              reviewIncompleteAgents:
+                reviewPollResult.status === 'partial_timeout'
+                  ? reviewPollResult.incompleteAgents
+                  : undefined,
               reviewVendors,
             }
           : ticket,
@@ -1921,9 +2176,13 @@ export async function pollReview(
             reviewArtifactPath: undefined,
             reviewNonActionSummary: undefined,
             reviewOutcome: 'clean',
-            reviewNote: formatNoAiReviewFeedbackNote(
-              state.reviewPollMaxWaitMinutes,
-            ),
+            reviewNote: reviewPollResult.incompleteAgents?.length
+              ? formatIncompleteAiReviewWithoutFindingsNote(
+                  reviewPollResult.effectiveMaxWaitMinutes,
+                  reviewPollResult.incompleteAgents,
+                )
+              : formatNoAiReviewFeedbackNote(state.reviewPollMaxWaitMinutes),
+            reviewIncompleteAgents: reviewPollResult.incompleteAgents,
             reviewVendors: [],
           }
         : ticket,
@@ -1959,7 +2218,7 @@ async function runStandaloneAiReview(
   ]);
 
   const commandStartedAt = Date.now();
-  const detectedReview = await pollForAiReview(
+  const reviewPollResult = await pollForAiReview(
     cwd,
     pullRequest.number,
     DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
@@ -1967,9 +2226,13 @@ async function runStandaloneAiReview(
     commandStartedAt,
   );
 
-  if (detectedReview) {
+  if (
+    reviewPollResult.status === 'triage_ready' ||
+    reviewPollResult.status === 'partial_timeout'
+  ) {
+    const detectedReview = reviewPollResult.result;
     const artifacts = await writeAiReviewArtifacts(
-      resolve(cwd, '.codex/ai-review', `pr-${pullRequest.number}`, 'review'),
+      resolve(cwd, '.agents/ai-review', `pr-${pullRequest.number}`, 'review'),
       detectedReview,
     );
     const triage = runAiReviewTriager(cwd, artifacts.artifactJsonPath);
@@ -1977,7 +2240,17 @@ async function runStandaloneAiReview(
       actionSummary: triage.actionSummary,
       artifactJsonPath: relativeToRepo(cwd, artifacts.artifactJsonPath),
       artifactTextPath: relativeToRepo(cwd, artifacts.artifactTextPath),
-      note: triage.note,
+      incompleteAgents:
+        reviewPollResult.status === 'partial_timeout'
+          ? reviewPollResult.incompleteAgents
+          : undefined,
+      note:
+        reviewPollResult.status === 'partial_timeout'
+          ? formatPartialAiReviewTimeoutNote(
+              reviewPollResult.effectiveMaxWaitMinutes,
+              reviewPollResult.incompleteAgents,
+            )
+          : triage.note,
       nonActionSummary: triage.nonActionSummary,
       outcome:
         triage.outcome === 'needs_patch'
@@ -2004,7 +2277,13 @@ async function runStandaloneAiReview(
   }
 
   const standaloneResult: StandaloneAiReviewResult = {
-    note: formatNoAiReviewFeedbackNote(DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES),
+    incompleteAgents: reviewPollResult.incompleteAgents,
+    note: reviewPollResult.incompleteAgents?.length
+      ? formatIncompleteAiReviewWithoutFindingsNote(
+          reviewPollResult.effectiveMaxWaitMinutes,
+          reviewPollResult.incompleteAgents,
+        )
+      : formatNoAiReviewFeedbackNote(DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES),
     outcome: 'clean',
     prNumber: pullRequest.number,
     prUrl: pullRequest.url,
@@ -2028,7 +2307,7 @@ async function writeStandaloneAiReviewNote(
 ): Promise<void> {
   const notePath = resolve(
     cwd,
-    '.codex/ai-review',
+    '.agents/ai-review',
     `pr-${prNumber}`,
     'note.md',
   );
@@ -2048,6 +2327,9 @@ async function writeStandaloneAiReviewNote(
         : undefined,
       result.nonActionSummary
         ? `- Non-action summary: ${result.nonActionSummary}`
+        : undefined,
+      result.incompleteAgents?.length
+        ? `- Incomplete agents at timeout: ${result.incompleteAgents.map((agent) => `\`${agent}\``).join(', ')}`
         : undefined,
       `- Note: ${result.note}`,
       result.artifactJsonPath
@@ -2263,7 +2545,9 @@ export function buildPullRequestBody(
     | 'title'
     | 'ticketFile'
     | 'baseBranch'
+    | 'internalReviewCompletedAt'
     | 'reviewActionSummary'
+    | 'reviewIncompleteAgents'
     | 'status'
     | 'reviewOutcome'
     | 'reviewNote'
@@ -2278,6 +2562,12 @@ export function buildPullRequestBody(
     `- ticket file: \`${ticket.ticketFile}\``,
     `- stacked base branch: \`${ticket.baseBranch}\``,
   ];
+
+  if (ticket.internalReviewCompletedAt) {
+    lines.push(
+      `- internal review: completed at \`${ticket.internalReviewCompletedAt}\``,
+    );
+  }
 
   if (
     ticket.reviewOutcome ||
@@ -2329,6 +2619,12 @@ export function buildPullRequestBody(
 
     if (ticket.reviewNonActionSummary) {
       lines.push(`- non-action summary: ${ticket.reviewNonActionSummary}`);
+    }
+
+    if (ticket.reviewIncompleteAgents?.length) {
+      lines.push(
+        `- incomplete agents at timeout: \`${ticket.reviewIncompleteAgents.join(', ')}\``,
+      );
     }
   }
 
@@ -3158,12 +3454,18 @@ function formatStatus(state: DeliveryState): string {
         `title=${ticket.title}`,
         `worktree=${ticket.worktreePath}`,
         ticket.handoffPath ? `handoff=${ticket.handoffPath}` : undefined,
+        ticket.internalReviewCompletedAt
+          ? `internal_review_completed_at=${ticket.internalReviewCompletedAt}`
+          : undefined,
         ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
         ticket.reviewArtifactJsonPath
           ? `review_artifact_json=${ticket.reviewArtifactJsonPath}`
           : undefined,
         ticket.reviewArtifactPath
           ? `review_artifact=${ticket.reviewArtifactPath}`
+          : undefined,
+        ticket.reviewIncompleteAgents?.length
+          ? `review_incomplete_agents=${ticket.reviewIncompleteAgents.join(',')}`
           : undefined,
         ticket.reviewVendors && ticket.reviewVendors.length > 0
           ? `review_vendors=${ticket.reviewVendors.join(',')}`
@@ -3346,7 +3648,8 @@ export function formatReviewWindowMessage(
     `- checks at: ${checks.join(', ')} minutes after PR open`,
     `- first check at: ${firstCheckAt}`,
     `- final check at: ${finalCheckAt}`,
-    '- if no `ai-code-review` feedback is detected by the final check, the orchestrator records `clean` and continues',
+    `- if an AI review agent is still clearly in progress at ${state.reviewPollMaxWaitMinutes} minutes, the orchestrator performs one final check at ${computeExtendedReviewPollMaxWaitMinutes(state.reviewPollIntervalMinutes, state.reviewPollMaxWaitMinutes)} minutes`,
+    '- if no actionable `ai-code-review` findings are captured by the final applicable check, the orchestrator records `clean` and continues',
   ].join('\n');
 }
 
@@ -3357,6 +3660,9 @@ function formatStandaloneAiReviewResult(
     'Standalone AI Review',
     `pr=${result.prUrl}`,
     `outcome=${result.outcome}`,
+    result.incompleteAgents?.length
+      ? `incomplete_agents=${result.incompleteAgents.join(',')}`
+      : undefined,
     result.vendors.length > 0
       ? `vendors=${result.vendors.join(',')}`
       : undefined,

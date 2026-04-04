@@ -2,7 +2,7 @@
 
 - For phase work, first read `docs/00-overview/start-here.md` and `docs/03-engineering/delivery-orchestrator.md`, then surface the orchestrator path before coding.
 - Prefer `bun run deliver --plan ...` over ad hoc implementation.
-- For orchestrated ticket work, the handoff under `.codex/delivery/<plan-key>/handoffs/` is required input alongside the plan and ticket docs.
+- For orchestrated ticket work, the handoff under `.agents/delivery/<plan-key>/handoffs/` is required input alongside the plan and ticket docs.
 - `begin phase` / `implement phase` means run the stacked-ticket workflow until blocked, not just the first ticket.
 - Phase flow: implement, verify, push/open PR, run the configured `ai-code-review` polling window, patch prudent findings if any appear, refresh PR state, then advance.
 - No `ai-code-review` feedback by the final polling check is not a blocker; record `clean` and continue unless real ambiguity or actionable feedback exists.

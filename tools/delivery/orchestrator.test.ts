@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   buildStandaloneAiReviewSection,
   buildReviewPollCheckMinutes,
+  buildPullRequestBody,
   buildPullRequestTitle,
   buildTicketHandoff,
   canAdvanceTicket,
@@ -25,12 +26,14 @@ import {
   formatReviewWindowMessage,
   mergeStandaloneAiReviewSection,
   notifyBestEffort,
+  openPullRequest,
   parseDotEnv,
   parseGitWorktreeList,
   parseAiReviewFetcherOutput,
   parseAiReviewTriagerOutput,
   parsePlan,
   pollReview,
+  recordInternalReview,
   recordReview,
   resolvePlanPathForBranch,
   resolveNotifier,
@@ -88,9 +91,9 @@ describe('delivery orchestrator', () => {
     ).toEqual({
       planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
       planKey: 'phase-03',
-      statePath: '.codex/delivery/phase-03/state.json',
-      reviewsDirPath: '.codex/delivery/phase-03/reviews',
-      handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
       reviewPollIntervalMinutes: 2,
       reviewPollMaxWaitMinutes: 8,
     });
@@ -554,10 +557,45 @@ describe('delivery orchestrator', () => {
     expect(
       buildStandaloneAiReviewSection({
         outcome: 'clean',
-        note: 'Detected AI review comments were summary-only and did not merit follow-up changes.',
+        note: 'External AI review completed without prudent follow-up changes.',
         vendors: ['qodo'],
       }),
     ).toContain('did not merit follow-up changes');
+  });
+
+  it('does not include external summary-only noise in the ticket pr body', () => {
+    const body = buildPullRequestBody(
+      {
+        planKey: 'phase-03',
+        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        statePath: '.agents/delivery/phase-03/state.json',
+        reviewsDirPath: '.agents/delivery/phase-03/reviews',
+        handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+        reviewPollIntervalMinutes: 2,
+        reviewPollMaxWaitMinutes: 8,
+        tickets: [],
+      },
+      {
+        id: 'P3.01',
+        title: 'Persist Transmission Identity For Queued Torrents',
+        ticketFile:
+          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+        baseBranch: 'main',
+        status: 'reviewed',
+        reviewOutcome: 'clean',
+        reviewNote:
+          'External AI review completed without prudent follow-up changes.',
+        reviewNonActionSummary: undefined,
+        reviewActionSummary: undefined,
+        reviewVendors: ['coderabbit', 'qodo'],
+      },
+    );
+
+    expect(body).toContain(
+      'External AI review completed without prudent follow-up changes.',
+    );
+    expect(body).not.toContain('Ignored 1 summary comment');
+    expect(body).not.toContain('non-action summary:');
   });
 
   it('surfaces the review wait window after opening a PR', () => {
@@ -806,6 +844,19 @@ describe('delivery orchestrator', () => {
     expect(
       parseAiReviewFetcherOutput(
         JSON.stringify({
+          agents: [
+            {
+              agent: 'coderabbit',
+              state: 'findings_detected',
+              findingsCount: 1,
+              note: 'actionable findings captured',
+            },
+            {
+              agent: 'qodo',
+              state: 'completed',
+              note: 'review completed without actionable findings',
+            },
+          ],
           detected: true,
           artifact_text: 'normalized review artifact',
           vendors: ['coderabbit', 'qodo'],
@@ -836,6 +887,19 @@ describe('delivery orchestrator', () => {
         }),
       ),
     ).toEqual({
+      agents: [
+        {
+          agent: 'coderabbit',
+          state: 'findings_detected',
+          findingsCount: 1,
+          note: 'actionable findings captured',
+        },
+        {
+          agent: 'qodo',
+          state: 'completed',
+          note: 'review completed without actionable findings',
+        },
+      ],
       detected: true,
       artifactText: 'normalized review artifact',
       vendors: ['coderabbit', 'qodo'],
@@ -872,6 +936,7 @@ describe('delivery orchestrator', () => {
     expect(() =>
       parseAiReviewFetcherOutput(
         JSON.stringify({
+          agents: [{ agent: 'coderabbit', state: 'unknown' }],
           detected: 'true',
           artifact_text: 42,
           vendors: 'coderabbit',
@@ -879,7 +944,7 @@ describe('delivery orchestrator', () => {
         }),
       ),
     ).toThrow(
-      'AI review fetcher output must be JSON with boolean `detected`, string `artifact_text`, string[] `vendors`, and array `comments` fields.',
+      'AI review fetcher output must be JSON with `agents`, boolean `detected`, string `artifact_text`, string[] `vendors`, and array `comments` fields.',
     );
   });
 
@@ -903,7 +968,70 @@ describe('delivery orchestrator', () => {
     });
   });
 
-  it('stops polling early when ai review is detected and saves the artifact', async () => {
+  it('records internal review before opening a PR', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_progress',
+          branch:
+            'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+        },
+      ],
+    };
+
+    const nextState = await recordInternalReview(state, 'P3.01');
+
+    expect(nextState.tickets[0]?.status).toBe('internally_reviewed');
+    expect(nextState.tickets[0]?.internalReviewCompletedAt).toBeTruthy();
+  });
+
+  it('requires internal review before opening a ticket-linked PR', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_progress',
+          branch:
+            'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+        },
+      ],
+    };
+
+    await expect(
+      openPullRequest(state, '/tmp/pirate_claw', 'P3.01'),
+    ).rejects.toThrow(
+      'Ticket P3.01 must complete internal review before opening a PR.',
+    );
+  });
+
+  it('waits for all detected agents before triage and saves the artifact', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
       planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
@@ -944,12 +1072,38 @@ describe('delivery orchestrator', () => {
           fetchCount += 1;
           return fetchCount === 1
             ? {
-                detected: false,
+                agents: [
+                  {
+                    agent: 'coderabbit',
+                    state: 'started',
+                    note: 'review still in progress',
+                  },
+                  {
+                    agent: 'qodo',
+                    state: 'findings_detected',
+                    findingsCount: 1,
+                    note: 'actionable findings captured',
+                  },
+                ],
+                detected: true,
                 artifactText: '',
-                vendors: [],
+                vendors: ['coderabbit', 'qodo'],
                 comments: [],
               }
             : {
+                agents: [
+                  {
+                    agent: 'coderabbit',
+                    state: 'completed',
+                    note: 'review completed without actionable findings',
+                  },
+                  {
+                    agent: 'qodo',
+                    state: 'findings_detected',
+                    findingsCount: 1,
+                    note: 'actionable findings captured',
+                  },
+                ],
                 detected: true,
                 artifactText: 'normalized ai review artifact',
                 vendors: ['coderabbit', 'qodo'],
@@ -1009,6 +1163,16 @@ describe('delivery orchestrator', () => {
           ),
         ),
       ).toMatchObject({
+        agents: [
+          {
+            agent: 'coderabbit',
+            state: 'completed',
+          },
+          {
+            agent: 'qodo',
+            state: 'findings_detected',
+          },
+        ],
         artifact_text: 'normalized ai review artifact',
         detected: true,
         vendors: ['coderabbit', 'qodo'],
@@ -1051,6 +1215,14 @@ describe('delivery orchestrator', () => {
       now: () => Date.parse('2026-04-01T10:00:00.000Z'),
       sleep: async () => {},
       fetcher: () => ({
+        agents: [
+          {
+            agent: 'coderabbit',
+            state: 'findings_detected',
+            findingsCount: 1,
+            note: 'actionable findings captured',
+          },
+        ],
         detected: true,
         artifactText: 'normalized ai review artifact',
         vendors: ['coderabbit'],
@@ -1090,6 +1262,66 @@ describe('delivery orchestrator', () => {
     ]);
   });
 
+  it('extends review polling by one interval when an agent is still in flight', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.codex/delivery/phase-03/state.json',
+      reviewsDirPath: '.codex/delivery/phase-03/reviews',
+      handoffsDirPath: '.codex/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_review',
+          branch:
+            'codex/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          prUrl: 'https://example.test/pull/20',
+          prNumber: 20,
+          prOpenedAt: '2026-04-01T10:00:00.000Z',
+        },
+      ],
+    };
+    const sleeps: number[] = [];
+
+    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
+      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+      sleep: async (milliseconds) => {
+        sleeps.push(milliseconds);
+      },
+      fetcher: () => ({
+        agents: [
+          {
+            agent: 'coderabbit',
+            state: 'started',
+            note: 'review still in progress',
+          },
+        ],
+        detected: true,
+        artifactText: 'started only artifact',
+        vendors: ['coderabbit'],
+        comments: [],
+      }),
+      updatePullRequestBody: async () => undefined,
+    });
+
+    expect(sleeps).toEqual([120000, 240000, 360000, 480000, 600000]);
+    expect(nextState.tickets[0]).toMatchObject({
+      status: 'reviewed',
+      reviewOutcome: 'clean',
+      reviewIncompleteAgents: ['coderabbit'],
+      reviewNote:
+        'AI review reached the 10-minute limit while waiting on: coderabbit. No actionable findings were captured. Rerun manually if needed.',
+    });
+  });
+
   it('auto-records clean when no ai review appears by the final check', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
@@ -1126,6 +1358,7 @@ describe('delivery orchestrator', () => {
         sleeps.push(milliseconds);
       },
       fetcher: () => ({
+        agents: [],
         detected: false,
         artifactText: '',
         vendors: [],
@@ -1184,6 +1417,14 @@ describe('delivery orchestrator', () => {
         sleeps.push(milliseconds);
       },
       fetcher: () => ({
+        agents: [
+          {
+            agent: 'coderabbit',
+            state: 'findings_detected',
+            findingsCount: 1,
+            note: 'actionable findings captured',
+          },
+        ],
         detected: true,
         artifactText: 'normalized ai review artifact',
         vendors: ['coderabbit'],

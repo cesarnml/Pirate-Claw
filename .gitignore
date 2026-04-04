@@ -4,6 +4,9 @@ node_modules/
 .codex/delivery/
 .codex/analysis/
 .codex/ai-review/
+.agents/delivery/
+.agents/analysis/
+.agents/ai-review/
 pirate-claw.config.json
 pirate-claw.db
 .env

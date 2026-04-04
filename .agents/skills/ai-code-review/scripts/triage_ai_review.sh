@@ -42,11 +42,12 @@ jq '
         non_action_summary:
           (
             [
-              (if ($summaries | length) > 0 then "Ignored \($summaries | length) summary comment(s)." else empty end),
               (if ($stale_findings | length) > 0 then "Ignored \($stale_findings | length) resolved or outdated finding comment(s)." else empty end),
               (if ($stale_unknowns | length) > 0 then "Ignored \($stale_unknowns | length) resolved or outdated unclear comment(s)." else empty end),
               (if ($unknowns | length) > 0 then "Left \($unknowns | length) unclear comment(s) for manual judgment." else empty end)
-            ] | join(" ")
+            ]
+            | map(select(length > 0))
+            | if length > 0 then join(" ") else null end
           ),
         vendors: $vendors
       }
@@ -58,27 +59,20 @@ jq '
         non_action_summary:
           (
             [
-              (if ($summaries | length) > 0 then "Ignored \($summaries | length) summary comment(s)." else empty end),
               (if ($stale_findings | length) > 0 then "Ignored \($stale_findings | length) resolved or outdated finding comment(s)." else empty end),
               (if ($stale_unknowns | length) > 0 then "Ignored \($stale_unknowns | length) resolved or outdated unclear comment(s)." else empty end)
-            ] | join(" ")
+            ]
+            | map(select(length > 0))
+            | if length > 0 then join(" ") else null end
           ),
         vendors: $vendors
       }
     else
       {
         outcome: "clean",
-        note: "Detected AI review comments were summary-only and did not merit follow-up changes.",
+        note: "External AI review completed without prudent follow-up changes.",
         action_summary: null,
-        non_action_summary:
-          (
-            [
-              (if ($summaries | length) > 0 then "Ignored \($summaries | length) summary comment(s)." else empty end),
-              (if ($stale_findings | length) > 0 then "Ignored \($stale_findings | length) resolved or outdated finding comment(s)." else empty end),
-              (if ($stale_unknowns | length) > 0 then "Ignored \($stale_unknowns | length) resolved or outdated unclear comment(s)." else empty end),
-              (if ($summaries | length) == 0 and ($stale_findings | length) == 0 and ($stale_unknowns | length) == 0 then "No actionable AI review comments were detected." else empty end)
-            ] | join(" ")
-          ),
+        non_action_summary: null,
         vendors: $vendors
       }
     end

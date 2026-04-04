@@ -35,8 +35,8 @@ That is the canonical interface. The tool is primarily AI-facing, so the explici
 The orchestrator owns process mechanics:
 
 - reading ticket order from the plan
-- durable local state under `.codex/delivery/<plan-key>/`
-- per-ticket handoff artifacts under `.codex/delivery/<plan-key>/handoffs/`
+- durable local state under `.agents/delivery/<plan-key>/`
+- per-ticket handoff artifacts under `.agents/delivery/<plan-key>/handoffs/`
 - deterministic branch and worktree naming
 - copying a local `.env` into fresh ticket work trees when the invoking worktree has one
 - bootstrapping fresh Bun ticket work trees before implementation starts
@@ -77,7 +77,7 @@ The orchestrator also owns the repo-side context reset contract for stacked tick
 
 When a ticket starts, the orchestrator writes a handoff artifact under:
 
-- `.codex/delivery/<plan-key>/handoffs/`
+- `.agents/delivery/<plan-key>/handoffs/`
 
 That handoff is the narrow context that the next ticket worker should begin from alongside the current repo state and required docs.
 
@@ -123,6 +123,7 @@ Available commands:
 - `repair-state`
 - `ai-review [--pr <number>]`
 - `start [ticket-id]`
+- `internal-review [ticket-id]`
 - `open-pr [ticket-id]`
 - `poll-review [ticket-id]`
 - `record-review <ticket-id> <clean|patched|operator_input_needed> [note]`
@@ -133,6 +134,7 @@ Available commands:
 
 ```bash
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md internal-review
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md open-pr
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-review
 # if the triager hook leaves the ticket in needs_patch, follow up and then record the final outcome
@@ -149,7 +151,7 @@ bun run deliver ai-review
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
-After `open-pr`, the orchestrator should surface the ai-review polling cadence and check timestamps. `poll-review` checks at 2, 4, 6, and 8 minutes after PR open, stops immediately when AI review comments are detected, writes `json` and `txt` artifacts, runs the triager hook, and otherwise auto-records `clean` at the final check.
+After implementation and verification, record the internal polish pass with `internal-review` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator should surface the ai-review polling cadence and check timestamps. `poll-review` checks at 2, 4, 6, and 8 minutes after PR open, waits for all detected review agents to become triage-ready, performs one final bounded check when review is still clearly in flight, writes `json` and `txt` artifacts, runs the triager hook, and otherwise auto-records `clean` at the final applicable check.
 
 If a parent ticket was squash-merged onto `main`, run:
 
@@ -185,15 +187,15 @@ When those env vars are absent, the notifier stays disabled and the orchestrator
 
 Fetched review output is written under:
 
-- `.codex/delivery/<plan-key>/reviews/`
+- `.agents/delivery/<plan-key>/reviews/`
 
 Generated handoff artifacts are written under:
 
-- `.codex/delivery/<plan-key>/handoffs/`
+- `.agents/delivery/<plan-key>/handoffs/`
 
 State is written under:
 
-- `.codex/delivery/<plan-key>/state.json`
+- `.agents/delivery/<plan-key>/state.json`
 
 ## PR Body Maintenance
 

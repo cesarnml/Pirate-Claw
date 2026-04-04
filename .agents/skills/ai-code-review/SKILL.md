@@ -13,7 +13,7 @@ The orchestrator owns:
 
 - polling cadence and stop conditions
 - delivery state transitions
-- artifact persistence under `.codex/delivery/.../reviews/`
+- artifact persistence under `.agents/delivery/.../reviews/`
 - auto-recording `clean` when no AI review is detected by the final check
 
 This skill owns:
@@ -26,6 +26,7 @@ This skill owns:
 The only contract between them is the repo-local helper script output:
 
 - fetcher:
+  - `agents: [{"agent":"coderabbit","state":"started|completed|findings_detected",...}]`
   - `detected: true|false`
   - `artifact_text: "<normalized text summary>"`
   - `vendors: ["coderabbit", "qodo", ...]`
@@ -53,8 +54,10 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
    - ordinary human drive-by comments do not count as AI review
    - preserve inline comment resolution/outdated state so stale bot comments do not block the flow by default
 5. Return the fetcher contract to the orchestrator when this is being used inside `poll-review`:
-   - `detected=false` means keep polling or auto-clean at the end
-   - `detected=true` means save the artifacts and hand off to judgment
+
+- `detected=false` means keep polling or auto-clean at the end
+- `detected=true` means the orchestrator can inspect per-agent state and decide whether to keep polling, triage, or record a bounded timeout note
+
 6. Triage each detected AI review comment before recommending any action.
    Classify it as actionable, stale, wrong, over-scoped, or out of scope.
 7. Treat AI review comments as advisory, not authoritative.
@@ -73,6 +76,7 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
 
 - Start with whether AI review comments were found.
 - Filter out generic summary noise by default and focus on unresolved review items.
+- Treat external AI summary posts as orchestration state signals, not PR-body content.
 - State which comments are actionable and which should be rejected.
 - Group by unresolved issue, not by raw API payload.
 - Include file and line when available.

@@ -64,7 +64,7 @@ If you are doing workflow or delivery-tooling work:
 
 1. Read [`docs/02-delivery/phase-implementation-guidance.md`](../02-delivery/phase-implementation-guidance.md).
 2. Read [`docs/03-engineering/delivery-orchestrator.md`](../03-engineering/delivery-orchestrator.md) if the work touches stacked delivery flow.
-3. If continuing an orchestrated ticket, read the generated handoff artifact under `.codex/delivery/<plan-key>/handoffs/` before implementing.
+3. If continuing an orchestrated ticket, read the generated handoff artifact under `.agents/delivery/<plan-key>/handoffs/` before implementing.
 
 ## Planning Workflow
 
