@@ -10,3 +10,4 @@ node_modules/
 pirate-claw.config.json
 pirate-claw.db
 .env
+notes/private/
