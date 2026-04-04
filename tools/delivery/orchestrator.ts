@@ -169,6 +169,7 @@ export async function runDeliveryOrchestrator(
   argv: string[],
   cwd: string,
 ): Promise<number> {
+  await ensureEnvReady(cwd);
   const notifier = resolveNotifier();
   let parsed:
     | {
@@ -324,6 +325,132 @@ export async function runDeliveryOrchestrator(
     ]);
     console.error(formatError(error));
     return 1;
+  }
+}
+
+type GitWorktreeEntry = {
+  branch?: string;
+  path: string;
+};
+
+export function parseGitWorktreeList(output: string): GitWorktreeEntry[] {
+  const entries: GitWorktreeEntry[] = [];
+  let current: GitWorktreeEntry | undefined;
+
+  for (const rawLine of output.split('\n')) {
+    const line = rawLine.trim();
+
+    if (line.length === 0) {
+      if (current) {
+        entries.push(current);
+        current = undefined;
+      }
+      continue;
+    }
+
+    if (line.startsWith('worktree ')) {
+      if (current) {
+        entries.push(current);
+      }
+
+      current = {
+        path: line.slice('worktree '.length),
+      };
+      continue;
+    }
+
+    if (line.startsWith('branch ') && current) {
+      current.branch = line.slice('branch '.length);
+    }
+  }
+
+  if (current) {
+    entries.push(current);
+  }
+
+  return entries;
+}
+
+export function parseDotEnv(content: string): Record<string, string> {
+  const values: Record<string, string> = {};
+
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+
+    if (line.length === 0 || line.startsWith('#')) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf('=');
+
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    let value = line.slice(separatorIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (key.length > 0) {
+      values[key] = value;
+    }
+  }
+
+  return values;
+}
+
+async function ensureEnvReady(cwd: string): Promise<void> {
+  await ensureLocalEnvFile(cwd);
+  await loadDotEnvIntoProcess(cwd);
+}
+
+async function ensureLocalEnvFile(cwd: string): Promise<void> {
+  const localEnvPath = resolve(cwd, '.env');
+
+  if (existsSync(localEnvPath)) {
+    return;
+  }
+
+  const primaryWorktreePath = findPrimaryWorktreePath(cwd);
+
+  if (!primaryWorktreePath) {
+    return;
+  }
+
+  await copyLocalEnvIfPresent(primaryWorktreePath, cwd);
+}
+
+export function findPrimaryWorktreePath(cwd: string): string | undefined {
+  const worktrees = parseGitWorktreeList(
+    runProcess(cwd, ['git', 'worktree', 'list', '--porcelain']),
+  );
+
+  return worktrees.find(
+    (worktree) =>
+      resolve(worktree.path) !== resolve(cwd) &&
+      worktree.branch === 'refs/heads/main',
+  )?.path;
+}
+
+async function loadDotEnvIntoProcess(cwd: string): Promise<void> {
+  const envPath = resolve(cwd, '.env');
+
+  if (!existsSync(envPath)) {
+    return;
+  }
+
+  const values = parseDotEnv(await readFile(envPath, 'utf8'));
+
+  for (const [key, value] of Object.entries(values)) {
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
   }
 }
 

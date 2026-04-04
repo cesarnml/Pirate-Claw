@@ -23,6 +23,8 @@ import {
   formatNotificationMessage,
   formatReviewWindowMessage,
   notifyBestEffort,
+  parseDotEnv,
+  parseGitWorktreeList,
   parseAiReviewFetcherOutput,
   parsePlan,
   pollReview,
@@ -232,6 +234,48 @@ describe('delivery orchestrator', () => {
     expect(derivePlanKey('./plans/custom/implementation-plan.md')).toBe(
       'custom',
     );
+  });
+
+  it('parses git worktree porcelain output and finds branch metadata', () => {
+    expect(
+      parseGitWorktreeList(
+        [
+          'worktree /Users/cesar/code/pirate_claw',
+          'HEAD abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /Users/cesar/.codex/worktrees/3cc9/pirate_claw',
+          'HEAD def456',
+          'branch refs/heads/codex/ai-code-review-template-boundary',
+          '',
+        ].join('\n'),
+      ),
+    ).toEqual([
+      {
+        path: '/Users/cesar/code/pirate_claw',
+        branch: 'refs/heads/main',
+      },
+      {
+        path: '/Users/cesar/.codex/worktrees/3cc9/pirate_claw',
+        branch: 'refs/heads/codex/ai-code-review-template-boundary',
+      },
+    ]);
+  });
+
+  it('parses dotenv content for missing process env hydration', () => {
+    expect(
+      parseDotEnv(
+        [
+          '# comment',
+          'TELEGRAM_BOT_TOKEN=bot-token',
+          'TELEGRAM_CHAT_ID="chat-id"',
+          '',
+        ].join('\n'),
+      ),
+    ).toEqual({
+      TELEGRAM_BOT_TOKEN: 'bot-token',
+      TELEGRAM_CHAT_ID: 'chat-id',
+    });
   });
 
   it('prefers existing ticket-id branch matches over title-derived names', () => {
