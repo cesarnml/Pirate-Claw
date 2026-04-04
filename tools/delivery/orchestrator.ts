@@ -168,6 +168,16 @@ type DeliveryNotifier =
       chatId: string;
     };
 
+type NotificationPayload = {
+  entities?: Array<{
+    length: number;
+    offset: number;
+    type: 'text_link';
+    url: string;
+  }>;
+  text: string;
+};
+
 const DEFAULT_REVIEW_POLL_INTERVAL_MINUTES = 2;
 const DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
 const STANDALONE_AI_REVIEW_SECTION_START = '<!-- ai-review:start -->';
@@ -2911,11 +2921,9 @@ export async function notifyBestEffort(
   }
 
   try {
-    await sendTelegramMessage(
-      notifier.botToken,
-      notifier.chatId,
-      formatNotificationMessage(cwd, event),
-    );
+    await sendTelegramMessage(notifier.botToken, notifier.chatId, {
+      ...buildNotificationPayload(cwd, event),
+    });
     return undefined;
   } catch (error) {
     return `Notification warning: ${formatError(error)}`;
@@ -2925,7 +2933,7 @@ export async function notifyBestEffort(
 async function sendTelegramMessage(
   botToken: string,
   chatId: string,
-  text: string,
+  payload: NotificationPayload,
 ): Promise<void> {
   const response = await fetch(
     `https://api.telegram.org/bot${botToken}/sendMessage`,
@@ -2936,7 +2944,8 @@ async function sendTelegramMessage(
       },
       body: JSON.stringify({
         chat_id: chatId,
-        text,
+        text: payload.text,
+        entities: payload.entities,
         disable_web_page_preview: true,
       }),
     },
@@ -3193,13 +3202,12 @@ export function formatNotificationMessage(
         .filter((line): line is string => line !== undefined)
         .join('\n');
     case 'standalone_review_started':
-      return [standaloneHeader, 'AI review started.', event.prUrl].join('\n');
+      return [standaloneHeader, 'AI review started.'].join('\n');
     case 'standalone_review_recorded':
       return [
         standaloneHeader,
         `Outcome: ${event.outcome}`,
         event.note ? `Note: ${event.note}` : undefined,
-        event.prUrl,
       ]
         .filter((line): line is string => line !== undefined)
         .join('\n');
@@ -3213,6 +3221,39 @@ export function formatNotificationMessage(
         .filter((line): line is string => line !== undefined)
         .join('\n');
   }
+}
+
+function buildNotificationPayload(
+  cwd: string,
+  event: DeliveryNotificationEvent,
+): NotificationPayload {
+  const text = formatNotificationMessage(cwd, event);
+
+  if (
+    event.kind !== 'standalone_review_started' &&
+    event.kind !== 'standalone_review_recorded'
+  ) {
+    return { text };
+  }
+
+  const linkLabel = `PR #${event.prNumber}`;
+  const offset = text.indexOf(linkLabel);
+
+  if (offset === -1) {
+    return { text };
+  }
+
+  return {
+    text,
+    entities: [
+      {
+        type: 'text_link',
+        offset,
+        length: linkLabel.length,
+        url: event.prUrl,
+      },
+    ],
+  };
 }
 
 function formatNoAiReviewFeedbackNote(maxWaitMinutes: number): string {

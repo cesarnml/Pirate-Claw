@@ -125,7 +125,7 @@ jq -n \
               }
             )
         )
-      | add;
+      | add // [];
 
     def thread_lookup:
       (enrich_threads)

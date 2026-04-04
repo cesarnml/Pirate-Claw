@@ -508,6 +508,15 @@ describe('delivery orchestrator', () => {
         reviewPollMaxWaitMinutes: 8,
       }),
     ).toContain('Son of Anton PR #32\nAI review started.');
+    expect(
+      formatNotificationMessage('/tmp/pirate_claw', {
+        kind: 'standalone_review_recorded',
+        prNumber: 32,
+        prUrl: 'https://example.test/pull/32',
+        outcome: 'needs_patch',
+        note: 'Actionable AI review findings were detected and still need follow-up.',
+      }),
+    ).not.toContain('https://example.test/pull/32');
   });
 
   it('merges the standalone ai review section into a pr body', () => {
@@ -1224,6 +1233,48 @@ describe('delivery orchestrator', () => {
 
     expect(warning).toContain('Notification warning:');
     expect(warning).toContain('Telegram sendMessage failed with 500');
+
+    process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    process.env.TELEGRAM_CHAT_ID = originalChatId;
+    globalThis.fetch = originalFetch;
+  });
+
+  it('sends standalone telegram notifications with a linked pr label instead of a raw url', async () => {
+    const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+    const originalChatId = process.env.TELEGRAM_CHAT_ID;
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    process.env.TELEGRAM_CHAT_ID = 'chat-id';
+    globalThis.fetch = (async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      requests.push(String(init?.body ?? ''));
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await notifyBestEffort(resolveNotifier(), '/tmp/pirate_claw', {
+      kind: 'standalone_review_started',
+      prNumber: 33,
+      prUrl: 'https://example.test/pull/33',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(JSON.parse(requests[0] ?? '{}')).toMatchObject({
+      text: 'Son of Anton PR #33\nAI review started.',
+      entities: [
+        {
+          type: 'text_link',
+          offset: 13,
+          length: 6,
+          url: 'https://example.test/pull/33',
+        },
+      ],
+    });
 
     process.env.TELEGRAM_BOT_TOKEN = originalToken;
     process.env.TELEGRAM_CHAT_ID = originalChatId;
