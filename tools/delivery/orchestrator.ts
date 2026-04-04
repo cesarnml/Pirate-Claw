@@ -2883,114 +2883,68 @@ function formatResolutionSuffix(
   }
 }
 
-function describeReviewComment(
+function extractHighlightedReviewText(body: string): string | undefined {
+  const boldMatches = [...body.matchAll(/\*\*([^*]+)\*\*/g)];
+
+  for (const match of boldMatches) {
+    const candidate = match[1]?.trim();
+    if (
+      candidate &&
+      !candidate.toLowerCase().startsWith('actionable comments posted')
+    ) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function summarizeReviewerFacingFinding(body: string): string {
+  const highlighted = extractHighlightedReviewText(body);
+  if (highlighted) {
+    return highlighted;
+  }
+
+  const firstMeaningfulLine = body
+    .split('\n')
+    .map((line) => line.trim())
+    .find(
+      (line) =>
+        line.length > 0 &&
+        !line.startsWith('```') &&
+        !line.startsWith('<') &&
+        !line.startsWith('>') &&
+        !line.startsWith('<!--'),
+    );
+
+  return summarizeReviewComment(firstMeaningfulLine ?? body);
+}
+
+function formatReviewFindingBullet(
   comment: AiReviewComment,
-  context: 'current' | 'history',
-  status: TicketStatus | ReviewResult,
-  resolution: AiReviewThreadResolution | undefined,
+  detail?: string,
 ): string {
-  if (context === 'history') {
-    return 'stale history';
-  }
-
-  if (comment.isOutdated) {
-    return 'outdated';
-  }
-
-  if (comment.isResolved) {
-    return 'already resolved';
-  }
-
-  if (comment.kind === 'summary') {
-    return 'summary only';
-  }
-
-  if (comment.kind === 'unknown') {
-    return 'manual judgment';
-  }
-
-  if (status === 'patched') {
-    return `patched${formatResolutionSuffix(resolution)}`;
-  }
-
-  if (status === 'needs_patch') {
-    return 'follow-up pending';
-  }
-
-  if (status === 'operator_input_needed') {
-    return 'operator input needed';
-  }
-
-  return 'finding';
+  const base = `- [${comment.vendor}] ${summarizeReviewerFacingFinding(comment.body)}`;
+  const suffix = detail ? ` (${detail})` : '';
+  return `${base}${suffix}${formatReviewCommentLocation(comment)}${formatReviewThreadLink(comment.url)}`;
 }
 
 function buildReviewCommentBullet(
   comment: AiReviewComment,
-  context: 'current' | 'history',
-  status: TicketStatus | ReviewResult,
-  resolutionByThreadId: ReadonlyMap<string, AiReviewThreadResolution>,
+  detail?: string,
 ): string {
-  const description = describeReviewComment(
-    comment,
-    context,
-    status,
-    comment.threadId ? resolutionByThreadId.get(comment.threadId) : undefined,
-  );
-  return `- [${comment.vendor}] ${description}: ${summarizeReviewComment(comment.body)}${formatReviewCommentLocation(comment)}${formatReviewThreadLink(comment.url)}`;
+  return formatReviewFindingBullet(comment, detail);
 }
 
 function buildReviewCommentBullets(
   comments: AiReviewComment[] | undefined,
-  context: 'current' | 'history',
-  status: TicketStatus | ReviewResult,
-  threadResolutions: AiReviewThreadResolution[] | undefined,
+  detail?: string,
 ): string[] {
   if (!comments || comments.length === 0) {
     return [];
   }
 
-  const resolutionByThreadId = new Map(
-    (threadResolutions ?? []).map((resolution) => [
-      resolution.threadId,
-      resolution,
-    ]),
-  );
-
-  return comments.map((comment) =>
-    buildReviewCommentBullet(comment, context, status, resolutionByThreadId),
-  );
-}
-
-function formatVendorSourceLinks(comments: AiReviewComment[]): string {
-  const urls = [
-    ...new Set(comments.map((comment) => comment.url).filter(Boolean)),
-  ];
-
-  if (urls.length === 1) {
-    return ` [source](${urls[0]})`;
-  }
-
-  return '';
-}
-
-function buildVendorSummaryNoiseBullets(comments: AiReviewComment[]): string[] {
-  if (comments.length === 0) {
-    return [];
-  }
-
-  const commentsByVendor = new Map<string, AiReviewComment[]>();
-
-  for (const comment of comments) {
-    const existing = commentsByVendor.get(comment.vendor) ?? [];
-    existing.push(comment);
-    commentsByVendor.set(comment.vendor, existing);
-  }
-
-  return [...commentsByVendor.entries()].map(([vendor, vendorComments]) => {
-    const count = vendorComments.length;
-    const noun = count === 1 ? 'summary-only update' : 'summary-only updates';
-    return `- [${vendor}] compressed ${count} ${noun}.${formatVendorSourceLinks(vendorComments)}`;
-  });
+  return comments.map((comment) => buildReviewCommentBullet(comment, detail));
 }
 
 function buildAiReviewDetailLines(input: {
@@ -3034,44 +2988,16 @@ function buildAiReviewDetailLines(input: {
     );
   }
 
-  if (reviewStatus === 'clean') {
-    lines.push(
-      input.note === formatNoAiReviewFeedbackNote(input.maxWaitMinutes)
-        ? `- No \`ai-code-review\` feedback was detected during the ${input.maxWaitMinutes}-minute polling window.`
-        : '- `ai-code-review` triage found no prudent follow-up changes.',
-    );
-  } else if (reviewStatus === 'needs_patch') {
-    lines.push(
-      '- `ai-code-review` triage found actionable follow-up work that still needs patching.',
-    );
-  } else if (reviewStatus === 'patched') {
-    lines.push(
-      '- `ai-code-review` triage led to prudent follow-up patches that are now included in this branch.',
-    );
-  } else {
-    lines.push(
-      '- `ai-code-review` stopped for operator input before follow-up could be completed safely.',
-    );
-  }
-
   if (input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead) {
     lines.push(
-      '- no current-SHA `ai-code-review` status is recorded for the current branch head; the latest recorded review is shown below as stale history.',
+      '- the latest recorded external AI review applies to an older branch head; the prior review history is shown below for debugging.',
     );
-  }
-
-  if (input.note) {
-    lines.push(`- follow-up note: ${input.note}`);
   }
 
   if (input.vendors && input.vendors.length > 0) {
     lines.push(
       `- vendors: ${input.vendors.map((vendor) => `\`${vendor}\``).join(', ')}`,
     );
-  }
-
-  if (input.actionSummary) {
-    lines.push(`- action summary: ${input.actionSummary}`);
   }
 
   const effectiveContext =
@@ -3095,44 +3021,71 @@ function buildAiReviewDetailLines(input: {
           (comment) => comment.isOutdated || comment.isResolved,
         );
 
-  const currentActionBullets = buildReviewCommentBullets(
-    currentActionableComments,
-    'current',
-    reviewStatus,
-    input.threadResolutions,
+  const resolutionByThreadId = new Map(
+    (input.threadResolutions ?? []).map((resolution) => [
+      resolution.threadId,
+      resolution,
+    ]),
   );
+  const resolvedFindingComments = [
+    ...(reviewStatus === 'patched' ? currentActionableComments : []),
+    ...staleOrResolvedComments,
+  ];
+  const unresolvedFindingComments =
+    reviewStatus === 'needs_patch' || reviewStatus === 'operator_input_needed'
+      ? currentActionableComments
+      : [];
 
-  if (currentActionBullets.length > 0) {
-    lines.push('', '### Current Findings', '', ...currentActionBullets);
+  if (
+    reviewStatus === 'clean' &&
+    currentActionableComments.length === 0 &&
+    currentSummaryNoiseComments.length === 0 &&
+    resolvedFindingComments.length === 0
+  ) {
+    lines.push('- no prudent follow-up changes were required.');
   }
 
-  const vendorSummaryNoiseBullets = buildVendorSummaryNoiseBullets(
-    currentSummaryNoiseComments,
-  );
+  const resolvedFindingBullets = resolvedFindingComments.map((comment) => {
+    const resolution = comment.threadId
+      ? resolutionByThreadId.get(comment.threadId)
+      : undefined;
+    const detail =
+      comment.isResolved || comment.isOutdated || effectiveContext === 'history'
+        ? undefined
+        : resolution
+          ? formatResolutionSuffix(resolution).replace(/^;\s*/, '')
+          : reviewStatus === 'patched'
+            ? 'patched'
+            : undefined;
+    return buildReviewCommentBullet(comment, detail);
+  });
 
-  if (vendorSummaryNoiseBullets.length > 0) {
+  if (resolvedFindingBullets.length > 0) {
     lines.push(
       '',
-      '### Vendor Summary Noise',
+      '### Resolved Review Findings',
       '',
-      ...vendorSummaryNoiseBullets,
+      ...resolvedFindingBullets,
     );
   }
 
-  const staleOrResolvedBullets = buildReviewCommentBullets(
-    staleOrResolvedComments,
-    effectiveContext === 'history' ? 'history' : 'current',
-    reviewStatus,
-    input.threadResolutions,
+  const unresolvedFindingBullets = buildReviewCommentBullets(
+    unresolvedFindingComments,
   );
 
-  if (staleOrResolvedBullets.length > 0) {
+  if (unresolvedFindingBullets.length > 0) {
     lines.push(
       '',
-      '### Stale / Resolved History',
+      '### Unresolved Review Findings',
       '',
-      ...staleOrResolvedBullets,
+      ...unresolvedFindingBullets,
     );
+    if (input.note) {
+      lines.push('', `- triage note: ${input.note}`);
+    }
+    if (input.actionSummary) {
+      lines.push(`- triage summary: ${input.actionSummary}`);
+    }
   }
 
   return lines;
@@ -3184,7 +3137,7 @@ export function buildPullRequestBody(
     ticket.status === 'needs_patch' ||
     ticket.status === 'operator_input_needed'
   ) {
-    lines.push('', '## AI Review Follow-Up', '');
+    lines.push('', '## External AI Review', '');
     lines.push(
       ...buildAiReviewDetailLines({
         actionSummary: ticket.reviewActionSummary,
@@ -3629,7 +3582,11 @@ export function buildStandaloneAiReviewSection(
     currentHeadSha?: string;
   } = {},
 ): string {
-  const lines = [STANDALONE_AI_REVIEW_SECTION_START, '## AI Review', ''];
+  const lines = [
+    STANDALONE_AI_REVIEW_SECTION_START,
+    '## External AI Review',
+    '',
+  ];
   lines.push(
     ...buildAiReviewDetailLines({
       actionSummary: result.actionSummary,
@@ -3644,8 +3601,6 @@ export function buildStandaloneAiReviewSection(
       vendors: result.vendors,
     }),
   );
-
-  lines.push(`- outcome: \`${result.outcome}\``);
 
   lines.push(STANDALONE_AI_REVIEW_SECTION_END);
   return lines.join('\n');

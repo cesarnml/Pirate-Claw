@@ -567,7 +567,7 @@ describe('delivery orchestrator', () => {
         ],
         vendors: ['coderabbit'],
       }),
-    ).toContain('triage led to prudent follow-up patches');
+    ).toContain('## External AI Review');
 
     expect(
       buildStandaloneAiReviewSection({
@@ -575,7 +575,7 @@ describe('delivery orchestrator', () => {
         note: 'External AI review completed without prudent follow-up changes.',
         vendors: ['qodo'],
       }),
-    ).toContain('triage found no prudent follow-up changes');
+    ).toContain('no prudent follow-up changes were required.');
   });
 
   it('keeps standalone pr bodies free of artifact paths', () => {
@@ -619,15 +619,14 @@ describe('delivery orchestrator', () => {
       },
     );
 
-    expect(body).toContain(
-      'External AI review completed without prudent follow-up changes.',
-    );
+    expect(body).toContain('no prudent follow-up changes were required.');
     expect(body).not.toContain('Ignored 1 summary comment');
     expect(body).not.toContain('### Vendor Summary Noise');
     expect(body).not.toContain('non-action summary:');
+    expect(body).not.toContain('summary-only updates');
   });
 
-  it('compresses current vendor summary noise and demotes resolved items', () => {
+  it('omits summary noise and renders resolved findings for reviewers', () => {
     const body = buildPullRequestBody(
       {
         planKey: 'phase-03',
@@ -710,17 +709,16 @@ describe('delivery orchestrator', () => {
       },
     );
 
-    expect(body).toContain('### Current Findings');
+    expect(body).toContain('## External AI Review');
+    expect(body).toContain('### Resolved Review Findings');
     expect(body).toContain(
-      '[coderabbit] patched; native GitHub thread resolved: Guard the null return here.',
+      '[coderabbit] Guard the null return here. (native GitHub thread resolved)',
     );
-    expect(body).toContain('### Vendor Summary Noise');
-    expect(body).toContain('[qodo] compressed 2 summary-only updates.');
-    expect(body).not.toContain('[qodo] summary only: Overall this looks good.');
-    expect(body).toContain('### Stale / Resolved History');
-    expect(body).toContain(
-      '[coderabbit] already resolved: Previous concern already resolved.',
-    );
+    expect(body).not.toContain('### Vendor Summary Noise');
+    expect(body).not.toContain('[qodo] compressed 2 summary-only updates.');
+    expect(body).not.toContain('Overall this looks good.');
+    expect(body).toContain('### Resolved Review Findings');
+    expect(body).toContain('[coderabbit] Previous concern already resolved.');
   });
 
   it('keeps reviewed findings current when the current head sha is unknown', () => {
@@ -744,10 +742,10 @@ describe('delivery orchestrator', () => {
       vendors: ['coderabbit'],
     });
 
-    expect(body).toContain('### Current Findings');
-    expect(body).not.toContain('### Stale / Resolved History');
+    expect(body).toContain('### Unresolved Review Findings');
+    expect(body).not.toContain('### Resolved Review Findings');
     expect(body).not.toContain(
-      'no current-SHA `ai-code-review` status is recorded',
+      'the latest recorded external AI review applies to an older branch head',
     );
   });
 
@@ -805,12 +803,10 @@ describe('delivery orchestrator', () => {
     );
 
     expect(body).toContain(
-      'no current-SHA `ai-code-review` status is recorded',
+      'the latest recorded external AI review applies to an older branch head',
     );
-    expect(body).toContain('### Stale / Resolved History');
-    expect(body).toContain(
-      '[coderabbit] stale history: Guard the null return here.',
-    );
+    expect(body).toContain('### Resolved Review Findings');
+    expect(body).toContain('[coderabbit] Guard the null return here.');
     expect(body).toContain('[thread](https://example.test/comment/1)');
   });
 
