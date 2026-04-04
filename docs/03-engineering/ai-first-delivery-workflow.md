@@ -12,6 +12,8 @@ It does that by keeping work in thin, reviewable slices:
 - record or patch prudent findings
 - keep the PR body current with what happened
 
+It can also carry a larger feature through several small linked PRs, so you can ship step by step without losing the thread of the overall implementation.
+
 The orchestrator owns the mechanics:
 
 - branch and worktree flow
