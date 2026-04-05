@@ -140,6 +140,114 @@ describe('daemon', () => {
     expect(order[1]).toBe('reconcile');
   });
 
+  it('skips a reconcile cycle with already_running when a run cycle holds the lock', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        await Bun.sleep(60);
+      },
+      reconcileCycle: async () => {},
+      options: { runIntervalMs: 20, reconcileIntervalMs: 20 },
+      signal: controller.signal,
+      log: (msg) => {
+        log.push(msg);
+        if (msg.includes('skipped: already_running')) {
+          controller.abort();
+        }
+      },
+    });
+
+    expect(log).toContain('reconcile cycle skipped: already_running');
+    expect(log).toContain('daemon stopped');
+  });
+
+  it('skips a run cycle with already_running when a reconcile cycle holds the lock', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+
+    await runDaemonLoop({
+      runCycle: async () => {},
+      reconcileCycle: async () => {
+        await Bun.sleep(60);
+      },
+      options: { runIntervalMs: 20, reconcileIntervalMs: 20 },
+      signal: controller.signal,
+      log: (msg) => {
+        log.push(msg);
+        if (msg.includes('run cycle skipped: already_running')) {
+          controller.abort();
+        }
+      },
+    });
+
+    expect(log).toContain('run cycle skipped: already_running');
+    expect(log).toContain('daemon stopped');
+  });
+
+  it('executes the cycle after the lock is released', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        await Bun.sleep(40);
+      },
+      reconcileCycle: async () => {},
+      options: { runIntervalMs: 100, reconcileIntervalMs: 15 },
+      signal: controller.signal,
+      log: (msg) => {
+        log.push(msg);
+        if (
+          log.includes('reconcile cycle skipped: already_running') &&
+          log.filter((m) => m === 'reconcile cycle completed').length >= 2
+        ) {
+          controller.abort();
+        }
+      },
+    });
+
+    const skips = log.filter((m) =>
+      m.includes('reconcile cycle skipped: already_running'),
+    );
+    const completions = log.filter((m) => m === 'reconcile cycle completed');
+
+    expect(skips.length).toBeGreaterThanOrEqual(1);
+    expect(completions.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('waits for an in-flight cycle to complete on shutdown even after a skip', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+    let recurringRunCompleted = false;
+    let isInitialRun = true;
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        if (isInitialRun) {
+          isInitialRun = false;
+          return;
+        }
+        await Bun.sleep(80);
+        recurringRunCompleted = true;
+      },
+      reconcileCycle: async () => {},
+      options: { runIntervalMs: 30, reconcileIntervalMs: 600_000 },
+      signal: controller.signal,
+      log: (msg) => {
+        log.push(msg);
+        if (msg === 'run cycle skipped: already_running') {
+          controller.abort();
+        }
+      },
+    });
+
+    expect(recurringRunCompleted).toBe(true);
+    expect(log).toContain('run cycle skipped: already_running');
+    expect(log).toContain('daemon stopped');
+  });
+
   it('derives daemon options from runtime config', () => {
     const options = daemonOptionsFromConfig({
       runIntervalMinutes: 15,
