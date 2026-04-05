@@ -3230,7 +3230,7 @@ export function assertReviewerFacingMarkdown(body: string): void {
   const sanitizedLines: string[] = [];
 
   for (const line of lines) {
-    if (/^\s*```/.test(line)) {
+    if (/^\s*(```|~~~)/.test(line)) {
       inFencedCodeBlock = !inFencedCodeBlock;
       sanitizedLines.push('');
       continue;
@@ -3975,11 +3975,12 @@ export function mergeStandaloneAiReviewSection(
 ): string {
   const pattern = new RegExp(
     `${STANDALONE_AI_REVIEW_SECTION_START}[\\s\\S]*?${STANDALONE_AI_REVIEW_SECTION_END}`,
+    'g',
   );
-  const mergedBody = pattern.test(body)
-    ? body.replace(pattern, section)
-    : body.trimEnd().length > 0
-      ? `${body.trimEnd()}\n\n${section}\n`
+  const bodyWithoutAiReviewSections = body.replace(pattern, '').trimEnd();
+  const mergedBody =
+    bodyWithoutAiReviewSections.length > 0
+      ? `${bodyWithoutAiReviewSections}\n\n${section}\n`
       : `${section}\n`;
 
   return `${stripBannedPrBodySections(mergedBody).trimEnd()}\n`;

@@ -557,6 +557,13 @@ describe('delivery orchestrator', () => {
     );
     expect(replaced.match(/<!-- ai-review:start -->/g)?.length ?? 0).toBe(1);
     expect(replaced).not.toContain('- stale');
+    const deduped = mergeStandaloneAiReviewSection(
+      '## Summary\n- existing body\n\n<!-- ai-review:start -->\nold-1\n<!-- ai-review:end -->\n\n<!-- ai-review:start -->\nold-2\n<!-- ai-review:end -->\n',
+      section,
+    );
+    expect(deduped.match(/<!-- ai-review:start -->/g)?.length ?? 0).toBe(1);
+    expect(deduped).not.toContain('old-1');
+    expect(deduped).not.toContain('old-2');
   });
 
   it('renders final standalone ai review outcomes accurately', () => {
@@ -1322,6 +1329,11 @@ describe('delivery orchestrator', () => {
     expect(merged).toContain('```md');
     expect(merged).toContain('## Verification');
     expect(merged).toContain('- example snippet');
+    expect(() =>
+      assertReviewerFacingMarkdown(
+        '## Summary\n\n~~~md\n## Verification\n- example snippet\n~~~\n',
+      ),
+    ).not.toThrow();
   });
 
   it('requires internal review before opening a ticket-linked PR', async () => {
