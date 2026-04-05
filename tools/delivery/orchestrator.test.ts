@@ -25,6 +25,9 @@ import {
   findTicketByBranch,
   formatNotificationMessage,
   formatReviewWindowMessage,
+  inferPackageManager,
+  initOrchestratorConfig,
+  loadOrchestratorConfig,
   mergeStandaloneAiReviewSection,
   notifyBestEffort,
   openPullRequest,
@@ -37,6 +40,7 @@ import {
   pollReview,
   recordInternalReview,
   recordReview,
+  resolveOrchestratorConfig,
   resolvePlanPathForBranch,
   resolveNotifier,
   resolveReviewFetcher,
@@ -2257,5 +2261,194 @@ describe('delivery orchestrator', () => {
         process.env.AI_CODE_REVIEW_TRIAGER = original;
       }
     }
+  });
+
+  describe('orchestrator config', () => {
+    it('returns defaults when config file is absent', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        const config = await loadOrchestratorConfig(tempDir);
+        expect(config).toEqual({});
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('loads a partial config and preserves specified fields', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        await writeFile(
+          join(tempDir, 'orchestrator.config.json'),
+          JSON.stringify({ defaultBranch: 'develop', runtime: 'node' }),
+        );
+
+        const config = await loadOrchestratorConfig(tempDir);
+        expect(config).toEqual({
+          defaultBranch: 'develop',
+          planRoot: undefined,
+          runtime: 'node',
+          packageManager: undefined,
+        });
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('throws on invalid runtime value', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        await writeFile(
+          join(tempDir, 'orchestrator.config.json'),
+          JSON.stringify({ runtime: 'deno' }),
+        );
+
+        await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+          /Invalid runtime "deno"/,
+        );
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('throws on invalid packageManager value', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        await writeFile(
+          join(tempDir, 'orchestrator.config.json'),
+          JSON.stringify({ packageManager: 'cargo' }),
+        );
+
+        await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+          /Invalid packageManager "cargo"/,
+        );
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('throws on non-string defaultBranch', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        await writeFile(
+          join(tempDir, 'orchestrator.config.json'),
+          JSON.stringify({ defaultBranch: 42 }),
+        );
+
+        await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+          /Invalid defaultBranch/,
+        );
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('resolves empty config to defaults', () => {
+      const tempDir = '/tmp/resolve-cfg-test';
+      const resolved = resolveOrchestratorConfig({}, tempDir);
+      expect(resolved).toEqual({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'npm',
+      });
+    });
+
+    it('merges partial config with defaults', () => {
+      const resolved = resolveOrchestratorConfig(
+        { defaultBranch: 'develop', planRoot: 'specifications' },
+        '/tmp/resolve-cfg-merge',
+      );
+      expect(resolved.defaultBranch).toBe('develop');
+      expect(resolved.planRoot).toBe('specifications');
+      expect(resolved.runtime).toBe('bun');
+      expect(resolved.packageManager).toBe('npm');
+    });
+
+    it('infers bun from bun.lock', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-pm-'));
+      try {
+        await writeFile(join(tempDir, 'bun.lock'), '');
+        expect(inferPackageManager(tempDir)).toBe('bun');
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('infers pnpm from pnpm-lock.yaml', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-pm-'));
+      try {
+        await writeFile(join(tempDir, 'pnpm-lock.yaml'), '');
+        expect(inferPackageManager(tempDir)).toBe('pnpm');
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('infers yarn from yarn.lock', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-pm-'));
+      try {
+        await writeFile(join(tempDir, 'yarn.lock'), '');
+        expect(inferPackageManager(tempDir)).toBe('yarn');
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('infers npm from package-lock.json', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-pm-'));
+      try {
+        await writeFile(join(tempDir, 'package-lock.json'), '{}');
+        expect(inferPackageManager(tempDir)).toBe('npm');
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('falls back to npm when no lockfile is present', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-pm-'));
+      try {
+        expect(inferPackageManager(tempDir)).toBe('npm');
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('syncStateWithPlan uses configured defaultBranch for first ticket baseBranch', () => {
+      initOrchestratorConfig({
+        defaultBranch: 'develop',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+      });
+
+      try {
+        const options = createOptions({
+          planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        });
+
+        const synced = syncStateWithPlan(
+          undefined,
+          [
+            {
+              id: 'P3.01',
+              title: 'First Ticket',
+              slug: 'first-ticket',
+              ticketFile: 'docs/02-delivery/phase-03/ticket-01-first-ticket.md',
+            },
+          ],
+          '/workspace/test',
+          options,
+        );
+
+        expect(synced.tickets[0]?.baseBranch).toBe('develop');
+      } finally {
+        initOrchestratorConfig({
+          defaultBranch: 'main',
+          planRoot: 'docs',
+          runtime: 'bun',
+          packageManager: 'bun',
+        });
+      }
+    });
   });
 });

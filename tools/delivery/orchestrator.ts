@@ -1,3 +1,4 @@
+import { spawnSync as nodeSpawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { readdir } from 'node:fs/promises';
@@ -99,6 +100,119 @@ type BranchMatch = {
   branch: string;
   source: 'ticket-id' | 'derived';
 };
+
+export type OrchestratorConfig = {
+  defaultBranch?: string;
+  planRoot?: string;
+  runtime?: 'bun' | 'node';
+  packageManager?: 'bun' | 'npm' | 'pnpm' | 'yarn';
+};
+
+export type ResolvedOrchestratorConfig = {
+  defaultBranch: string;
+  planRoot: string;
+  runtime: 'bun' | 'node';
+  packageManager: 'bun' | 'npm' | 'pnpm' | 'yarn';
+};
+
+const VALID_RUNTIMES = ['bun', 'node'] as const;
+const VALID_PACKAGE_MANAGERS = ['bun', 'npm', 'pnpm', 'yarn'] as const;
+
+let _config: ResolvedOrchestratorConfig = {
+  defaultBranch: 'main',
+  planRoot: 'docs',
+  runtime: 'bun',
+  packageManager: 'npm',
+};
+
+export function initOrchestratorConfig(
+  config: ResolvedOrchestratorConfig,
+): void {
+  _config = config;
+}
+
+export function getOrchestratorConfig(): ResolvedOrchestratorConfig {
+  return _config;
+}
+
+export async function loadOrchestratorConfig(
+  cwd: string,
+): Promise<OrchestratorConfig> {
+  const configPath = resolve(cwd, 'orchestrator.config.json');
+
+  if (!existsSync(configPath)) {
+    return {};
+  }
+
+  const raw = JSON.parse(await readFile(configPath, 'utf8')) as Record<
+    string,
+    unknown
+  >;
+
+  if (
+    raw.runtime !== undefined &&
+    !VALID_RUNTIMES.includes(raw.runtime as (typeof VALID_RUNTIMES)[number])
+  ) {
+    throw new Error(
+      `Invalid runtime "${String(raw.runtime)}" in orchestrator.config.json. Expected: ${VALID_RUNTIMES.join(', ')}`,
+    );
+  }
+
+  if (
+    raw.packageManager !== undefined &&
+    !VALID_PACKAGE_MANAGERS.includes(
+      raw.packageManager as (typeof VALID_PACKAGE_MANAGERS)[number],
+    )
+  ) {
+    throw new Error(
+      `Invalid packageManager "${String(raw.packageManager)}" in orchestrator.config.json. Expected: ${VALID_PACKAGE_MANAGERS.join(', ')}`,
+    );
+  }
+
+  if (
+    raw.defaultBranch !== undefined &&
+    typeof raw.defaultBranch !== 'string'
+  ) {
+    throw new Error(
+      'Invalid defaultBranch in orchestrator.config.json. Expected a string.',
+    );
+  }
+
+  if (raw.planRoot !== undefined && typeof raw.planRoot !== 'string') {
+    throw new Error(
+      'Invalid planRoot in orchestrator.config.json. Expected a string.',
+    );
+  }
+
+  return {
+    defaultBranch: raw.defaultBranch as string | undefined,
+    planRoot: raw.planRoot as string | undefined,
+    runtime: raw.runtime as OrchestratorConfig['runtime'],
+    packageManager: raw.packageManager as OrchestratorConfig['packageManager'],
+  };
+}
+
+export function inferPackageManager(
+  cwd: string,
+): ResolvedOrchestratorConfig['packageManager'] {
+  if (existsSync(resolve(cwd, 'bun.lock'))) return 'bun';
+  if (existsSync(resolve(cwd, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (existsSync(resolve(cwd, 'yarn.lock'))) return 'yarn';
+  if (existsSync(resolve(cwd, 'package-lock.json'))) return 'npm';
+  return 'npm';
+}
+
+export function resolveOrchestratorConfig(
+  raw: OrchestratorConfig,
+  cwd: string,
+): ResolvedOrchestratorConfig {
+  return {
+    defaultBranch: raw.defaultBranch ?? 'main',
+    planRoot: raw.planRoot ?? 'docs',
+    runtime: raw.runtime ?? 'bun',
+    packageManager: raw.packageManager ?? inferPackageManager(cwd),
+  };
+}
 
 export type DeliveryNotificationEvent =
   | {
@@ -324,6 +438,9 @@ export async function runDeliveryOrchestrator(
     | undefined;
 
   try {
+    const rawConfig = await loadOrchestratorConfig(cwd);
+    _config = resolveOrchestratorConfig(rawConfig, cwd);
+
     await ensureEnvReady(cwd);
     const notifier = resolveNotifier();
     parsed = parseCliArgs(argv);
@@ -434,7 +551,7 @@ export async function runDeliveryOrchestrator(
             outcome !== 'operator_input_needed')
         ) {
           throw new Error(
-            'Usage: bun run deliver --plan <plan-path> record-review <ticket-id> <clean|patched|operator_input_needed> [note]',
+            `Usage: ${_config.packageManager} run deliver --plan <plan-path> record-review <ticket-id> <clean|patched|operator_input_needed> [note]`,
           );
         }
 
@@ -601,7 +718,7 @@ export function findPrimaryWorktreePath(cwd: string): string | undefined {
   return worktrees.find(
     (worktree) =>
       resolve(worktree.path) !== resolve(cwd) &&
-      worktree.branch === 'refs/heads/main',
+      worktree.branch === `refs/heads/${_config.defaultBranch}`,
   )?.path;
 }
 
@@ -694,7 +811,7 @@ export function syncStateWithPlan(
       );
       const inferredBaseBranch =
         index === 0
-          ? 'main'
+          ? _config.defaultBranch
           : selectBranchValue(
               existingById.get(previousTicket?.id ?? '')?.branch,
               inferredById.get(previousTicket?.id ?? '')?.branch,
@@ -710,7 +827,7 @@ export function syncStateWithPlan(
         branch: resolvedBranch,
         baseBranch:
           index === 0
-            ? 'main'
+            ? _config.defaultBranch
             : selectBranchValue(
                 previous?.baseBranch,
                 inferredTicket?.baseBranch,
@@ -985,7 +1102,7 @@ async function resolveOptionsForCommand(
 
 function getUsage(): string {
   return [
-    'Usage: bun run deliver --plan <plan-path> <command>',
+    `Usage: ${_config.packageManager} run deliver --plan <plan-path> <command>`,
     '',
     'Commands:',
     '  ai-review [--pr <number>]',
@@ -1089,7 +1206,7 @@ export function resolvePlanPathForBranch(
 }
 
 async function listImplementationPlans(cwd: string): Promise<string[]> {
-  const deliveryRoot = resolve(cwd, 'docs/02-delivery');
+  const deliveryRoot = resolve(cwd, _config.planRoot, '02-delivery');
   const entries = await readdir(deliveryRoot, { withFileTypes: true });
 
   return entries
@@ -1219,7 +1336,7 @@ function inferStateFromRepo(
       deriveBranchName(definition);
     const baseBranch =
       index === 0
-        ? 'main'
+        ? _config.defaultBranch
         : (findExistingBranch(branchCatalog, ticketDefinitions[index - 1]!)
             ?.branch ?? deriveBranchName(ticketDefinitions[index - 1]!));
     const branchExists = branchCatalog.includes(branch);
@@ -2851,8 +2968,8 @@ async function restackTicket(
   );
   const previous = targetIndex > 0 ? state.tickets[targetIndex - 1] : undefined;
 
-  let nextBaseBranch = 'main';
-  let rebaseTarget = 'origin/main';
+  let nextBaseBranch = _config.defaultBranch;
+  let rebaseTarget = `origin/${_config.defaultBranch}`;
 
   if (previous) {
     const oldBase = runProcess(cwd, [
@@ -2875,7 +2992,7 @@ async function restackTicket(
 
     runProcess(cwd, ['git', 'rebase', '--onto', rebaseTarget, oldBase]);
   } else {
-    runProcess(cwd, ['git', 'rebase', 'origin/main']);
+    runProcess(cwd, ['git', 'rebase', `origin/${_config.defaultBranch}`]);
   }
 
   const nextState: DeliveryState = {
@@ -4319,17 +4436,31 @@ function runProcessResult(
   stderr: string;
   stdout: string;
 } {
-  const result = Bun.spawnSync(cmd, {
+  if (_config.runtime === 'bun' && typeof globalThis.Bun !== 'undefined') {
+    const result = Bun.spawnSync(cmd, {
+      cwd,
+      stderr: 'pipe',
+      stdout: 'pipe',
+      env: process.env,
+    });
+
+    return {
+      exitCode: result.exitCode,
+      stderr: new TextDecoder().decode(result.stderr).trim(),
+      stdout: new TextDecoder().decode(result.stdout),
+    };
+  }
+
+  const result = nodeSpawnSync(cmd[0]!, cmd.slice(1), {
     cwd,
-    stderr: 'pipe',
-    stdout: 'pipe',
     env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
 
   return {
-    exitCode: result.exitCode,
-    stderr: new TextDecoder().decode(result.stderr).trim(),
-    stdout: new TextDecoder().decode(result.stdout),
+    exitCode: result.status ?? 1,
+    stderr: (result.stderr?.toString() ?? '').trim(),
+    stdout: result.stdout?.toString() ?? '',
   };
 }
 
@@ -4384,16 +4515,31 @@ function sleep(milliseconds: number): Promise<void> {
   );
 }
 
+const LOCK_FILES = [
+  'bun.lock',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'package-lock.json',
+] as const;
+
 async function bootstrapWorktreeIfNeeded(worktreePath: string): Promise<void> {
   if (
     !existsSync(resolve(worktreePath, 'package.json')) ||
-    !existsSync(resolve(worktreePath, 'bun.lock')) ||
     existsSync(resolve(worktreePath, 'node_modules'))
   ) {
     return;
   }
 
-  runProcess(worktreePath, ['bun', 'install']);
+  const hasLockfile = LOCK_FILES.some((file) =>
+    existsSync(resolve(worktreePath, file)),
+  );
+
+  if (!hasLockfile) {
+    return;
+  }
+
+  const pm = _config.packageManager;
+  runProcess(worktreePath, [pm, 'install']);
 
   const packageJson = JSON.parse(
     await readFile(resolve(worktreePath, 'package.json'), 'utf8'),
@@ -4402,7 +4548,7 @@ async function bootstrapWorktreeIfNeeded(worktreePath: string): Promise<void> {
   };
 
   if (packageJson.scripts?.['hooks:install']) {
-    runProcess(worktreePath, ['bun', 'run', 'hooks:install']);
+    runProcess(worktreePath, [pm, 'run', 'hooks:install']);
   }
 }
 

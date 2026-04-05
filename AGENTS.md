@@ -1,7 +1,8 @@
 # Repo Rules
 
 - For phase work, first read `docs/00-overview/start-here.md` and `docs/03-engineering/delivery-orchestrator.md`, then surface the orchestrator path before coding.
-- Prefer `bun run deliver --plan ...` over ad hoc implementation.
+- The delivery orchestrator reads `orchestrator.config.json` at the repo root for runtime, package manager, default branch, and plan root. See `docs/03-engineering/delivery-orchestrator.md` for field details and defaults.
+- Prefer `bun run deliver --plan ...` (or the configured package manager's equivalent) over ad hoc implementation.
 - For orchestrated ticket work, the handoff under `.agents/delivery/<plan-key>/handoffs/` is required input alongside the plan and ticket docs.
 - `begin phase` / `implement phase` means run the stacked-ticket workflow until blocked, not just the first ticket.
 - Phase flow: implement, verify, push/open PR, run the configured `ai-code-review` polling window, patch prudent findings if any appear, refresh PR state, then advance.
