@@ -328,13 +328,36 @@ jq -n \
 
     def comment_kind($channel):
       (body_text | normalize_text) as $body
+      | (vendor_name) as $vendor
       | if $channel == "inline_review" then
           if (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then "unknown" else "finding" end
-        elif $channel == "review_summary" and ($body | length) == 0 then "summary"
-        elif looks_like_started_text or looks_like_summary_noise_text then "summary"
-        elif ($body | test("summary|overall|overview|high level|high-level|general feedback|looks good|no major issues|quick recap")) then "summary"
-        elif ($body | test("should|could|must|consider|missing|bug|issue|incorrect|guard|handle|return|null|undefined|race|rename|suggestion:|nit:|nitpick")) then "finding"
-        else "unknown"
+        elif $vendor == "qodo" and $channel == "issue_comment" and ($body | test("review summary by qodo")) then
+          "summary"
+        elif $vendor == "qodo" and $channel == "issue_comment" and ($body | test("code review by qodo")) then
+          if (
+            ($body | test("bugs \\(0\\)"))
+            and ($body | test("rule violations \\(0\\)"))
+            and ($body | test("requirement gaps \\(0\\)"))
+            and ($body | test("ux issues \\(0\\)"))
+          ) then
+            "summary"
+          elif (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then
+            "unknown"
+          else
+            "finding"
+          end
+        elif $vendor == "coderabbit" and ($channel == "issue_comment" or $channel == "review_summary") then
+          "summary"
+        elif $channel == "review_summary" and ($body | length) == 0 then
+          "summary"
+        elif looks_like_started_text or looks_like_summary_noise_text then
+          "summary"
+        elif ($body | test("summary|overall|overview|high level|high-level|general feedback|looks good|no major issues|quick recap")) then
+          "summary"
+        elif ($body | test("should|could|must|consider|missing|bug|issue|incorrect|guard|handle|return|null|undefined|race|rename|suggestion:|nit:|nitpick")) then
+          "finding"
+        else
+          "unknown"
         end;
 
     def derived_agent_state($channel):

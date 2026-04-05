@@ -1655,6 +1655,7 @@ export async function openPullRequest(
   const body = buildPullRequestBody(state, target, {
     currentHeadSha: readHeadSha(target.worktreePath),
   });
+  assertReviewerFacingMarkdown(body);
   const existingPullRequest = findOpenPullRequest(
     target.worktreePath,
     target.branch,
@@ -3070,6 +3071,49 @@ function buildReviewCommentBullets(
   return comments.map((comment) => buildReviewCommentBullet(comment, detail));
 }
 
+export function assertReviewerFacingMarkdown(body: string): void {
+  const lines = body.split('\n');
+  let inFencedCodeBlock = false;
+  const sanitizedLines: string[] = [];
+
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+      sanitizedLines.push('');
+      continue;
+    }
+
+    if (inFencedCodeBlock) {
+      sanitizedLines.push('');
+      continue;
+    }
+
+    sanitizedLines.push(line.replace(/`[^`]*`/g, ''));
+  }
+
+  if (inFencedCodeBlock) {
+    throw new Error(
+      'PR body guard failed: markdown contains an unmatched fenced code block.',
+    );
+  }
+
+  const sanitizedBody = sanitizedLines.join('\n');
+  if (/(^|[^`])\\n(#{1,6}\s|- |\* |\d+\.\s)/.test(sanitizedBody)) {
+    throw new Error(
+      'PR body guard failed: body contains likely-escaped newline formatting sequences.',
+    );
+  }
+
+  const malformedHeading = sanitizedLines.find((line) =>
+    /^(#{1,6})(?!#)\S/.test(line.trim()),
+  );
+  if (malformedHeading) {
+    throw new Error(
+      `PR body guard failed: malformed markdown heading "${malformedHeading.trim()}".`,
+    );
+  }
+}
+
 function buildAiReviewDetailLines(input: {
   actionSummary?: string;
   comments?: AiReviewComment[];
@@ -3209,6 +3253,15 @@ function buildAiReviewDetailLines(input: {
     if (input.actionSummary) {
       lines.push(`- triage summary: ${input.actionSummary}`);
     }
+  }
+
+  if (input.nonActionSummary) {
+    lines.push(
+      '',
+      '### No-Action Rationale',
+      '',
+      `- ${input.nonActionSummary}`,
+    );
   }
 
   return lines;
@@ -3675,15 +3728,18 @@ function updatePullRequestBody(
     return;
   }
 
+  const body = buildPullRequestBody(state, ticket, {
+    currentHeadSha: readHeadSha(ticket.worktreePath),
+  });
+  assertReviewerFacingMarkdown(body);
+
   runProcess(ticket.worktreePath, [
     'gh',
     'pr',
     'edit',
     String(ticket.prNumber),
     '--body',
-    buildPullRequestBody(state, ticket, {
-      currentHeadSha: readHeadSha(ticket.worktreePath),
-    }),
+    body,
   ]);
 }
 
@@ -3757,6 +3813,7 @@ function updateStandalonePullRequestBody(
       currentHeadSha: pullRequest.headRefOid,
     }),
   );
+  assertReviewerFacingMarkdown(nextBody);
 
   runProcess(cwd, [
     'gh',

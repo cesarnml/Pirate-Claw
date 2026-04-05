@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  assertReviewerFacingMarkdown,
   buildStandaloneAiReviewSection,
   buildReviewPollCheckMinutes,
   buildPullRequestBody,
@@ -626,6 +627,21 @@ describe('delivery orchestrator', () => {
     expect(body).not.toContain('summary-only updates');
   });
 
+  it('renders no-action rationale when non-action summary exists on clean outcome', () => {
+    const body = buildStandaloneAiReviewSection({
+      outcome: 'clean',
+      note: 'External AI review completed without prudent follow-up changes.',
+      nonActionSummary:
+        'Ignored 2 vendor summary comments and 1 stale recommendation.',
+      vendors: ['qodo'],
+    });
+
+    expect(body).toContain('### No-Action Rationale');
+    expect(body).toContain(
+      'Ignored 2 vendor summary comments and 1 stale recommendation.',
+    );
+  });
+
   it('omits summary noise and renders resolved findings for reviewers', () => {
     const body = buildPullRequestBody(
       {
@@ -1215,6 +1231,36 @@ describe('delivery orchestrator', () => {
 
     expect(nextState.tickets[0]?.status).toBe('internally_reviewed');
     expect(nextState.tickets[0]?.internalReviewCompletedAt).toBeTruthy();
+  });
+
+  it('rejects pr bodies that contain literal escaped newlines', () => {
+    expect(() =>
+      assertReviewerFacingMarkdown('## Summary\\n- malformed'),
+    ).toThrow(
+      'PR body guard failed: body contains likely-escaped newline formatting sequences.',
+    );
+  });
+
+  it('rejects pr bodies that contain unmatched markdown fenced code blocks', () => {
+    expect(() =>
+      assertReviewerFacingMarkdown('## Summary\n```md\n- item\n'),
+    ).toThrow(
+      'PR body guard failed: markdown contains an unmatched fenced code block.',
+    );
+  });
+
+  it('accepts reviewer-facing markdown with proper headings and lists', () => {
+    expect(() =>
+      assertReviewerFacingMarkdown('## Summary\n\n- item\n\n## Verification\n'),
+    ).not.toThrow();
+  });
+
+  it('allows literal \\n text when it appears inside inline code', () => {
+    expect(() =>
+      assertReviewerFacingMarkdown(
+        '## Summary\n\n- guard against literal `\\\\n` in malformed generated bodies\n',
+      ),
+    ).not.toThrow();
   });
 
   it('requires internal review before opening a ticket-linked PR', async () => {
