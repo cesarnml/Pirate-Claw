@@ -116,7 +116,7 @@ Goal:
 
 Current status:
 
-- P5.01 movie codec policy mode is implemented in delivery work; label routing remains pending
+- P5.01 movie codec policy mode and P5.02 label-routing fallback are implemented in delivery work
 
 Committed scope:
 

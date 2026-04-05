@@ -122,6 +122,13 @@ Before running:
 4. If authentication is enabled, copy the same username and password into `pirate-claw.config.json`.
 5. If Transmission restricts allowed addresses, keep `127.0.0.1` or `localhost` allowed.
 
+At queue time, Pirate Claw attempts to send Transmission labels based on media type:
+
+- `movie` for movie feeds
+- `tv` for TV feeds
+
+If the configured Transmission instance rejects label arguments, Pirate Claw logs a warning and retries the same submission without labels.
+
 ## Real-World Feed Notes
 
 The current build is tuned to work against:

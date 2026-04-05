@@ -151,6 +151,64 @@ describe('pirate-claw run', () => {
     expect(transmissionServer.requestCount).toBe(6);
   });
 
+  it('warns and retries without labels when Transmission rejects label arguments', async () => {
+    const directory = await mkdtemp();
+    const feedServer = startSingleMovieItemFeedServer();
+    const transmissionServer = startLabelRejectingTransmissionServer();
+    const configPath = join(directory, 'pirate-claw.config.json');
+
+    await Bun.write(
+      configPath,
+      JSON.stringify(
+        {
+          feeds: [
+            {
+              name: 'Movie Feed',
+              url: `${feedServer.url}/movie.rss`,
+              mediaType: 'movie',
+            },
+          ],
+          tv: [],
+          movies: {
+            years: [2024],
+            resolutions: ['2160p', '1080p'],
+            codecs: ['x265'],
+            codecPolicy: 'prefer',
+          },
+          transmission: {
+            url: `${transmissionServer.url}/transmission/rpc`,
+            username: 'user',
+            password: 'pass',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const run = await runSimpleCommand(directory, 'run');
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toContain('queued: 1');
+    expect(run.stderr).toContain(
+      'Transmission rejected label arguments; retrying submission without labels.',
+    );
+    expect(transmissionServer.requestBodies).toHaveLength(2);
+    expect(transmissionServer.requestBodies[0]).toEqual({
+      method: 'torrent-add',
+      arguments: {
+        filename: 'https://example.test/downloads/example-movie.torrent',
+        labels: ['movie'],
+      },
+    });
+    expect(transmissionServer.requestBodies[1]).toEqual({
+      method: 'torrent-add',
+      arguments: {
+        filename: 'https://example.test/downloads/example-movie.torrent',
+      },
+    });
+  });
+
   it('exits with a readable error when config is missing a required section', async () => {
     const directory = await mkdtemp();
     const configPath = `${directory}/missing-sections.json`;
@@ -921,6 +979,36 @@ function startFeedServer(): { url: string } {
   return { url: server.url.origin };
 }
 
+function startSingleMovieItemFeedServer(): { url: string } {
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    routes: {
+      '/movie.rss': new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Movie Feed</title>
+    <item>
+      <title>Example.Movie.2024.1080p.WEB.x265-GROUP</title>
+      <link>https://example.test/releases/example-movie</link>
+      <guid>https://example.test/releases/example-movie</guid>
+      <pubDate>Sat, 05 Apr 2026 12:00:00 GMT</pubDate>
+      <enclosure url="https://example.test/downloads/example-movie.torrent" type="application/x-bittorrent" />
+    </item>
+  </channel>
+</rss>`,
+        {
+          headers: { 'content-type': 'application/rss+xml; charset=utf-8' },
+        },
+      ),
+    },
+  });
+
+  servers.push(server);
+  return { url: server.url.origin };
+}
+
 function startTransmissionServer(): { url: string; requestCount: number } {
   const state = { requestCount: 0 };
   const server = Bun.serve({
@@ -972,6 +1060,71 @@ function startTransmissionServer(): { url: string; requestCount: number } {
     url: server.url.origin,
     get requestCount() {
       return state.requestCount;
+    },
+  };
+}
+
+function startLabelRejectingTransmissionServer(): {
+  url: string;
+  requestBodies: Array<{
+    method?: string;
+    arguments?: { filename?: string; labels?: string[] };
+  }>;
+} {
+  const state = {
+    requestBodies: [] as Array<{
+      method?: string;
+      arguments?: { filename?: string; labels?: string[] };
+    }>,
+  };
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    routes: {
+      '/transmission/rpc': async (request: Request) => {
+        const sessionId = request.headers.get('x-transmission-session-id');
+
+        if (!sessionId) {
+          return new Response(null, {
+            status: 409,
+            headers: {
+              'x-transmission-session-id': 'session-123',
+            },
+          });
+        }
+
+        const body = (await request.json()) as {
+          method?: string;
+          arguments?: { filename?: string; labels?: string[] };
+        };
+        state.requestBodies.push(body);
+
+        if (body.arguments?.labels) {
+          return Response.json({
+            result: 'invalid or unknown argument: labels',
+            arguments: {},
+          });
+        }
+
+        return Response.json({
+          result: 'success',
+          arguments: {
+            'torrent-added': {
+              id: 42,
+              hashString: 'hash-42',
+              name: 'Queued Torrent',
+            },
+          },
+        });
+      },
+    },
+  });
+
+  servers.push(server);
+  return {
+    url: server.url.origin,
+    get requestBodies() {
+      return [...state.requestBodies];
     },
   };
 }

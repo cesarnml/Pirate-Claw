@@ -35,6 +35,7 @@ Current product boundary:
 - shared runtime lock prevents overlapping cycles
 - machine-readable and human-readable cycle artifacts with bounded retention
 - movie codec policy mode via `movies.codecPolicy` (`prefer` by default, `require` for strict matching)
+- queue-time Transmission `movie` / `tv` labels with warning+retry fallback when labels are unsupported
 
 Still deferred:
 

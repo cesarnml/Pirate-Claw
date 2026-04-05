@@ -109,6 +109,7 @@ export async function submitCandidate(
 ): Promise<void> {
   const submission = await downloader.submit({
     downloadUrl: input.feedItem.downloadUrl,
+    labels: getSubmissionLabels(input.match.item.mediaType),
   });
 
   if (submission.ok) {
@@ -128,6 +129,10 @@ export async function submitCandidate(
     status: 'failed',
     message: submission.message,
   });
+}
+
+function getSubmissionLabels(mediaType: 'tv' | 'movie'): string[] {
+  return [mediaType];
 }
 
 function groupByIdentity(
