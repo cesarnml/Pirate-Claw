@@ -1236,7 +1236,9 @@ describe('delivery orchestrator', () => {
   it('rejects pr bodies that contain literal escaped newlines', () => {
     expect(() =>
       assertReviewerFacingMarkdown('## Summary\\n- malformed'),
-    ).toThrow('PR body guard failed: body contains literal "\\n" sequences.');
+    ).toThrow(
+      'PR body guard failed: body contains likely-escaped newline formatting sequences.',
+    );
   });
 
   it('rejects pr bodies that contain unmatched markdown fenced code blocks', () => {
@@ -1250,6 +1252,14 @@ describe('delivery orchestrator', () => {
   it('accepts reviewer-facing markdown with proper headings and lists', () => {
     expect(() =>
       assertReviewerFacingMarkdown('## Summary\n\n- item\n\n## Verification\n'),
+    ).not.toThrow();
+  });
+
+  it('allows literal \\n text when it appears inside inline code', () => {
+    expect(() =>
+      assertReviewerFacingMarkdown(
+        '## Summary\n\n- guard against literal `\\\\n` in malformed generated bodies\n',
+      ),
     ).not.toThrow();
   });
 

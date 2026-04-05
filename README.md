@@ -160,6 +160,8 @@ Useful local commands:
 - `bun run deliver --plan <plan-path> poll-review` to run the orchestrator's 2/4/6/8-minute `ai-code-review` polling loop for the active PR and persist reviewed-SHA provenance plus vendor-attributed review artifacts
 - `bun run deliver --plan <plan-path> record-review <ticket-id> patched ...` to record patched follow-up and make a best-effort attempt to resolve mapped native GitHub inline review threads
 
+The delivery orchestrator applies reviewer-facing PR-body guards during PR create/edit flows. It rejects likely escaped-newline formatting sequences and malformed markdown basics (for example, unmatched fenced code blocks or malformed headings), while allowing literal `\\n` examples inside inline-code spans.
+
 The review hooks and triage guidance for that flow live in the repo-local skill at [`./.agents/skills/ai-code-review/SKILL.md`](./.agents/skills/ai-code-review/SKILL.md). The orchestrator consumes repo-local fetcher and triager scripts there, not a Codex-specific runtime.
 
 If you are working on the repo rather than just using the CLI, start with [`docs/00-overview/start-here.md`](./docs/00-overview/start-here.md).

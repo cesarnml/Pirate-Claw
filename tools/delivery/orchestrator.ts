@@ -3072,22 +3072,41 @@ function buildReviewCommentBullets(
 }
 
 export function assertReviewerFacingMarkdown(body: string): void {
-  if (body.includes('\\n')) {
-    throw new Error(
-      'PR body guard failed: body contains literal "\\n" sequences.',
-    );
+  const lines = body.split('\n');
+  let inFencedCodeBlock = false;
+  const sanitizedLines: string[] = [];
+
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+      sanitizedLines.push('');
+      continue;
+    }
+
+    if (inFencedCodeBlock) {
+      sanitizedLines.push('');
+      continue;
+    }
+
+    sanitizedLines.push(line.replace(/`[^`]*`/g, ''));
   }
 
-  const fencedCodeBlocks = body.match(/```/g)?.length ?? 0;
-  if (fencedCodeBlocks % 2 !== 0) {
+  if (inFencedCodeBlock) {
     throw new Error(
       'PR body guard failed: markdown contains an unmatched fenced code block.',
     );
   }
 
-  const malformedHeading = body
-    .split('\n')
-    .find((line) => /^(#{1,6})(?!#)\S/.test(line.trim()));
+  const sanitizedBody = sanitizedLines.join('\n');
+  if (/(^|[^`])\\n(#{1,6}\s|- |\* |\d+\.\s)/.test(sanitizedBody)) {
+    throw new Error(
+      'PR body guard failed: body contains likely-escaped newline formatting sequences.',
+    );
+  }
+
+  const malformedHeading = sanitizedLines.find((line) =>
+    /^(#{1,6})(?!#)\S/.test(line.trim()),
+  );
   if (malformedHeading) {
     throw new Error(
       `PR body guard failed: malformed markdown heading "${malformedHeading.trim()}".`,

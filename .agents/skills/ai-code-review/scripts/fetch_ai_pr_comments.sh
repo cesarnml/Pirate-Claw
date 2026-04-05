@@ -334,7 +334,18 @@ jq -n \
         elif $vendor == "qodo" and $channel == "issue_comment" and ($body | test("review summary by qodo")) then
           "summary"
         elif $vendor == "qodo" and $channel == "issue_comment" and ($body | test("code review by qodo")) then
-          if (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then "unknown" else "finding" end
+          if (
+            ($body | test("bugs \\(0\\)"))
+            and ($body | test("rule violations \\(0\\)"))
+            and ($body | test("requirement gaps \\(0\\)"))
+            and ($body | test("ux issues \\(0\\)"))
+          ) then
+            "summary"
+          elif (comment_thread_state.is_outdated or comment_thread_state.is_resolved) then
+            "unknown"
+          else
+            "finding"
+          end
         elif $vendor == "coderabbit" and ($channel == "issue_comment" or $channel == "review_summary") then
           "summary"
         elif $channel == "review_summary" and ($body | length) == 0 then
