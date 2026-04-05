@@ -74,6 +74,77 @@ Future pressure and ideation:
 - final media placement may be owned either by Transmission or by Pirate Claw once completion tracking is reliable enough to make that boundary explicit
 - if Transmission labels can drive downloader-side placement rules reliably, Pirate Claw may eventually assign labels such as movie or tv at queue time instead of owning final move logic itself
 
+## Phase 04: Always-On Local Runtime
+
+Goal:
+
+- add a foreground daemon mode for continuous local operation
+- schedule queue-intake and reconcile cycles with clear defaults
+- make runtime activity machine-readable through JSON/Markdown artifacts
+
+Committed scope:
+
+- `pirate-claw daemon` as a long-running local command
+- default cadence: run every 30 minutes, reconcile every 1 minute
+- per-feed poll interval overrides with due-feed-only run behavior
+- one shared runtime lock and overlap-skip reason `already_running`
+- runtime artifacts under `.pirate-claw/runtime` with 7-day retention
+
+Explicitly deferred:
+
+- movie codec strictness policy mode
+- Transmission label/category routing
+- NAS packaging and deployment automation
+- dashboard/UI artifact rendering
+
+Working notes:
+
+- `docs/01-product/phase-04-always-on-local-runtime.md`
+- `docs/02-delivery/phase-04/implementation-plan.md`
+
+## Phase 05: Intake Policy And Transmission Routing
+
+Goal:
+
+- allow movie codec behavior to be configured as preference or hard requirement
+- add media-type routing labels on Transmission submissions
+- preserve queueing with warning+fallback when labels are unsupported
+
+Committed scope:
+
+- `movies.codecPolicy: "prefer" | "require"`
+- queue-time `movie` / `tv` labels for Transmission
+- warn-and-retry-unlabeled fallback when label arguments are rejected
+
+Explicitly deferred:
+
+- generalized per-feed custom routing labels
+- hard-fail strict mode for unsupported labels
+- media placement ownership redesign
+
+Working notes:
+
+- `docs/01-product/phase-05-intake-policy-and-routing.md`
+
+## Phase 06: Synology Runbook
+
+Goal:
+
+- provide a validated runbook for always-on Pirate Claw + Transmission operation on Synology
+
+Committed scope:
+
+- tested setup and operations documentation only
+
+Explicitly deferred:
+
+- repo-managed Docker Compose deployment bundle
+- backup/restore and one-click installation automation
+
+Working notes:
+
+- `docs/01-product/phase-06-synology-runbook.md`
+
 ## Planning Rules
 
 - keep phase docs outcome-focused

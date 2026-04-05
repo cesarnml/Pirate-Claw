@@ -5,8 +5,8 @@ The docs are organized by purpose so later phases can be added without flattenin
 ## Recommended Reading Order
 
 1. `00-overview/start-here.md`
-2. `01-product/phase-01-mvp.md`
-3. `02-delivery/phase-01/implementation-plan.md`
+2. `01-product/phase-03-post-queue-lifecycle.md`
+3. `02-delivery/phase-04/implementation-plan.md`
 4. `03-engineering/tdd-workflow.md`
 
 ## Folder Structure
@@ -23,6 +23,11 @@ Entry-point docs for new contributors or new Codex threads.
 Phase-level product definitions.
 
 - `phase-01-mvp.md`: current MVP scope and data flow
+- `phase-02-real-world-feed-compatibility.md`: live-feed compatibility scope and deferrals
+- `phase-03-post-queue-lifecycle.md`: lifecycle reconciliation and status semantics
+- `phase-04-always-on-local-runtime.md`: always-on scheduling, locking, and runtime artifacts
+- `phase-05-intake-policy-and-routing.md`: codec policy mode and Transmission routing labels
+- `phase-06-synology-runbook.md`: Synology runbook goals and boundaries
 
 ### `02-delivery`
 
@@ -32,6 +37,9 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-01/implementation-plan.md`: ordered delivery plan for phase 01
 - `phase-01/ticket-*.md`: one file per ticket
 - `phase-01/*-rationale.md`: rationale notes for tickets and the post-phase polish pass
+- `phase-02/implementation-plan.md`: real-world feed compatibility delivery plan
+- `phase-03/implementation-plan.md`: post-queue lifecycle delivery plan
+- `phase-04/implementation-plan.md`: always-on local runtime delivery plan
 
 ### `03-engineering`
 
@@ -49,7 +57,7 @@ Architecture and tooling decisions that should remain explicit and reviewable.
 
 ## Repo Rules
 
-- Do not implement all of phase 01 in one pass.
+- Do not implement all of a phase in one pass.
 - Ship one small red-green-refactor slice at a time.
 - Each ticket should be reviewable in roughly 1-3 hours of human-equivalent work.
 - Use Bun as the repo runtime and default test runner unless a ticket explicitly justifies otherwise.
