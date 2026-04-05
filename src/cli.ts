@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
+import { DEFAULT_DAEMON_OPTIONS, runDaemonLoop } from './daemon';
 import {
   reconcileCandidates,
   retryFailedCandidates,
@@ -85,6 +86,47 @@ export async function runCli(argv: string[]): Promise<number> {
       return 0;
     }
 
+    if (command === 'daemon') {
+      const configPath = parseConfigPath(rest);
+      const resolvedConfigPath = resolveConfigPath(configPath);
+      const config = await loadConfig(resolvedConfigPath);
+      const database = openDatabase();
+
+      try {
+        ensureSchema(database);
+        const repository = createRepository(database);
+        const downloader = createTransmissionDownloader(config.transmission);
+
+        const controller = new AbortController();
+        process.on('SIGINT', () => controller.abort());
+        process.on('SIGTERM', () => controller.abort());
+
+        await runDaemonLoop({
+          runCycle: async () => {
+            const result = await runPipeline({
+              config,
+              repository,
+              downloader,
+            });
+            console.log(formatRunSummary(result));
+          },
+          reconcileCycle: async () => {
+            const result = await reconcileCandidates({
+              repository,
+              downloader,
+            });
+            console.log(formatReconcileSummary(result));
+          },
+          options: DEFAULT_DAEMON_OPTIONS,
+          signal: controller.signal,
+        });
+      } finally {
+        database.close();
+      }
+
+      return 0;
+    }
+
     if (command === 'status') {
       const database = openStatusDatabase();
 
@@ -104,7 +146,7 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     console.error(
-      'Unknown command. Available commands: "run", "status", "retry-failed", "reconcile".',
+      'Unknown command. Available commands: "run", "daemon", "status", "retry-failed", "reconcile".',
     );
     return 1;
   } catch (error) {
