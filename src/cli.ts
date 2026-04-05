@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs';
 
+import { join } from 'node:path';
+
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
 import { daemonOptionsFromConfig, runDaemonLoop } from './daemon';
 import {
@@ -7,6 +9,12 @@ import {
   retryFailedCandidates,
   runPipeline,
 } from './pipeline';
+import {
+  filterDueFeeds,
+  loadPollState,
+  recordFeedPolled,
+  savePollState,
+} from './poll-state';
 import {
   type CandidateLifecycleStatus,
   createRepository,
@@ -102,13 +110,39 @@ export async function runCli(argv: string[]): Promise<number> {
         process.once('SIGINT', onSignal);
         process.once('SIGTERM', onSignal);
 
+        const pollStatePath = join(
+          config.runtime.artifactDir,
+          'poll-state.json',
+        );
+
         await runDaemonLoop({
           runCycle: async () => {
+            let pollState = loadPollState(pollStatePath);
+            const now = Date.now();
+            const dueFeeds = filterDueFeeds(
+              config.feeds,
+              pollState,
+              config.runtime,
+              now,
+            );
+
+            if (dueFeeds.length === 0) {
+              console.log('run cycle: no feeds due');
+              return;
+            }
+
             const result = await runPipeline({
-              config,
+              config: { ...config, feeds: dueFeeds },
               repository,
               downloader,
             });
+
+            const polledAt = new Date(now).toISOString();
+            for (const feed of dueFeeds) {
+              pollState = recordFeedPolled(pollState, feed.name, polledAt);
+            }
+            savePollState(pollStatePath, pollState);
+
             console.log(formatRunSummary(result));
           },
           reconcileCycle: async () => {

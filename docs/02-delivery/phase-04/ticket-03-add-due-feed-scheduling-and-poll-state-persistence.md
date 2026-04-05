@@ -20,6 +20,14 @@ Per-feed cadence is core to Phase 04 value and efficiency. Without due-feed sele
 - run/reconcile overlap lock behavior
 - runtime artifact generation
 
+## Rationale
+
+Due-feed filtering happens before `runPipeline` by constructing a reduced `config.feeds` array. This keeps the core pipeline unchanged; only the daemon run cycle selects which feeds to include.
+
+Poll state persists as a JSON file under `runtime.artifactDir`. On first run, all feeds are due because they have no recorded `lastPolledAt`. After each successful cycle, the daemon records the poll timestamp per feed. On restart, the daemon reloads this file and resumes where it left off.
+
+Per-feed `pollIntervalMinutes` overrides the global `runIntervalMinutes` for that feed's due check. If absent, the global default applies.
+
 ## Red First Prompt
 
 What user-visible scheduling behavior fails first when due-feed selection and feed polling state persistence are absent?
