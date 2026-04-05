@@ -5,9 +5,11 @@ The docs are organized by purpose so later phases can be added without flattenin
 ## Recommended Reading Order
 
 1. `00-overview/start-here.md`
-2. `01-product/phase-03-post-queue-lifecycle.md`
-3. `02-delivery/phase-04/implementation-plan.md`
-4. `03-engineering/tdd-workflow.md`
+2. `00-overview/roadmap.md`
+3. `03-engineering/delivery-orchestrator.md`
+4. `01-product/phase-04-always-on-local-runtime.md`
+5. `02-delivery/phase-04/implementation-plan.md`
+6. `03-engineering/tdd-workflow.md`
 
 ## Folder Structure
 
