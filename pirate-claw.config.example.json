@@ -21,7 +21,8 @@
   "movies": {
     "years": [2026],
     "resolutions": ["1080p"],
-    "codecs": ["x265"]
+    "codecs": ["x265"],
+    "codecPolicy": "prefer"
   },
   "transmission": {
     "url": "http://localhost:9091/transmission/rpc",

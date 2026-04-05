@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 
 import type { MoviePolicy } from '../src/config';
-import { matchMovieItem } from '../src/movie-match';
+import {
+  getMovieNoMatchReason,
+  matchMovieItem,
+  MOVIE_CODEC_POLICY_REQUIRE_DISALLOWED_MESSAGE,
+  MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE,
+} from '../src/movie-match';
 import { normalizeFeedItem } from '../src/normalize';
 
 describe('matchMovieItem', () => {
@@ -14,6 +19,7 @@ describe('matchMovieItem', () => {
       years: [2025, 2024],
       resolutions: ['2160p', '1080p'],
       codecs: ['x265', 'x264'],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(item, policy)).toEqual({
@@ -34,6 +40,7 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(item, policy)).toEqual({
@@ -54,6 +61,7 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(item, policy)).toEqual({
@@ -78,6 +86,7 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['2160p', '1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(webRelease, policy)?.identityKey).toBe(
@@ -97,6 +106,7 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(item, policy)?.identityKey).toBe(
@@ -117,6 +127,7 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265', 'x264'],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(explicitCodec, policy)?.identityKey).toBe(
@@ -140,11 +151,48 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265', 'x264'],
+      codecPolicy: 'prefer',
     };
 
     expect(
       matchMovieItem(lowerPreferenceCodec, policy)?.score ?? 0,
     ).toBeGreaterThan(matchMovieItem(unknownCodec, policy)?.score ?? 0);
+  });
+
+  it('rejects codec-unknown movies when codecPolicy is require', () => {
+    const item = normalizeFeedItem({
+      mediaType: 'movie',
+      rawTitle: 'Example.Movie.2024.1080p.WEB-GROUP',
+    });
+    const policy: MoviePolicy = {
+      years: [2024],
+      resolutions: ['1080p'],
+      codecs: ['x265'],
+      codecPolicy: 'require',
+    };
+
+    expect(matchMovieItem(item, policy)).toBeUndefined();
+    expect(getMovieNoMatchReason(item, policy)).toBe(
+      MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE,
+    );
+  });
+
+  it('reports a strict-policy reason when the movie codec is not allowed', () => {
+    const item = normalizeFeedItem({
+      mediaType: 'movie',
+      rawTitle: 'Example.Movie.2024.1080p.WEB.x264-GROUP',
+    });
+    const policy: MoviePolicy = {
+      years: [2024],
+      resolutions: ['1080p'],
+      codecs: ['x265'],
+      codecPolicy: 'require',
+    };
+
+    expect(matchMovieItem(item, policy)).toBeUndefined();
+    expect(getMovieNoMatchReason(item, policy)).toBe(
+      MOVIE_CODEC_POLICY_REQUIRE_DISALLOWED_MESSAGE,
+    );
   });
 
   it.each([
@@ -202,6 +250,7 @@ describe('matchMovieItem', () => {
         years: [2024],
         resolutions: ['1080p'],
         codecs: ['x265'],
+        codecPolicy: 'prefer',
       };
 
       expect(matchMovieItem(item, policy)).toBeUndefined();
@@ -217,6 +266,7 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(item, policy)).toBeUndefined();
@@ -231,6 +281,7 @@ describe('matchMovieItem', () => {
       years: [2024],
       resolutions: ['1080p'],
       codecs: [],
+      codecPolicy: 'prefer',
     };
 
     expect(matchMovieItem(item, policy)).toBeUndefined();

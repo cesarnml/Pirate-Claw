@@ -39,6 +39,39 @@ describe('validateConfig', () => {
     expect(config.tv[0]?.codecs).toEqual(['x265', 'x264']);
     expect(config.movies.resolutions).toEqual(['2160p', '1080p']);
     expect(config.movies.codecs).toEqual(['x265']);
+    expect(config.movies.codecPolicy).toBe('prefer');
+  });
+
+  it('parses movies.codecPolicy when set to require', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      movies: {
+        years: [2024],
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+        codecPolicy: 'require',
+      },
+    });
+
+    expect(config.movies.codecPolicy).toBe('require');
+  });
+
+  it('fails with a precise movies.codecPolicy path when the value is unsupported', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+          codecPolicy: 'strict',
+        },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config movies codecPolicy" has invalid value; expected one of "prefer", "require".',
+      ),
+    );
   });
 
   it('fails with a precise tv codecs path when a codec is unsupported', () => {
@@ -290,6 +323,7 @@ function createMinimalConfig() {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     },
     transmission: {
       url: 'http://localhost:9091/transmission/rpc',

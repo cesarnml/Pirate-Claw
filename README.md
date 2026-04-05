@@ -93,7 +93,8 @@ Example:
   "movies": {
     "years": [2026],
     "resolutions": ["1080p"],
-    "codecs": ["x265"]
+    "codecs": ["x265"],
+    "codecPolicy": "prefer"
   },
   "transmission": {
     "url": "http://localhost:9091/transmission/rpc",
@@ -132,8 +133,11 @@ Current behavior:
 
 - queueable torrent URLs come from RSS `enclosure.url` when present
 - `<link>` remains a fallback when no enclosure URL exists
-- movie items can still match when year and resolution fit policy even if codec is missing
+- movie items default to `movies.codecPolicy: "prefer"`, so they can still match when year and resolution fit policy even if codec is missing
 - explicit preferred codecs still outrank otherwise equivalent unknown-codec movie releases
+
+`movies.codecPolicy` accepts `"prefer"` or `"require"`.
+Use `"require"` to reject movie releases that do not expose an allowed codec in the title.
 
 ## Local Runtime Files
 

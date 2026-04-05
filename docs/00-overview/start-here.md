@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through Phase 04.
+Pirate Claw is implemented through Phase 04, with Phase 05 ticket P5.01 active in delivery work.
 
 Current delivered surface:
 
@@ -34,6 +34,7 @@ Current product boundary:
 - per-feed polling cadence with persistent poll state
 - shared runtime lock prevents overlapping cycles
 - machine-readable and human-readable cycle artifacts with bounded retention
+- movie codec policy mode via `movies.codecPolicy` (`prefer` by default, `require` for strict matching)
 
 Still deferred:
 

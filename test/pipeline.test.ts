@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { type AppConfig, DEFAULT_RUNTIME_CONFIG } from '../src/config';
 import { FeedError } from '../src/feed';
+import { MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE } from '../src/movie-match';
 import { retryFailedCandidates, runPipeline } from '../src/pipeline';
 import {
   createRepository,
@@ -177,6 +178,59 @@ describe('runPipeline', () => {
       queuedAt: '2026-03-30T00:10:00.000Z',
     });
   });
+
+  it('records a strict codec-policy no-match reason for codec-unknown movie releases', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+
+    const result = await runPipeline({
+      config: createConfig({
+        feeds: [
+          {
+            name: 'Movie Feed',
+            url: 'https://example.test/movie.rss',
+            mediaType: 'movie',
+          },
+        ],
+        tv: [],
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+          codecPolicy: 'require',
+        },
+      }),
+      repository,
+      downloader: {
+        submit: async () => ({
+          ok: true as const,
+          status: 'queued' as const,
+        }),
+      },
+      fetchFeed: async () => [
+        {
+          feedName: 'Movie Feed',
+          guidOrLink: 'https://example.test/releases/example-movie-no-codec',
+          rawTitle: 'Example.Movie.2024.1080p.WEB-GROUP',
+          publishedAt: '2026-03-30T00:00:00.000Z',
+          downloadUrl:
+            'https://example.test/downloads/example-movie-no-codec.torrent',
+        },
+      ],
+    });
+
+    expect(result.counts).toEqual({
+      queued: 0,
+      failed: 0,
+      skipped_duplicate: 0,
+      skipped_no_match: 1,
+    });
+    expect(repository.listFeedItemOutcomes(result.runId)).toMatchObject([
+      {
+        status: 'skipped_no_match',
+        message: MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE,
+      },
+    ]);
+  });
 });
 
 describe('retryFailedCandidates', () => {
@@ -323,6 +377,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       years: [2024],
       resolutions: ['1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     },
     transmission: {
       url: 'http://localhost:9091/transmission/rpc',

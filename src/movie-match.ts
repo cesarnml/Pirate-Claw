@@ -10,6 +10,11 @@ export type MovieMatchResult = {
   item: NormalizedFeedItem;
 };
 
+export const MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE =
+  'Movie codec is required by policy but missing from release title.';
+export const MOVIE_CODEC_POLICY_REQUIRE_DISALLOWED_MESSAGE =
+  'Movie codec is required by policy and release codec is not allowed.';
+
 const MOVIE_POLICY_RULE_NAME = 'movies';
 
 export function matchMovieItem(
@@ -37,6 +42,34 @@ export function matchMovieItem(
   };
 }
 
+export function getMovieNoMatchReason(
+  item: NormalizedFeedItem,
+  policy: MoviePolicy,
+): string | undefined {
+  const { year, resolution, codec } = item;
+
+  if (
+    item.mediaType !== 'movie' ||
+    year === undefined ||
+    resolution === undefined ||
+    !policy.years.includes(year) ||
+    !policy.resolutions.includes(resolution) ||
+    policy.codecPolicy !== 'require'
+  ) {
+    return undefined;
+  }
+
+  if (codec === undefined) {
+    return MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE;
+  }
+
+  if (!policy.codecs.includes(codec)) {
+    return MOVIE_CODEC_POLICY_REQUIRE_DISALLOWED_MESSAGE;
+  }
+
+  return undefined;
+}
+
 function buildIdentityKey(item: NormalizedFeedItem): string {
   return `movie:${item.normalizedTitle.trim().toLowerCase()}|${item.year ?? ''}`;
 }
@@ -51,7 +84,7 @@ function matchesMovieQuality(
   }
 
   if (codec === undefined) {
-    return policy.codecs.length > 0;
+    return policy.codecPolicy === 'prefer' && policy.codecs.length > 0;
   }
 
   return matchesAllowedQuality(

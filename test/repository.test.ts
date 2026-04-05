@@ -573,6 +573,7 @@ function requireMovieMatch(rawTitle: string) {
       years: [2024],
       resolutions: ['2160p', '1080p'],
       codecs: ['x265'],
+      codecPolicy: 'prefer',
     },
   );
 

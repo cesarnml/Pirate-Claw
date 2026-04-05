@@ -114,6 +114,10 @@ Goal:
 - add media-type routing labels on Transmission submissions
 - preserve queueing with warning+fallback when labels are unsupported
 
+Current status:
+
+- P5.01 movie codec policy mode is implemented in delivery work; label routing remains pending
+
 Committed scope:
 
 - `movies.codecPolicy: "prefer" | "require"`

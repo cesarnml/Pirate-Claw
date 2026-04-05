@@ -36,12 +36,12 @@ export function createPipelineCoordinator(input: {
   downloader: Downloader;
 }) {
   return {
-    recordNoMatch(feedItemId: number): void {
+    recordNoMatch(feedItemId: number, message?: string): void {
       input.repository.recordFeedItemOutcome({
         runId: input.run.id,
         feedItemId,
         status: 'skipped_no_match',
-        message: 'No matching rule or policy.',
+        message: message ?? 'No matching rule or policy.',
       });
     },
 

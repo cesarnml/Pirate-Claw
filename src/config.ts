@@ -17,6 +17,7 @@ export type MoviePolicy = {
   years: number[];
   resolutions: string[];
   codecs: string[];
+  codecPolicy: 'prefer' | 'require';
 };
 
 export type TransmissionConfig = {
@@ -162,7 +163,27 @@ function validateMoviePolicy(
       `${path} movies`,
       supportedCodecs,
     ),
+    codecPolicy: requireMovieCodecPolicy(rule, `${path} movies codecPolicy`),
   };
+}
+
+function requireMovieCodecPolicy(
+  input: Record<string, unknown>,
+  path: string,
+): 'prefer' | 'require' {
+  const value = input.codecPolicy;
+
+  if (value === undefined) {
+    return 'prefer';
+  }
+
+  if (value === 'prefer' || value === 'require') {
+    return value;
+  }
+
+  throw new ConfigError(
+    `Config file "${path}" has invalid value; expected one of "prefer", "require".`,
+  );
 }
 
 function validateTransmission(
