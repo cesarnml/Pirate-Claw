@@ -24,6 +24,7 @@ export type SubmissionFailure = {
   ok: false;
   code: SubmissionFailureCode;
   message: string;
+  rpcResult?: string;
 };
 
 export type SubmissionResult = SubmissionSuccess | SubmissionFailure;
@@ -55,12 +56,19 @@ export type Downloader = {
   lookupTorrents?(input: LookupTorrentsInput): Promise<LookupTorrentsResult>;
 };
 
+export type DownloaderOptions = {
+  warn?: (message: string) => void;
+};
+
 export function createTransmissionDownloader(
   config: TransmissionConfig,
+  options: DownloaderOptions = {},
 ): Downloader {
+  const warn = options.warn ?? console.warn;
+
   return {
     submit(input) {
-      return submitToTransmission(config, input);
+      return submitToTransmission(config, input, warn);
     },
     lookupTorrents(input) {
       return lookupTorrentsInTransmission(config, input);
@@ -71,6 +79,7 @@ export function createTransmissionDownloader(
 async function submitToTransmission(
   config: TransmissionConfig,
   input: SubmitDownloadInput,
+  warn: (message: string) => void,
 ): Promise<SubmissionResult> {
   const firstResponse = await sendSubmitRpcRequest(config, input);
 
@@ -83,7 +92,7 @@ async function submitToTransmission(
     return result;
   }
 
-  console.warn(
+  warn(
     'Transmission rejected label arguments; retrying submission without labels.',
   );
 
@@ -340,8 +349,9 @@ function shouldRetryWithoutLabels(
     input.labels.length > 0 &&
     !result.ok &&
     result.code === 'rpc_error' &&
-    /labels?/i.test(result.message) &&
-    /(invalid|unknown|unsupported|unrecognized)/i.test(result.message)
+    typeof result.rpcResult === 'string' &&
+    /labels?/i.test(result.rpcResult) &&
+    /(invalid|unknown|unsupported|unrecognized)/i.test(result.rpcResult)
   );
 }
 
@@ -383,6 +393,7 @@ function parseSubmissionResult(parsed: unknown): SubmissionResult {
       ok: false,
       code: 'rpc_error',
       message: `Transmission rejected torrent submission: ${parsed.result}.`,
+      rpcResult: parsed.result,
     };
   }
 
@@ -422,6 +433,7 @@ function parseLookupTorrentsResult(parsed: unknown): LookupTorrentsResult {
       ok: false,
       code: 'rpc_error',
       message: `Transmission rejected torrent lookup: ${parsed.result}.`,
+      rpcResult: parsed.result,
     };
   }
 

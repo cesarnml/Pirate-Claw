@@ -131,140 +131,133 @@ describe('Transmission adapter', () => {
     const requests: CapturedRequest[] = [];
     let requestCount = 0;
     const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (message?: unknown) => warnings.push(String(message ?? ''));
+    const server = startTransmissionServer(async (request) => {
+      requests.push(await captureRequest(request));
+      requestCount += 1;
 
-    try {
-      const server = startTransmissionServer(async (request) => {
-        requests.push(await captureRequest(request));
-        requestCount += 1;
-
-        if (requestCount === 1) {
-          return new Response(null, {
-            status: 409,
-            headers: {
-              'x-transmission-session-id': 'session-123',
-            },
-          });
-        }
-
-        const body = requests.at(-1)?.json as {
-          arguments?: { labels?: string[] };
-        };
-
-        if (body.arguments?.labels) {
-          return Response.json({
-            result: 'invalid or unknown argument: labels',
-            arguments: {},
-          });
-        }
-
-        return Response.json({
-          result: 'success',
-          arguments: {
-            'torrent-added': {
-              id: 7,
-              hashString: 'abcdef123456',
-              name: 'Example Movie',
-            },
+      if (requestCount === 1) {
+        return new Response(null, {
+          status: 409,
+          headers: {
+            'x-transmission-session-id': 'session-123',
           },
         });
-      });
-      const downloader = createTransmissionDownloader(
-        createTransmissionConfig(server.url.origin, '/downloads/movies'),
-      );
+      }
 
-      const result = await downloader.submit({
-        downloadUrl: 'https://download.example.test/movie/example.torrent',
+      const body = requests.at(-1)?.json as {
+        arguments?: { labels?: string[] };
+      };
+
+      if (body.arguments?.labels) {
+        return Response.json({
+          result: 'invalid or unknown argument: labels',
+          arguments: {},
+        });
+      }
+
+      return Response.json({
+        result: 'success',
+        arguments: {
+          'torrent-added': {
+            id: 7,
+            hashString: 'abcdef123456',
+            name: 'Example Movie',
+          },
+        },
+      });
+    });
+    const downloader = createTransmissionDownloader(
+      createTransmissionConfig(server.url.origin, '/downloads/movies'),
+      {
+        warn: (message) => warnings.push(message),
+      },
+    );
+
+    const result = await downloader.submit({
+      downloadUrl: 'https://download.example.test/movie/example.torrent',
+      labels: ['movie'],
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      status: 'queued',
+      torrentId: 7,
+      torrentName: 'Example Movie',
+      torrentHash: 'abcdef123456',
+    });
+    expect(warnings).toEqual([
+      'Transmission rejected label arguments; retrying submission without labels.',
+    ]);
+    expect(requests).toHaveLength(3);
+    expect(requests[1]!.json).toEqual({
+      method: 'torrent-add',
+      arguments: {
+        filename: 'https://download.example.test/movie/example.torrent',
+        'download-dir': '/downloads/movies',
         labels: ['movie'],
-      });
-
-      expect(result).toEqual({
-        ok: true,
-        status: 'queued',
-        torrentId: 7,
-        torrentName: 'Example Movie',
-        torrentHash: 'abcdef123456',
-      });
-      expect(warnings).toEqual([
-        'Transmission rejected label arguments; retrying submission without labels.',
-      ]);
-      expect(requests).toHaveLength(3);
-      expect(requests[1]!.json).toEqual({
-        method: 'torrent-add',
-        arguments: {
-          filename: 'https://download.example.test/movie/example.torrent',
-          'download-dir': '/downloads/movies',
-          labels: ['movie'],
-        },
-      });
-      expect(requests[2]!.json).toEqual({
-        method: 'torrent-add',
-        arguments: {
-          filename: 'https://download.example.test/movie/example.torrent',
-          'download-dir': '/downloads/movies',
-        },
-      });
-    } finally {
-      console.warn = originalWarn;
-    }
+      },
+    });
+    expect(requests[2]!.json).toEqual({
+      method: 'torrent-add',
+      arguments: {
+        filename: 'https://download.example.test/movie/example.torrent',
+        'download-dir': '/downloads/movies',
+      },
+    });
   });
 
   it('returns the original structured failure when label fallback also fails', async () => {
     let requestCount = 0;
     const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (message?: unknown) => warnings.push(String(message ?? ''));
+    const server = startTransmissionServer(async (request) => {
+      requestCount += 1;
 
-    try {
-      const server = startTransmissionServer(async (request) => {
-        requestCount += 1;
+      if (requestCount === 1) {
+        return new Response(null, {
+          status: 409,
+          headers: {
+            'x-transmission-session-id': 'session-123',
+          },
+        });
+      }
 
-        if (requestCount === 1) {
-          return new Response(null, {
-            status: 409,
-            headers: {
-              'x-transmission-session-id': 'session-123',
-            },
-          });
-        }
+      const body = (await request.json()) as {
+        arguments?: { labels?: string[] };
+      };
 
-        const body = (await request.json()) as {
-          arguments?: { labels?: string[] };
-        };
-
-        if (body.arguments?.labels) {
-          return Response.json({
-            result: 'invalid or unknown argument: labels',
-            arguments: {},
-          });
-        }
-
+      if (body.arguments?.labels) {
         return Response.json({
-          result: 'torrent rejected by policy',
+          result: 'invalid or unknown argument: labels',
           arguments: {},
         });
-      });
-      const downloader = createTransmissionDownloader(
-        createTransmissionConfig(server.url.origin),
-      );
+      }
 
-      const result = await downloader.submit({
-        downloadUrl: 'https://download.example.test/movie/example.torrent',
-        labels: ['movie'],
+      return Response.json({
+        result: 'torrent rejected by policy',
+        arguments: {},
       });
+    });
+    const downloader = createTransmissionDownloader(
+      createTransmissionConfig(server.url.origin),
+      {
+        warn: (message) => warnings.push(message),
+      },
+    );
 
-      expectFailure(
-        result,
-        'rpc_error',
-        'Transmission rejected torrent submission: torrent rejected by policy.',
-      );
-      expect(warnings).toEqual([
-        'Transmission rejected label arguments; retrying submission without labels.',
-      ]);
-    } finally {
-      console.warn = originalWarn;
-    }
+    const result = await downloader.submit({
+      downloadUrl: 'https://download.example.test/movie/example.torrent',
+      labels: ['movie'],
+    });
+
+    expectFailure(
+      result,
+      'rpc_error',
+      'Transmission rejected torrent submission: torrent rejected by policy.',
+      'torrent rejected by policy',
+    );
+    expect(warnings).toEqual([
+      'Transmission rejected label arguments; retrying submission without labels.',
+    ]);
   });
 
   it('returns a structured failure when Transmission rejects the RPC call', async () => {
@@ -574,10 +567,14 @@ function expectFailure(
   result: unknown,
   code: SubmissionFailureCode,
   message: string,
+  rpcResult?: string,
 ): asserts result is SubmissionFailure {
-  expect(result).toEqual({
-    ok: false,
-    code,
-    message,
-  });
+  expect(result).toEqual(
+    expect.objectContaining({
+      ok: false,
+      code,
+      message,
+      ...(rpcResult ? { rpcResult } : {}),
+    }),
+  );
 }

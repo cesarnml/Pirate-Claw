@@ -100,11 +100,14 @@ export async function runCli(argv: string[]): Promise<number> {
       const resolvedConfigPath = resolveConfigPath(configPath);
       const config = await loadConfig(resolvedConfigPath);
       const database = openDatabase();
+      const log = console.log;
 
       try {
         ensureSchema(database);
         const repository = createRepository(database);
-        const downloader = createTransmissionDownloader(config.transmission);
+        const downloader = createTransmissionDownloader(config.transmission, {
+          warn: log,
+        });
 
         const controller = new AbortController();
         const onSignal = () => controller.abort();
@@ -157,6 +160,7 @@ export async function runCli(argv: string[]): Promise<number> {
           },
           options: daemonOptionsFromConfig(config.runtime),
           signal: controller.signal,
+          log,
           onCycleResult: (result) => {
             writeCycleArtifact(artifactDir, result);
             pruneArtifacts(artifactDir, artifactRetentionDays);
