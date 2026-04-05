@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { runDaemonLoop } from '../src/daemon';
+import { daemonOptionsFromConfig, runDaemonLoop } from '../src/daemon';
 
 describe('daemon', () => {
   it('runs initial run and reconcile cycles on startup', async () => {
@@ -138,5 +138,17 @@ describe('daemon', () => {
 
     expect(order[0]).toBe('run');
     expect(order[1]).toBe('reconcile');
+  });
+
+  it('derives daemon options from runtime config', () => {
+    const options = daemonOptionsFromConfig({
+      runIntervalMinutes: 15,
+      reconcileIntervalMinutes: 2,
+      artifactDir: '.pirate-claw/runtime',
+      artifactRetentionDays: 7,
+    });
+
+    expect(options.runIntervalMs).toBe(15 * 60 * 1000);
+    expect(options.reconcileIntervalMs).toBe(2 * 60 * 1000);
   });
 });

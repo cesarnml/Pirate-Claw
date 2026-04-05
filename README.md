@@ -61,10 +61,11 @@ The repo includes a checked-in example at [`pirate-claw.config.example.json`](./
 
 High-level config shape:
 
-- `feeds`: RSS sources to inspect
+- `feeds`: RSS sources to inspect (optional `pollIntervalMinutes` per feed)
 - `tv`: per-show rules for title, resolution, and codec
 - `movies`: global movie intake policy
 - `transmission`: local Transmission RPC settings
+- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults)
 
 Example:
 
@@ -98,6 +99,12 @@ Example:
     "url": "http://localhost:9091/transmission/rpc",
     "username": "your-user",
     "password": "your-password"
+  },
+  "runtime": {
+    "runIntervalMinutes": 30,
+    "reconcileIntervalMinutes": 1,
+    "artifactDir": ".pirate-claw/runtime",
+    "artifactRetentionDays": 7
   }
 }
 ```

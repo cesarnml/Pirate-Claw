@@ -1,12 +1,16 @@
+import type { RuntimeConfig } from './config';
+
 export type DaemonOptions = {
   runIntervalMs: number;
   reconcileIntervalMs: number;
 };
 
-export const DEFAULT_DAEMON_OPTIONS: DaemonOptions = {
-  runIntervalMs: 30 * 60 * 1000,
-  reconcileIntervalMs: 60 * 1000,
-};
+export function daemonOptionsFromConfig(runtime: RuntimeConfig): DaemonOptions {
+  return {
+    runIntervalMs: runtime.runIntervalMinutes * 60 * 1000,
+    reconcileIntervalMs: runtime.reconcileIntervalMinutes * 60 * 1000,
+  };
+}
 
 export async function runDaemonLoop(input: {
   runCycle: () => Promise<void>;

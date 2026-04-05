@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 
-import { ConfigError, validateConfig } from '../src/config';
+import {
+  ConfigError,
+  DEFAULT_RUNTIME_CONFIG,
+  validateConfig,
+} from '../src/config';
 
 describe('validateConfig', () => {
   it('normalizes tv and movie allowlists to lowercase', () => {
@@ -107,6 +111,126 @@ describe('validateConfig', () => {
     );
   });
 
+  it('applies default runtime config when runtime section is absent', () => {
+    const config = validateConfig(createMinimalConfig());
+
+    expect(config.runtime).toEqual(DEFAULT_RUNTIME_CONFIG);
+    expect(config.runtime.runIntervalMinutes).toBe(30);
+    expect(config.runtime.reconcileIntervalMinutes).toBe(1);
+    expect(config.runtime.artifactDir).toBe('.pirate-claw/runtime');
+    expect(config.runtime.artifactRetentionDays).toBe(7);
+  });
+
+  it('applies partial runtime overrides with defaults for omitted fields', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      runtime: {
+        runIntervalMinutes: 15,
+      },
+    });
+
+    expect(config.runtime.runIntervalMinutes).toBe(15);
+    expect(config.runtime.reconcileIntervalMinutes).toBe(1);
+    expect(config.runtime.artifactDir).toBe('.pirate-claw/runtime');
+    expect(config.runtime.artifactRetentionDays).toBe(7);
+  });
+
+  it('applies all runtime overrides when fully specified', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      runtime: {
+        runIntervalMinutes: 10,
+        reconcileIntervalMinutes: 5,
+        artifactDir: '/custom/path',
+        artifactRetentionDays: 14,
+      },
+    });
+
+    expect(config.runtime).toEqual({
+      runIntervalMinutes: 10,
+      reconcileIntervalMinutes: 5,
+      artifactDir: '/custom/path',
+      artifactRetentionDays: 14,
+    });
+  });
+
+  it('fails when a runtime field is not a positive number', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { runIntervalMinutes: 0 },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config runtime runIntervalMinutes" must be a positive number.',
+      ),
+    );
+
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { reconcileIntervalMinutes: -1 },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config runtime reconcileIntervalMinutes" must be a positive number.',
+      ),
+    );
+  });
+
+  it('fails when runtime section is not an object', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: 'invalid',
+      }),
+    ).toThrow(
+      new ConfigError('Config file "config runtime" must be an object.'),
+    );
+  });
+
+  it('parses optional pollIntervalMinutes on feeds', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      feeds: [
+        {
+          name: 'TV Feed',
+          url: 'https://example.test/tv.rss',
+          mediaType: 'tv',
+          pollIntervalMinutes: 15,
+        },
+        {
+          name: 'Movie Feed',
+          url: 'https://example.test/movie.rss',
+          mediaType: 'movie',
+        },
+      ],
+    });
+
+    expect(config.feeds[0]?.pollIntervalMinutes).toBe(15);
+    expect(config.feeds[1]?.pollIntervalMinutes).toBeUndefined();
+  });
+
+  it('fails when pollIntervalMinutes is not a positive number', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        feeds: [
+          {
+            name: 'TV Feed',
+            url: 'https://example.test/tv.rss',
+            mediaType: 'tv',
+            pollIntervalMinutes: 0,
+          },
+        ],
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config feeds[0] pollIntervalMinutes" must be a positive number.',
+      ),
+    );
+  });
+
   it('fails with a precise tv matchPattern path when regex syntax is invalid', () => {
     expect(() =>
       validateConfig({
@@ -141,3 +265,32 @@ describe('validateConfig', () => {
     );
   });
 });
+
+function createMinimalConfig() {
+  return {
+    feeds: [
+      {
+        name: 'TV Feed',
+        url: 'https://example.test/tv.rss',
+        mediaType: 'tv',
+      },
+    ],
+    tv: [
+      {
+        name: 'Example Show',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ],
+    movies: {
+      years: [2024],
+      resolutions: ['1080p'],
+      codecs: ['x265'],
+    },
+    transmission: {
+      url: 'http://localhost:9091/transmission/rpc',
+      username: 'user',
+      password: 'pass',
+    },
+  };
+}

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
-import { DEFAULT_DAEMON_OPTIONS, runDaemonLoop } from './daemon';
+import { daemonOptionsFromConfig, runDaemonLoop } from './daemon';
 import {
   reconcileCandidates,
   retryFailedCandidates,
@@ -118,7 +118,7 @@ export async function runCli(argv: string[]): Promise<number> {
             });
             console.log(formatReconcileSummary(result));
           },
-          options: DEFAULT_DAEMON_OPTIONS,
+          options: daemonOptionsFromConfig(config.runtime),
           signal: controller.signal,
         });
       } finally {

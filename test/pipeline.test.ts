@@ -4,7 +4,7 @@ import { mkdtemp as createTempDir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { AppConfig } from '../src/config';
+import { type AppConfig, DEFAULT_RUNTIME_CONFIG } from '../src/config';
 import { FeedError } from '../src/feed';
 import { retryFailedCandidates, runPipeline } from '../src/pipeline';
 import {
@@ -329,6 +329,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       username: 'user',
       password: 'pass',
     },
+    runtime: { ...DEFAULT_RUNTIME_CONFIG },
     ...overrides,
   };
 }

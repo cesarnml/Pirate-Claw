@@ -27,5 +27,11 @@
     "url": "http://localhost:9091/transmission/rpc",
     "username": "REPLACE_WITH_YOUR_TRANSMISSION_USERNAME",
     "password": "REPLACE_WITH_YOUR_TRANSMISSION_PASSWORD"
+  },
+  "runtime": {
+    "runIntervalMinutes": 30,
+    "reconcileIntervalMinutes": 1,
+    "artifactDir": ".pirate-claw/runtime",
+    "artifactRetentionDays": 7
   }
 }

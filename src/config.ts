@@ -3,6 +3,7 @@ export type FeedConfig = {
   url: string;
   mediaType: 'tv' | 'movie';
   parserHints?: Record<string, unknown>;
+  pollIntervalMinutes?: number;
 };
 
 export type TvRule = {
@@ -25,11 +26,26 @@ export type TransmissionConfig = {
   downloadDir?: string;
 };
 
+export type RuntimeConfig = {
+  runIntervalMinutes: number;
+  reconcileIntervalMinutes: number;
+  artifactDir: string;
+  artifactRetentionDays: number;
+};
+
+export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
+  runIntervalMinutes: 30,
+  reconcileIntervalMinutes: 1,
+  artifactDir: '.pirate-claw/runtime',
+  artifactRetentionDays: 7,
+};
+
 export type AppConfig = {
   feeds: FeedConfig[];
   tv: TvRule[];
   movies: MoviePolicy;
   transmission: TransmissionConfig;
+  runtime: RuntimeConfig;
 };
 
 const DEFAULT_CONFIG_PATH = 'pirate-claw.config.json';
@@ -80,6 +96,7 @@ export function validateConfig(input: unknown, path = 'config'): AppConfig {
     tv: tv.map((entry, index) => validateTvRule(entry, path, index)),
     movies: validateMoviePolicy(movies, path),
     transmission: validateTransmission(transmission, path),
+    runtime: validateRuntime(input.runtime, path),
   };
 }
 
@@ -93,6 +110,10 @@ function validateFeed(input: unknown, path: string, index: number): FeedConfig {
     parserHints: optionalRecord(
       feed.parserHints,
       `${path} feeds[${index}] parserHints`,
+    ),
+    pollIntervalMinutes: optionalPositiveNumber(
+      feed.pollIntervalMinutes,
+      `${path} feeds[${index}] pollIntervalMinutes`,
     ),
   };
 }
@@ -331,6 +352,50 @@ const supportedCodecs = new Set(['x264', 'x265']);
 function expectString(input: unknown, path: string): string {
   if (typeof input !== 'string' || input.length === 0) {
     throw new ConfigError(`Config file "${path}" must be a non-empty string.`);
+  }
+
+  return input;
+}
+
+function validateRuntime(input: unknown, path: string): RuntimeConfig {
+  if (input === undefined) {
+    return { ...DEFAULT_RUNTIME_CONFIG };
+  }
+
+  const runtime = expectRecord(input, `${path} runtime`);
+
+  return {
+    runIntervalMinutes:
+      optionalPositiveNumber(
+        runtime.runIntervalMinutes,
+        `${path} runtime runIntervalMinutes`,
+      ) ?? DEFAULT_RUNTIME_CONFIG.runIntervalMinutes,
+    reconcileIntervalMinutes:
+      optionalPositiveNumber(
+        runtime.reconcileIntervalMinutes,
+        `${path} runtime reconcileIntervalMinutes`,
+      ) ?? DEFAULT_RUNTIME_CONFIG.reconcileIntervalMinutes,
+    artifactDir:
+      optionalString(runtime.artifactDir, `${path} runtime artifactDir`) ??
+      DEFAULT_RUNTIME_CONFIG.artifactDir,
+    artifactRetentionDays:
+      optionalPositiveNumber(
+        runtime.artifactRetentionDays,
+        `${path} runtime artifactRetentionDays`,
+      ) ?? DEFAULT_RUNTIME_CONFIG.artifactRetentionDays,
+  };
+}
+
+function optionalPositiveNumber(
+  input: unknown,
+  path: string,
+): number | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (typeof input !== 'number' || Number.isNaN(input) || input <= 0) {
+    throw new ConfigError(`Config file "${path}" must be a positive number.`);
   }
 
   return input;
