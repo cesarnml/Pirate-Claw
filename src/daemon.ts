@@ -22,6 +22,7 @@ export async function runDaemonLoop(input: {
   const { runCycle, reconcileCycle, options, signal } = input;
   const log = input.log ?? console.log;
   let busy = false;
+  let inFlight: Promise<void> | undefined;
 
   async function guardedCycle(
     type: string,
@@ -35,9 +36,12 @@ export async function runDaemonLoop(input: {
     busy = true;
 
     try {
-      await executeCycle(type, cycle, log);
+      const promise = executeCycle(type, cycle, log);
+      inFlight = promise;
+      await promise;
     } finally {
       busy = false;
+      inFlight = undefined;
     }
   }
 
@@ -51,14 +55,11 @@ export async function runDaemonLoop(input: {
     return;
   }
 
-  let runInFlight: Promise<void> | undefined;
-  let reconcileInFlight: Promise<void> | undefined;
-
   const runTimer = setInterval(() => {
-    runInFlight = guardedCycle('run', runCycle);
+    guardedCycle('run', runCycle);
   }, options.runIntervalMs);
   const reconcileTimer = setInterval(() => {
-    reconcileInFlight = guardedCycle('reconcile', reconcileCycle);
+    guardedCycle('reconcile', reconcileCycle);
   }, options.reconcileIntervalMs);
 
   await new Promise<void>((resolve) => {
@@ -73,9 +74,9 @@ export async function runDaemonLoop(input: {
   clearInterval(runTimer);
   clearInterval(reconcileTimer);
 
-  await Promise.allSettled(
-    [runInFlight, reconcileInFlight].filter(Boolean) as Promise<void>[],
-  );
+  if (inFlight) {
+    await inFlight;
+  }
 
   log('daemon stopped');
 }

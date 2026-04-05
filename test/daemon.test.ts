@@ -217,6 +217,37 @@ describe('daemon', () => {
     expect(completions.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('waits for an in-flight cycle to complete on shutdown even after a skip', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+    let recurringRunCompleted = false;
+    let isInitialRun = true;
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        if (isInitialRun) {
+          isInitialRun = false;
+          return;
+        }
+        await Bun.sleep(80);
+        recurringRunCompleted = true;
+      },
+      reconcileCycle: async () => {},
+      options: { runIntervalMs: 30, reconcileIntervalMs: 600_000 },
+      signal: controller.signal,
+      log: (msg) => {
+        log.push(msg);
+        if (msg === 'run cycle skipped: already_running') {
+          controller.abort();
+        }
+      },
+    });
+
+    expect(recurringRunCompleted).toBe(true);
+    expect(log).toContain('run cycle skipped: already_running');
+    expect(log).toContain('daemon stopped');
+  });
+
   it('derives daemon options from runtime config', () => {
     const options = daemonOptionsFromConfig({
       runIntervalMinutes: 15,
