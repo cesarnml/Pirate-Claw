@@ -439,7 +439,7 @@ type PollReviewDependencies = {
   ) => void | Promise<void>;
 };
 
-type StandaloneAiReviewResult = {
+export type StandaloneAiReviewResult = {
   actionSummary?: string;
   artifactJsonPath?: string;
   artifactTextPath?: string;
@@ -453,6 +453,24 @@ type StandaloneAiReviewResult = {
   reviewedHeadSha?: string;
   threadResolutions?: AiReviewThreadResolution[];
   vendors: string[];
+};
+
+type StandaloneAiReviewDependencies = Pick<
+  PollReviewDependencies,
+  'fetcher' | 'now' | 'resolveThreads' | 'sleep' | 'triager'
+> & {
+  previousOutcome?: ReviewOutcome;
+  pullRequest?: StandalonePullRequest;
+  updatePullRequestBody?: (
+    cwd: string,
+    pullRequest: StandalonePullRequest,
+    result: StandaloneAiReviewResult,
+  ) => void | Promise<void>;
+  writeNote?: (
+    cwd: string,
+    prNumber: number,
+    result: StandaloneAiReviewResult,
+  ) => Promise<void>;
 };
 
 type StandalonePullRequest = {
@@ -2670,16 +2688,23 @@ export async function pollReview(
   return nextState;
 }
 
-async function runStandaloneAiReview(
+export async function runStandaloneAiReview(
   cwd: string,
   notifier: DeliveryNotifier,
   prNumber?: number,
+  dependencies: StandaloneAiReviewDependencies = {},
 ): Promise<StandaloneAiReviewResult> {
-  const pullRequest = resolveStandalonePullRequest(cwd, prNumber);
-  const previousOutcome = await readStandaloneAiReviewOutcome(
-    cwd,
-    pullRequest.number,
-  );
+  const pullRequest =
+    dependencies.pullRequest ?? resolveStandalonePullRequest(cwd, prNumber);
+  const previousOutcome =
+    dependencies.previousOutcome ??
+    (await readStandaloneAiReviewOutcome(cwd, pullRequest.number));
+  const triager = dependencies.triager ?? runAiReviewTriager;
+  const resolveThreads =
+    dependencies.resolveThreads ?? resolveNativeReviewThreads;
+  const writeNote = dependencies.writeNote ?? writeStandaloneAiReviewNote;
+  const updatePullRequestBodyFn =
+    dependencies.updatePullRequestBody ?? updateStandalonePullRequestBody;
 
   await emitNotificationWarnings(notifier, cwd, [
     buildStandaloneReviewStartedEvent(pullRequest.number, pullRequest.url),
@@ -2692,6 +2717,7 @@ async function runStandaloneAiReview(
     DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
     DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
     commandStartedAt,
+    dependencies,
   );
 
   if (
@@ -2703,10 +2729,10 @@ async function runStandaloneAiReview(
       resolve(cwd, '.agents/ai-review', `pr-${pullRequest.number}`, 'review'),
       detectedReview,
     );
-    const triage = runAiReviewTriager(cwd, artifacts.artifactJsonPath);
+    const triageResult = triager(cwd, artifacts.artifactJsonPath);
     const threadResolutions =
-      triage.outcome === 'patched' || triage.outcome === 'clean'
-        ? resolveNativeReviewThreads(cwd, detectedReview.comments)
+      triageResult.outcome === 'patched' || triageResult.outcome === 'clean'
+        ? resolveThreads(cwd, detectedReview.comments)
         : [];
     if (threadResolutions.length > 0) {
       await writeAiReviewThreadResolutions(
@@ -2715,15 +2741,15 @@ async function runStandaloneAiReview(
       );
     }
     const latestOutcome =
-      triage.outcome === 'needs_patch'
+      triageResult.outcome === 'needs_patch'
         ? 'operator_input_needed'
-        : triage.outcome;
+        : triageResult.outcome;
     const cumulativeOutcome: ReviewResult =
       latestOutcome === 'clean' || latestOutcome === 'patched'
         ? (mergeReviewOutcome(previousOutcome, latestOutcome) ?? latestOutcome)
         : latestOutcome;
     const standaloneResult: StandaloneAiReviewResult = {
-      actionSummary: triage.actionSummary,
+      actionSummary: triageResult.actionSummary,
       artifactJsonPath: relativeToRepo(cwd, artifacts.artifactJsonPath),
       artifactTextPath: relativeToRepo(cwd, artifacts.artifactTextPath),
       incompleteAgents:
@@ -2737,10 +2763,10 @@ async function runStandaloneAiReview(
               reviewPollResult.incompleteAgents,
             )
           : cumulativeOutcome === 'patched' && latestOutcome === 'clean'
-            ? formatCumulativePatchedReviewNote(triage.note)
-            : triage.note,
+            ? formatCumulativePatchedReviewNote(triageResult.note)
+            : triageResult.note,
       comments: detectedReview.comments,
-      nonActionSummary: triage.nonActionSummary,
+      nonActionSummary: triageResult.nonActionSummary,
       outcome: cumulativeOutcome,
       prNumber: pullRequest.number,
       prUrl: pullRequest.url,
@@ -2748,15 +2774,13 @@ async function runStandaloneAiReview(
       threadResolutions:
         threadResolutions.length > 0 ? threadResolutions : undefined,
       vendors:
-        triage.vendors.length > 0 ? triage.vendors : detectedReview.vendors,
+        triageResult.vendors.length > 0
+          ? triageResult.vendors
+          : detectedReview.vendors,
     };
-    await writeStandaloneAiReviewNote(
-      cwd,
-      pullRequest.number,
-      standaloneResult,
-    );
+    await writeNote(cwd, pullRequest.number, standaloneResult);
     try {
-      updateStandalonePullRequestBody(cwd, pullRequest, standaloneResult);
+      await updatePullRequestBodyFn(cwd, pullRequest, standaloneResult);
     } catch (error) {
       console.warn(
         `Standalone AI review was recorded locally for PR #${pullRequest.number}, but PR body update failed: ${formatError(error)}`,
@@ -2782,9 +2806,9 @@ async function runStandaloneAiReview(
     prUrl: pullRequest.url,
     vendors: [],
   };
-  await writeStandaloneAiReviewNote(cwd, pullRequest.number, standaloneResult);
+  await writeNote(cwd, pullRequest.number, standaloneResult);
   try {
-    updateStandalonePullRequestBody(cwd, pullRequest, standaloneResult);
+    await updatePullRequestBodyFn(cwd, pullRequest, standaloneResult);
   } catch (error) {
     console.warn(
       `Standalone AI review was recorded locally for PR #${pullRequest.number}, but PR body update failed: ${formatError(error)}`,

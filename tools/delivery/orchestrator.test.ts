@@ -47,6 +47,7 @@ import {
   resolveNotifier,
   resolveReviewFetcher,
   resolveReviewTriager,
+  runStandaloneAiReview,
   summarizeStateDifferences,
   syncStateWithPlan,
   runProcessResult,
@@ -2004,6 +2005,245 @@ describe('delivery orchestrator', () => {
       reviewNote:
         'No AI review feedback was detected within the 8-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
     });
+  });
+
+  it('matches standalone cumulative patched semantics when a later review pass is clean', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_review',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          prUrl: 'https://example.test/pull/20',
+          prNumber: 20,
+          prOpenedAt: '2026-04-01T10:00:00.000Z',
+          reviewOutcome: 'patched',
+          reviewNote: 'Patched the prudent AI review follow-up.',
+        },
+      ],
+    };
+    const fetcher = () => ({
+      agents: [
+        {
+          agent: 'coderabbit' as const,
+          state: 'completed' as const,
+          note: 'review completed without actionable findings',
+        },
+      ],
+      detected: true,
+      artifactText: 'normalized ai review artifact',
+      reviewedHeadSha: 'abcdef1234567890',
+      vendors: ['coderabbit'],
+      comments: [],
+    });
+    const triager = () => ({
+      outcome: 'clean' as const,
+      note: 'External AI review completed without prudent follow-up changes.',
+      vendors: ['coderabbit'],
+    });
+
+    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
+      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+      sleep: async () => {},
+      fetcher,
+      triager,
+      updatePullRequestBody: async () => {},
+    });
+    const standaloneResult = await runStandaloneAiReview(
+      '/tmp/pirate_claw',
+      { kind: 'noop', enabled: false },
+      undefined,
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher,
+        triager,
+        previousOutcome: 'patched',
+        pullRequest: {
+          body: 'existing body',
+          createdAt: '2026-04-01T10:00:00.000Z',
+          headRefName:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          headRefOid: 'fedcba0987654321',
+          number: 20,
+          title:
+            'feat: persist transmission identity for queued torrents [P3.01]',
+          url: 'https://example.test/pull/20',
+        },
+        updatePullRequestBody: () => {},
+        writeNote: async () => {},
+      },
+    );
+
+    expect(standaloneResult.outcome).toBe('patched');
+    expect(nextState.tickets[0]?.reviewOutcome).toBe('patched');
+    expect(nextState.tickets[0]?.reviewNote).toBe(standaloneResult.note);
+  });
+
+  it('matches standalone cumulative patched semantics when no later ai review appears', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_review',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          prUrl: 'https://example.test/pull/20',
+          prNumber: 20,
+          prOpenedAt: '2026-04-01T10:00:00.000Z',
+          reviewOutcome: 'patched',
+          reviewNote: 'Patched the prudent AI review follow-up.',
+        },
+      ],
+    };
+    const fetcher = () => ({
+      agents: [],
+      detected: false,
+      artifactText: '',
+      vendors: [],
+      comments: [],
+    });
+
+    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
+      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+      sleep: async () => {},
+      fetcher,
+      updatePullRequestBody: async () => {},
+    });
+    const standaloneResult = await runStandaloneAiReview(
+      '/tmp/pirate_claw',
+      { kind: 'noop', enabled: false },
+      undefined,
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher,
+        previousOutcome: 'patched',
+        pullRequest: {
+          body: 'existing body',
+          createdAt: '2026-04-01T10:00:00.000Z',
+          headRefName:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          headRefOid: 'fedcba0987654321',
+          number: 20,
+          title:
+            'feat: persist transmission identity for queued torrents [P3.01]',
+          url: 'https://example.test/pull/20',
+        },
+        updatePullRequestBody: () => {},
+        writeNote: async () => {},
+      },
+    );
+
+    expect(standaloneResult.outcome).toBe('patched');
+    expect(nextState.tickets[0]?.reviewOutcome).toBe('patched');
+    expect(nextState.tickets[0]?.reviewNote).toBe(standaloneResult.note);
+  });
+
+  it('matches standalone timeout note semantics when agents stay in flight without findings', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_review',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          prUrl: 'https://example.test/pull/20',
+          prNumber: 20,
+          prOpenedAt: '2026-04-01T10:00:00.000Z',
+        },
+      ],
+    };
+    const fetcher = () => ({
+      agents: [
+        {
+          agent: 'coderabbit' as const,
+          state: 'started' as const,
+          note: 'review still in progress',
+        },
+      ],
+      detected: true,
+      artifactText: 'started only artifact',
+      vendors: ['coderabbit'],
+      comments: [],
+    });
+
+    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
+      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+      sleep: async () => {},
+      fetcher,
+      updatePullRequestBody: async () => {},
+    });
+    const standaloneResult = await runStandaloneAiReview(
+      '/tmp/pirate_claw',
+      { kind: 'noop', enabled: false },
+      undefined,
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher,
+        pullRequest: {
+          body: 'existing body',
+          createdAt: '2026-04-01T10:00:00.000Z',
+          headRefName:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          headRefOid: 'fedcba0987654321',
+          number: 20,
+          title:
+            'feat: persist transmission identity for queued torrents [P3.01]',
+          url: 'https://example.test/pull/20',
+        },
+        updatePullRequestBody: () => {},
+        writeNote: async () => {},
+      },
+    );
+
+    expect(standaloneResult.outcome).toBe('clean');
+    expect(nextState.tickets[0]?.reviewOutcome).toBe('clean');
+    expect(nextState.tickets[0]?.reviewIncompleteAgents).toEqual(
+      standaloneResult.incompleteAgents,
+    );
+    expect(nextState.tickets[0]?.reviewNote).toBe(standaloneResult.note);
   });
 
   it('uses the normal polling cadence when prOpenedAt is missing', async () => {
