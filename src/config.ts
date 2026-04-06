@@ -18,6 +18,13 @@ type CompactTvDefaults = {
   codecs: string[];
 };
 
+type CompactTvShowEntry = {
+  name: string;
+  matchPattern?: string;
+  resolutions?: string[];
+  codecs?: string[];
+};
+
 export type MoviePolicy = {
   years: number[];
   resolutions: string[];
@@ -114,7 +121,9 @@ function validateTvConfig(input: unknown, path: string): TvRule[] {
   const defaults = validateCompactTvDefaults(tv.defaults, path);
   const shows = requireCompactTvShows(tv.shows, path);
 
-  return shows.map((name) => validateCompactTvRule(name, defaults));
+  return shows.map((entry, index) =>
+    validateCompactTvRule(entry, defaults, `${path} tv shows[${index}]`),
+  );
 }
 
 function validateFeed(input: unknown, path: string, index: number): FeedConfig {
@@ -181,7 +190,10 @@ function validateCompactTvDefaults(
   };
 }
 
-function requireCompactTvShows(input: unknown, path: string): string[] {
+function requireCompactTvShows(
+  input: unknown,
+  path: string,
+): CompactTvShowEntry[] {
   if (!Array.isArray(input) || input.length === 0) {
     throw new ConfigError(
       `Config file "${path} tv" has invalid "shows"; expected a non-empty array of show names.`,
@@ -189,18 +201,62 @@ function requireCompactTvShows(input: unknown, path: string): string[] {
   }
 
   return input.map((entry, index) =>
-    expectString(entry, `${path} tv shows[${index}]`),
+    validateCompactTvShowEntry(entry, `${path} tv shows[${index}]`),
   );
 }
 
 function validateCompactTvRule(
-  name: string,
+  entry: CompactTvShowEntry,
   defaults: CompactTvDefaults,
+  path: string,
 ): TvRule {
   return {
-    name,
-    resolutions: [...defaults.resolutions],
-    codecs: [...defaults.codecs],
+    name: entry.name,
+    matchPattern: validateOptionalMatchPattern(
+      entry.matchPattern,
+      `${path} matchPattern`,
+    ),
+    resolutions: entry.resolutions
+      ? [...entry.resolutions]
+      : [...defaults.resolutions],
+    codecs: entry.codecs ? [...entry.codecs] : [...defaults.codecs],
+  };
+}
+
+function validateCompactTvShowEntry(
+  input: unknown,
+  path: string,
+): CompactTvShowEntry {
+  if (typeof input === 'string') {
+    return { name: expectString(input, path) };
+  }
+
+  const entry = expectRecord(input, path);
+
+  return {
+    name: requireString(entry, 'name', path),
+    matchPattern:
+      entry.matchPattern === undefined
+        ? undefined
+        : expectString(entry.matchPattern, `${path} matchPattern`),
+    resolutions:
+      entry.resolutions === undefined
+        ? undefined
+        : requireNormalizedAllowedStringArray(
+            entry,
+            'resolutions',
+            path,
+            supportedResolutions,
+          ),
+    codecs:
+      entry.codecs === undefined
+        ? undefined
+        : requireNormalizedAllowedStringArray(
+            entry,
+            'codecs',
+            path,
+            supportedCodecs,
+          ),
   };
 }
 

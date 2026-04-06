@@ -29,3 +29,5 @@ Compact TV config is only useful if it still handles exceptions cleanly. Some sh
 - `Why this path:` mixed `tv.shows` entries preserve the compact happy path while giving exceptions a local escape hatch, which is the smallest acceptable extension beyond P7.01.
 - `Alternative considered:` introducing named profiles in the same ticket was rejected because it adds an extra indirection layer before the compact/default model is proven useful.
 - `Deferred:` profile systems, config rendering, env-backed secrets, and richer validation guidance remain separate tickets.
+- `Implementation note:` mixed compact entries are normalized into the same `TvRule[]` output as P7.01, so downstream matcher and runtime code still does not need to distinguish compact config variants.
+- `Validation note:` the checked-in example and README now show both inherited string entries and bounded per-show object overrides so operators can see the intended shape directly.
