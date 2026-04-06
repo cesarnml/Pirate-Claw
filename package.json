@@ -17,6 +17,7 @@
     "run": "bun run ./src/cli.ts",
     "spellcheck": "cspell lint . --gitignore --no-progress",
     "spellcheck:words": "cspell lint . --gitignore --no-progress --no-summary --no-exit-code --words-only | bun run ./scripts/spellcheck-words.ts",
+    "stacked-closeout": "bun run ./scripts/stacked-closeout.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "typecheck": "tsc --noEmit",

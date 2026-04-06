@@ -1173,7 +1173,7 @@ function findTicketById(
         ));
 }
 
-async function loadState(
+export async function loadState(
   cwd: string,
   options: OrchestratorOptions,
 ): Promise<DeliveryState> {
@@ -1335,7 +1335,10 @@ async function repairState(
   };
 }
 
-async function saveState(cwd: string, state: DeliveryState): Promise<void> {
+export async function saveState(
+  cwd: string,
+  state: DeliveryState,
+): Promise<void> {
   const absoluteStatePath = resolve(cwd, state.statePath);
   await mkdir(dirname(absoluteStatePath), { recursive: true });
   await writeFile(
@@ -4597,7 +4600,7 @@ async function bootstrapWorktreeIfNeeded(worktreePath: string): Promise<void> {
   }
 }
 
-function formatStatus(state: DeliveryState): string {
+export function formatStatus(state: DeliveryState): string {
   return [
     'Delivery Orchestrator',
     `plan_key=${state.planKey}`,

@@ -162,6 +162,10 @@ Available commands:
 - `advance [--no-start-next]`
 - `restack [ticket-id]`
 
+Separate post-delivery closeout command:
+
+- `bun run stacked-closeout --plan <plan-path>`
+
 ## Typical Flow
 
 ```bash
@@ -173,6 +177,14 @@ bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-rev
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md record-review P2.02 patched "patched the two actionable correctness issues"
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
 ```
+
+After the developer has reviewed the full stacked PR chain and is ready to merge it, use:
+
+```bash
+bun run stacked-closeout --plan docs/02-delivery/phase-02/implementation-plan.md
+```
+
+`stacked-closeout` is intentionally separate from `deliver`. It handles stacked PR merge choreography rather than ticket implementation state: squash-merging each reviewed slice in order, rebasing the next child branch onto the new `main`, force-pushing it, retargeting the surviving child PR to `main`, and only then deleting the merged parent branch. If GitHub has already auto-closed a child PR because its previous base branch disappeared, `stacked-closeout` opens a replacement PR against `main` and records that replacement in the delivery state file before continuing.
 
 For a non-ticket PR, run the manual standalone path:
 

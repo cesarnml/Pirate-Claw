@@ -15,6 +15,7 @@
 - During external waits, read-ahead into the next ticket, handoff, and adjacent seams is encouraged. Do not write ahead until the current ticket is cleared.
 - Stop only for unsafe work, missing prerequisites, ambiguous review triage, orchestrator blockage, or explicit user interruption.
 - Final merge or advance of delivered stacked PR slices remains a developer approval step.
+- After developer approval of a completed stacked phase, close it with `bun run stacked-closeout --plan <plan-path>` rather than manual squash-merge/rebase/retarget steps.
 
 - `pr`: if a delivery ticket is clear from branch/docs/diff, use a human-readable Conventional-Commit-style subject plus the active ticket suffix, for example `[P3.02]`. Otherwise omit the suffix.
 - Any PR creation or PR-body drafting should follow the same `pr` conventions even when the user did not literally type `pr`.

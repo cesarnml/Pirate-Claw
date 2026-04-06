@@ -135,6 +135,8 @@ In this repo's son-of-anton workflow, the developer remains directly engaged at 
 - approval of the decomposed thin-slice ticket stack
 - final review and approval of delivered stacked PR slices before merge/advance
 
+After that final approval, close reviewed stacked slices with `bun run stacked-closeout --plan <plan-path>` rather than manually re-deriving the merge/rebase/retarget sequence.
+
 Smaller bounded product-surface changes can still use a standalone non-ticket PR path. Son-of-Anton does not require every implementation change to become a new phase/epic as long as the review surface remains human-sized.
 
 Every ticket handoff should leave a short explanation artifact in the PR, review notes, or ticket update that answers:

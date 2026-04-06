@@ -185,6 +185,7 @@ Useful local commands:
 - `bun run verify`
 - `bun run ci`
 - `bun run deliver restack` to restack the current delivery ticket after its parent PR was squash-merged to `main`
+- `bun run stacked-closeout --plan <plan-path>` to squash-merge a completed stacked delivery phase in order, rebasing each child branch onto the new `main` before retargeting or replacing its PR as needed
 - `bun run deliver --plan <plan-path> poll-review` to run the orchestrator's 2/4/6/8-minute `ai-code-review` polling loop for the active PR and persist reviewed-SHA provenance plus vendor-attributed review artifacts
 - `bun run deliver --plan <plan-path> record-review <ticket-id> patched ...` to record patched follow-up and make a best-effort attempt to resolve mapped native GitHub inline review threads
 
