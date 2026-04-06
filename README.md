@@ -24,7 +24,7 @@ It currently supports:
 
 1. Install dependencies with `bun install`.
 2. Copy [`pirate-claw.config.example.json`](./pirate-claw.config.example.json) to `./pirate-claw.config.json`.
-3. Edit your feeds, matching rules, and Transmission credentials.
+3. Edit your feeds, TV/movie matching rules, and Transmission credentials.
 4. Make sure the Transmission app is running and local RPC access is enabled.
 5. Run:
 
@@ -62,7 +62,7 @@ The repo includes a checked-in example at [`pirate-claw.config.example.json`](./
 High-level config shape:
 
 - `feeds`: RSS sources to inspect (optional `pollIntervalMinutes` per feed)
-- `tv`: per-show rules for title, resolution, and codec
+- `tv`: either the legacy per-show rule array or a compact `defaults + shows` object
 - `movies`: global movie intake policy
 - `transmission`: local Transmission RPC settings
 - `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults)
@@ -83,13 +83,13 @@ Example:
       "mediaType": "movie"
     }
   ],
-  "tv": [
-    {
-      "name": "Beyond the Gates",
+  "tv": {
+    "defaults": {
       "resolutions": ["720p"],
       "codecs": ["x265"]
-    }
-  ],
+    },
+    "shows": ["Beyond the Gates"]
+  },
   "movies": {
     "years": [2026],
     "resolutions": ["1080p"],
@@ -109,6 +109,12 @@ Example:
   }
 }
 ```
+
+The compact TV form reduces repetition when most tracked shows share one quality policy:
+
+- `tv.defaults` defines the shared `resolutions` and `codecs`
+- `tv.shows` lists show names that inherit those defaults
+- the older `tv: [{ ... }]` array shape still works unchanged
 
 ## Transmission Setup
 

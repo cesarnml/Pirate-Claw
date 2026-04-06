@@ -7,6 +7,44 @@ import {
 } from '../src/config';
 
 describe('validateConfig', () => {
+  it('loads compact tv defaults and show names into normalized tv rules', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      tv: {
+        defaults: {
+          resolutions: ['1080P'],
+          codecs: ['X265'],
+        },
+        shows: ['Example Show', 'Another Show'],
+      },
+    });
+
+    expect(config.tv).toEqual([
+      {
+        name: 'Example Show',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+      {
+        name: 'Another Show',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ]);
+  });
+
+  it('keeps the legacy tv rule array shape working unchanged', () => {
+    const config = validateConfig(createMinimalConfig());
+
+    expect(config.tv).toEqual([
+      {
+        name: 'Example Show',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ]);
+  });
+
   it('normalizes tv and movie allowlists to lowercase', () => {
     const config = validateConfig({
       feeds: [
@@ -299,6 +337,19 @@ describe('validateConfig', () => {
       }),
     ).toThrow(
       /Config file "config tv\[0\] matchPattern" has invalid regex syntax:/,
+    );
+  });
+
+  it('fails when compact tv config omits defaults', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        tv: {
+          shows: ['Example Show'],
+        },
+      }),
+    ).toThrow(
+      new ConfigError('Config file "config tv defaults" must be an object.'),
     );
   });
 });

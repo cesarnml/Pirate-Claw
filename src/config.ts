@@ -13,6 +13,11 @@ export type TvRule = {
   codecs: string[];
 };
 
+type CompactTvDefaults = {
+  resolutions: string[];
+  codecs: string[];
+};
+
 export type MoviePolicy = {
   years: number[];
   resolutions: string[];
@@ -88,17 +93,28 @@ export function validateConfig(input: unknown, path = 'config'): AppConfig {
   }
 
   const feeds = requireArray(input, 'feeds', path);
-  const tv = requireArray(input, 'tv', path);
   const movies = requireRecord(input, 'movies', path);
   const transmission = requireRecord(input, 'transmission', path);
 
   return {
     feeds: feeds.map((entry, index) => validateFeed(entry, path, index)),
-    tv: tv.map((entry, index) => validateTvRule(entry, path, index)),
+    tv: validateTvConfig(input.tv, path),
     movies: validateMoviePolicy(movies, path),
     transmission: validateTransmission(transmission, path),
     runtime: validateRuntime(input.runtime, path),
   };
+}
+
+function validateTvConfig(input: unknown, path: string): TvRule[] {
+  if (Array.isArray(input)) {
+    return input.map((entry, index) => validateTvRule(entry, path, index));
+  }
+
+  const tv = expectRecord(input, `${path} tv`);
+  const defaults = validateCompactTvDefaults(tv.defaults, path);
+  const shows = requireCompactTvShows(tv.shows, path);
+
+  return shows.map((name) => validateCompactTvRule(name, defaults));
 }
 
 function validateFeed(input: unknown, path: string, index: number): FeedConfig {
@@ -140,6 +156,51 @@ function validateTvRule(input: unknown, path: string, index: number): TvRule {
       `${path} tv[${index}]`,
       supportedCodecs,
     ),
+  };
+}
+
+function validateCompactTvDefaults(
+  input: unknown,
+  path: string,
+): CompactTvDefaults {
+  const defaults = expectRecord(input, `${path} tv defaults`);
+
+  return {
+    resolutions: requireNormalizedAllowedStringArray(
+      defaults,
+      'resolutions',
+      `${path} tv defaults`,
+      supportedResolutions,
+    ),
+    codecs: requireNormalizedAllowedStringArray(
+      defaults,
+      'codecs',
+      `${path} tv defaults`,
+      supportedCodecs,
+    ),
+  };
+}
+
+function requireCompactTvShows(input: unknown, path: string): string[] {
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new ConfigError(
+      `Config file "${path} tv" has invalid "shows"; expected a non-empty array of show names.`,
+    );
+  }
+
+  return input.map((entry, index) =>
+    expectString(entry, `${path} tv shows[${index}]`),
+  );
+}
+
+function validateCompactTvRule(
+  name: string,
+  defaults: CompactTvDefaults,
+): TvRule {
+  return {
+    name,
+    resolutions: [...defaults.resolutions],
+    codecs: [...defaults.codecs],
   };
 }
 

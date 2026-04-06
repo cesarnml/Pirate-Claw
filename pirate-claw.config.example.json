@@ -11,13 +11,13 @@
       "mediaType": "movie"
     }
   ],
-  "tv": [
-    {
-      "name": "Beyond the Gates",
+  "tv": {
+    "defaults": {
       "resolutions": ["720p"],
       "codecs": ["x265"]
-    }
-  ],
+    },
+    "shows": ["Beyond the Gates"]
+  },
   "movies": {
     "years": [2026],
     "resolutions": ["1080p"],

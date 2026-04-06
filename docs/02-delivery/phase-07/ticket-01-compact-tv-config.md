@@ -30,3 +30,5 @@ The current TV config repeats the same `resolutions` and `codecs` block for ever
 - `Why this path:` widening config ingestion while preserving the existing internal `TvRule[]` model is the smallest acceptable slice because it improves operator ergonomics without forcing matcher or pipeline redesign.
 - `Alternative considered:` replacing the old `TvRule[]` form outright was rejected because Phase 07 commits to backward compatibility for existing configs.
 - `Deferred:` per-show override objects, config-inspection commands, env-backed secrets, and broader config-shape generalization remain later tickets in this phase.
+- `Implementation note:` the loader now accepts either the legacy `TvRule[]` array or the compact object and normalizes both into the same `TvRule[]` output, which kept matcher, pipeline, and CLI runtime code unchanged for this slice.
+- `Validation note:` README and the checked-in example config were updated in the same ticket so operators can discover the compact form without waiting for later Phase 07 work.
