@@ -196,7 +196,10 @@ Goal:
 Planning note:
 
 - this is a separate engineering epic, not a product phase, and should be planned under `docs/03-engineering/` or a later dedicated engineering roadmap note
-- current tracked epic: `docs/03-engineering/epic-01-pr-body-reporting-unification.md`
+- recently completed engineering epics:
+  - `docs/03-engineering/epic-01-pr-body-reporting-unification.md`
+  - `docs/03-engineering/epic-02-delivery-orchestrator-pr-flow-convergence.md`
+- any further modularity push should start from the now-converged post-PR review lifecycle rather than reopening that same boundary
 
 ## Planning Rules
 
@@ -205,4 +208,4 @@ Planning note:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-06.
+Last verified against `README.md` and active delivery plans: 2026-04-07.

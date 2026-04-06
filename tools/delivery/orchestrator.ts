@@ -2639,6 +2639,69 @@ function processCleanAiReview(options: {
   };
 }
 
+async function applyTicketReviewUpdate(
+  state: DeliveryState,
+  ticketId: string,
+  updateTicket: (ticket: TicketState) => TicketState,
+  dependencies: {
+    updatePullRequestBody?: (
+      state: DeliveryState,
+      ticket: TicketState,
+    ) => void | Promise<void>;
+  } = {},
+): Promise<DeliveryState> {
+  const nextState: DeliveryState = {
+    ...state,
+    tickets: state.tickets.map((ticket) =>
+      ticket.id === ticketId ? updateTicket(ticket) : ticket,
+    ),
+  };
+  const updatedTarget = nextState.tickets.find(
+    (ticket) => ticket.id === ticketId,
+  );
+
+  if (!updatedTarget) {
+    throw new Error(`Unknown ticket ${ticketId}.`);
+  }
+
+  const updatePullRequestBodyFn =
+    dependencies.updatePullRequestBody ?? updatePullRequestBody;
+  try {
+    await updatePullRequestBodyFn(nextState, updatedTarget);
+  } catch (error) {
+    console.warn(
+      `Review was recorded locally for ${updatedTarget.id}, but PR body update failed: ${formatError(error)}`,
+    );
+  }
+
+  return nextState;
+}
+
+async function persistStandaloneAiReviewResult(
+  cwd: string,
+  pullRequest: StandalonePullRequest,
+  result: StandaloneAiReviewResult,
+  dependencies: Pick<
+    StandaloneAiReviewDependencies,
+    'updatePullRequestBody' | 'writeNote'
+  > = {},
+): Promise<StandaloneAiReviewResult> {
+  const writeNote = dependencies.writeNote ?? writeStandaloneAiReviewNote;
+  const updatePullRequestBodyFn =
+    dependencies.updatePullRequestBody ?? updateStandalonePullRequestBody;
+
+  await writeNote(cwd, pullRequest.number, result);
+  try {
+    await updatePullRequestBodyFn(cwd, pullRequest, result);
+  } catch (error) {
+    console.warn(
+      `Standalone AI review was recorded locally for PR #${pullRequest.number}, but PR body update failed: ${formatError(error)}`,
+    );
+  }
+
+  return result;
+}
+
 export async function pollReview(
   state: DeliveryState,
   cwd: string,
@@ -2655,8 +2718,6 @@ export async function pollReview(
   const triager = dependencies.triager ?? runAiReviewTriager;
   const resolveThreads =
     dependencies.resolveThreads ?? resolveNativeReviewThreads;
-  const updatePullRequestBodyFn =
-    dependencies.updatePullRequestBody ?? updatePullRequestBody;
   const { pollWindowStartedAt, pollWindowStartedAtIso } =
     resolveReviewPollWindowStart(target.prOpenedAt, now);
   const reviewPollResult = await pollForAiReview(
@@ -2692,56 +2753,37 @@ export async function pollReview(
     });
     const nextStatus =
       processedReview.outcome === 'needs_patch' ? 'needs_patch' : 'reviewed';
-    const nextState: DeliveryState = {
-      ...state,
-      tickets: state.tickets.map((ticket) =>
-        ticket.id === target.id
-          ? {
-              ...ticket,
-              prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
-              status: nextStatus,
-              reviewActionSummary: processedReview.actionSummary,
-              reviewComments: processedReview.comments,
-              reviewArtifactJsonPath: relativeToRepo(
-                cwd,
-                processedReview.artifactJsonPath,
-              ),
-              reviewArtifactPath: relativeToRepo(
-                cwd,
-                processedReview.artifactTextPath,
-              ),
-              reviewFetchedAt: new Date(now()).toISOString(),
-              reviewHeadSha: processedReview.reviewedHeadSha,
-              reviewNonActionSummary: processedReview.nonActionSummary,
-              reviewOutcome: accumulateTicketReviewOutcome(
-                ticket.reviewOutcome,
-                processedReview.outcome,
-              ),
-              reviewNote: processedReview.note,
-              reviewIncompleteAgents: processedReview.incompleteAgents,
-              reviewThreadResolutions: processedReview.threadResolutions,
-              reviewVendors: processedReview.vendors,
-            }
-          : ticket,
-      ),
-    };
-    const updatedTarget = nextState.tickets.find(
-      (ticket) => ticket.id === target.id,
+    return applyTicketReviewUpdate(
+      state,
+      target.id,
+      (ticket) => ({
+        ...ticket,
+        prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
+        status: nextStatus,
+        reviewActionSummary: processedReview.actionSummary,
+        reviewComments: processedReview.comments,
+        reviewArtifactJsonPath: relativeToRepo(
+          cwd,
+          processedReview.artifactJsonPath,
+        ),
+        reviewArtifactPath: relativeToRepo(
+          cwd,
+          processedReview.artifactTextPath,
+        ),
+        reviewFetchedAt: new Date(now()).toISOString(),
+        reviewHeadSha: processedReview.reviewedHeadSha,
+        reviewNonActionSummary: processedReview.nonActionSummary,
+        reviewOutcome: accumulateTicketReviewOutcome(
+          ticket.reviewOutcome,
+          processedReview.outcome,
+        ),
+        reviewNote: processedReview.note,
+        reviewIncompleteAgents: processedReview.incompleteAgents,
+        reviewThreadResolutions: processedReview.threadResolutions,
+        reviewVendors: processedReview.vendors,
+      }),
+      dependencies,
     );
-
-    if (!updatedTarget) {
-      throw new Error(`Unknown ticket ${target.id}.`);
-    }
-
-    try {
-      await updatePullRequestBodyFn(nextState, updatedTarget);
-    } catch (error) {
-      console.warn(
-        `Review was recorded locally for ${updatedTarget.id}, but PR body update failed: ${formatError(error)}`,
-      );
-    }
-
-    return nextState;
   }
 
   const processedReview = processCleanAiReview({
@@ -2750,48 +2792,30 @@ export async function pollReview(
     maxWaitMinutes: state.reviewPollMaxWaitMinutes,
     previousOutcome: target.reviewOutcome,
   });
-  const nextState: DeliveryState = {
-    ...state,
-    tickets: state.tickets.map((ticket) =>
-      ticket.id === target.id
-        ? {
-            ...ticket,
-            prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
-            status: 'reviewed',
-            reviewActionSummary: undefined,
-            reviewComments: undefined,
-            reviewArtifactJsonPath: undefined,
-            reviewArtifactPath: undefined,
-            reviewHeadSha: undefined,
-            reviewNonActionSummary: undefined,
-            reviewOutcome: accumulateTicketReviewOutcome(
-              ticket.reviewOutcome,
-              processedReview.outcome,
-            ),
-            reviewNote: processedReview.note,
-            reviewIncompleteAgents: processedReview.incompleteAgents,
-            reviewThreadResolutions: undefined,
-            reviewVendors: [],
-          }
-        : ticket,
-    ),
-  };
-  const updatedTarget = nextState.tickets.find(
-    (ticket) => ticket.id === target.id,
+  return applyTicketReviewUpdate(
+    state,
+    target.id,
+    (ticket) => ({
+      ...ticket,
+      prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
+      status: 'reviewed',
+      reviewActionSummary: undefined,
+      reviewComments: undefined,
+      reviewArtifactJsonPath: undefined,
+      reviewArtifactPath: undefined,
+      reviewHeadSha: undefined,
+      reviewNonActionSummary: undefined,
+      reviewOutcome: accumulateTicketReviewOutcome(
+        ticket.reviewOutcome,
+        processedReview.outcome,
+      ),
+      reviewNote: processedReview.note,
+      reviewIncompleteAgents: processedReview.incompleteAgents,
+      reviewThreadResolutions: undefined,
+      reviewVendors: [],
+    }),
+    dependencies,
   );
-
-  if (!updatedTarget) {
-    throw new Error(`Unknown ticket ${target.id}.`);
-  }
-
-  try {
-    await updatePullRequestBodyFn(nextState, updatedTarget);
-  } catch (error) {
-    console.warn(
-      `Review was recorded locally for ${updatedTarget.id}, but PR body update failed: ${formatError(error)}`,
-    );
-  }
-  return nextState;
 }
 
 export async function runStandaloneAiReview(
@@ -2808,9 +2832,6 @@ export async function runStandaloneAiReview(
   const triager = dependencies.triager ?? runAiReviewTriager;
   const resolveThreads =
     dependencies.resolveThreads ?? resolveNativeReviewThreads;
-  const writeNote = dependencies.writeNote ?? writeStandaloneAiReviewNote;
-  const updatePullRequestBodyFn =
-    dependencies.updatePullRequestBody ?? updateStandalonePullRequestBody;
 
   await emitNotificationWarnings(notifier, cwd, [
     buildStandaloneReviewStartedEvent(pullRequest.number, pullRequest.url),
@@ -2865,15 +2886,12 @@ export async function runStandaloneAiReview(
       threadResolutions: processedReview.threadResolutions,
       vendors: processedReview.vendors,
     };
-    await writeNote(cwd, pullRequest.number, standaloneResult);
-    try {
-      await updatePullRequestBodyFn(cwd, pullRequest, standaloneResult);
-    } catch (error) {
-      console.warn(
-        `Standalone AI review was recorded locally for PR #${pullRequest.number}, but PR body update failed: ${formatError(error)}`,
-      );
-    }
-    return standaloneResult;
+    return persistStandaloneAiReviewResult(
+      cwd,
+      pullRequest,
+      standaloneResult,
+      dependencies,
+    );
   }
 
   const processedReview = processCleanAiReview({
@@ -2890,15 +2908,12 @@ export async function runStandaloneAiReview(
     prUrl: pullRequest.url,
     vendors: [],
   };
-  await writeNote(cwd, pullRequest.number, standaloneResult);
-  try {
-    await updatePullRequestBodyFn(cwd, pullRequest, standaloneResult);
-  } catch (error) {
-    console.warn(
-      `Standalone AI review was recorded locally for PR #${pullRequest.number}, but PR body update failed: ${formatError(error)}`,
-    );
-  }
-  return standaloneResult;
+  return persistStandaloneAiReviewResult(
+    cwd,
+    pullRequest,
+    standaloneResult,
+    dependencies,
+  );
 }
 
 async function writeStandaloneAiReviewNote(
@@ -3002,49 +3017,30 @@ export async function recordReview(
     );
   }
 
-  const nextState: DeliveryState = {
-    ...state,
-    tickets: state.tickets.map((ticket) =>
-      ticket.id === ticketId
-        ? {
-            ...ticket,
-            status:
-              outcome === 'operator_input_needed'
-                ? 'operator_input_needed'
-                : 'reviewed',
-            reviewOutcome: accumulateTicketReviewOutcome(
-              ticket.reviewOutcome,
-              outcome,
-            ),
-            reviewNote:
-              formatAccumulatedReviewNote(
-                ticket.reviewOutcome,
-                outcome,
-                defaultFinalReviewNote(outcome, note, ticket.reviewNote),
-              ) ?? defaultFinalReviewNote(outcome, note, ticket.reviewNote),
-            reviewThreadResolutions:
-              outcome === 'patched' ? reviewThreadResolutions : undefined,
-          }
-        : ticket,
-    ),
-  };
-  const updatedTarget = nextState.tickets.find(
-    (ticket) => ticket.id === ticketId,
+  return applyTicketReviewUpdate(
+    state,
+    ticketId,
+    (ticket) => ({
+      ...ticket,
+      status:
+        outcome === 'operator_input_needed'
+          ? 'operator_input_needed'
+          : 'reviewed',
+      reviewOutcome: accumulateTicketReviewOutcome(
+        ticket.reviewOutcome,
+        outcome,
+      ),
+      reviewNote:
+        formatAccumulatedReviewNote(
+          ticket.reviewOutcome,
+          outcome,
+          defaultFinalReviewNote(outcome, note, ticket.reviewNote),
+        ) ?? defaultFinalReviewNote(outcome, note, ticket.reviewNote),
+      reviewThreadResolutions:
+        outcome === 'patched' ? reviewThreadResolutions : undefined,
+    }),
+    dependencies,
   );
-
-  if (updatedTarget) {
-    const updatePullRequestBodyFn =
-      dependencies.updatePullRequestBody ?? updatePullRequestBody;
-    try {
-      await updatePullRequestBodyFn(nextState, updatedTarget);
-    } catch (error) {
-      console.warn(
-        `Review was recorded locally for ${updatedTarget.id}, but PR body update failed: ${formatError(error)}`,
-      );
-    }
-  }
-
-  return nextState;
 }
 
 async function advanceToNextTicket(

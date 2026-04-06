@@ -38,3 +38,4 @@ This ticket comes last on purpose. By the time it lands, the risky semantic extr
 - `Why this path:` leaving command rewiring until last keeps earlier PRs behavior-focused and lets the final cleanup read as straightforward composition simplification.
 - `Alternative considered:` doing command rewiring in the first or middle ticket was rejected because it would make every earlier PR harder to review and harder to bisect.
 - `Deferred:` any broader orchestrator decomposition beyond this post-PR lifecycle should become a separate epic if still valuable after convergence lands.
+- `Implemented seam:` `poll-review`, `record-review`, and standalone `ai-review` now delegate their final recorded-review persistence through shared ticketed and standalone command-layer helpers, so the remaining mode-specific code stays at the edge while the converged post-PR lifecycle rules flow through one path.

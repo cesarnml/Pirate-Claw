@@ -72,7 +72,7 @@ The orchestrator owns process mechanics:
 - blocking advancement until review has been explicitly recorded or auto-recorded as `clean` after the final polling check
 - refreshing the current PR body from recorded ai-cr follow-up notes immediately before advancing to the next ticket
 - resolving native GitHub inline review threads for patched AI-review findings when the saved review artifact exposes a resolvable thread identity
-- normalizing reviewer-facing external AI-review PR body reporting through one shared cleanup/rendering path for ticket-linked and standalone PRs
+- converging ticket-linked and standalone post-PR review handling through shared lifecycle helpers for detected-review processing, clean/timeout recording, metadata refresh, and final persistence
 
 It does **not** own AI-review detection heuristics or triage judgment.
 
@@ -104,6 +104,8 @@ Other vendors are out of scope unless the repo-local `ai-code-review` skill is d
 The absence of `ai-code-review` comments after the final 8-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
 
 When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket moves into an intermediate `needs_patch` state with the saved artifacts and triage note. From there the follow-up must conclude as either `patched` or `operator_input_needed`. PR body updates remain best-effort in either case.
+
+At this point in the repo, `poll-review`, `record-review`, and standalone `ai-review` are intentionally thin mode-specific shells around the same post-PR lifecycle helpers. Ticket-linked flow still owns stacked state transitions and standalone flow still owns PR discovery plus author-body preservation, but the semantic review handling between those edges is shared.
 
 ## Ticket Context Reset
 
@@ -254,7 +256,7 @@ PR descriptions are maintained as delivery metadata, not one-shot text.
 - `record-review ... patched` also makes a best-effort attempt to resolve mapped native GitHub inline review threads for patched findings
 - `poll-review` auto-records `clean` when no `ai-code-review` feedback is detected by the final check and refreshes the PR body immediately
 - PR-body AI-review notes now distinguish current-head review from stale-history review when the reviewed SHA no longer matches the branch head
-- ticket-linked and standalone PR refreshes now share the same reviewer-facing external-review section builder plus cleanup rules for duplicate/stale review scaffolding
+- ticket-linked and standalone PR refreshes now share the same reviewer-facing external-review section builder, metadata-refresh adapter, and command-layer persistence helpers while preserving their intentionally different outer PR-body shapes
 - `advance` refreshes the PR body from that recorded review state, then marks the ticket done and optionally starts the next one
 
 This matters because the repo squash-merges PRs onto `main`, so the PR body needs to mention prudent ai-cr follow-up work before the stack moves on.
