@@ -65,7 +65,7 @@ If you are planning or revising a phase:
 1. Read the relevant product doc under `docs/01-product/`.
 2. Read [`docs/02-delivery/phase-implementation-guidance.md`](../02-delivery/phase-implementation-guidance.md).
 3. Read or update the relevant `docs/02-delivery/<phase>/implementation-plan.md`.
-4. Use Plan Mode plus `grill-me` before finalizing the phase/epic scope or ticket decomposition.
+4. Run an explicit planning pass and use `grill-me` before finalizing the phase/epic scope or ticket decomposition. Plan Mode is optional, not required by repo policy.
 5. Do not start implementation until the developer has approved the decomposed ticket stack.
 6. If the user skips those control points and asks to implement new product-scope work anyway, pause, explain the missing planning step, and stop until the developer approves the plan.
 
@@ -94,7 +94,7 @@ If the request names a phase or epic and the user says to implement, start, begi
 
 When shaping a new phase or revising an existing one:
 
-- start in Plan Mode
+- start with an explicit planning pass
 - keep the phase outcome-focused
 - break work into small end-to-end tickets
 - keep explicit deferrals in the phase plan

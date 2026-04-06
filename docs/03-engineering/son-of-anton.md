@@ -102,15 +102,16 @@ These are not decorative process leftovers. They are the session bridge.
 
 They make it possible to stop, resume later, switch threads, or recover from drift without pretending the AI will perfectly remember the earlier context.
 
-## Plan Mode And `grill-me`
+## Planning Passes And `grill-me`
 
 For new product-scope expansion, Son-of-Anton requires an explicit planning pass before implementation.
 
 That planning pass should:
 
-- happen in Plan Mode
 - use `grill-me` to pressure-test scope and decomposition
 - end with a developer-approved set of thin, reviewable tickets
+
+Plan Mode can be a useful way to run that conversation, but Son-of-Anton does not require it as a repo policy. The durable requirement is the planning pass plus `grill-me`, not the conversation mode label.
 
 This is an intentional control surface, not optional ceremony.
 
@@ -150,7 +151,7 @@ When a change is smaller, bounded, and still reviewable as one standalone PR, th
 
 The distinction is:
 
-- new product-scope expansion should go through Plan Mode, `grill-me`, and approved decomposition
+- new product-scope expansion should go through an explicit planning pass, `grill-me`, and approved decomposition
 - smaller bounded product, ergonomics, docs, or tooling changes may still use a standalone PR path when the review surface stays human-sized
 
 ## Why This Repo Uses It

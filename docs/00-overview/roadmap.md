@@ -187,7 +187,7 @@ Working notes:
 - `docs/01-product/phase-07-config-ergonomics.md`
 - `docs/02-delivery/phase-07/implementation-plan.md`
 
-## Future Engineering Epic: Delivery Tooling Modularity
+## Engineering Epic 03: Delivery Tooling Modularity
 
 Goal:
 
@@ -195,11 +195,16 @@ Goal:
 
 Planning note:
 
-- this is a separate engineering epic, not a product phase, and should be planned under `docs/03-engineering/` or a later dedicated engineering roadmap note
+- this is a separate engineering epic, not a product phase
 - recently completed engineering epics:
   - `docs/03-engineering/epic-01-pr-body-reporting-unification.md`
   - `docs/03-engineering/epic-02-delivery-orchestrator-pr-flow-convergence.md`
 - any further modularity push should start from the now-converged post-PR review lifecycle rather than reopening that same boundary
+
+Working notes:
+
+- `docs/03-engineering/epic-03-delivery-orchestrator-modularity-and-concern-separation.md`
+- `docs/02-delivery/engineering-epic-03/implementation-plan.md`
 
 ## Planning Rules
 

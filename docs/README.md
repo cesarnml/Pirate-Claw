@@ -38,6 +38,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 
 - `issue-tracking.md`: naming, sizing, and issue hierarchy
 - `engineering-epic-02/implementation-plan.md`: runnable ticket stack for post-PR review-flow convergence in the delivery orchestrator
+- `engineering-epic-03/implementation-plan.md`: runnable ticket stack for delivery orchestrator modularity and concern separation
 - `phase-01/implementation-plan.md`: ordered delivery plan for phase 01
 - `phase-01/ticket-*.md`: one file per ticket
 - `phase-01/*-rationale.md`: rationale notes for tickets and the post-phase polish pass
@@ -53,6 +54,7 @@ Cross-cutting engineering rules that apply beyond a single phase.
 
 - `epic-01-pr-body-reporting-unification.md`: shared reviewer-facing PR body reporting cleanup for ticket-linked and standalone orchestrator flows
 - `epic-02-delivery-orchestrator-pr-flow-convergence.md`: reviewer-sized convergence plan for shared post-PR external AI-review lifecycle architecture
+- `epic-03-delivery-orchestrator-modularity-and-concern-separation.md`: concern-first modularization plan for the delivery orchestrator
 - `sqlite-schema.md`: current local SQLite tables, identities, and persistence invariants
 - `son-of-anton.md`: the dev-facing doctrine for this repo's AI-assisted delivery workflow
 - `snyk-workflow-rationale.md`: rationale for adding Snyk-based security scanning to CI

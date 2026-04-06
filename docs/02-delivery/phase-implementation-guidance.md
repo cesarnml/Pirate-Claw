@@ -10,7 +10,7 @@ Use it when:
 
 ## Core Stance
 
-- shape new product phases/epics in Plan Mode before implementation
+- shape new product phases/epics through an explicit planning pass before implementation
 - use `grill-me` to pressure-test scope and decomposition before accepting the plan
 - treat developer approval of the decomposed ticket stack as required before implementation begins
 - build one small real behavior at a time
@@ -34,6 +34,8 @@ Use it when:
 If a phase or ticket still feels vague, pressure-test it before implementation.
 
 The default tool for that is the `grill-me` skill.
+
+Plan Mode can help structure the conversation, but it is not a required repo policy control point. The required control points are the planning pass itself, `grill-me` pressure-testing, and developer approval of the resulting ticket stack.
 
 For new product feature-set expansion, this pressure test is not optional. Son-of-anton uses it to keep AI autonomy bounded by explicit human-approved product goals and reviewable ticket slices.
 
