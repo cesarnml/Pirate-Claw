@@ -497,6 +497,12 @@ type DetectedReviewProcessingResult = {
   vendors: string[];
 };
 
+type CleanReviewProcessingResult = {
+  incompleteAgents?: string[];
+  note: string;
+  outcome: ReviewResult;
+};
+
 export async function runDeliveryOrchestrator(
   argv: string[],
   cwd: string,
@@ -2611,6 +2617,28 @@ function shouldResolveDetectedReviewThreads(
   return outcome === 'clean' || outcome === 'patched';
 }
 
+function processCleanAiReview(options: {
+  effectiveMaxWaitMinutes: number;
+  incompleteAgents?: string[];
+  maxWaitMinutes: number;
+  previousOutcome: ReviewOutcome | undefined;
+}): CleanReviewProcessingResult {
+  return {
+    incompleteAgents: options.incompleteAgents,
+    note: options.incompleteAgents?.length
+      ? formatIncompleteAiReviewWithoutFindingsNote(
+          options.effectiveMaxWaitMinutes,
+          options.incompleteAgents,
+        )
+      : formatNoFeedbackReviewNote(
+          options.previousOutcome,
+          options.maxWaitMinutes,
+        ),
+    outcome:
+      accumulateReviewOutcome(options.previousOutcome, 'clean') ?? 'clean',
+  };
+}
+
 export async function pollReview(
   state: DeliveryState,
   cwd: string,
@@ -2716,6 +2744,12 @@ export async function pollReview(
     return nextState;
   }
 
+  const processedReview = processCleanAiReview({
+    effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
+    incompleteAgents: reviewPollResult.incompleteAgents,
+    maxWaitMinutes: state.reviewPollMaxWaitMinutes,
+    previousOutcome: target.reviewOutcome,
+  });
   const nextState: DeliveryState = {
     ...state,
     tickets: state.tickets.map((ticket) =>
@@ -2732,18 +2766,10 @@ export async function pollReview(
             reviewNonActionSummary: undefined,
             reviewOutcome: accumulateTicketReviewOutcome(
               ticket.reviewOutcome,
-              'clean',
+              processedReview.outcome,
             ),
-            reviewNote: reviewPollResult.incompleteAgents?.length
-              ? formatIncompleteAiReviewWithoutFindingsNote(
-                  reviewPollResult.effectiveMaxWaitMinutes,
-                  reviewPollResult.incompleteAgents,
-                )
-              : formatNoFeedbackReviewNote(
-                  ticket.reviewOutcome,
-                  state.reviewPollMaxWaitMinutes,
-                ),
-            reviewIncompleteAgents: reviewPollResult.incompleteAgents,
+            reviewNote: processedReview.note,
+            reviewIncompleteAgents: processedReview.incompleteAgents,
             reviewThreadResolutions: undefined,
             reviewVendors: [],
           }
@@ -2850,18 +2876,16 @@ export async function runStandaloneAiReview(
     return standaloneResult;
   }
 
-  const standaloneResult: StandaloneAiReviewResult = {
+  const processedReview = processCleanAiReview({
+    effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
     incompleteAgents: reviewPollResult.incompleteAgents,
-    note: reviewPollResult.incompleteAgents?.length
-      ? formatIncompleteAiReviewWithoutFindingsNote(
-          reviewPollResult.effectiveMaxWaitMinutes,
-          reviewPollResult.incompleteAgents,
-        )
-      : formatNoFeedbackReviewNote(
-          previousOutcome,
-          DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
-        ),
-    outcome: accumulateReviewOutcome(previousOutcome, 'clean') ?? 'clean',
+    maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+    previousOutcome,
+  });
+  const standaloneResult: StandaloneAiReviewResult = {
+    incompleteAgents: processedReview.incompleteAgents,
+    note: processedReview.note,
+    outcome: processedReview.outcome,
     prNumber: pullRequest.number,
     prUrl: pullRequest.url,
     vendors: [],
