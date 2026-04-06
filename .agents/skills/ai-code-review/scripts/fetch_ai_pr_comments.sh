@@ -267,7 +267,7 @@ jq -n \
       | ($body | test("review started|review in progress|currently reviewing|i am reviewing|i'\''m reviewing|analyzing this pr|analysis in progress|starting review|check back in a few minutes|processing new changes in this pr"));
 
     def greptile_reviewed_sha:
-      (body_text | capture("commit/(?<sha>[0-9a-fA-F]{7,40})")?.sha // "" | ascii_downcase);
+      (try (body_text | capture("commit/(?<sha>[0-9a-fA-F]{7,40})").sha) catch "" | ascii_downcase);
 
     def looks_like_current_greptile_started_text:
       (body_text | normalize_text) as $body
