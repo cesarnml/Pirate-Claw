@@ -64,7 +64,9 @@ If you are planning or revising a phase:
 1. Read the relevant product doc under `docs/01-product/`.
 2. Read [`docs/02-delivery/phase-implementation-guidance.md`](../02-delivery/phase-implementation-guidance.md).
 3. Read or update the relevant `docs/02-delivery/<phase>/implementation-plan.md`.
-4. If the phase is still fuzzy, use `grill-me` before finalizing the plan.
+4. Use Plan Mode plus `grill-me` before finalizing the phase/epic scope or ticket decomposition.
+5. Do not start implementation until the developer has approved the decomposed ticket stack.
+6. If the user skips those control points and asks to implement new product-scope work anyway, pause, explain the missing planning step, and stop until the developer approves the plan.
 
 If you are implementing an existing ticket:
 
@@ -72,6 +74,12 @@ If you are implementing an existing ticket:
 2. Read the specific ticket file.
 3. Read any current-user docs affected by the change, usually [`README.md`](../../README.md).
 4. Read any engineering note directly tied to the work, such as schema or delivery docs.
+
+If you are making a smaller bounded product or ergonomics change that does not justify a new phase/epic:
+
+1. Confirm that the work does not need a new phase plan or ticket decomposition.
+2. Implement it as a normal standalone PR-sized change.
+3. Use the orchestrator's standalone `ai-review` path instead of the ticketed stacked flow.
 
 If you are doing workflow or delivery-tooling work:
 
@@ -83,11 +91,14 @@ If you are doing workflow or delivery-tooling work:
 
 When shaping a new phase or revising an existing one:
 
+- start in Plan Mode
 - keep the phase outcome-focused
 - break work into small end-to-end tickets
 - keep explicit deferrals in the phase plan
 - prefer a thin real slice over broad setup work
-- use `grill-me` when the decision tree is still unclear
+- use `grill-me` to pressure-test the plan before it is accepted
+- treat developer approval of the resulting ticket decomposition as required before implementation starts
+- if those control points are missing for new product-scope work, pause and inform rather than improvising scope
 
 The shared stance for phase planning lives in:
 
@@ -115,6 +126,14 @@ Default technical constraints:
 - behavior-focused tests through public interfaces
 
 ## Review And Handoff Workflow
+
+In this repo's son-of-anton workflow, the developer remains directly engaged at three control points:
+
+- ideation into concrete phase/epic product goals
+- approval of the decomposed thin-slice ticket stack
+- final review and approval of delivered stacked PR slices before merge/advance
+
+Smaller bounded product-surface changes can still use a standalone non-ticket PR path. Son-of-Anton does not require every implementation change to become a new phase/epic as long as the review surface remains human-sized.
 
 Every ticket handoff should leave a short explanation artifact in the PR, review notes, or ticket update that answers:
 
