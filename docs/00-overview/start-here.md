@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through Phase 04, with Phase 05 ticket P5.01 active in delivery work.
+Pirate Claw is implemented through Phase 05.
 
 Current delivered surface:
 
@@ -22,6 +22,8 @@ Current delivered surface:
 - local config via `pirate-claw.config.json`
 - local runtime persistence via `pirate-claw.db`
 - runtime artifacts under `.pirate-claw/runtime/cycles/` with 7-day retention
+- movie codec policy mode via `movies.codecPolicy` (`prefer` by default, `require` for strict matching)
+- queue-time Transmission `movie` / `tv` labels with warning+retry fallback when labels are unsupported
 
 Current product boundary:
 
@@ -34,10 +36,7 @@ Current product boundary:
 - per-feed polling cadence with persistent poll state
 - shared runtime lock prevents overlapping cycles
 - machine-readable and human-readable cycle artifacts with bounded retention
-- movie codec policy mode via `movies.codecPolicy` (`prefer` by default, `require` for strict matching)
-- queue-time Transmission `movie` / `tv` labels with warning+retry fallback when labels are unsupported
-
-Still deferred:
+  Still deferred:
 
 - web UI
 - remote feed capture
@@ -46,7 +45,7 @@ Still deferred:
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and CLI commands: 2026-04-05.
+Last verified against `README.md` and CLI commands: 2026-04-06.
 
 ## Read These Docs By Task Type
 

@@ -42,6 +42,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-02/implementation-plan.md`: real-world feed compatibility delivery plan
 - `phase-03/implementation-plan.md`: post-queue lifecycle delivery plan
 - `phase-04/implementation-plan.md`: always-on local runtime delivery plan
+- `phase-05/implementation-plan.md`: intake policy and Transmission routing delivery plan
 
 ### `03-engineering`
 

@@ -116,7 +116,7 @@ Goal:
 
 Current status:
 
-- P5.01 movie codec policy mode and P5.02 label-routing fallback are implemented in delivery work
+- implemented on `main` via P5.01 movie codec policy mode and P5.02 label-routing fallback
 
 Committed scope:
 
@@ -133,6 +133,7 @@ Explicitly deferred:
 Working notes:
 
 - `docs/01-product/phase-05-intake-policy-and-routing.md`
+- `docs/02-delivery/phase-05/implementation-plan.md`
 
 ## Phase 06: Synology Runbook
 
@@ -159,4 +160,4 @@ Working notes:
 - keep tickets implementation-focused
 - promote durable technical choices into ADRs
 
-Last verified against `README.md` and active delivery plans: 2026-04-05.
+Last verified against `README.md` and active delivery plans: 2026-04-06.

@@ -44,7 +44,7 @@ For each ticket:
 1. write the first failing test
 2. implement the smallest code to go green
 3. refactor for clarity
-4. capture a short rationale note for reviewers and future threads
+4. capture a short rationale note in the delivery ticket doc for reviewers and future threads
 5. stop for review before the next ticket
 
 After a phase or epic is functionally complete, run one bounded polish pass before starting the next phase.
@@ -74,4 +74,5 @@ Each ticket or PR should include a short rationale section with these prompts:
 - durable decisions live in `docs/04-decisions/`
 
 Do not bury ticket scope only in GitHub issue comments. The matching doc file should remain readable without external context.
-Do not bury implementation rationale only in chat history. Preserve the short learning artifact in the ticket, PR, or review notes.
+Do not bury implementation rationale only in chat history. Preserve the short learning artifact in the delivery ticket doc.
+If later review or validation produces non-redundant findings, append them to the same `## Rationale` section instead of creating a parallel rationale artifact.

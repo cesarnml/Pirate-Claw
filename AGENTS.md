@@ -17,7 +17,10 @@
 
 Before calling a delivery ticket complete:
 
-- update or add the ticket rationale note when the ticket introduces or changes behavior
-- update `README.md` when user-visible behavior, command surface, or project status changed
-- update `docs/00-overview/start-here.md` and `docs/00-overview/roadmap.md` when a phase/ticket changes delivered scope, current commands, or deferrals
+- update the delivery ticket doc itself with a `## Rationale` section when the ticket introduces or changes behavior; do not treat PR bodies, review notes, or chat as the source of truth for rationale
+- append later non-redundant review, validation, or implementation findings to that same `## Rationale` section instead of creating a parallel rationale artifact
+- check whether `README.md` needs an update when user-visible behavior, command surface, or project status changed
+- check whether `docs/00-overview/start-here.md` needs an update when a phase or ticket changes delivered scope, current commands, delivered status, or deferrals
+- check whether `docs/00-overview/roadmap.md` needs an update when a phase or ticket changes delivered scope, delivered status, active phase state, working notes, or deferrals
+- check whether `docs/README.md` needs an update when a new phase plan, delivery doc, or durable doc path was added
 - verify the relevant tests or checks for the completed work

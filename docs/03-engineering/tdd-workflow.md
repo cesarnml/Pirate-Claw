@@ -75,7 +75,7 @@ A ticket is done when:
 - tests are green
 - code only includes the minimum support needed for that behavior
 - README or docs changes needed for that slice are included
-- a short rationale note explains why this was the smallest acceptable path
+- the delivery ticket doc contains a short `## Rationale` section explaining why this was the smallest acceptable path
 - unresolved follow-up work is captured in the next ticket, not hidden in comments
 
 ## Suggested Test Split
@@ -108,9 +108,11 @@ After each ticket, review with these questions:
 
 ## Suggested Rationale Template
 
-Use this short template in PRs, ticket updates, or review notes:
+Use this short template in the delivery ticket doc's `## Rationale` section:
 
 - `Red first:` ...
 - `Why this path:` ...
 - `Alternative considered:` ...
 - `Deferred:` ...
+
+If later review or validation adds non-redundant findings, append them to the same section rather than creating a separate rationale artifact.
