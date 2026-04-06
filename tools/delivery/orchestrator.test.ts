@@ -2246,6 +2246,69 @@ describe('delivery orchestrator', () => {
     expect(nextState.tickets[0]?.reviewNote).toBe(standaloneResult.note);
   });
 
+  it('maps standalone needs-patch triage to operator input at the shared accumulation seam', async () => {
+    const fetcher = () => ({
+      agents: [
+        {
+          agent: 'coderabbit' as const,
+          state: 'findings_detected' as const,
+          findingsCount: 1,
+          note: 'actionable findings captured',
+        },
+      ],
+      detected: true,
+      artifactText: 'normalized ai review artifact',
+      reviewedHeadSha: 'abcdef1234567890',
+      vendors: ['coderabbit'],
+      comments: [
+        {
+          vendor: 'coderabbit',
+          channel: 'inline_review' as const,
+          authorLogin: 'coderabbitai',
+          authorType: 'Bot' as const,
+          body: 'Guard the null return here.',
+          kind: 'finding' as const,
+        },
+      ],
+    });
+    const triager = () => ({
+      outcome: 'needs_patch' as const,
+      note: 'Actionable AI review findings were detected and still need follow-up.',
+      actionSummary: 'Flagged 1 finding comment for follow-up.',
+      vendors: ['coderabbit'],
+    });
+
+    const standaloneResult = await runStandaloneAiReview(
+      '/tmp/pirate_claw',
+      { kind: 'noop', enabled: false },
+      undefined,
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher,
+        triager,
+        pullRequest: {
+          body: 'existing body',
+          createdAt: '2026-04-01T10:00:00.000Z',
+          headRefName:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          headRefOid: 'fedcba0987654321',
+          number: 20,
+          title:
+            'feat: persist transmission identity for queued torrents [P3.01]',
+          url: 'https://example.test/pull/20',
+        },
+        updatePullRequestBody: () => {},
+        writeNote: async () => {},
+      },
+    );
+
+    expect(standaloneResult.outcome).toBe('operator_input_needed');
+    expect(standaloneResult.note).toBe(
+      'Actionable AI review findings were detected and still need follow-up.',
+    );
+  });
+
   it('uses the normal polling cadence when prOpenedAt is missing', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
@@ -2423,6 +2486,53 @@ describe('delivery orchestrator', () => {
       'P3.01',
       'clean',
       'External AI review completed without prudent follow-up changes.',
+      {
+        updatePullRequestBody: async () => {},
+      },
+    );
+
+    expect(nextState.tickets[0]).toMatchObject({
+      status: 'reviewed',
+      reviewOutcome: 'patched',
+      reviewNote:
+        'External AI review completed without prudent follow-up changes. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+    });
+  });
+
+  it('does not reuse a stale unresolved note when recording clean after operator input', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'operator_input_needed',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          reviewOutcome: 'patched',
+          reviewNote:
+            'Actionable AI review findings were detected and still need follow-up.',
+        },
+      ],
+    };
+
+    const nextState = await recordReview(
+      state,
+      '/tmp/pirate_claw',
+      'P3.01',
+      'clean',
+      undefined,
       {
         updatePullRequestBody: async () => {},
       },
