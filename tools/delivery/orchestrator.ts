@@ -144,10 +144,10 @@ export async function loadOrchestratorConfig(
     return {};
   }
 
-  const raw = JSON.parse(await readFile(configPath, 'utf8')) as Record<
-    string,
-    unknown
-  >;
+  const raw = requireConfigObject(
+    JSON.parse(await readFile(configPath, 'utf8')),
+    'orchestrator.config.json',
+  );
 
   if (
     raw.runtime !== undefined &&
@@ -169,24 +169,20 @@ export async function loadOrchestratorConfig(
     );
   }
 
-  if (
-    raw.defaultBranch !== undefined &&
-    typeof raw.defaultBranch !== 'string'
-  ) {
-    throw new Error(
-      'Invalid defaultBranch in orchestrator.config.json. Expected a string.',
-    );
-  }
-
-  if (raw.planRoot !== undefined && typeof raw.planRoot !== 'string') {
-    throw new Error(
-      'Invalid planRoot in orchestrator.config.json. Expected a string.',
-    );
-  }
+  const defaultBranch = optionalNonBlankString(
+    raw.defaultBranch,
+    'defaultBranch',
+    'orchestrator.config.json',
+  );
+  const planRoot = optionalNonBlankString(
+    raw.planRoot,
+    'planRoot',
+    'orchestrator.config.json',
+  );
 
   return {
-    defaultBranch: raw.defaultBranch as string | undefined,
-    planRoot: raw.planRoot as string | undefined,
+    defaultBranch,
+    planRoot,
     runtime: raw.runtime as OrchestratorConfig['runtime'],
     packageManager: raw.packageManager as OrchestratorConfig['packageManager'],
   };
@@ -207,11 +203,57 @@ export function resolveOrchestratorConfig(
   cwd: string,
 ): ResolvedOrchestratorConfig {
   return {
-    defaultBranch: raw.defaultBranch ?? 'main',
-    planRoot: raw.planRoot ?? 'docs',
+    defaultBranch: raw.defaultBranch?.trim() || 'main',
+    planRoot: raw.planRoot?.trim() || 'docs',
     runtime: raw.runtime ?? 'bun',
     packageManager: raw.packageManager ?? inferPackageManager(cwd),
   };
+}
+
+function requireConfigObject(
+  raw: unknown,
+  sourceLabel: string,
+): Record<string, unknown> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`${sourceLabel} must contain a JSON object.`);
+  }
+
+  return raw as Record<string, unknown>;
+}
+
+function optionalNonBlankString(
+  value: unknown,
+  fieldName: string,
+  sourceLabel: string,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(
+      `Invalid ${fieldName} in ${sourceLabel}. Expected a string.`,
+    );
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new Error(
+      `Invalid ${fieldName} in ${sourceLabel}. Expected a non-blank string.`,
+    );
+  }
+
+  return normalized;
+}
+
+export function generateRunDeliverInvocation(
+  packageManager: ResolvedOrchestratorConfig['packageManager'],
+): string {
+  if (packageManager === 'npm') {
+    return 'npm run deliver --';
+  }
+
+  return `${packageManager} run deliver`;
 }
 
 export type DeliveryNotificationEvent =
@@ -551,7 +593,7 @@ export async function runDeliveryOrchestrator(
             outcome !== 'operator_input_needed')
         ) {
           throw new Error(
-            `Usage: ${_config.packageManager} run deliver --plan <plan-path> record-review <ticket-id> <clean|patched|operator_input_needed> [note]`,
+            `Usage: ${generateRunDeliverInvocation(_config.packageManager)} --plan <plan-path> record-review <ticket-id> <clean|patched|operator_input_needed> [note]`,
           );
         }
 
@@ -1102,7 +1144,7 @@ async function resolveOptionsForCommand(
 
 function getUsage(): string {
   return [
-    `Usage: ${_config.packageManager} run deliver --plan <plan-path> <command>`,
+    `Usage: ${generateRunDeliverInvocation(_config.packageManager)} --plan <plan-path> <command>`,
     '',
     'Commands:',
     '  ai-review [--pr <number>]',
@@ -4428,7 +4470,7 @@ function runProcess(cwd: string, cmd: string[]): string {
   return result.stdout;
 }
 
-function runProcessResult(
+export function runProcessResult(
   cwd: string,
   cmd: string[],
 ): {
@@ -4459,7 +4501,10 @@ function runProcessResult(
 
   return {
     exitCode: result.status ?? 1,
-    stderr: (result.stderr?.toString() ?? '').trim(),
+    stderr: [result.stderr?.toString() ?? '', result.error?.message ?? '']
+      .filter(Boolean)
+      .join('\n')
+      .trim(),
     stdout: result.stdout?.toString() ?? '',
   };
 }

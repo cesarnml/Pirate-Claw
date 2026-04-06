@@ -25,6 +25,7 @@ import {
   findTicketByBranch,
   formatNotificationMessage,
   formatReviewWindowMessage,
+  generateRunDeliverInvocation,
   inferPackageManager,
   initOrchestratorConfig,
   loadOrchestratorConfig,
@@ -47,6 +48,7 @@ import {
   resolveReviewTriager,
   summarizeStateDifferences,
   syncStateWithPlan,
+  runProcessResult,
   type DeliveryState,
 } from './orchestrator';
 
@@ -2342,26 +2344,80 @@ describe('delivery orchestrator', () => {
       }
     });
 
-    it('resolves empty config to defaults', () => {
-      const tempDir = '/tmp/resolve-cfg-test';
-      const resolved = resolveOrchestratorConfig({}, tempDir);
-      expect(resolved).toEqual({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'npm',
-      });
+    it('throws when config json is not an object', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        await writeFile(join(tempDir, 'orchestrator.config.json'), '[]');
+
+        await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+          /must contain a JSON object/,
+        );
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
     });
 
-    it('merges partial config with defaults', () => {
-      const resolved = resolveOrchestratorConfig(
-        { defaultBranch: 'develop', planRoot: 'specifications' },
-        '/tmp/resolve-cfg-merge',
-      );
-      expect(resolved.defaultBranch).toBe('develop');
-      expect(resolved.planRoot).toBe('specifications');
-      expect(resolved.runtime).toBe('bun');
-      expect(resolved.packageManager).toBe('npm');
+    it('throws on blank defaultBranch', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        await writeFile(
+          join(tempDir, 'orchestrator.config.json'),
+          JSON.stringify({ defaultBranch: '   ' }),
+        );
+
+        await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+          /Expected a non-blank string/,
+        );
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('throws on blank planRoot', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-'));
+      try {
+        await writeFile(
+          join(tempDir, 'orchestrator.config.json'),
+          JSON.stringify({ planRoot: '   ' }),
+        );
+
+        await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+          /Expected a non-blank string/,
+        );
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('resolves empty config to defaults', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-resolve-'));
+      try {
+        const resolved = resolveOrchestratorConfig({}, tempDir);
+        expect(resolved).toEqual({
+          defaultBranch: 'main',
+          planRoot: 'docs',
+          runtime: 'bun',
+          packageManager: 'npm',
+        });
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
+    });
+
+    it('merges partial config with defaults', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'orch-cfg-resolve-'));
+      try {
+        const resolved = resolveOrchestratorConfig(
+          { defaultBranch: 'develop', planRoot: 'specifications' },
+          tempDir,
+        );
+        expect(resolved.defaultBranch).toBe('develop');
+        expect(resolved.planRoot).toBe('specifications');
+        expect(resolved.runtime).toBe('bun');
+        expect(resolved.packageManager).toBe('npm');
+      } finally {
+        await rm(tempDir, { recursive: true });
+      }
     });
 
     it('infers bun from bun.lock', async () => {
@@ -2450,5 +2506,36 @@ describe('delivery orchestrator', () => {
         });
       }
     });
+  });
+
+  it('renders npm deliver invocations with a separator', () => {
+    expect(generateRunDeliverInvocation('npm')).toBe('npm run deliver --');
+    expect(generateRunDeliverInvocation('bun')).toBe('bun run deliver');
+    expect(generateRunDeliverInvocation('pnpm')).toBe('pnpm run deliver');
+  });
+
+  it('surfaces node spawn startup errors in stderr', () => {
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'node',
+      packageManager: 'bun',
+    });
+
+    try {
+      const result = runProcessResult(process.cwd(), [
+        '__codex_missing_binary_for_test__',
+      ]);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('__codex_missing_binary_for_test__');
+    } finally {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+      });
+    }
   });
 });
