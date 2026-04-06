@@ -196,7 +196,7 @@ function requireCompactTvShows(
 ): CompactTvShowEntry[] {
   if (!Array.isArray(input) || input.length === 0) {
     throw new ConfigError(
-      `Config file "${path} tv" has invalid "shows"; expected a non-empty array of show names.`,
+      `Config file "${path} tv" has invalid "shows"; expected a non-empty array of show entries (string names or objects).`,
     );
   }
 
