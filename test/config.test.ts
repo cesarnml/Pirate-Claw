@@ -428,7 +428,9 @@ describe('validateConfig', () => {
         },
       }),
     ).toThrow(
-      new ConfigError('Config file "config tv defaults" must be an object.'),
+      new ConfigError(
+        'Config file "config tv defaults" must be an object with "resolutions" and "codecs", for example { "resolutions": ["1080p"], "codecs": ["x265"] }.',
+      ),
     );
   });
 
@@ -455,6 +457,25 @@ describe('validateConfig', () => {
     );
   });
 
+  it('fails when a compact tv show entry is neither a string nor an object', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        tv: {
+          defaults: {
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+          },
+          shows: [42],
+        },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config tv shows[0]" must be a string show name or an object with "name", optional "matchPattern", optional "resolutions", and optional "codecs".',
+      ),
+    );
+  });
+
   it('fails when transmission credentials are missing inline and in env', () => {
     expect(() =>
       validateConfig(
@@ -469,7 +490,7 @@ describe('validateConfig', () => {
       ),
     ).toThrow(
       new ConfigError(
-        'Config file "config transmission username" must be a non-empty string or come from PIRATE_CLAW_TRANSMISSION_USERNAME.',
+        'Config file "config transmission username" must be a non-empty string or come from PIRATE_CLAW_TRANSMISSION_USERNAME in the process environment or a .env file next to the config file.',
       ),
     );
   });

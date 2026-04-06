@@ -180,7 +180,13 @@ function validateCompactTvDefaults(
   input: unknown,
   path: string,
 ): CompactTvDefaults {
-  const defaults = expectRecord(input, `${path} tv defaults`);
+  if (!isRecord(input)) {
+    throw new ConfigError(
+      `Config file "${path} tv defaults" must be an object with "resolutions" and "codecs", for example { "resolutions": ["1080p"], "codecs": ["x265"] }.`,
+    );
+  }
+
+  const defaults = input;
 
   return {
     resolutions: requireNormalizedAllowedStringArray(
@@ -204,7 +210,7 @@ function requireCompactTvShows(
 ): CompactTvShowEntry[] {
   if (!Array.isArray(input) || input.length === 0) {
     throw new ConfigError(
-      `Config file "${path} tv" has invalid "shows"; expected a non-empty array of show entries (string names or objects).`,
+      `Config file "${path} tv shows" must be a non-empty array like ["Example Show"] or [{ "name": "Example Show" }].`,
     );
   }
 
@@ -239,7 +245,13 @@ function validateCompactTvShowEntry(
     return { name: expectString(input, path) };
   }
 
-  const entry = expectRecord(input, path);
+  if (!isRecord(input)) {
+    throw new ConfigError(
+      `Config file "${path}" must be a string show name or an object with "name", optional "matchPattern", optional "resolutions", and optional "codecs".`,
+    );
+  }
+
+  const entry = input;
 
   return {
     name: requireString(entry, 'name', path),
@@ -352,7 +364,7 @@ function resolveTransmissionSecret(
   }
 
   throw new ConfigError(
-    `Config file "${path}" must be a non-empty string or come from ${envKey}.`,
+    `Config file "${path}" must be a non-empty string or come from ${envKey} in the process environment or a .env file next to the config file.`,
   );
 }
 

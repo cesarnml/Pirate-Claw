@@ -28,3 +28,5 @@ Flexible config forms are only helpful if failures are understandable. Operators
 - `Why this path:` tightening the current config-loader error surface is the smallest acceptable way to support the new ergonomic forms without forcing operators to reverse-engineer parser expectations.
 - `Alternative considered:` replacing the entire config-loader validation layer with a new schema library was rejected because this ticket only commits to better operator feedback, not a validator rewrite.
 - `Deferred:` schema visualization, localized messaging, and broader CLI error redesign remain outside this ticket.
+- `Implementation note:` the improvements stayed inside the existing config-loader functions, but Phase 07-specific errors now point at the precise config path and suggest accepted compact forms instead of only reporting generic object/type failures.
+- `Validation note:` coverage now asserts the new suggestion text for malformed `tv.defaults`, malformed `tv.shows` entries, and env-backed Transmission credential misconfiguration so the operator-facing messages do not silently regress.
