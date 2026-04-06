@@ -39,3 +39,4 @@ This ticket only handles the "review detected" branch. It does not yet take on n
 - `Why this path:` detected-review processing is a coherent seam with clear inputs and outputs, making it small enough for one stacked PR without hiding unrelated control-flow changes.
 - `Alternative considered:` converging both detected-review and no-review branches together was rejected because the combined PR would be harder to reason about in review.
 - `Deferred:` timeout/no-feedback handling and refresh adapters remain separate tickets.
+- `Implemented seam:` both ticket-linked and standalone review-detected branches now route through one shared processor that writes artifacts, runs triage, applies vendor fallback, persists thread resolutions when the mode/outcome allows it, and returns the normalized review snapshot consumed by the mode-specific callers.

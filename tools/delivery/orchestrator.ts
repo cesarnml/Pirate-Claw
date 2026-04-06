@@ -483,6 +483,20 @@ type StandalonePullRequest = {
   url: string;
 };
 
+type DetectedReviewProcessingResult = {
+  actionSummary?: string;
+  artifactJsonPath: string;
+  artifactTextPath: string;
+  comments: AiReviewComment[];
+  incompleteAgents?: string[];
+  nonActionSummary?: string;
+  note: string;
+  outcome: ReviewResult;
+  reviewedHeadSha?: string;
+  threadResolutions?: AiReviewThreadResolution[];
+  vendors: string[];
+};
+
 export async function runDeliveryOrchestrator(
   argv: string[],
   cwd: string,
@@ -2512,6 +2526,91 @@ async function writeAiReviewThreadResolutions(
   );
 }
 
+async function processDetectedAiReview(options: {
+  artifactStemPath: string;
+  detectedReview: AiReviewFetcherResult;
+  effectiveMaxWaitMinutes: number;
+  incompleteAgents?: string[];
+  mapOutcome?: (outcome: ReviewResult) => ReviewResult;
+  mode: 'standalone' | 'ticketed';
+  previousOutcome: ReviewOutcome | undefined;
+  resolveThreads: (
+    worktreePath: string,
+    comments: AiReviewComment[],
+  ) => AiReviewThreadResolution[];
+  triager: (
+    worktreePath: string,
+    artifactJsonPath: string,
+  ) => AiReviewTriagerResult;
+  worktreePath: string;
+}): Promise<DetectedReviewProcessingResult> {
+  const artifacts = await writeAiReviewArtifacts(
+    options.artifactStemPath,
+    options.detectedReview,
+  );
+  const triageResult = options.triager(
+    options.worktreePath,
+    artifacts.artifactJsonPath,
+  );
+  const latestOutcome =
+    options.mapOutcome?.(triageResult.outcome) ?? triageResult.outcome;
+  const threadResolutions = shouldResolveDetectedReviewThreads(
+    options.mode,
+    triageResult.outcome,
+  )
+    ? options.resolveThreads(
+        options.worktreePath,
+        options.detectedReview.comments,
+      )
+    : [];
+  if (threadResolutions.length > 0) {
+    await writeAiReviewThreadResolutions(
+      artifacts.artifactJsonPath,
+      threadResolutions,
+    );
+  }
+
+  return {
+    actionSummary: triageResult.actionSummary,
+    artifactJsonPath: artifacts.artifactJsonPath,
+    artifactTextPath: artifacts.artifactTextPath,
+    comments: options.detectedReview.comments,
+    incompleteAgents: options.incompleteAgents,
+    nonActionSummary: triageResult.nonActionSummary,
+    note: options.incompleteAgents?.length
+      ? formatPartialAiReviewTimeoutNote(
+          options.effectiveMaxWaitMinutes,
+          options.incompleteAgents,
+        )
+      : (formatAccumulatedReviewNote(
+          options.previousOutcome,
+          latestOutcome,
+          triageResult.note,
+        ) ?? triageResult.note),
+    outcome:
+      accumulateReviewOutcome(options.previousOutcome, latestOutcome) ??
+      latestOutcome,
+    reviewedHeadSha: options.detectedReview.reviewedHeadSha,
+    threadResolutions:
+      threadResolutions.length > 0 ? threadResolutions : undefined,
+    vendors:
+      triageResult.vendors.length > 0
+        ? triageResult.vendors
+        : options.detectedReview.vendors,
+  };
+}
+
+function shouldResolveDetectedReviewThreads(
+  mode: 'standalone' | 'ticketed',
+  outcome: ReviewResult,
+): boolean {
+  if (mode === 'ticketed') {
+    return outcome === 'patched';
+  }
+
+  return outcome === 'clean' || outcome === 'patched';
+}
+
 export async function pollReview(
   state: DeliveryState,
   cwd: string,
@@ -2545,26 +2644,26 @@ export async function pollReview(
     reviewPollResult.status === 'triage_ready' ||
     reviewPollResult.status === 'partial_timeout'
   ) {
-    const detectedReview = reviewPollResult.result;
-    const artifacts = await writeAiReviewArtifacts(
-      resolve(cwd, state.reviewsDirPath, `${target.id}-ai-review`),
-      detectedReview,
-    );
-    const triage = triager(target.worktreePath, artifacts.artifactJsonPath);
-    const reviewThreadResolutions =
-      triage.outcome === 'patched'
-        ? resolveThreads(target.worktreePath, detectedReview.comments)
-        : [];
-    if (reviewThreadResolutions.length > 0) {
-      await writeAiReviewThreadResolutions(
-        artifacts.artifactJsonPath,
-        reviewThreadResolutions,
-      );
-    }
-    const reviewVendors =
-      triage.vendors.length > 0 ? triage.vendors : detectedReview.vendors;
+    const processedReview = await processDetectedAiReview({
+      artifactStemPath: resolve(
+        cwd,
+        state.reviewsDirPath,
+        `${target.id}-ai-review`,
+      ),
+      detectedReview: reviewPollResult.result,
+      effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
+      incompleteAgents:
+        reviewPollResult.status === 'partial_timeout'
+          ? reviewPollResult.incompleteAgents
+          : undefined,
+      mode: 'ticketed',
+      previousOutcome: target.reviewOutcome,
+      resolveThreads,
+      triager,
+      worktreePath: target.worktreePath,
+    });
     const nextStatus =
-      triage.outcome === 'needs_patch' ? 'needs_patch' : 'reviewed';
+      processedReview.outcome === 'needs_patch' ? 'needs_patch' : 'reviewed';
     const nextState: DeliveryState = {
       ...state,
       tickets: state.tickets.map((ticket) =>
@@ -2573,43 +2672,27 @@ export async function pollReview(
               ...ticket,
               prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
               status: nextStatus,
-              reviewActionSummary: triage.actionSummary,
-              reviewComments: detectedReview.comments,
+              reviewActionSummary: processedReview.actionSummary,
+              reviewComments: processedReview.comments,
               reviewArtifactJsonPath: relativeToRepo(
                 cwd,
-                artifacts.artifactJsonPath,
+                processedReview.artifactJsonPath,
               ),
               reviewArtifactPath: relativeToRepo(
                 cwd,
-                artifacts.artifactTextPath,
+                processedReview.artifactTextPath,
               ),
               reviewFetchedAt: new Date(now()).toISOString(),
-              reviewHeadSha: detectedReview.reviewedHeadSha,
-              reviewNonActionSummary: triage.nonActionSummary,
+              reviewHeadSha: processedReview.reviewedHeadSha,
+              reviewNonActionSummary: processedReview.nonActionSummary,
               reviewOutcome: accumulateTicketReviewOutcome(
                 ticket.reviewOutcome,
-                triage.outcome,
+                processedReview.outcome,
               ),
-              reviewNote:
-                reviewPollResult.status === 'partial_timeout'
-                  ? formatPartialAiReviewTimeoutNote(
-                      reviewPollResult.effectiveMaxWaitMinutes,
-                      reviewPollResult.incompleteAgents,
-                    )
-                  : (formatAccumulatedReviewNote(
-                      ticket.reviewOutcome,
-                      triage.outcome,
-                      triage.note,
-                    ) ?? triage.note),
-              reviewIncompleteAgents:
-                reviewPollResult.status === 'partial_timeout'
-                  ? reviewPollResult.incompleteAgents
-                  : undefined,
-              reviewThreadResolutions:
-                reviewThreadResolutions.length > 0
-                  ? reviewThreadResolutions
-                  : undefined,
-              reviewVendors,
+              reviewNote: processedReview.note,
+              reviewIncompleteAgents: processedReview.incompleteAgents,
+              reviewThreadResolutions: processedReview.threadResolutions,
+              reviewVendors: processedReview.vendors,
             }
           : ticket,
       ),
@@ -2721,56 +2804,40 @@ export async function runStandaloneAiReview(
     reviewPollResult.status === 'triage_ready' ||
     reviewPollResult.status === 'partial_timeout'
   ) {
-    const detectedReview = reviewPollResult.result;
-    const artifacts = await writeAiReviewArtifacts(
-      resolve(cwd, '.agents/ai-review', `pr-${pullRequest.number}`, 'review'),
-      detectedReview,
-    );
-    const triageResult = triager(cwd, artifacts.artifactJsonPath);
-    const threadResolutions =
-      triageResult.outcome === 'patched' || triageResult.outcome === 'clean'
-        ? resolveThreads(cwd, detectedReview.comments)
-        : [];
-    if (threadResolutions.length > 0) {
-      await writeAiReviewThreadResolutions(
-        artifacts.artifactJsonPath,
-        threadResolutions,
-      );
-    }
-    const latestOutcome = mapStandaloneReviewOutcome(triageResult.outcome);
-    const cumulativeOutcome: ReviewResult =
-      accumulateReviewOutcome(previousOutcome, latestOutcome) ?? latestOutcome;
-    const standaloneResult: StandaloneAiReviewResult = {
-      actionSummary: triageResult.actionSummary,
-      artifactJsonPath: relativeToRepo(cwd, artifacts.artifactJsonPath),
-      artifactTextPath: relativeToRepo(cwd, artifacts.artifactTextPath),
+    const processedReview = await processDetectedAiReview({
+      artifactStemPath: resolve(
+        cwd,
+        '.agents/ai-review',
+        `pr-${pullRequest.number}`,
+        'review',
+      ),
+      detectedReview: reviewPollResult.result,
+      effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
       incompleteAgents:
         reviewPollResult.status === 'partial_timeout'
           ? reviewPollResult.incompleteAgents
           : undefined,
-      note:
-        reviewPollResult.status === 'partial_timeout'
-          ? formatPartialAiReviewTimeoutNote(
-              reviewPollResult.effectiveMaxWaitMinutes,
-              reviewPollResult.incompleteAgents,
-            )
-          : (formatAccumulatedReviewNote(
-              previousOutcome,
-              latestOutcome,
-              triageResult.note,
-            ) ?? triageResult.note),
-      comments: detectedReview.comments,
-      nonActionSummary: triageResult.nonActionSummary,
-      outcome: cumulativeOutcome,
+      mapOutcome: mapStandaloneReviewOutcome,
+      mode: 'standalone',
+      previousOutcome,
+      resolveThreads,
+      triager,
+      worktreePath: cwd,
+    });
+    const standaloneResult: StandaloneAiReviewResult = {
+      actionSummary: processedReview.actionSummary,
+      artifactJsonPath: relativeToRepo(cwd, processedReview.artifactJsonPath),
+      artifactTextPath: relativeToRepo(cwd, processedReview.artifactTextPath),
+      incompleteAgents: processedReview.incompleteAgents,
+      note: processedReview.note,
+      comments: processedReview.comments,
+      nonActionSummary: processedReview.nonActionSummary,
+      outcome: processedReview.outcome,
       prNumber: pullRequest.number,
       prUrl: pullRequest.url,
-      reviewedHeadSha: detectedReview.reviewedHeadSha,
-      threadResolutions:
-        threadResolutions.length > 0 ? threadResolutions : undefined,
-      vendors:
-        triageResult.vendors.length > 0
-          ? triageResult.vendors
-          : detectedReview.vendors,
+      reviewedHeadSha: processedReview.reviewedHeadSha,
+      threadResolutions: processedReview.threadResolutions,
+      vendors: processedReview.vendors,
     };
     await writeNote(cwd, pullRequest.number, standaloneResult);
     try {
