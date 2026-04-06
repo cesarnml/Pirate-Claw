@@ -2,3 +2,43 @@
 # Keep this file intentionally minimal for now: Qodo is a supported external
 # review agent in this repo, and this file gives us a stable place for future
 # opinionated repo-level tweaks without relying only on portal settings.
+#
+# Pin the key GitHub App automation defaults explicitly so repo behavior does
+# not depend solely on upstream or portal-side defaults.
+#
+# Source:
+# - https://docs.qodo.ai/v1/configuration/configuration-file
+# - https://raw.githubusercontent.com/qodo-ai/pr-agent/main/pr_agent/settings/configuration.toml
+#
+# Keep this file minimal. Qodo's docs recommend overriding only the settings
+# you actually want to pin at the repo level.
+
+[config]
+publish_output = true
+publish_output_progress = true
+disable_auto_feedback = false
+
+[github]
+deployment_type = "user"
+base_url = "https://api.github.com"
+publish_inline_comments_fallback_with_verification = true
+try_fix_invalid_inline_comments = true
+app_name = "pr-agent"
+ignore_bot_pr = true
+
+[github_app]
+bot_user = "github-actions[bot]"
+override_deployment_type = true
+handle_pr_actions = ["opened", "reopened", "ready_for_review"]
+pr_commands = [
+  "/describe --pr_description.final_update_message=false",
+  "/review",
+  "/improve",
+]
+handle_push_trigger = false
+push_trigger_ignore_bot_commits = true
+push_trigger_ignore_merge_commits = true
+push_trigger_wait_for_initial_review = true
+push_trigger_pending_tasks_backlog = true
+push_trigger_pending_tasks_ttl = 300
+push_commands = ["/describe", "/review"]

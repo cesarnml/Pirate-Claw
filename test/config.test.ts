@@ -33,6 +33,49 @@ describe('validateConfig', () => {
     ]);
   });
 
+  it('supports mixed compact tv show entries with per-show overrides', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      tv: {
+        defaults: {
+          resolutions: ['1080P'],
+          codecs: ['X265'],
+        },
+        shows: [
+          'Default Show',
+          {
+            name: 'Pattern Override Show',
+            matchPattern: 'pattern-override',
+          },
+          {
+            name: 'Quality Override Show',
+            resolutions: ['720p'],
+            codecs: ['x264'],
+          },
+        ],
+      },
+    });
+
+    expect(config.tv).toEqual([
+      {
+        name: 'Default Show',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+      {
+        name: 'Pattern Override Show',
+        matchPattern: 'pattern-override',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+      {
+        name: 'Quality Override Show',
+        resolutions: ['720p'],
+        codecs: ['x264'],
+      },
+    ]);
+  });
+
   it('keeps the legacy tv rule array shape working unchanged', () => {
     const config = validateConfig(createMinimalConfig());
 
@@ -350,6 +393,29 @@ describe('validateConfig', () => {
       }),
     ).toThrow(
       new ConfigError('Config file "config tv defaults" must be an object.'),
+    );
+  });
+
+  it('fails when a compact tv object entry omits the show name', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        tv: {
+          defaults: {
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+          },
+          shows: [
+            {
+              resolutions: ['720p'],
+            },
+          ],
+        },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config tv shows[0] name" must be a non-empty string.',
+      ),
     );
   });
 });

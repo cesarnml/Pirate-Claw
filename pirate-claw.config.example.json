@@ -16,7 +16,14 @@
       "resolutions": ["720p"],
       "codecs": ["x265"]
     },
-    "shows": ["Beyond the Gates"]
+    "shows": [
+      "Beyond the Gates",
+      {
+        "name": "The Daily Show",
+        "matchPattern": "daily show",
+        "resolutions": ["1080p"]
+      }
+    ]
   },
   "movies": {
     "years": [2026],

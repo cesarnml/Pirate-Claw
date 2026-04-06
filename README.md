@@ -88,7 +88,14 @@ Example:
       "resolutions": ["720p"],
       "codecs": ["x265"]
     },
-    "shows": ["Beyond the Gates"]
+    "shows": [
+      "Beyond the Gates",
+      {
+        "name": "The Daily Show",
+        "matchPattern": "daily show",
+        "resolutions": ["1080p"]
+      }
+    ]
   },
   "movies": {
     "years": [2026],
@@ -113,7 +120,8 @@ Example:
 The compact TV form reduces repetition when most tracked shows share one quality policy:
 
 - `tv.defaults` defines the shared `resolutions` and `codecs`
-- `tv.shows` lists show names that inherit those defaults
+- `tv.shows` may contain plain show names that inherit those defaults
+- `tv.shows` may also contain objects with local `matchPattern`, `resolutions`, or `codecs` overrides
 - the older `tv: [{ ... }]` array shape still works unchanged
 
 ## Transmission Setup
