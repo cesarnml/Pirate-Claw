@@ -30,6 +30,7 @@ Phase-level product definitions.
 - `phase-04-always-on-local-runtime.md`: always-on scheduling, locking, and runtime artifacts
 - `phase-05-intake-policy-and-routing.md`: codec policy mode and Transmission routing labels
 - `phase-06-synology-runbook.md`: Synology runbook goals and boundaries
+- `phase-07-config-ergonomics.md`: compact config, config visibility, and env-backed Transmission secrets
 
 ### `02-delivery`
 
@@ -43,6 +44,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-03/implementation-plan.md`: post-queue lifecycle delivery plan
 - `phase-04/implementation-plan.md`: always-on local runtime delivery plan
 - `phase-05/implementation-plan.md`: intake policy and Transmission routing delivery plan
+- `phase-07/implementation-plan.md`: config ergonomics delivery plan
 
 ### `03-engineering`
 

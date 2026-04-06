@@ -47,6 +47,10 @@ Current product boundary:
 
 Last verified against `README.md` and CLI commands: 2026-04-06.
 
+Current planned next product phase:
+
+- Phase 07 config ergonomics is now documented and is independent of the Synology runbook work in Phase 06 because it builds on the existing config and CLI surface rather than NAS validation
+
 ## Read These Docs By Task Type
 
 If you are understanding the current product:

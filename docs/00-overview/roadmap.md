@@ -154,10 +154,54 @@ Working notes:
 
 - `docs/01-product/phase-06-synology-runbook.md`
 
+## Phase 07: Config Ergonomics
+
+Goal:
+
+- reduce repetition in common TV tracking config
+- make the fully-expanded effective config visible to the operator
+- keep Transmission credentials out of the main JSON file when desired
+- improve config validation clarity for compact config forms
+
+Current planning note:
+
+- Phase 07 is independent of Phase 06 and may be implemented next because it depends on the current config and CLI surface, not Synology validation
+
+Committed scope:
+
+- compact TV config via `tv.defaults + tv.shows`
+- mixed `tv.shows` entries with per-show overrides
+- a config-normalization visibility command
+- env-backed Transmission username/password loading
+- clearer config validation errors with path-aware guidance
+
+Explicitly deferred:
+
+- config mini-DSLs or named profile systems
+- broad ingestion redesign
+- non-Transmission secret providers
+- orchestrator/configurability/module-decomposition work
+
+Working notes:
+
+- `docs/01-product/phase-07-config-ergonomics.md`
+- `docs/02-delivery/phase-07/implementation-plan.md`
+
+## Future Engineering Epic: Delivery Tooling Modularity
+
+Goal:
+
+- keep orchestrator and delivery tooling maintainable as configuration and workflow surface expand
+
+Planning note:
+
+- this is a separate engineering epic, not a product phase, and should be planned under `docs/03-engineering/` or a later dedicated engineering roadmap note
+
 ## Planning Rules
 
 - keep phase docs outcome-focused
 - keep tickets implementation-focused
 - promote durable technical choices into ADRs
+- numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
 Last verified against `README.md` and active delivery plans: 2026-04-06.
