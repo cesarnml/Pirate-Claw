@@ -96,6 +96,7 @@ In this repo, supported external AI-review vendors are currently:
 
 - `coderabbit`
 - `qodo`
+- `greptile`
 
 Other vendors are out of scope unless the repo-local `ai-code-review` skill is deliberately expanded.
 

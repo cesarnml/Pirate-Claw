@@ -2267,8 +2267,7 @@ function resolveNativeReviewThreads(
   for (const comment of comments) {
     if (
       comment.channel !== 'inline_review' ||
-      comment.kind !== 'finding' ||
-      comment.isOutdated === true ||
+      (comment.kind !== 'finding' && comment.isOutdated !== true) ||
       comment.isResolved === true ||
       !comment.threadId ||
       seen.has(comment.threadId)
@@ -2706,7 +2705,7 @@ async function runStandaloneAiReview(
     );
     const triage = runAiReviewTriager(cwd, artifacts.artifactJsonPath);
     const threadResolutions =
-      triage.outcome === 'patched'
+      triage.outcome === 'patched' || triage.outcome === 'clean'
         ? resolveNativeReviewThreads(cwd, detectedReview.comments)
         : [];
     if (threadResolutions.length > 0) {

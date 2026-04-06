@@ -34,6 +34,7 @@ Supported external review agents are currently:
 
 - `coderabbit`
 - `qodo`
+- `greptile`
 
 Other AI-review vendors are out of scope unless repo policy explicitly adds them.
 

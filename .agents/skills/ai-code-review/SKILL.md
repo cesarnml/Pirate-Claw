@@ -11,6 +11,7 @@ Supported external review agents in this repo are currently:
 
 - `coderabbit`
 - `qodo`
+- `greptile`
 
 Treat other AI-review vendors or generic AI-review bot patterns as unsupported unless repo policy explicitly adds them.
 
@@ -37,14 +38,14 @@ The only contract between them is the repo-local helper script output:
   - `detected: true|false`
   - `artifact_text: "<normalized text summary>"`
   - `reviewed_head_sha?: "<pull request head sha at fetch time>"`
-  - `vendors: ["coderabbit", "qodo"]`
+  - `vendors: ["coderabbit", "qodo", "greptile"]`
   - `comments: [...]`
 - triager:
   - `outcome: "clean" | "needs_patch" | "patched"`
   - `note: "<concise final note>"`
   - `action_summary?: "<what was acted on>"`
   - `non_action_summary?: "<what was ignored and why>"`
-  - `vendors: ["coderabbit", "qodo"]`
+  - `vendors: ["coderabbit", "qodo", "greptile"]`
 
 When the triager returns `needs_patch`, the orchestrator treats that as an intermediate follow-up state. The follow-up should conclude as either `patched` or `operator_input_needed`, not stop permanently at `needs_patch`.
 
@@ -58,7 +59,7 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
 3. If the orchestrator already saved `review.json`, use that structured artifact as the source of truth for vendor attribution and comment shape.
 4. Apply the detection policy in the helper script:
    - comments from supported vendor identities that correspond to AI review
-   - comments whose wording explicitly identifies them as CodeRabbit or Qodo review
+   - comments whose wording explicitly identifies them as CodeRabbit, Qodo, or Greptile review
    - ordinary human drive-by comments do not count as AI review
    - preserve reviewed head SHA plus inline comment resolution/outdated state and native thread identity so stale bot comments do not block the flow by default
 5. Return the fetcher contract to the orchestrator when this is being used inside `poll-review`:

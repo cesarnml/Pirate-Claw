@@ -6,7 +6,7 @@ set -euo pipefail
 #     "agents": [{"agent":"coderabbit","state":"started|completed|findings_detected","findingsCount":1,"note":"..."}],
 #     "detected": true|false,
 #     "artifact_text": "normalized text artifact",
-#     "vendors": ["coderabbit", "qodo"],
+#     "vendors": ["coderabbit", "qodo", "greptile"],
 #     "comments": [...]
 #   }
 
@@ -253,15 +253,15 @@ jq -n \
 
     def looks_like_supported_ai_identity:
       (author_login | ascii_downcase) as $login
-      | ($login | test("qodo|coderabbit"));
+      | ($login | test("qodo|coderabbit|greptile"));
 
     def looks_like_supported_ai_text:
       (body_text | normalize_text) as $body
-      | ($body | test("coderabbit|code rabbit|qodo"));
+      | ($body | test("coderabbit|code rabbit|qodo|greptile"));
 
     def looks_like_started_text:
       (body_text | normalize_text) as $body
-      | ($body | test("review started|review in progress|currently reviewing|i am reviewing|i'\''m reviewing|analyzing this pr|analysis in progress|starting review|check back in a few minutes|processing new changes in this pr"));
+      | ($body | test("review started|review in progress|currently reviewing|i am reviewing|i'\''m reviewing|analyzing this pr|analysis in progress|starting review|check back in a few minutes|processing new changes in this pr|last reviewed commit|re-trigger greptile|retrigger greptile|reviews \\("));
 
     def looks_like_summary_noise_text:
       (body_text | normalize_text) as $body
@@ -272,6 +272,7 @@ jq -n \
       | (body_text | normalize_text) as $body
       | if ($login | test("coderabbit")) or ($body | test("coderabbit|code rabbit")) then "coderabbit"
         elif ($login | test("qodo")) or ($body | test("qodo")) then "qodo"
+        elif ($login | test("greptile")) or ($body | test("greptile")) then "greptile"
         else null
         end;
 
@@ -342,6 +343,8 @@ jq -n \
             "finding"
           end
         elif $vendor == "coderabbit" and ($channel == "issue_comment" or $channel == "review_summary") then
+          "summary"
+        elif $vendor == "greptile" and $channel == "issue_comment" then
           "summary"
         elif $channel == "review_summary" and ($body | length) == 0 then
           "summary"
