@@ -266,6 +266,19 @@ jq -n \
       (body_text | normalize_text) as $body
       | ($body | test("review started|review in progress|currently reviewing|i am reviewing|i'\''m reviewing|analyzing this pr|analysis in progress|starting review|check back in a few minutes|processing new changes in this pr"));
 
+    def looks_like_summary_noise_text:
+      (body_text | normalize_text) as $body
+      | ($body | test("review summary by|code review by|walkthroughs|file changes|looking for bugs\\?|finishing touches|summary of changes|rule violations|bugs \\("));
+
+    def vendor_name:
+      (author_login | ascii_downcase) as $login
+      | (body_text | normalize_text) as $body
+      | if ($login | test("coderabbit")) or ($body | test("coderabbit|code rabbit")) then "coderabbit"
+        elif ($login | test("qodo")) or ($body | test("qodo")) then "qodo"
+        elif ($login | test("greptile")) or ($body | test("greptile")) then "greptile"
+        else null
+        end;
+
     def greptile_reviewed_sha:
       (try (body_text | capture("commit/(?<sha>[0-9a-fA-F]{7,40})").sha) catch "" | ascii_downcase);
 
@@ -282,19 +295,6 @@ jq -n \
           | ($reviewed | length) > 0
             and ($current | length) > 0
             and ($current | startswith($reviewed))
-        end;
-
-    def looks_like_summary_noise_text:
-      (body_text | normalize_text) as $body
-      | ($body | test("review summary by|code review by|walkthroughs|file changes|looking for bugs\\?|finishing touches|summary of changes|rule violations|bugs \\("));
-
-    def vendor_name:
-      (author_login | ascii_downcase) as $login
-      | (body_text | normalize_text) as $body
-      | if ($login | test("coderabbit")) or ($body | test("coderabbit|code rabbit")) then "coderabbit"
-        elif ($login | test("qodo")) or ($body | test("qodo")) then "qodo"
-        elif ($login | test("greptile")) or ($body | test("greptile")) then "greptile"
-        else null
         end;
 
     def enrich_threads:
