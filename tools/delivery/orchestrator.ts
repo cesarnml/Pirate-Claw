@@ -2929,10 +2929,8 @@ export async function recordReview(
               formatAccumulatedReviewNote(
                 ticket.reviewOutcome,
                 outcome,
-                note ?? ticket.reviewNote,
-              ) ??
-              note ??
-              ticket.reviewNote,
+                defaultFinalReviewNote(outcome, note, ticket.reviewNote),
+              ) ?? defaultFinalReviewNote(outcome, note, ticket.reviewNote),
             reviewThreadResolutions:
               outcome === 'patched' ? reviewThreadResolutions : undefined,
           }
@@ -3455,6 +3453,22 @@ function formatAccumulatedReviewNote(
   }
 
   return note;
+}
+
+function defaultFinalReviewNote(
+  outcome: ReviewResult,
+  note: string | undefined,
+  previousNote: string | undefined,
+): string | undefined {
+  if (note !== undefined) {
+    return note;
+  }
+
+  if (outcome === 'clean') {
+    return 'External AI review completed without prudent follow-up changes.';
+  }
+
+  return previousNote;
 }
 
 function formatCumulativePatchedReviewNote(note: string | undefined): string {

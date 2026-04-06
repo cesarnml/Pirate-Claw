@@ -2499,6 +2499,53 @@ describe('delivery orchestrator', () => {
     });
   });
 
+  it('does not reuse a stale unresolved note when recording clean after operator input', async () => {
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 8,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'operator_input_needed',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          reviewOutcome: 'patched',
+          reviewNote:
+            'Actionable AI review findings were detected and still need follow-up.',
+        },
+      ],
+    };
+
+    const nextState = await recordReview(
+      state,
+      '/tmp/pirate_claw',
+      'P3.01',
+      'clean',
+      undefined,
+      {
+        updatePullRequestBody: async () => {},
+      },
+    );
+
+    expect(nextState.tickets[0]).toMatchObject({
+      status: 'reviewed',
+      reviewOutcome: 'patched',
+      reviewNote:
+        'External AI review completed without prudent follow-up changes. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+    });
+  });
+
   it('reuses existing thread resolutions instead of resolving twice', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
