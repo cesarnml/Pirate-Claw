@@ -4257,6 +4257,7 @@ export function buildStandaloneAiReviewSection(
     | 'artifactJsonPath'
     | 'artifactTextPath'
     | 'comments'
+    | 'incompleteAgents'
     | 'note'
     | 'nonActionSummary'
     | 'outcome'
@@ -4272,6 +4273,7 @@ export function buildStandaloneAiReviewSection(
   const section = buildExternalAiReviewSection(result, {
     actionCommits: options.actionCommits,
     currentHeadSha: options.currentHeadSha,
+    incompleteAgents: result.incompleteAgents,
     maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
   });
 

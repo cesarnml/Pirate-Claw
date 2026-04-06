@@ -651,6 +651,19 @@ describe('delivery orchestrator', () => {
     ).toContain('- outcome: `clean`');
   });
 
+  it('preserves incomplete agents in standalone review sections', () => {
+    const body = buildStandaloneAiReviewSection({
+      outcome: 'clean',
+      note: 'External AI review completed without prudent follow-up changes.',
+      incompleteAgents: ['coderabbit', 'greptile'],
+      vendors: ['coderabbit', 'greptile'],
+    });
+
+    expect(body).toContain(
+      '- incomplete agents at timeout: `coderabbit, greptile`',
+    );
+  });
+
   it('renders the same external review section content for ticketed and standalone flows', () => {
     const section = buildExternalAiReviewSection(
       {
