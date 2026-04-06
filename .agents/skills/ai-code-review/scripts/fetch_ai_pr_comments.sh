@@ -266,24 +266,6 @@ jq -n \
       (body_text | normalize_text) as $body
       | ($body | test("review started|review in progress|currently reviewing|i am reviewing|i'\''m reviewing|analyzing this pr|analysis in progress|starting review|check back in a few minutes|processing new changes in this pr"));
 
-    def greptile_reviewed_sha:
-      (try (body_text | capture("commit/(?<sha>[0-9a-fA-F]{7,40})").sha) catch "" | ascii_downcase);
-
-    def looks_like_current_greptile_started_text:
-      (body_text | normalize_text) as $body
-      | (vendor_name) as $vendor
-      | if $vendor != "greptile" then
-          false
-        elif ($body | test("last reviewed commit|re-trigger greptile|retrigger greptile|reviews \\(")) | not then
-          false
-        else
-          (greptile_reviewed_sha) as $reviewed
-          | (current_head_sha) as $current
-          | ($reviewed | length) > 0
-            and ($current | length) > 0
-            and ($current | startswith($reviewed))
-        end;
-
     def looks_like_summary_noise_text:
       (body_text | normalize_text) as $body
       | ($body | test("review summary by|code review by|walkthroughs|file changes|looking for bugs\\?|finishing touches|summary of changes|rule violations|bugs \\("));
