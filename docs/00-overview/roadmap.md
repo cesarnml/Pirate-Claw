@@ -196,6 +196,7 @@ Goal:
 Planning note:
 
 - this is a separate engineering epic, not a product phase, and should be planned under `docs/03-engineering/` or a later dedicated engineering roadmap note
+- current tracked epic: `docs/03-engineering/epic-01-pr-body-reporting-unification.md`
 
 ## Planning Rules
 

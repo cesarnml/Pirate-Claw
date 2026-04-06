@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import {
   assertReviewerFacingMarkdown,
+  buildExternalAiReviewSection,
   buildStandaloneAiReviewSection,
   buildReviewPollCheckMinutes,
   buildPullRequestBody,
@@ -573,6 +574,44 @@ describe('delivery orchestrator', () => {
     expect(deduped).not.toContain('old-2');
   });
 
+  it('removes stale manual external review prose when refreshing standalone review metadata', () => {
+    const merged = mergeStandaloneAiReviewSection(
+      [
+        '## Summary',
+        '- add stacked closeout support',
+        '',
+        '## External AI Review',
+        '',
+        '- original outcome on reviewed head: `operator_input_needed`',
+        '- reviewed commit: `df8c35128bd2`',
+        '- current branch head: `f238a1f`',
+        '- vendors: `coderabbit`',
+        '',
+        '### Patched Follow-Up',
+        '',
+        '- [coderabbit] Persist replacement PR metadata before continuing.',
+        '',
+        '<!-- ai-review:start -->',
+        'old managed block',
+        '<!-- ai-review:end -->',
+      ].join('\n'),
+      buildStandaloneAiReviewSection({
+        outcome: 'clean',
+        note: 'External AI review completed without prudent follow-up changes.',
+        reviewedHeadSha: '80026dbdebbb18fa6017dc522c2a0fc916927367',
+        vendors: ['coderabbit', 'greptile'],
+      }),
+    );
+
+    expect(merged.match(/^## External AI Review$/gm)?.length ?? 0).toBe(1);
+    expect(merged).not.toContain('original outcome on reviewed head');
+    expect(merged).not.toContain('Patched Follow-Up');
+    expect(merged).toContain('## Summary');
+    expect(merged).toContain('- add stacked closeout support');
+    expect(merged).toContain('<!-- ai-review:start -->');
+    expect(merged).toContain('`coderabbit`, `greptile`');
+  });
+
   it('renders final standalone ai review outcomes accurately', () => {
     expect(
       buildStandaloneAiReviewSection({
@@ -610,6 +649,73 @@ describe('delivery orchestrator', () => {
         vendors: ['qodo'],
       }),
     ).toContain('- outcome: `clean`');
+  });
+
+  it('preserves incomplete agents in standalone review sections', () => {
+    const body = buildStandaloneAiReviewSection({
+      outcome: 'clean',
+      note: 'External AI review completed without prudent follow-up changes.',
+      incompleteAgents: ['coderabbit', 'greptile'],
+      vendors: ['coderabbit', 'greptile'],
+    });
+
+    expect(body).toContain(
+      '- incomplete agents at timeout: `coderabbit, greptile`',
+    );
+  });
+
+  it('renders the same external review section content for ticketed and standalone flows', () => {
+    const section = buildExternalAiReviewSection(
+      {
+        outcome: 'patched',
+        note: 'Patched the prudent AI review follow-up.',
+        reviewedHeadSha: 'abcdef1234567890',
+        comments: [
+          {
+            vendor: 'coderabbit',
+            channel: 'inline_review',
+            authorLogin: 'coderabbitai',
+            authorType: 'Bot',
+            body: 'Guard the null return here.',
+            kind: 'finding',
+            path: 'src/example.ts',
+            line: 42,
+            threadId: 'thread_example_1',
+            url: 'https://example.test/comment/1',
+          },
+        ],
+        threadResolutions: [
+          {
+            status: 'resolved',
+            threadId: 'thread_example_1',
+            url: 'https://example.test/comment/1',
+            vendor: 'coderabbit',
+          },
+        ],
+        vendors: ['coderabbit'],
+      },
+      {
+        actionCommits: [
+          {
+            sha: 'c87f955ca43a1234',
+            subject: 'resolve null-guard follow-up',
+            vendors: ['coderabbit'],
+          },
+        ],
+        currentHeadSha: 'fedcba0987654321',
+        maxWaitMinutes: 8,
+      },
+    );
+
+    expect(section).toContain('## External AI Review');
+    expect(section).toContain('- outcome: `patched`');
+    expect(section).toContain('### Actions Taken');
+    expect(section).toContain(
+      '`c87f955ca43a` [coderabbit] resolve null-guard follow-up',
+    );
+    expect(section).toContain(
+      'the latest recorded external AI review applies to an older branch head',
+    );
   });
 
   it('keeps standalone pr bodies free of artifact paths', () => {

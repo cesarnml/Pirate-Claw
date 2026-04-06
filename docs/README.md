@@ -50,6 +50,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 
 Cross-cutting engineering rules that apply beyond a single phase.
 
+- `epic-01-pr-body-reporting-unification.md`: shared reviewer-facing PR body reporting cleanup for ticket-linked and standalone orchestrator flows
 - `sqlite-schema.md`: current local SQLite tables, identities, and persistence invariants
 - `son-of-anton.md`: the dev-facing doctrine for this repo's AI-assisted delivery workflow
 - `snyk-workflow-rationale.md`: rationale for adding Snyk-based security scanning to CI

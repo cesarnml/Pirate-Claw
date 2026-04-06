@@ -3232,6 +3232,97 @@ function stripBannedPrBodySections(body: string): string {
     .trimEnd();
 }
 
+function stripExternalAiReviewSections(body: string): string {
+  const lines = body.split('\n');
+  const kept: string[] = [];
+  let index = 0;
+  let activeFence: { char: '`' | '~'; length: number } | undefined;
+
+  while (index < lines.length) {
+    const line = lines[index]!;
+    const fenceMarker = parseFenceMarker(line);
+    if (fenceMarker) {
+      if (!activeFence) {
+        activeFence = { char: fenceMarker.char, length: fenceMarker.length };
+      } else if (
+        fenceMarker.char === activeFence.char &&
+        fenceMarker.length >= activeFence.length &&
+        fenceMarker.trailing.trim().length === 0
+      ) {
+        activeFence = undefined;
+      }
+      kept.push(line);
+      index += 1;
+      continue;
+    }
+    if (activeFence) {
+      kept.push(line);
+      index += 1;
+      continue;
+    }
+
+    const heading = parseMarkdownHeadingAt(lines, index);
+    if (
+      !heading ||
+      heading.title.trim().toLowerCase() !== 'external ai review'
+    ) {
+      kept.push(lines[index]!);
+      index += 1;
+      continue;
+    }
+
+    index += heading.lineCount;
+    while (index < lines.length) {
+      const nextLine = lines[index]!;
+      const nextFenceMarker = parseFenceMarker(nextLine);
+      if (nextFenceMarker) {
+        if (!activeFence) {
+          activeFence = {
+            char: nextFenceMarker.char,
+            length: nextFenceMarker.length,
+          };
+        } else if (
+          nextFenceMarker.char === activeFence.char &&
+          nextFenceMarker.length >= activeFence.length &&
+          nextFenceMarker.trailing.trim().length === 0
+        ) {
+          activeFence = undefined;
+        }
+        index += 1;
+        continue;
+      }
+      if (activeFence) {
+        index += 1;
+        continue;
+      }
+      const nextHeading = parseMarkdownHeadingAt(lines, index);
+      if (nextHeading && nextHeading.level <= heading.level) {
+        break;
+      }
+      index += 1;
+    }
+  }
+
+  return kept
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+}
+
+function normalizeReviewerFacingPullRequestBody(
+  body: string,
+  options: {
+    stripExternalAiReviewSections?: boolean;
+  } = {},
+): string {
+  const sanitized = stripBannedPrBodySections(body);
+  const withoutExternalReview = options.stripExternalAiReviewSections
+    ? stripExternalAiReviewSections(sanitized)
+    : sanitized;
+
+  return `${withoutExternalReview.trimEnd()}\n`;
+}
+
 function collectActionVendors(
   comments: AiReviewComment[] | undefined,
   vendors: string[] | undefined,
@@ -3723,32 +3814,31 @@ export function buildPullRequestBody(
     ticket.status === 'needs_patch' ||
     ticket.status === 'operator_input_needed'
   ) {
-    lines.push('', '## External AI Review', '');
     lines.push(
-      ...buildAiReviewDetailLines({
-        actionSummary: ticket.reviewActionSummary,
-        actionCommits: options.actionCommits,
-        comments: ticket.reviewComments,
-        currentHeadSha: options.currentHeadSha,
-        maxWaitMinutes: state.reviewPollMaxWaitMinutes,
-        nonActionSummary: ticket.reviewNonActionSummary,
-        note: ticket.reviewNote,
-        outcome: ticket.reviewOutcome,
-        reviewedHeadSha: ticket.reviewHeadSha,
-        status: ticket.status,
-        threadResolutions: ticket.reviewThreadResolutions,
-        vendors: ticket.reviewVendors,
-      }),
+      '',
+      buildExternalAiReviewSection(
+        {
+          actionSummary: ticket.reviewActionSummary,
+          comments: ticket.reviewComments,
+          note: ticket.reviewNote,
+          nonActionSummary: ticket.reviewNonActionSummary,
+          outcome: ticket.reviewOutcome,
+          reviewedHeadSha: ticket.reviewHeadSha,
+          status: ticket.status,
+          threadResolutions: ticket.reviewThreadResolutions,
+          vendors: ticket.reviewVendors,
+        },
+        {
+          actionCommits: options.actionCommits,
+          currentHeadSha: options.currentHeadSha,
+          incompleteAgents: ticket.reviewIncompleteAgents,
+          maxWaitMinutes: state.reviewPollMaxWaitMinutes,
+        },
+      ),
     );
-
-    if (ticket.reviewIncompleteAgents?.length) {
-      lines.push(
-        `- incomplete agents at timeout: \`${ticket.reviewIncompleteAgents.join(', ')}\``,
-      );
-    }
   }
 
-  return stripBannedPrBodySections(lines.join('\n'));
+  return normalizeReviewerFacingPullRequestBody(lines.join('\n'));
 }
 
 export function buildPullRequestTitle(
@@ -4167,6 +4257,7 @@ export function buildStandaloneAiReviewSection(
     | 'artifactJsonPath'
     | 'artifactTextPath'
     | 'comments'
+    | 'incompleteAgents'
     | 'note'
     | 'nonActionSummary'
     | 'outcome'
@@ -4179,29 +4270,64 @@ export function buildStandaloneAiReviewSection(
     currentHeadSha?: string;
   } = {},
 ): string {
-  const lines = [
+  const section = buildExternalAiReviewSection(result, {
+    actionCommits: options.actionCommits,
+    currentHeadSha: options.currentHeadSha,
+    incompleteAgents: result.incompleteAgents,
+    maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+  });
+
+  return [
     STANDALONE_AI_REVIEW_SECTION_START,
-    '## External AI Review',
-    '',
-  ];
+    section,
+    STANDALONE_AI_REVIEW_SECTION_END,
+  ].join('\n');
+}
+
+export function buildExternalAiReviewSection(
+  result: {
+    actionSummary?: string;
+    comments?: AiReviewComment[];
+    note?: string;
+    nonActionSummary?: string;
+    outcome?: ReviewResult;
+    reviewedHeadSha?: string;
+    status?: TicketStatus;
+    threadResolutions?: AiReviewThreadResolution[];
+    vendors?: string[];
+  },
+  options: {
+    actionCommits?: ReviewActionCommit[];
+    currentHeadSha?: string;
+    incompleteAgents?: string[];
+    maxWaitMinutes: number;
+  },
+): string {
+  const lines = ['## External AI Review', ''];
   lines.push(
     ...buildAiReviewDetailLines({
       actionSummary: result.actionSummary,
       actionCommits: options.actionCommits,
       comments: result.comments,
       currentHeadSha: options.currentHeadSha,
-      maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+      maxWaitMinutes: options.maxWaitMinutes,
       nonActionSummary: result.nonActionSummary,
       note: result.note,
       outcome: result.outcome,
       reviewedHeadSha: result.reviewedHeadSha,
+      status: result.status,
       threadResolutions: result.threadResolutions,
       vendors: result.vendors,
     }),
   );
 
-  lines.push(STANDALONE_AI_REVIEW_SECTION_END);
-  return stripBannedPrBodySections(lines.join('\n'));
+  if (options.incompleteAgents && options.incompleteAgents.length > 0) {
+    lines.push(
+      `- incomplete agents at timeout: \`${options.incompleteAgents.join(', ')}\``,
+    );
+  }
+
+  return lines.join('\n');
 }
 
 export function mergeStandaloneAiReviewSection(
@@ -4213,12 +4339,18 @@ export function mergeStandaloneAiReviewSection(
     'g',
   );
   const bodyWithoutAiReviewSections = body.replace(pattern, '').trimEnd();
+  const normalizedBody = normalizeReviewerFacingPullRequestBody(
+    bodyWithoutAiReviewSections,
+    {
+      stripExternalAiReviewSections: true,
+    },
+  ).trimEnd();
   const mergedBody =
-    bodyWithoutAiReviewSections.length > 0
-      ? `${bodyWithoutAiReviewSections}\n\n${section}\n`
+    normalizedBody.length > 0
+      ? `${normalizedBody}\n\n${section}\n`
       : `${section}\n`;
 
-  return `${stripBannedPrBodySections(mergedBody).trimEnd()}\n`;
+  return normalizeReviewerFacingPullRequestBody(mergedBody);
 }
 
 function updateStandalonePullRequestBody(
