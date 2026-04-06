@@ -29,3 +29,5 @@ More flexible config ingestion increases the need for visibility. Operators shou
 - `Why this path:` one bounded config-inspection command is the smallest acceptable way to make flexible config ingestion auditable without redesigning status or runtime artifacts.
 - `Alternative considered:` surfacing the normalized config only through daemon artifacts was rejected because operators need an on-demand inspection path even when the daemon is not running.
 - `Deferred:` interactive config tooling, broader schema introspection, and validation-polish work beyond the command itself remain outside this ticket.
+- `Implementation note:` `pirate-claw config show` reuses the existing `loadConfig` normalization path and prints the resulting `AppConfig` as stable pretty JSON, which avoided introducing a second config-rendering model.
+- `Validation note:` CLI coverage now exercises compact TV defaults plus per-show overrides through the public command so this visibility path stays aligned with the runtime loader rather than only with unit-level config tests.

@@ -33,6 +33,22 @@ export async function runCli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
 
   try {
+    if (command === 'config') {
+      const [subcommand, ...configArgs] = rest;
+
+      if (subcommand === 'show') {
+        const configPath = parseConfigPath(configArgs);
+        const resolvedConfigPath = resolveConfigPath(configPath);
+        const config = await loadConfig(resolvedConfigPath);
+
+        console.log(JSON.stringify(config, null, 2));
+        return 0;
+      }
+
+      console.error('Unknown config command. Available commands: "show".');
+      return 1;
+    }
+
     if (command === 'run') {
       const configPath = parseConfigPath(rest);
       const resolvedConfigPath = resolveConfigPath(configPath);
@@ -192,7 +208,7 @@ export async function runCli(argv: string[]): Promise<number> {
     }
 
     console.error(
-      'Unknown command. Available commands: "run", "daemon", "status", "retry-failed", "reconcile".',
+      'Unknown command. Available commands: "run", "daemon", "status", "retry-failed", "reconcile", "config".',
     );
     return 1;
   } catch (error) {

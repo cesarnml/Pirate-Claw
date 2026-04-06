@@ -501,6 +501,134 @@ describe('pirate-claw status', () => {
   });
 });
 
+describe('pirate-claw config show', () => {
+  afterEach(async () => {
+    while (openDatabases.length > 0) {
+      openDatabases.pop()?.close();
+    }
+
+    while (servers.length > 0) {
+      servers.pop()?.stop(true);
+    }
+
+    while (tempDirs.length > 0) {
+      const directory = tempDirs.pop();
+
+      if (directory) {
+        await Bun.$`rm -rf ${directory}`;
+      }
+    }
+  });
+
+  it('prints the normalized config for compact tv input', async () => {
+    const directory = await mkdtemp();
+    const configPath = join(directory, 'pirate-claw.config.json');
+
+    await Bun.write(
+      configPath,
+      JSON.stringify(
+        {
+          feeds: [
+            {
+              name: 'TV Feed',
+              url: 'https://example.test/tv.rss',
+              mediaType: 'tv',
+            },
+          ],
+          tv: {
+            defaults: {
+              resolutions: ['1080P'],
+              codecs: ['X265'],
+            },
+            shows: [
+              'Default Show',
+              {
+                name: 'Override Show',
+                matchPattern: 'override show',
+                resolutions: ['720p'],
+              },
+            ],
+          },
+          movies: {
+            years: [2024],
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+          },
+          transmission: {
+            url: 'http://localhost:9091/transmission/rpc',
+            username: 'user',
+            password: 'pass',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await runSimpleCommand(
+      directory,
+      'config',
+      'show',
+      '--config',
+      configPath,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+      feeds: [
+        {
+          name: 'TV Feed',
+          url: 'https://example.test/tv.rss',
+          mediaType: 'tv',
+        },
+      ],
+      tv: [
+        {
+          name: 'Default Show',
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+        },
+        {
+          name: 'Override Show',
+          matchPattern: 'override show',
+          resolutions: ['720p'],
+          codecs: ['x265'],
+        },
+      ],
+      movies: {
+        years: [2024],
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+        codecPolicy: 'prefer',
+      },
+      transmission: {
+        url: 'http://localhost:9091/transmission/rpc',
+        username: 'user',
+        password: 'pass',
+      },
+      runtime: {
+        runIntervalMinutes: 30,
+        reconcileIntervalMinutes: 1,
+        artifactDir: '.pirate-claw/runtime',
+        artifactRetentionDays: 7,
+      },
+    });
+  });
+
+  it('fails with a readable error for unknown config subcommands', async () => {
+    const directory = await mkdtemp();
+
+    const result = await runSimpleCommand(directory, 'config', 'wat');
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(
+      'Unknown config command. Available commands: "show".',
+    );
+  });
+});
+
 describe('pirate-claw retry-failed', () => {
   afterEach(async () => {
     while (openDatabases.length > 0) {

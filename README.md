@@ -19,6 +19,7 @@ It currently supports:
 - `pirate-claw status`
 - `pirate-claw retry-failed`
 - `pirate-claw reconcile`
+- `pirate-claw config show`
 
 ## Quick Start
 
@@ -51,6 +52,12 @@ Reconcile tracked torrents from Transmission with:
 
 ```bash
 ./bin/pirate-claw reconcile --config ./pirate-claw.config.json
+```
+
+Inspect the fully normalized effective config with:
+
+```bash
+./bin/pirate-claw config show --config ./pirate-claw.config.json
 ```
 
 ## Configuration
