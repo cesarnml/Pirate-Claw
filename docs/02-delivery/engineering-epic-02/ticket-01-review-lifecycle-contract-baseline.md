@@ -42,3 +42,4 @@ This ticket is limited to tests and planning-doc clarification. It does not yet 
 - `Why this path:` test-first convergence is the smallest acceptable way to keep later refactors honest without widening into implementation before the boundary is locked.
 - `Alternative considered:` starting with helper extraction was rejected because it would make review harder and hide whether the new seam actually preserved existing semantics.
 - `Deferred:` all helper extraction, persistence convergence, and command rewiring remain for later tickets.
+- `Follow-up locked in this ticket:` standalone `ai-review` execution now has explicit parity coverage against ticket-linked polling for cumulative `patched` carry-forward and timeout-without-findings notes, so later convergence work has to preserve both paths together instead of only keeping isolated tests green.
