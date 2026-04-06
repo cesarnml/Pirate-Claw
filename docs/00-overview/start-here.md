@@ -45,11 +45,12 @@ Current product boundary:
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and CLI commands: 2026-04-06.
+Last verified against `README.md` and CLI commands: 2026-04-07.
 
 Current planning focus:
 
 - use the roadmap to identify the active phase or bounded ticket work; phase/epic requests should flow through the delivery orchestrator until blocked or explicitly narrowed
+- the delivery orchestrator's post-PR external AI-review lifecycle convergence work is implemented; further delivery-tooling changes should treat that boundary as the new baseline
 
 ## Read These Docs By Task Type
 
