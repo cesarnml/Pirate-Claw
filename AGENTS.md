@@ -6,12 +6,19 @@
 - For orchestrated ticket work, the handoff under `.agents/delivery/<plan-key>/handoffs/` is required input alongside the plan and ticket docs.
 - `begin phase` / `implement phase` means run the stacked-ticket workflow until blocked, not just the first ticket.
 - Phase flow: implement, verify, push/open PR, run the configured `ai-code-review` polling window, patch prudent findings if any appear, refresh PR state, then advance.
-- No `ai-code-review` feedback by the final polling check is not a blocker; record `clean` and continue unless real ambiguity or actionable feedback exists.
+- No `ai-code-review` feedback by the final polling check is not a blocker. Record `clean` only when no actionable feedback was found during the review window. If actionable feedback was found and prudently fixed, preserve `patched` as the final outcome; do not downgrade `patched` to `clean` just because later polling is quiet.
 - During external waits, read-ahead into the next ticket, handoff, and adjacent seams is encouraged. Do not write ahead until the current ticket is cleared.
 - Stop only for unsafe work, missing prerequisites, ambiguous review triage, orchestrator blockage, or explicit user interruption.
 
 - `pr`: if a delivery ticket is clear from branch/docs/diff, use a human-readable Conventional-Commit-style subject plus the active ticket suffix, for example `[P3.02]`. Otherwise omit the suffix.
 - Any PR creation or PR-body drafting should follow the same `pr` conventions even when the user did not literally type `pr`.
+
+## Pre-Commit
+
+Before an AI agent creates a commit:
+
+- if it changed files covered by Prettier, run `bun run format` or `bun run format:check` and fix any failures before committing
+- if it changed docs, Markdown, config examples, PR text, or other user-facing copy, run `bun run spellcheck` and fix any failures before committing
 
 ## Ticket Completion Checklist
 

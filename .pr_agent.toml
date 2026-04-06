@@ -1,0 +1,4 @@
+# Repo-local Qodo configuration surface.
+# Keep this file intentionally minimal for now: Qodo is a supported external
+# review agent in this repo, and this file gives us a stable place for future
+# opinionated repo-level tweaks without relying only on portal settings.

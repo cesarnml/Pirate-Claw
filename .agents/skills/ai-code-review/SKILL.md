@@ -7,6 +7,13 @@ description: Detect and triage AI-generated pull request review comments for the
 
 This is a repo-local delivery skill. It is intended to travel with the orchestrator workflow as that workflow becomes template-ready.
 
+Supported external review agents in this repo are currently:
+
+- `coderabbit`
+- `qodo`
+
+Treat other AI-review vendors or generic AI-review bot patterns as unsupported unless repo policy explicitly adds them.
+
 ## Boundary
 
 The orchestrator owns:
@@ -30,14 +37,14 @@ The only contract between them is the repo-local helper script output:
   - `detected: true|false`
   - `artifact_text: "<normalized text summary>"`
   - `reviewed_head_sha?: "<pull request head sha at fetch time>"`
-  - `vendors: ["coderabbit", "qodo", ...]`
+  - `vendors: ["coderabbit", "qodo"]`
   - `comments: [...]`
 - triager:
   - `outcome: "clean" | "needs_patch" | "patched"`
   - `note: "<concise final note>"`
   - `action_summary?: "<what was acted on>"`
   - `non_action_summary?: "<what was ignored and why>"`
-  - `vendors: [...]`
+  - `vendors: ["coderabbit", "qodo"]`
 
 When the triager returns `needs_patch`, the orchestrator treats that as an intermediate follow-up state. The follow-up should conclude as either `patched` or `operator_input_needed`, not stop permanently at `needs_patch`.
 
@@ -50,8 +57,8 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
    - `.agents/skills/ai-code-review/scripts/fetch_ai_pr_comments.sh <pr-number>`
 3. If the orchestrator already saved `review.json`, use that structured artifact as the source of truth for vendor attribution and comment shape.
 4. Apply the detection policy in the helper script:
-   - comments from bot or vendor identities that correspond to AI review
-   - comments whose wording explicitly identifies them as AI-generated code review
+   - comments from supported vendor identities that correspond to AI review
+   - comments whose wording explicitly identifies them as CodeRabbit or Qodo review
    - ordinary human drive-by comments do not count as AI review
    - preserve reviewed head SHA plus inline comment resolution/outdated state and native thread identity so stale bot comments do not block the flow by default
 5. Return the fetcher contract to the orchestrator when this is being used inside `poll-review`:
@@ -78,6 +85,7 @@ Use this skill when the orchestrator has saved an AI review artifact or when you
 
 - Start with whether AI review comments were found.
 - Filter out generic summary noise by default and focus on unresolved review items.
+- Recognize only supported external review agents for detection and normalization unless repo policy expands that list.
 - Treat external AI summary posts as orchestration state signals, not PR-body content.
 - State which comments are actionable and which should be rejected.
 - Group by unresolved issue, not by raw API payload.

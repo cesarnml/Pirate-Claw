@@ -86,11 +86,18 @@ So the orchestrator only consumes the skill hook contracts:
 - fetcher:
   - `detected=false`: keep polling, or auto-record `clean` on the final check
   - `detected=true`: save structured and rendered artifacts, then call the triager hook
-  - preserves vendor identity, reviewed head SHA, native thread identity when available, and inline-comment resolution/outdated metadata in the saved `json` artifact
+  - preserves supported-vendor identity, reviewed head SHA, native thread identity when available, and inline-comment resolution/outdated metadata in the saved `json` artifact
 - triager:
   - returns `clean`, `needs_patch`, or `patched`
   - returns the final note plus concise action and non-action summaries
   - may be overridden with `AI_CODE_REVIEW_TRIAGER` without changing orchestrator code
+
+In this repo, supported external AI-review vendors are currently:
+
+- `coderabbit`
+- `qodo`
+
+Other vendors are out of scope unless the repo-local `ai-code-review` skill is deliberately expanded.
 
 The absence of `ai-code-review` comments after the final 8-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
 

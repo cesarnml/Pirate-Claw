@@ -28,7 +28,14 @@ The repo-local `ai-code-review` skill owns the judgment:
 - which comments are actionable
 - which comments should be rejected as stale, weak, or out of scope
 
-The boundary is implemented as repo-local hooks under `.agents/skills/ai-code-review/`: a fetcher that normalizes multi-vendor AI review into structured data, and a triager hook that turns that data into a final outcome plus concise rationale.
+The boundary is implemented as repo-local hooks under `.agents/skills/ai-code-review/`: a fetcher that normalizes supported external AI review into structured data, and a triager hook that turns that data into a final outcome plus concise rationale.
+
+Supported external review agents are currently:
+
+- `coderabbit`
+- `qodo`
+
+Other AI-review vendors are out of scope unless repo policy explicitly adds them.
 
 The normalized artifact now carries reviewed-commit provenance and native GitHub inline-thread identity when available. That lets the PR body distinguish current-head review from stale-history review, and it lets patched inline findings be resolved in the GitHub PR UI without vendor-specific logic.
 
