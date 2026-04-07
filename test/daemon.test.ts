@@ -368,6 +368,23 @@ describe('daemon', () => {
     expect(log.every((m) => !m.includes('api stopped'))).toBe(true);
   });
 
+  it('throws when apiPort is set without a fetch handler', async () => {
+    const controller = new AbortController();
+
+    await expect(
+      runDaemonLoop({
+        runCycle: async () => {},
+        reconcileCycle: async () => {},
+        options: {
+          runIntervalMs: 600_000,
+          reconcileIntervalMs: 600_000,
+          apiPort: 0,
+        },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow(/requires a fetch handler/);
+  });
+
   it('stops the HTTP server on signal shutdown', async () => {
     const log: string[] = [];
     const controller = new AbortController();

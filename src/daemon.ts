@@ -30,6 +30,12 @@ export async function runDaemonLoop(input: {
 
   let server: ReturnType<typeof Bun.serve> | undefined;
 
+  if (options.apiPort != null && !input.fetch) {
+    throw new Error(
+      `runDaemonLoop requires a fetch handler when apiPort (${options.apiPort}) is set.`,
+    );
+  }
+
   if (options.apiPort != null && input.fetch) {
     server = Bun.serve({
       port: options.apiPort,
