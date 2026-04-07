@@ -50,7 +50,7 @@ Last verified against `README.md` and CLI commands: 2026-04-07.
 Current planning focus:
 
 - use the roadmap to identify the active phase or bounded ticket work; phase/epic requests should flow through the delivery orchestrator until blocked or explicitly narrowed
-- the delivery orchestrator's Epic 03 concern-first modularization is implemented; further delivery-tooling changes should extend the extracted module boundaries rather than rebuilding the monolith in `tools/delivery/orchestrator.ts`
+- the delivery orchestrator's post-PR external AI-review lifecycle convergence work is implemented; further delivery-tooling changes should treat that boundary as the new baseline
 
 ## Read These Docs By Task Type
 
@@ -68,6 +68,7 @@ If you are planning or revising a phase:
 4. Run an explicit planning pass and use `grill-me` before finalizing the phase/epic scope or ticket decomposition. Plan Mode is optional, not required by repo policy.
 5. Do not start implementation until the developer has approved the decomposed ticket stack.
 6. If the user skips those control points and asks to implement new product-scope work anyway, pause, explain the missing planning step, and stop until the developer approves the plan.
+7. If an approved phase implementation plan explicitly declares a docs-validation direct-to-`main` execution mode, follow that plan-specific mode instead of forcing the stacked PR orchestrator path.
 
 If you are implementing an existing ticket:
 

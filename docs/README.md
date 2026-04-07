@@ -46,6 +46,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-03/implementation-plan.md`: post-queue lifecycle delivery plan
 - `phase-04/implementation-plan.md`: always-on local runtime delivery plan
 - `phase-05/implementation-plan.md`: intake policy and Transmission routing delivery plan
+- `phase-06/implementation-plan.md`: Synology runbook delivery plan
 - `phase-07/implementation-plan.md`: config ergonomics delivery plan
 
 ### `03-engineering`

@@ -153,6 +153,7 @@ Explicitly deferred:
 Working notes:
 
 - `docs/01-product/phase-06-synology-runbook.md`
+- `docs/02-delivery/phase-06/implementation-plan.md`
 
 ## Phase 07: Config Ergonomics
 
@@ -199,8 +200,7 @@ Planning note:
 - recently completed engineering epics:
   - `docs/03-engineering/epic-01-pr-body-reporting-unification.md`
   - `docs/03-engineering/epic-02-delivery-orchestrator-pr-flow-convergence.md`
-  - `docs/03-engineering/epic-03-delivery-orchestrator-modularity-and-concern-separation.md`
-- further delivery-tooling changes should extend the extracted modular boundaries rather than collapsing command, review, PR metadata, platform, and notification concerns back into `tools/delivery/orchestrator.ts`
+- any further modularity push should start from the now-converged post-PR review lifecycle rather than reopening that same boundary
 
 Working notes:
 
