@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import {
@@ -1654,13 +1653,7 @@ async function startTicket(
   }
 
   if (!existsSync(target.worktreePath)) {
-    addPlatformWorktree(
-      cwd,
-      target.worktreePath,
-      target.branch,
-      target.baseBranch,
-      _config.runtime,
-    );
+    addWorktree(cwd, target.worktreePath, target.branch, target.baseBranch);
   }
 
   await copyLocalEnvIfPresent(cwd, target.worktreePath);
@@ -1790,25 +1783,19 @@ export async function openPullRequest(
   let prNumber: number;
 
   if (existingPullRequest) {
-    editPlatformPullRequest(
-      target.worktreePath,
-      existingPullRequest.number,
-      { body, title },
-      _config.runtime,
-    );
+    editPullRequest(target.worktreePath, existingPullRequest.number, {
+      body,
+      title,
+    });
     prUrl = existingPullRequest.url;
     prNumber = existingPullRequest.number;
   } else {
-    prUrl = createPlatformPullRequest(
-      target.worktreePath,
-      {
-        base: target.baseBranch,
-        body,
-        head: target.branch,
-        title,
-      },
-      _config.runtime,
-    );
+    prUrl = createPullRequest(target.worktreePath, {
+      base: target.baseBranch,
+      body,
+      head: target.branch,
+      title,
+    });
     prNumber = parsePullRequestNumber(prUrl);
   }
 
@@ -2231,11 +2218,7 @@ function resolveNativeReviewThreads(
     }
 
     try {
-      const response = resolvePlatformReviewThread(
-        worktreePath,
-        comment.threadId,
-        _config.runtime,
-      );
+      const response = resolveReviewThread(worktreePath, comment.threadId);
       const parsed = parseResolveReviewThreadOutput(response);
 
       if (!parsed.resolved) {
@@ -3009,7 +2992,7 @@ async function restackTicket(
     );
   }
 
-  fetchPlatformOrigin(cwd, _config.runtime);
+  fetchOrigin(cwd);
 
   const targetIndex = state.tickets.findIndex(
     (ticket) => ticket.id === target.id,
@@ -3020,12 +3003,7 @@ async function restackTicket(
   let rebaseTarget = `origin/${_config.defaultBranch}`;
 
   if (previous) {
-    const oldBase = readPlatformMergeBase(
-      cwd,
-      target.branch,
-      previous.branch,
-      _config.runtime,
-    );
+    const oldBase = readMergeBase(cwd, target.branch, previous.branch);
 
     if (!oldBase) {
       throw new Error(
@@ -3038,13 +3016,9 @@ async function restackTicket(
       rebaseTarget = previous.branch;
     }
 
-    rebasePlatformOnto(cwd, rebaseTarget, oldBase, _config.runtime);
+    rebaseOnto(cwd, rebaseTarget, oldBase);
   } else {
-    rebasePlatformOntoDefaultBranch(
-      cwd,
-      _config.defaultBranch,
-      _config.runtime,
-    );
+    rebaseOntoDefaultBranch(cwd, _config.defaultBranch);
   }
 
   const nextState: DeliveryState = {
@@ -3070,24 +3044,19 @@ async function restackTicket(
 
   if (pullRequest) {
     const currentHeadSha = readHeadSha(updatedTarget.worktreePath);
-    editPlatformPullRequest(
-      cwd,
-      pullRequest.number,
-      {
-        base: nextBaseBranch,
-        body: buildPullRequestBody(nextState, updatedTarget, {
-          actionCommits: listReviewActionCommits(
-            updatedTarget.worktreePath,
-            updatedTarget.reviewHeadSha,
-            currentHeadSha,
-            updatedTarget.reviewComments,
-            updatedTarget.reviewVendors,
-          ),
+    editPullRequest(cwd, pullRequest.number, {
+      base: nextBaseBranch,
+      body: buildPullRequestBody(nextState, updatedTarget, {
+        actionCommits: listReviewActionCommits(
+          updatedTarget.worktreePath,
+          updatedTarget.reviewHeadSha,
           currentHeadSha,
-        }),
-      },
-      _config.runtime,
-    );
+          updatedTarget.reviewComments,
+          updatedTarget.reviewVendors,
+        ),
+        currentHeadSha,
+      }),
+    });
   }
 
   return nextState;
@@ -3351,12 +3320,11 @@ function listReviewActionCommits(
 
   const actionVendors = collectActionVendors(comments, vendors);
   try {
-    return listPlatformCommitSubjectsBetween(
+    return listCommitSubjectsBetween(
       cwd,
       reviewedHeadSha,
       currentHeadSha,
       MAX_ACTION_COMMITS,
-      _config.runtime,
     )
       .map((line) => {
         const [sha, subject] = line.split('\t', 2);
@@ -4295,12 +4263,7 @@ function updatePullRequestBody(
   );
   assertReviewerFacingMarkdown(body);
 
-  editPlatformPullRequest(
-    ticket.worktreePath,
-    ticket.prNumber,
-    { body },
-    _config.runtime,
-  );
+  editPullRequest(ticket.worktreePath, ticket.prNumber, { body });
 }
 
 export function buildStandaloneAiReviewSection(
@@ -4430,12 +4393,7 @@ function updateStandalonePullRequestBody(
   );
   assertReviewerFacingMarkdown(nextBody);
 
-  editPlatformPullRequest(
-    cwd,
-    pullRequest.number,
-    { body: nextBody },
-    _config.runtime,
-  );
+  editPullRequest(cwd, pullRequest.number, { body: nextBody });
 }
 
 function findOpenPullRequest(
@@ -4467,6 +4425,78 @@ function ensureCleanWorktree(cwd: string): void {
 
 function ensureBranchPushed(cwd: string, branch: string): void {
   ensurePlatformBranchPushed(cwd, branch, _config.runtime);
+}
+
+function addWorktree(
+  cwd: string,
+  worktreePath: string,
+  branch: string,
+  baseBranch: string,
+): void {
+  addPlatformWorktree(cwd, worktreePath, branch, baseBranch, _config.runtime);
+}
+
+function createPullRequest(
+  cwd: string,
+  options: {
+    base: string;
+    body: string;
+    head: string;
+    title: string;
+  },
+): string {
+  return createPlatformPullRequest(cwd, options, _config.runtime);
+}
+
+function editPullRequest(
+  cwd: string,
+  prNumber: number,
+  options: {
+    base?: string;
+    body?: string;
+    title?: string;
+  },
+): void {
+  editPlatformPullRequest(cwd, prNumber, options, _config.runtime);
+}
+
+function resolveReviewThread(worktreePath: string, threadId: string): string {
+  return resolvePlatformReviewThread(worktreePath, threadId, _config.runtime);
+}
+
+function fetchOrigin(cwd: string): void {
+  fetchPlatformOrigin(cwd, _config.runtime);
+}
+
+function readMergeBase(
+  cwd: string,
+  branch: string,
+  previousBranch: string,
+): string {
+  return readPlatformMergeBase(cwd, branch, previousBranch, _config.runtime);
+}
+
+function rebaseOnto(cwd: string, rebaseTarget: string, oldBase: string): void {
+  rebasePlatformOnto(cwd, rebaseTarget, oldBase, _config.runtime);
+}
+
+function rebaseOntoDefaultBranch(cwd: string, defaultBranch: string): void {
+  rebasePlatformOntoDefaultBranch(cwd, defaultBranch, _config.runtime);
+}
+
+function listCommitSubjectsBetween(
+  cwd: string,
+  reviewedHeadSha: string,
+  currentHeadSha: string,
+  maxCount: number,
+): string[] {
+  return listPlatformCommitSubjectsBetween(
+    cwd,
+    reviewedHeadSha,
+    currentHeadSha,
+    maxCount,
+    _config.runtime,
+  );
 }
 
 async function emitNotificationWarnings(
