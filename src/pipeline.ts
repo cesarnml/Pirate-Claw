@@ -1,4 +1,4 @@
-import type { AppConfig, FeedConfig } from './config';
+import type { AppConfig, FeedConfig, TransmissionConfig } from './config';
 import { fetchFeed, type RawFeedItem } from './feed';
 import { getMovieNoMatchReason, matchMovieItem } from './movie-match';
 import { normalizeFeedItem, type NormalizedFeedItem } from './normalize';
@@ -39,6 +39,7 @@ export async function runPipeline(input: {
     run,
     repository: input.repository,
     downloader: input.downloader,
+    resolveDownloadDir: createDownloadDirResolver(input.config.transmission),
   });
 
   try {
@@ -78,12 +79,16 @@ export async function runPipeline(input: {
 export async function retryFailedCandidates(input: {
   repository: Repository;
   downloader: Downloader;
+  transmissionConfig?: TransmissionConfig;
 }): Promise<RunPipelineResult> {
   const run = input.repository.startRun();
   const coordinator = createPipelineCoordinator({
     run,
     repository: input.repository,
     downloader: input.downloader,
+    resolveDownloadDir: input.transmissionConfig
+      ? createDownloadDirResolver(input.transmissionConfig)
+      : undefined,
   });
 
   try {
@@ -250,4 +255,11 @@ function deriveLifecycleStatus(
   }
 
   return 'queued';
+}
+
+function createDownloadDirResolver(
+  transmission: TransmissionConfig,
+): (mediaType: 'tv' | 'movie') => string | undefined {
+  return (mediaType) =>
+    transmission.downloadDirs?.[mediaType] ?? transmission.downloadDir;
 }

@@ -26,3 +26,7 @@ Resolve the effective `downloadDir` per submission based on media type and pass 
 ## Exit Condition
 
 A torrent submission for a movie feed includes the movie-specific `downloadDir` in the RPC call. A TV feed submission includes the TV-specific directory. When neither is configured, existing behavior is preserved.
+
+## Rationale
+
+Per-submission `downloadDir` was added to `SubmitDownloadInput` and the `buildSubmitRequestBody` function now prefers it over `config.downloadDir`. The precedence chain (per-type → global → omitted) is resolved through a `createDownloadDirResolver` function in pipeline.ts that reads `TransmissionConfig`. The resolver is injected into the pipeline coordinator as a function, avoiding a direct coupling between the pipeline-runner module and config types. The `retryFailedCandidates` path also receives the resolver so that retries honor per-media-type directories.

@@ -34,6 +34,7 @@ export function createPipelineCoordinator(input: {
   run: RunRecord;
   repository: Repository;
   downloader: Downloader;
+  resolveDownloadDir?: (mediaType: 'tv' | 'movie') => string | undefined;
 }) {
   return {
     recordNoMatch(feedItemId: number, message?: string): void {
@@ -70,12 +71,17 @@ export function createPipelineCoordinator(input: {
           continue;
         }
 
-        await submitCandidate(input.repository, input.downloader, {
-          runId: input.run.id,
-          feedItemId: winner.feedItem.id,
-          feedItem: winner.feedItem,
-          match: winner.match,
-        });
+        await submitCandidate(
+          input.repository,
+          input.downloader,
+          {
+            runId: input.run.id,
+            feedItemId: winner.feedItem.id,
+            feedItem: winner.feedItem,
+            match: winner.match,
+          },
+          input.resolveDownloadDir,
+        );
       }
     },
 
@@ -83,12 +89,17 @@ export function createPipelineCoordinator(input: {
       candidates: CandidateStateRecord[],
     ): Promise<void> {
       for (const candidate of candidates) {
-        await submitCandidate(input.repository, input.downloader, {
-          runId: input.run.id,
-          feedItemId: candidate.lastFeedItemId,
-          feedItem: createRawFeedItem(candidate),
-          match: createCandidateMatchRecord(candidate),
-        });
+        await submitCandidate(
+          input.repository,
+          input.downloader,
+          {
+            runId: input.run.id,
+            feedItemId: candidate.lastFeedItemId,
+            feedItem: createRawFeedItem(candidate),
+            match: createCandidateMatchRecord(candidate),
+          },
+          input.resolveDownloadDir,
+        );
       }
     },
 
@@ -106,9 +117,11 @@ export async function submitCandidate(
   repository: Repository,
   downloader: Downloader,
   input: SubmissionInput,
+  resolveDownloadDir?: (mediaType: 'tv' | 'movie') => string | undefined,
 ): Promise<void> {
   const submission = await downloader.submit({
     downloadUrl: input.feedItem.downloadUrl,
+    downloadDir: resolveDownloadDir?.(input.match.item.mediaType),
     labels: getSubmissionLabels(input.match.item.mediaType),
   });
 
