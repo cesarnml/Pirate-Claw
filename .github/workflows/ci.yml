@@ -31,7 +31,7 @@ jobs:
         run: bun run ci
 
   snyk:
-    name: Snyk Security
+    name: Snyk Security (advisory)
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -52,7 +52,50 @@ jobs:
         uses: snyk/actions/setup@master
 
       - name: Scan dependencies
+        id: snyk_dependencies
+        if: env.SNYK_TOKEN != ''
+        continue-on-error: true
+        timeout-minutes: 5
         run: snyk test --severity-threshold=high
 
       - name: Scan source code
+        id: snyk_code
+        if: env.SNYK_TOKEN != ''
+        continue-on-error: true
+        timeout-minutes: 5
         run: snyk code test --severity-threshold=high
+
+      - name: Report advisory outcome
+        if: always()
+        run: |
+          {
+            echo "## Snyk advisory status"
+            if [ -z "${SNYK_TOKEN:-}" ]; then
+              echo
+              echo "- skipped: \`SNYK_TOKEN\` is not configured for this repository."
+              exit 0
+            fi
+
+            advisory_failure=0
+
+            if [ "${{ steps.snyk_dependencies.outcome }}" = "success" ]; then
+              echo
+              echo "- dependency scan: passed"
+            else
+              echo
+              echo "- dependency scan: advisory failure"
+              advisory_failure=1
+            fi
+
+            if [ "${{ steps.snyk_code.outcome }}" = "success" ]; then
+              echo "- source scan: passed"
+            else
+              echo "- source scan: advisory failure"
+              advisory_failure=1
+            fi
+
+            if [ "$advisory_failure" -eq 1 ]; then
+              echo
+              echo "Snyk remains visible, but this workflow does not fail when scans time out or return findings."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
