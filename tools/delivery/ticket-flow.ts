@@ -375,10 +375,9 @@ export function openPullRequest(
         ? {
             ...ticket,
             status: 'in_review',
-            internalReviewCompletedAt: ticket.internalReviewCompletedAt,
             prUrl,
             prNumber,
-            prOpenedAt: now,
+            prOpenedAt: ticket.prOpenedAt ?? now,
           }
         : ticket,
     ),

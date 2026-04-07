@@ -29,6 +29,8 @@ type NotificationPayload = {
   text: string;
 };
 
+const TELEGRAM_SEND_TIMEOUT_MS = 10_000;
+
 function findTicketById(
   state: DeliveryState,
   ticketId?: string,
@@ -480,6 +482,7 @@ async function sendTelegramMessage(
         entities: payload.entities,
         disable_web_page_preview: true,
       }),
+      signal: AbortSignal.timeout(TELEGRAM_SEND_TIMEOUT_MS),
     },
   );
 

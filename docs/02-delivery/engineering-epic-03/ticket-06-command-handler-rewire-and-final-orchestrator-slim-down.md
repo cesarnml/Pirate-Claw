@@ -29,3 +29,9 @@ The final extraction moved the remaining top-level orchestration seams out of `t
 - `tools/delivery/ticket-flow.ts` now owns ticket progression, handoff rendering, PR-opening orchestration, and restack/advance flow mechanics.
 
 The orchestrator remains the stable facade and runtime composition shell, but no longer directly owns every command concern. User-visible commands, storage roots, PR semantics, and review behavior were intentionally preserved.
+
+Review follow-up:
+
+- kept `open-pr` refreshes from resetting `prOpenedAt`, so re-opening or refreshing an in-review ticket does not restart the review poll window
+- removed a redundant `internalReviewCompletedAt` reassignment in the extracted ticket-flow PR transition
+- added a bounded timeout to best-effort Telegram sends so notification delivery cannot hang the CLI indefinitely
