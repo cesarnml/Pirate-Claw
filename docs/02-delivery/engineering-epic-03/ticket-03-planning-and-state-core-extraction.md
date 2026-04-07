@@ -19,3 +19,9 @@ Separate plan/state mechanics from command orchestration.
 - no review-lifecycle extraction in this ticket
 - no PR-metadata extraction in this ticket
 - no workflow-semantic changes
+
+## Rationale
+
+This ticket separates config loading, plan discovery and parsing, and delivery-state persistence and repo inference into dedicated modules so later tickets can rewire command handling without continuing to mix orchestration with planning and storage mechanics.
+
+The extraction preserves the existing state shape, plan lookup behavior, and branch inference semantics by keeping the orchestrator's exported facade stable while turning it into a thin caller over the new `config/`, `planning/`, and `state/` module boundaries.

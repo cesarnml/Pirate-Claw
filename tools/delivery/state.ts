@@ -1,0 +1,521 @@
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+
+import {
+  listLocalBranches,
+  listMergedPullRequests,
+  listOpenPullRequests,
+  listRemoteBranches,
+  type PullRequestSummary,
+  type Runtime,
+} from './platform';
+import { parsePlan } from './planning';
+import type {
+  DeliveryState,
+  OrchestratorOptions,
+  TicketDefinition,
+  TicketState,
+  TicketStatus,
+} from './orchestrator';
+
+type LoadPlanContextResult = {
+  absoluteStatePath: string;
+  inferred: DeliveryState;
+  ticketDefinitions: TicketDefinition[];
+};
+
+type SyncStateDependencies = {
+  cwd: string;
+  defaultBranch: string;
+  deriveBranchName: (
+    definition: Pick<TicketDefinition, 'id' | 'slug'>,
+  ) => string;
+  deriveWorktreePath: (cwd: string, ticketId: string) => string;
+};
+
+type RepoInferenceDependencies = SyncStateDependencies & {
+  runtime: Runtime;
+  findExistingBranch: (
+    branches: string[],
+    definition: TicketDefinition,
+  ) => { branch: string; source: 'ticket-id' | 'derived' } | undefined;
+};
+
+export async function loadState(
+  cwd: string,
+  options: OrchestratorOptions,
+  dependencies: RepoInferenceDependencies,
+): Promise<DeliveryState> {
+  const { absoluteStatePath, inferred, ticketDefinitions } =
+    await loadPlanContext(cwd, options, dependencies);
+
+  if (!existsSync(absoluteStatePath)) {
+    return syncStateWithPlan(
+      undefined,
+      ticketDefinitions,
+      options,
+      inferred,
+      dependencies,
+    );
+  }
+
+  const existing = JSON.parse(
+    await readFile(absoluteStatePath, 'utf8'),
+  ) as DeliveryState;
+
+  return syncStateWithPlan(
+    existing,
+    ticketDefinitions,
+    options,
+    inferred,
+    dependencies,
+  );
+}
+
+export async function repairState(
+  cwd: string,
+  options: OrchestratorOptions,
+  dependencies: RepoInferenceDependencies,
+): Promise<{
+  state: DeliveryState;
+  backupPath?: string;
+  changes: string[];
+  hadExistingState: boolean;
+}> {
+  const { absoluteStatePath, inferred, ticketDefinitions } =
+    await loadPlanContext(cwd, options, dependencies);
+  const repairedState = syncStateWithPlan(
+    undefined,
+    ticketDefinitions,
+    options,
+    inferred,
+    dependencies,
+  );
+  const hadExistingState = existsSync(absoluteStatePath);
+
+  if (!hadExistingState) {
+    await saveState(cwd, repairedState);
+
+    return {
+      state: repairedState,
+      changes: [
+        'No prior state file existed; wrote clean state from repo reality.',
+      ],
+      hadExistingState: false,
+    };
+  }
+
+  const existing = JSON.parse(
+    await readFile(absoluteStatePath, 'utf8'),
+  ) as DeliveryState;
+  const changes = summarizeStateDifferences(existing, repairedState);
+  let backupPath: string | undefined;
+
+  if (changes.length > 0) {
+    backupPath = await backupStateFile(absoluteStatePath);
+  }
+
+  await saveState(cwd, repairedState);
+
+  return {
+    state: repairedState,
+    backupPath: backupPath ? relativeToRepo(cwd, backupPath) : undefined,
+    changes:
+      changes.length > 0
+        ? changes
+        : [
+            'Saved state already matched repo reality; rewrote normalized state.',
+          ],
+    hadExistingState: true,
+  };
+}
+
+export async function saveState(
+  cwd: string,
+  state: DeliveryState,
+): Promise<void> {
+  const absoluteStatePath = resolve(cwd, state.statePath);
+  await mkdir(dirname(absoluteStatePath), { recursive: true });
+  await writeFile(
+    absoluteStatePath,
+    JSON.stringify(state, null, 2) + '\n',
+    'utf8',
+  );
+}
+
+export function syncStateWithPlan(
+  existing: DeliveryState | undefined,
+  ticketDefinitions: TicketDefinition[],
+  options: OrchestratorOptions,
+  inferred: DeliveryState | undefined,
+  dependencies: SyncStateDependencies,
+): DeliveryState {
+  const existingById = new Map(
+    existing?.tickets.map((ticket) => [ticket.id, ticket]),
+  );
+  const inferredById = new Map(
+    inferred?.tickets.map((ticket) => [ticket.id, ticket]),
+  );
+
+  return {
+    planKey: options.planKey,
+    planPath: options.planPath,
+    statePath: options.statePath,
+    reviewsDirPath: options.reviewsDirPath,
+    handoffsDirPath: options.handoffsDirPath,
+    reviewPollIntervalMinutes: options.reviewPollIntervalMinutes,
+    reviewPollMaxWaitMinutes: options.reviewPollMaxWaitMinutes,
+    tickets: ticketDefinitions.map((definition, index) => {
+      const previous = existingById.get(definition.id);
+      const inferredTicket = inferredById.get(definition.id);
+      const previousTicket = ticketDefinitions[index - 1];
+      const resolvedBranch = selectBranchValue(
+        previous?.branch,
+        inferredTicket?.branch,
+        dependencies.deriveBranchName(definition),
+      );
+      const inferredBaseBranch =
+        index === 0
+          ? dependencies.defaultBranch
+          : selectBranchValue(
+              existingById.get(previousTicket?.id ?? '')?.branch,
+              inferredById.get(previousTicket?.id ?? '')?.branch,
+              dependencies.deriveBranchName(previousTicket!),
+            );
+
+      return {
+        id: definition.id,
+        title: definition.title,
+        slug: definition.slug,
+        ticketFile: definition.ticketFile,
+        status: selectStatusValue(previous?.status, inferredTicket?.status),
+        branch: resolvedBranch,
+        baseBranch:
+          index === 0
+            ? dependencies.defaultBranch
+            : selectBranchValue(
+                previous?.baseBranch,
+                inferredTicket?.baseBranch,
+                inferredBaseBranch,
+              ),
+        worktreePath:
+          previous?.worktreePath ??
+          inferredTicket?.worktreePath ??
+          dependencies.deriveWorktreePath(dependencies.cwd, definition.id),
+        handoffPath: previous?.handoffPath ?? inferredTicket?.handoffPath,
+        handoffGeneratedAt:
+          previous?.handoffGeneratedAt ?? inferredTicket?.handoffGeneratedAt,
+        internalReviewCompletedAt:
+          previous?.internalReviewCompletedAt ??
+          inferredTicket?.internalReviewCompletedAt,
+        prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
+        prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
+        prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
+        reviewArtifactPath:
+          previous?.reviewArtifactPath ?? inferredTicket?.reviewArtifactPath,
+        reviewArtifactJsonPath:
+          previous?.reviewArtifactJsonPath ??
+          inferredTicket?.reviewArtifactJsonPath,
+        reviewActionSummary:
+          previous?.reviewActionSummary ?? inferredTicket?.reviewActionSummary,
+        reviewFetchedAt:
+          previous?.reviewFetchedAt ?? inferredTicket?.reviewFetchedAt,
+        reviewHeadSha: previous?.reviewHeadSha ?? inferredTicket?.reviewHeadSha,
+        reviewNonActionSummary:
+          previous?.reviewNonActionSummary ??
+          inferredTicket?.reviewNonActionSummary,
+        reviewIncompleteAgents:
+          previous?.reviewIncompleteAgents ??
+          inferredTicket?.reviewIncompleteAgents,
+        reviewComments:
+          previous?.reviewComments ?? inferredTicket?.reviewComments,
+        reviewOutcome: previous?.reviewOutcome ?? inferredTicket?.reviewOutcome,
+        reviewNote: previous?.reviewNote ?? inferredTicket?.reviewNote,
+        reviewThreadResolutions:
+          previous?.reviewThreadResolutions ??
+          inferredTicket?.reviewThreadResolutions,
+        reviewVendors: previous?.reviewVendors ?? inferredTicket?.reviewVendors,
+      };
+    }),
+  };
+}
+
+export function summarizeStateDifferences(
+  existing: DeliveryState,
+  repaired: DeliveryState,
+): string[] {
+  const changes: string[] = [];
+
+  if (existing.planKey !== repaired.planKey) {
+    changes.push(`planKey ${existing.planKey} -> ${repaired.planKey}`);
+  }
+
+  if (existing.planPath !== repaired.planPath) {
+    changes.push(`planPath ${existing.planPath} -> ${repaired.planPath}`);
+  }
+
+  const existingById = new Map(
+    existing.tickets.map((ticket) => [ticket.id, ticket]),
+  );
+
+  for (const repairedTicket of repaired.tickets) {
+    const existingTicket = existingById.get(repairedTicket.id);
+
+    if (!existingTicket) {
+      changes.push(`${repairedTicket.id}: missing from existing state`);
+      continue;
+    }
+
+    if (existingTicket.status !== repairedTicket.status) {
+      changes.push(
+        `${repairedTicket.id}: status ${existingTicket.status} -> ${repairedTicket.status}`,
+      );
+    }
+
+    if (existingTicket.branch !== repairedTicket.branch) {
+      changes.push(
+        `${repairedTicket.id}: branch ${existingTicket.branch} -> ${repairedTicket.branch}`,
+      );
+    }
+
+    if (existingTicket.baseBranch !== repairedTicket.baseBranch) {
+      changes.push(
+        `${repairedTicket.id}: base ${existingTicket.baseBranch} -> ${repairedTicket.baseBranch}`,
+      );
+    }
+
+    if (existingTicket.worktreePath !== repairedTicket.worktreePath) {
+      changes.push(
+        `${repairedTicket.id}: worktree ${existingTicket.worktreePath} -> ${repairedTicket.worktreePath}`,
+      );
+    }
+
+    if (existingTicket.prUrl !== repairedTicket.prUrl) {
+      changes.push(
+        `${repairedTicket.id}: pr ${existingTicket.prUrl ?? 'none'} -> ${repairedTicket.prUrl ?? 'none'}`,
+      );
+    }
+  }
+
+  for (const existingTicket of existing.tickets) {
+    if (
+      !repaired.tickets.find((candidate) => candidate.id === existingTicket.id)
+    ) {
+      changes.push(
+        `${existingTicket.id}: present in existing state but absent after repair`,
+      );
+    }
+  }
+
+  return changes;
+}
+
+function inferStateFromRepo(
+  cwd: string,
+  ticketDefinitions: TicketDefinition[],
+  options: OrchestratorOptions,
+  dependencies: RepoInferenceDependencies,
+): DeliveryState {
+  const remoteBranches = listRemoteBranches(cwd, dependencies.runtime);
+  const localBranches = listLocalBranches(cwd, dependencies.runtime);
+  const openPullRequests = listOpenPullRequests(cwd, dependencies.runtime);
+  const mergedPullRequests = listMergedPullRequests(cwd, dependencies.runtime);
+  const branchCatalog = [
+    ...new Set([
+      ...localBranches,
+      ...remoteBranches,
+      ...openPullRequests.keys(),
+      ...mergedPullRequests.keys(),
+    ]),
+  ];
+
+  const tickets = ticketDefinitions.map((definition, index) => {
+    const branch =
+      dependencies.findExistingBranch(branchCatalog, definition)?.branch ??
+      dependencies.deriveBranchName(definition);
+    const baseBranch =
+      index === 0
+        ? dependencies.defaultBranch
+        : (dependencies.findExistingBranch(
+            branchCatalog,
+            ticketDefinitions[index - 1]!,
+          )?.branch ??
+          dependencies.deriveBranchName(ticketDefinitions[index - 1]!));
+    const branchExists = branchCatalog.includes(branch);
+    const openPr =
+      openPullRequests.get(branch) ??
+      findPullRequestForTicket(
+        openPullRequests,
+        definition,
+        dependencies.findExistingBranch,
+      );
+    const mergedPr =
+      mergedPullRequests.get(branch) ??
+      findPullRequestForTicket(
+        mergedPullRequests,
+        definition,
+        dependencies.findExistingBranch,
+      );
+    const pr = openPr ?? mergedPr;
+    const nextBranch = ticketDefinitions[index + 1]
+      ? (dependencies.findExistingBranch(
+          branchCatalog,
+          ticketDefinitions[index + 1]!,
+        )?.branch ??
+        dependencies.deriveBranchName(ticketDefinitions[index + 1]!))
+      : undefined;
+    const nextBranchExists =
+      nextBranch !== undefined && branchCatalog.includes(nextBranch);
+
+    let status: TicketStatus = 'pending';
+
+    if (mergedPr || (branchExists && nextBranchExists)) {
+      status = 'done';
+    } else if (openPr) {
+      status = 'in_review';
+    } else if (branchExists) {
+      status = 'in_progress';
+    }
+
+    return {
+      ...definition,
+      status,
+      branch,
+      baseBranch,
+      worktreePath: dependencies.deriveWorktreePath(cwd, definition.id),
+      handoffPath: undefined,
+      handoffGeneratedAt: undefined,
+      prNumber: pr?.number,
+      prUrl: pr?.url,
+      prOpenedAt: undefined,
+      reviewArtifactPath: undefined,
+      reviewArtifactJsonPath: undefined,
+      reviewActionSummary: undefined,
+      reviewFetchedAt: undefined,
+      reviewHeadSha: undefined,
+      reviewNonActionSummary: undefined,
+      reviewComments: undefined,
+      reviewOutcome: undefined,
+      reviewNote: undefined,
+      reviewThreadResolutions: undefined,
+      reviewVendors: undefined,
+    } satisfies TicketState;
+  });
+
+  return {
+    planKey: options.planKey,
+    planPath: options.planPath,
+    statePath: options.statePath,
+    reviewsDirPath: options.reviewsDirPath,
+    handoffsDirPath: options.handoffsDirPath,
+    reviewPollIntervalMinutes: options.reviewPollIntervalMinutes,
+    reviewPollMaxWaitMinutes: options.reviewPollMaxWaitMinutes,
+    tickets,
+  };
+}
+
+async function loadPlanContext(
+  cwd: string,
+  options: OrchestratorOptions,
+  dependencies: RepoInferenceDependencies,
+): Promise<LoadPlanContextResult> {
+  const planMarkdown = await readFile(resolve(cwd, options.planPath), 'utf8');
+  const ticketDefinitions = parsePlan(planMarkdown, options.planPath);
+  const absoluteStatePath = resolve(cwd, options.statePath);
+  const inferred = inferStateFromRepo(
+    cwd,
+    ticketDefinitions,
+    options,
+    dependencies,
+  );
+
+  return {
+    absoluteStatePath,
+    inferred,
+    ticketDefinitions,
+  };
+}
+
+function findPullRequestForTicket(
+  pullRequests: Map<string, PullRequestSummary>,
+  definition: TicketDefinition,
+  findExistingBranch: (
+    branches: string[],
+    definition: TicketDefinition,
+  ) => { branch: string; source: 'ticket-id' | 'derived' } | undefined,
+): PullRequestSummary | undefined {
+  const match = findExistingBranch(Array.from(pullRequests.keys()), definition);
+  return match ? pullRequests.get(match.branch) : undefined;
+}
+
+function selectStatusValue(
+  currentStatus: TicketStatus | undefined,
+  inferredStatus: TicketStatus | undefined,
+): TicketStatus {
+  if (!currentStatus) {
+    return inferredStatus ?? 'pending';
+  }
+
+  if (!inferredStatus) {
+    return currentStatus;
+  }
+
+  return statusRank(inferredStatus) > statusRank(currentStatus)
+    ? inferredStatus
+    : currentStatus;
+}
+
+function statusRank(status: TicketStatus): number {
+  switch (status) {
+    case 'pending':
+      return 0;
+    case 'in_progress':
+      return 1;
+    case 'internally_reviewed':
+      return 2;
+    case 'in_review':
+      return 3;
+    case 'needs_patch':
+      return 4;
+    case 'operator_input_needed':
+      return 5;
+    case 'reviewed':
+      return 6;
+    case 'done':
+      return 7;
+  }
+}
+
+function selectBranchValue(
+  currentBranch: string | undefined,
+  inferredBranch: string | undefined,
+  fallbackBranch: string,
+): string {
+  if (inferredBranch) {
+    return inferredBranch;
+  }
+
+  return currentBranch ?? fallbackBranch;
+}
+
+async function backupStateFile(absoluteStatePath: string): Promise<string> {
+  const backupPath = absoluteStatePath.replace(
+    /\.json$/,
+    `.stale-${new Date()
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace(/\.\d{3}Z$/, 'Z')}.json`,
+  );
+
+  await writeFile(
+    backupPath,
+    await readFile(absoluteStatePath, 'utf8'),
+    'utf8',
+  );
+  return backupPath;
+}
+
+function relativeToRepo(cwd: string, absolutePath: string): string {
+  return resolve(absolutePath).replace(`${resolve(cwd)}/`, '');
+}

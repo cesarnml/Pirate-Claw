@@ -1,7 +1,13 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
+import {
+  loadOrchestratorConfig as loadOrchestratorConfigImpl,
+  resolveOrchestratorConfig as resolveOrchestratorConfigImpl,
+  type OrchestratorConfig,
+  type ResolvedOrchestratorConfig,
+} from './config';
 import {
   addWorktree as addPlatformWorktree,
   bootstrapWorktreeIfNeeded as bootstrapPlatformWorktreeIfNeeded,
@@ -15,10 +21,6 @@ import {
   findPrimaryWorktreePath as findPlatformPrimaryWorktreePath,
   hasMergedPullRequestForBranch as hasPlatformMergedPullRequestForBranch,
   listCommitSubjectsBetween as listPlatformCommitSubjectsBetween,
-  listLocalBranches as listPlatformLocalBranches,
-  listMergedPullRequests as listPlatformMergedPullRequests,
-  listOpenPullRequests as listPlatformOpenPullRequests,
-  listRemoteBranches as listPlatformRemoteBranches,
   readCurrentBranch as readPlatformCurrentBranch,
   readHeadSha as readPlatformHeadSha,
   readLatestCommitSubject as readPlatformLatestCommitSubject,
@@ -31,6 +33,20 @@ import {
   runProcessResult as runPlatformProcessResult,
   type PullRequestSummary,
 } from './platform';
+import {
+  createOptions as createOptionsImpl,
+  derivePlanKey as derivePlanKeyImpl,
+  inferPlanPathFromBranch as inferPlanPathFromBranchImpl,
+  parsePlan as parsePlanImpl,
+  resolvePlanPathForBranch as resolvePlanPathForBranchImpl,
+} from './planning';
+import {
+  loadState as loadStateImpl,
+  repairState as repairStateImpl,
+  saveState as saveStateImpl,
+  summarizeStateDifferences as summarizeStateDifferencesImpl,
+  syncStateWithPlan as syncStateWithPlanImpl,
+} from './state';
 
 export { parseGitWorktreeList } from './platform';
 
@@ -115,22 +131,7 @@ type BranchMatch = {
   source: 'ticket-id' | 'derived';
 };
 
-export type OrchestratorConfig = {
-  defaultBranch?: string;
-  planRoot?: string;
-  runtime?: 'bun' | 'node';
-  packageManager?: 'bun' | 'npm' | 'pnpm' | 'yarn';
-};
-
-export type ResolvedOrchestratorConfig = {
-  defaultBranch: string;
-  planRoot: string;
-  runtime: 'bun' | 'node';
-  packageManager: 'bun' | 'npm' | 'pnpm' | 'yarn';
-};
-
-const VALID_RUNTIMES = ['bun', 'node'] as const;
-const VALID_PACKAGE_MANAGERS = ['bun', 'npm', 'pnpm', 'yarn'] as const;
+export type { OrchestratorConfig, ResolvedOrchestratorConfig } from './config';
 
 let _config: ResolvedOrchestratorConfig = {
   defaultBranch: 'main',
@@ -152,113 +153,17 @@ export function getOrchestratorConfig(): ResolvedOrchestratorConfig {
 export async function loadOrchestratorConfig(
   cwd: string,
 ): Promise<OrchestratorConfig> {
-  const configPath = resolve(cwd, 'orchestrator.config.json');
-
-  if (!existsSync(configPath)) {
-    return {};
-  }
-
-  const raw = requireConfigObject(
-    JSON.parse(await readFile(configPath, 'utf8')),
-    'orchestrator.config.json',
-  );
-
-  if (
-    raw.runtime !== undefined &&
-    !VALID_RUNTIMES.includes(raw.runtime as (typeof VALID_RUNTIMES)[number])
-  ) {
-    throw new Error(
-      `Invalid runtime "${String(raw.runtime)}" in orchestrator.config.json. Expected: ${VALID_RUNTIMES.join(', ')}`,
-    );
-  }
-
-  if (
-    raw.packageManager !== undefined &&
-    !VALID_PACKAGE_MANAGERS.includes(
-      raw.packageManager as (typeof VALID_PACKAGE_MANAGERS)[number],
-    )
-  ) {
-    throw new Error(
-      `Invalid packageManager "${String(raw.packageManager)}" in orchestrator.config.json. Expected: ${VALID_PACKAGE_MANAGERS.join(', ')}`,
-    );
-  }
-
-  const defaultBranch = optionalNonBlankString(
-    raw.defaultBranch,
-    'defaultBranch',
-    'orchestrator.config.json',
-  );
-  const planRoot = optionalNonBlankString(
-    raw.planRoot,
-    'planRoot',
-    'orchestrator.config.json',
-  );
-
-  return {
-    defaultBranch,
-    planRoot,
-    runtime: raw.runtime as OrchestratorConfig['runtime'],
-    packageManager: raw.packageManager as OrchestratorConfig['packageManager'],
-  };
-}
-
-export function inferPackageManager(
-  cwd: string,
-): ResolvedOrchestratorConfig['packageManager'] {
-  if (existsSync(resolve(cwd, 'bun.lock'))) return 'bun';
-  if (existsSync(resolve(cwd, 'pnpm-lock.yaml'))) return 'pnpm';
-  if (existsSync(resolve(cwd, 'yarn.lock'))) return 'yarn';
-  if (existsSync(resolve(cwd, 'package-lock.json'))) return 'npm';
-  return 'npm';
+  return loadOrchestratorConfigImpl(cwd);
 }
 
 export function resolveOrchestratorConfig(
   raw: OrchestratorConfig,
   cwd: string,
 ): ResolvedOrchestratorConfig {
-  return {
-    defaultBranch: raw.defaultBranch?.trim() || 'main',
-    planRoot: raw.planRoot?.trim() || 'docs',
-    runtime: raw.runtime ?? 'bun',
-    packageManager: raw.packageManager ?? inferPackageManager(cwd),
-  };
+  return resolveOrchestratorConfigImpl(raw, cwd);
 }
 
-function requireConfigObject(
-  raw: unknown,
-  sourceLabel: string,
-): Record<string, unknown> {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new Error(`${sourceLabel} must contain a JSON object.`);
-  }
-
-  return raw as Record<string, unknown>;
-}
-
-function optionalNonBlankString(
-  value: unknown,
-  fieldName: string,
-  sourceLabel: string,
-): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== 'string') {
-    throw new Error(
-      `Invalid ${fieldName} in ${sourceLabel}. Expected a string.`,
-    );
-  }
-
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    throw new Error(
-      `Invalid ${fieldName} in ${sourceLabel}. Expected a non-blank string.`,
-    );
-  }
-
-  return normalized;
-}
+export { inferPackageManager } from './config';
 
 export function generateRunDeliverInvocation(
   packageManager: ResolvedOrchestratorConfig['packageManager'],
@@ -825,40 +730,7 @@ export function parsePlan(
   markdown: string,
   planPath: string,
 ): TicketDefinition[] {
-  const ticketOrderSection = markdown.match(
-    /## Ticket Order\s+([\s\S]*?)\n## Ticket Files/,
-  )?.[1];
-  const ticketFilesSection = markdown.match(
-    /## Ticket Files\s+([\s\S]*?)\n## Exit Condition/,
-  )?.[1];
-
-  if (!ticketOrderSection || !ticketFilesSection) {
-    throw new Error(`Could not parse ticket order from ${planPath}.`);
-  }
-
-  const titles = [
-    ...ticketOrderSection.matchAll(/`([A-Z0-9.]+)\s+([^`]+)`/g),
-  ].map((match) => ({
-    id: match[1] ?? '',
-    title: match[2] ?? '',
-  }));
-  const files = [...ticketFilesSection.matchAll(/`([^`]+)`/g)].map(
-    (match) => match[1] ?? '',
-  );
-
-  if (titles.length === 0 || titles.length !== files.length) {
-    throw new Error(
-      `Ticket order and ticket file sections are inconsistent in ${planPath}.`,
-    );
-  }
-
-  const planDir = dirname(planPath);
-
-  return titles.map((ticket, index) => ({
-    ...ticket,
-    slug: slugify(ticket.title),
-    ticketFile: join(planDir, files[index] ?? ''),
-  }));
+  return parsePlanImpl(markdown, planPath);
 }
 
 export function syncStateWithPlan(
@@ -868,144 +740,12 @@ export function syncStateWithPlan(
   options: OrchestratorOptions,
   inferred?: DeliveryState,
 ): DeliveryState {
-  const existingById = new Map(
-    existing?.tickets.map((ticket) => [ticket.id, ticket]),
-  );
-  const inferredById = new Map(
-    inferred?.tickets.map((ticket) => [ticket.id, ticket]),
-  );
-
-  return {
-    planKey: options.planKey,
-    planPath: options.planPath,
-    statePath: options.statePath,
-    reviewsDirPath: options.reviewsDirPath,
-    handoffsDirPath: options.handoffsDirPath,
-    reviewPollIntervalMinutes: options.reviewPollIntervalMinutes,
-    reviewPollMaxWaitMinutes: options.reviewPollMaxWaitMinutes,
-    tickets: ticketDefinitions.map((definition, index) => {
-      const previous = existingById.get(definition.id);
-      const inferredTicket = inferredById.get(definition.id);
-      const previousTicket = ticketDefinitions[index - 1];
-      const resolvedBranch = selectBranchValue(
-        previous?.branch,
-        inferredTicket?.branch,
-        deriveBranchName(definition),
-      );
-      const inferredBaseBranch =
-        index === 0
-          ? _config.defaultBranch
-          : selectBranchValue(
-              existingById.get(previousTicket?.id ?? '')?.branch,
-              inferredById.get(previousTicket?.id ?? '')?.branch,
-              deriveBranchName(previousTicket!),
-            );
-
-      return {
-        id: definition.id,
-        title: definition.title,
-        slug: definition.slug,
-        ticketFile: definition.ticketFile,
-        status: selectStatusValue(previous?.status, inferredTicket?.status),
-        branch: resolvedBranch,
-        baseBranch:
-          index === 0
-            ? _config.defaultBranch
-            : selectBranchValue(
-                previous?.baseBranch,
-                inferredTicket?.baseBranch,
-                inferredBaseBranch,
-              ),
-        worktreePath:
-          previous?.worktreePath ??
-          inferredTicket?.worktreePath ??
-          deriveWorktreePath(cwd, definition.id),
-        handoffPath: previous?.handoffPath ?? inferredTicket?.handoffPath,
-        handoffGeneratedAt:
-          previous?.handoffGeneratedAt ?? inferredTicket?.handoffGeneratedAt,
-        internalReviewCompletedAt:
-          previous?.internalReviewCompletedAt ??
-          inferredTicket?.internalReviewCompletedAt,
-        prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
-        prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
-        prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
-        reviewArtifactPath:
-          previous?.reviewArtifactPath ?? inferredTicket?.reviewArtifactPath,
-        reviewArtifactJsonPath:
-          previous?.reviewArtifactJsonPath ??
-          inferredTicket?.reviewArtifactJsonPath,
-        reviewActionSummary:
-          previous?.reviewActionSummary ?? inferredTicket?.reviewActionSummary,
-        reviewFetchedAt:
-          previous?.reviewFetchedAt ?? inferredTicket?.reviewFetchedAt,
-        reviewHeadSha: previous?.reviewHeadSha ?? inferredTicket?.reviewHeadSha,
-        reviewNonActionSummary:
-          previous?.reviewNonActionSummary ??
-          inferredTicket?.reviewNonActionSummary,
-        reviewIncompleteAgents:
-          previous?.reviewIncompleteAgents ??
-          inferredTicket?.reviewIncompleteAgents,
-        reviewComments:
-          previous?.reviewComments ?? inferredTicket?.reviewComments,
-        reviewOutcome: previous?.reviewOutcome ?? inferredTicket?.reviewOutcome,
-        reviewNote: previous?.reviewNote ?? inferredTicket?.reviewNote,
-        reviewThreadResolutions:
-          previous?.reviewThreadResolutions ??
-          inferredTicket?.reviewThreadResolutions,
-        reviewVendors: previous?.reviewVendors ?? inferredTicket?.reviewVendors,
-      };
-    }),
-  };
-}
-
-function selectStatusValue(
-  currentStatus: TicketStatus | undefined,
-  inferredStatus: TicketStatus | undefined,
-): TicketStatus {
-  if (!currentStatus) {
-    return inferredStatus ?? 'pending';
-  }
-
-  if (!inferredStatus) {
-    return currentStatus;
-  }
-
-  return statusRank(inferredStatus) > statusRank(currentStatus)
-    ? inferredStatus
-    : currentStatus;
-}
-
-function statusRank(status: TicketStatus): number {
-  switch (status) {
-    case 'pending':
-      return 0;
-    case 'in_progress':
-      return 1;
-    case 'internally_reviewed':
-      return 2;
-    case 'in_review':
-      return 3;
-    case 'needs_patch':
-      return 4;
-    case 'operator_input_needed':
-      return 5;
-    case 'reviewed':
-      return 6;
-    case 'done':
-      return 7;
-  }
-}
-
-function selectBranchValue(
-  currentBranch: string | undefined,
-  inferredBranch: string | undefined,
-  fallbackBranch: string,
-): string {
-  if (inferredBranch) {
-    return inferredBranch;
-  }
-
-  return currentBranch ?? fallbackBranch;
+  return syncStateWithPlanImpl(existing, ticketDefinitions, options, inferred, {
+    cwd,
+    defaultBranch: _config.defaultBranch,
+    deriveBranchName,
+    deriveWorktreePath,
+  });
 }
 
 export function findNextPendingTicket(
@@ -1081,24 +821,7 @@ export function resolveNotifier(): DeliveryNotifier {
 export function createOptions(input: {
   planPath?: string;
 }): OrchestratorOptions {
-  if (!input.planPath) {
-    throw new Error(
-      'Pass --plan <plan-path>. Phase aliases are no longer supported.',
-    );
-  }
-
-  const planPath = normalizeRepoPath(input.planPath);
-  const planKey = derivePlanKey(planPath);
-
-  return {
-    planPath,
-    planKey,
-    statePath: `.agents/delivery/${planKey}/state.json`,
-    reviewsDirPath: `.agents/delivery/${planKey}/reviews`,
-    handoffsDirPath: `.agents/delivery/${planKey}/handoffs`,
-    reviewPollIntervalMinutes: DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
-    reviewPollMaxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
-  };
+  return createOptionsImpl(input);
 }
 
 function parseCliArgs(argv: string[]): {
@@ -1218,264 +941,61 @@ export async function loadState(
   cwd: string,
   options: OrchestratorOptions,
 ): Promise<DeliveryState> {
-  const { absoluteStatePath, inferred, ticketDefinitions } =
-    await loadPlanContext(cwd, options);
-
-  if (!existsSync(absoluteStatePath)) {
-    return syncStateWithPlan(
-      undefined,
-      ticketDefinitions,
-      cwd,
-      options,
-      inferred,
-    );
-  }
-
-  const existing = JSON.parse(
-    await readFile(absoluteStatePath, 'utf8'),
-  ) as DeliveryState;
-
-  return syncStateWithPlan(existing, ticketDefinitions, cwd, options, inferred);
-}
-
-export async function inferPlanPathFromBranch(
-  cwd: string,
-  branch: string,
-): Promise<string> {
-  const planPaths = await listImplementationPlans(cwd);
-  const planIndex: Array<{ planPath: string; tickets: TicketDefinition[] }> =
-    [];
-
-  for (const planPath of planPaths) {
-    const markdown = await readFile(resolve(cwd, planPath), 'utf8');
-    planIndex.push({
-      planPath,
-      tickets: parsePlan(markdown, planPath),
-    });
-  }
-
-  return resolvePlanPathForBranch(planIndex, branch);
-}
-
-export function resolvePlanPathForBranch(
-  planIndex: Array<{ planPath: string; tickets: TicketDefinition[] }>,
-  branch: string,
-): string {
-  const matches: string[] = [];
-
-  for (const plan of planIndex) {
-    if (
-      plan.tickets.some(
-        (ticket) => findExistingBranch([branch], ticket)?.branch === branch,
-      )
-    ) {
-      matches.push(plan.planPath);
-    }
-  }
-
-  if (matches.length === 1) {
-    return matches[0]!;
-  }
-
-  if (matches.length === 0) {
-    throw new Error(
-      `Could not infer a delivery plan for ${branch}. Pass --plan <plan-path>.`,
-    );
-  }
-
-  throw new Error(
-    `Multiple delivery plans match ${branch}: ${matches.join(', ')}. Pass --plan <plan-path>.`,
-  );
-}
-
-async function listImplementationPlans(cwd: string): Promise<string[]> {
-  const deliveryRoot = resolve(cwd, _config.planRoot, '02-delivery');
-  const entries = await readdir(deliveryRoot, { withFileTypes: true });
-
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) =>
-      relativeToRepo(
-        cwd,
-        resolve(deliveryRoot, entry.name, 'implementation-plan.md'),
-      ),
-    )
-    .filter((planPath) => existsSync(resolve(cwd, planPath)))
-    .sort();
-}
-
-async function loadPlanContext(
-  cwd: string,
-  options: OrchestratorOptions,
-): Promise<{
-  absoluteStatePath: string;
-  inferred: DeliveryState;
-  ticketDefinitions: TicketDefinition[];
-}> {
-  const planMarkdown = await readFile(resolve(cwd, options.planPath), 'utf8');
-  const ticketDefinitions = parsePlan(planMarkdown, options.planPath);
-  const absoluteStatePath = resolve(cwd, options.statePath);
-  const inferred = inferStateFromRepo(cwd, ticketDefinitions, options);
-
-  return {
-    absoluteStatePath,
-    inferred,
-    ticketDefinitions,
-  };
+  return loadStateImpl(cwd, options, {
+    cwd,
+    defaultBranch: _config.defaultBranch,
+    runtime: _config.runtime,
+    deriveBranchName,
+    deriveWorktreePath,
+    findExistingBranch,
+  });
 }
 
 async function repairState(
   cwd: string,
   options: OrchestratorOptions,
 ): Promise<RepairStateResult> {
-  const { absoluteStatePath, inferred, ticketDefinitions } =
-    await loadPlanContext(cwd, options);
-  const repairedState = syncStateWithPlan(
-    undefined,
-    ticketDefinitions,
+  return repairStateImpl(cwd, options, {
     cwd,
-    options,
-    inferred,
+    defaultBranch: _config.defaultBranch,
+    runtime: _config.runtime,
+    deriveBranchName,
+    deriveWorktreePath,
+    findExistingBranch,
+  });
+}
+
+export async function inferPlanPathFromBranch(
+  cwd: string,
+  branch: string,
+): Promise<string> {
+  return inferPlanPathFromBranchImpl(
+    cwd,
+    branch,
+    _config.planRoot,
+    findExistingBranch,
   );
-  const hadExistingState = existsSync(absoluteStatePath);
+}
 
-  if (!hadExistingState) {
-    await saveState(cwd, repairedState);
-
-    return {
-      state: repairedState,
-      changes: [
-        'No prior state file existed; wrote clean state from repo reality.',
-      ],
-      hadExistingState: false,
-    };
-  }
-
-  const existing = JSON.parse(
-    await readFile(absoluteStatePath, 'utf8'),
-  ) as DeliveryState;
-  const changes = summarizeStateDifferences(existing, repairedState);
-  let backupPath: string | undefined;
-
-  if (changes.length > 0) {
-    backupPath = await backupStateFile(absoluteStatePath);
-  }
-
-  await saveState(cwd, repairedState);
-
-  return {
-    state: repairedState,
-    backupPath: backupPath ? relativeToRepo(cwd, backupPath) : undefined,
-    changes:
-      changes.length > 0
-        ? changes
-        : [
-            'Saved state already matched repo reality; rewrote normalized state.',
-          ],
-    hadExistingState: true,
-  };
+export function resolvePlanPathForBranch(
+  planIndex: Array<{ planPath: string; tickets: TicketDefinition[] }>,
+  branch: string,
+): string {
+  return resolvePlanPathForBranchImpl(planIndex, branch, findExistingBranch);
 }
 
 export async function saveState(
   cwd: string,
   state: DeliveryState,
 ): Promise<void> {
-  const absoluteStatePath = resolve(cwd, state.statePath);
-  await mkdir(dirname(absoluteStatePath), { recursive: true });
-  await writeFile(
-    absoluteStatePath,
-    JSON.stringify(state, null, 2) + '\n',
-    'utf8',
-  );
+  await saveStateImpl(cwd, state);
 }
 
-function inferStateFromRepo(
-  cwd: string,
-  ticketDefinitions: TicketDefinition[],
-  options: OrchestratorOptions,
-): DeliveryState {
-  const remoteBranches = listPlatformRemoteBranches(cwd, _config.runtime);
-  const localBranches = listPlatformLocalBranches(cwd, _config.runtime);
-  const openPullRequests = listOpenPullRequests(cwd);
-  const mergedPullRequests = listMergedPullRequests(cwd);
-  const branchCatalog = [
-    ...new Set([
-      ...localBranches,
-      ...remoteBranches,
-      ...openPullRequests.keys(),
-      ...mergedPullRequests.keys(),
-    ]),
-  ];
-
-  const tickets = ticketDefinitions.map((definition, index) => {
-    const branch =
-      findExistingBranch(branchCatalog, definition)?.branch ??
-      deriveBranchName(definition);
-    const baseBranch =
-      index === 0
-        ? _config.defaultBranch
-        : (findExistingBranch(branchCatalog, ticketDefinitions[index - 1]!)
-            ?.branch ?? deriveBranchName(ticketDefinitions[index - 1]!));
-    const branchExists = branchCatalog.includes(branch);
-    const openPr =
-      openPullRequests.get(branch) ??
-      findPullRequestForTicket(openPullRequests, definition);
-    const mergedPr =
-      mergedPullRequests.get(branch) ??
-      findPullRequestForTicket(mergedPullRequests, definition);
-    const pr = openPr ?? mergedPr;
-    const nextBranch = ticketDefinitions[index + 1]
-      ? (findExistingBranch(branchCatalog, ticketDefinitions[index + 1]!)
-          ?.branch ?? deriveBranchName(ticketDefinitions[index + 1]!))
-      : undefined;
-    const nextBranchExists =
-      nextBranch !== undefined && branchCatalog.includes(nextBranch);
-
-    let status: TicketStatus = 'pending';
-
-    if (mergedPr || (branchExists && nextBranchExists)) {
-      status = 'done';
-    } else if (openPr) {
-      status = 'in_review';
-    } else if (branchExists) {
-      status = 'in_progress';
-    }
-
-    return {
-      ...definition,
-      status,
-      branch,
-      baseBranch,
-      worktreePath: deriveWorktreePath(cwd, definition.id),
-      handoffPath: undefined,
-      handoffGeneratedAt: undefined,
-      prNumber: pr?.number,
-      prUrl: pr?.url,
-      prOpenedAt: undefined,
-      reviewArtifactPath: undefined,
-      reviewArtifactJsonPath: undefined,
-      reviewActionSummary: undefined,
-      reviewFetchedAt: undefined,
-      reviewHeadSha: undefined,
-      reviewNonActionSummary: undefined,
-      reviewComments: undefined,
-      reviewOutcome: undefined,
-      reviewNote: undefined,
-      reviewThreadResolutions: undefined,
-      reviewVendors: undefined,
-    };
-  });
-
-  return {
-    planKey: options.planKey,
-    planPath: options.planPath,
-    statePath: options.statePath,
-    reviewsDirPath: options.reviewsDirPath,
-    handoffsDirPath: options.handoffsDirPath,
-    reviewPollIntervalMinutes: options.reviewPollIntervalMinutes,
-    reviewPollMaxWaitMinutes: options.reviewPollMaxWaitMinutes,
-    tickets,
-  };
+export function summarizeStateDifferences(
+  existing: DeliveryState,
+  repaired: DeliveryState,
+): string[] {
+  return summarizeStateDifferencesImpl(existing, repaired);
 }
 
 export function findExistingBranch(
@@ -1511,108 +1031,11 @@ export function findExistingBranch(
   return undefined;
 }
 
-export function summarizeStateDifferences(
-  existing: DeliveryState,
-  repaired: DeliveryState,
-): string[] {
-  const changes: string[] = [];
-
-  if (existing.planKey !== repaired.planKey) {
-    changes.push(`planKey: ${existing.planKey} -> ${repaired.planKey}`);
-  }
-
-  if (existing.planPath !== repaired.planPath) {
-    changes.push(`planPath: ${existing.planPath} -> ${repaired.planPath}`);
-  }
-
-  for (const repairedTicket of repaired.tickets) {
-    const existingTicket = existing.tickets.find(
-      (candidate) => candidate.id === repairedTicket.id,
-    );
-
-    if (!existingTicket) {
-      changes.push(`${repairedTicket.id}: missing from existing state`);
-      continue;
-    }
-
-    if (existingTicket.status !== repairedTicket.status) {
-      changes.push(
-        `${repairedTicket.id}: status ${existingTicket.status} -> ${repairedTicket.status}`,
-      );
-    }
-
-    if (existingTicket.branch !== repairedTicket.branch) {
-      changes.push(
-        `${repairedTicket.id}: branch ${existingTicket.branch} -> ${repairedTicket.branch}`,
-      );
-    }
-
-    if (existingTicket.baseBranch !== repairedTicket.baseBranch) {
-      changes.push(
-        `${repairedTicket.id}: base ${existingTicket.baseBranch} -> ${repairedTicket.baseBranch}`,
-      );
-    }
-
-    if (existingTicket.worktreePath !== repairedTicket.worktreePath) {
-      changes.push(
-        `${repairedTicket.id}: worktree ${existingTicket.worktreePath} -> ${repairedTicket.worktreePath}`,
-      );
-    }
-
-    if (existingTicket.prUrl !== repairedTicket.prUrl) {
-      changes.push(
-        `${repairedTicket.id}: pr ${existingTicket.prUrl ?? 'none'} -> ${repairedTicket.prUrl ?? 'none'}`,
-      );
-    }
-  }
-
-  for (const existingTicket of existing.tickets) {
-    if (
-      !repaired.tickets.find((candidate) => candidate.id === existingTicket.id)
-    ) {
-      changes.push(
-        `${existingTicket.id}: present in existing state but absent after repair`,
-      );
-    }
-  }
-
-  return changes;
-}
-
-function listOpenPullRequests(cwd: string): Map<string, PullRequestSummary> {
-  return listPlatformOpenPullRequests(cwd, _config.runtime);
-}
-
-function listMergedPullRequests(cwd: string): Map<string, PullRequestSummary> {
-  return listPlatformMergedPullRequests(cwd, _config.runtime);
-}
-
 function resolveStandalonePullRequest(
   cwd: string,
   prNumber?: number,
 ): StandalonePullRequest {
   return resolvePlatformStandalonePullRequest(cwd, _config.runtime, prNumber);
-}
-
-function findPullRequestForTicket(
-  pullRequests: Map<string, PullRequestSummary>,
-  definition: Pick<TicketDefinition, 'id'>,
-): PullRequestSummary | undefined {
-  const ticketIdToken = definition.id.toLowerCase().replace('.', '-');
-
-  for (const [headRefName, summary] of pullRequests.entries()) {
-    const normalized = headRefName.toLowerCase();
-
-    if (
-      normalized.includes(`/${ticketIdToken}`) ||
-      normalized.includes(`-${ticketIdToken}`) ||
-      normalized.endsWith(ticketIdToken)
-    ) {
-      return summary;
-    }
-  }
-
-  return undefined;
 }
 
 async function startTicket(
@@ -4560,23 +3983,6 @@ async function sendTelegramMessage(
   }
 }
 
-async function backupStateFile(absoluteStatePath: string): Promise<string> {
-  const backupPath = absoluteStatePath.replace(
-    /\.json$/,
-    `.stale-${new Date()
-      .toISOString()
-      .replace(/[-:]/g, '')
-      .replace(/\.\d{3}Z$/, 'Z')}.json`,
-  );
-
-  await writeFile(
-    backupPath,
-    await readFile(absoluteStatePath, 'utf8'),
-    'utf8',
-  );
-  return backupPath;
-}
-
 function parsePullRequestNumber(prUrl: string): number {
   const match = prUrl.match(/\/pull\/(\d+)$/);
 
@@ -4602,29 +4008,8 @@ export function runProcessResult(
   return runPlatformProcessResult(cwd, cmd, _config.runtime);
 }
 
-function normalizeRepoPath(value: string): string {
-  return value.replace(/^\.?\//, '');
-}
-
 export function derivePlanKey(planPath: string): string {
-  const normalizedPlanPath = normalizeRepoPath(planPath);
-
-  if (basename(normalizedPlanPath).toLowerCase() === 'implementation-plan.md') {
-    return slugify(basename(dirname(normalizedPlanPath)));
-  }
-
-  return normalizedPlanPath
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-md$/, '');
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  return derivePlanKeyImpl(planPath);
 }
 
 function relativeToRepo(cwd: string, absolutePath: string): string {

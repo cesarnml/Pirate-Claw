@@ -1,0 +1,131 @@
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+export type OrchestratorConfig = {
+  defaultBranch?: string;
+  planRoot?: string;
+  runtime?: 'bun' | 'node';
+  packageManager?: 'bun' | 'npm' | 'pnpm' | 'yarn';
+};
+
+export type ResolvedOrchestratorConfig = {
+  defaultBranch: string;
+  planRoot: string;
+  runtime: 'bun' | 'node';
+  packageManager: 'bun' | 'npm' | 'pnpm' | 'yarn';
+};
+
+const VALID_RUNTIMES = ['bun', 'node'] as const;
+const VALID_PACKAGE_MANAGERS = ['bun', 'npm', 'pnpm', 'yarn'] as const;
+
+export async function loadOrchestratorConfig(
+  cwd: string,
+): Promise<OrchestratorConfig> {
+  const configPath = resolve(cwd, 'orchestrator.config.json');
+
+  if (!existsSync(configPath)) {
+    return {};
+  }
+
+  const raw = requireConfigObject(
+    JSON.parse(await readFile(configPath, 'utf8')),
+    'orchestrator.config.json',
+  );
+
+  if (
+    raw.runtime !== undefined &&
+    !VALID_RUNTIMES.includes(raw.runtime as (typeof VALID_RUNTIMES)[number])
+  ) {
+    throw new Error(
+      `Invalid runtime "${String(raw.runtime)}" in orchestrator.config.json. Expected: ${VALID_RUNTIMES.join(', ')}`,
+    );
+  }
+
+  if (
+    raw.packageManager !== undefined &&
+    !VALID_PACKAGE_MANAGERS.includes(
+      raw.packageManager as (typeof VALID_PACKAGE_MANAGERS)[number],
+    )
+  ) {
+    throw new Error(
+      `Invalid packageManager "${String(raw.packageManager)}" in orchestrator.config.json. Expected: ${VALID_PACKAGE_MANAGERS.join(', ')}`,
+    );
+  }
+
+  const defaultBranch = optionalNonBlankString(
+    raw.defaultBranch,
+    'defaultBranch',
+    'orchestrator.config.json',
+  );
+  const planRoot = optionalNonBlankString(
+    raw.planRoot,
+    'planRoot',
+    'orchestrator.config.json',
+  );
+
+  return {
+    defaultBranch,
+    planRoot,
+    runtime: raw.runtime as OrchestratorConfig['runtime'],
+    packageManager: raw.packageManager as OrchestratorConfig['packageManager'],
+  };
+}
+
+export function inferPackageManager(
+  cwd: string,
+): ResolvedOrchestratorConfig['packageManager'] {
+  if (existsSync(resolve(cwd, 'bun.lock'))) return 'bun';
+  if (existsSync(resolve(cwd, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (existsSync(resolve(cwd, 'yarn.lock'))) return 'yarn';
+  if (existsSync(resolve(cwd, 'package-lock.json'))) return 'npm';
+  return 'npm';
+}
+
+export function resolveOrchestratorConfig(
+  raw: OrchestratorConfig,
+  cwd: string,
+): ResolvedOrchestratorConfig {
+  return {
+    defaultBranch: raw.defaultBranch?.trim() || 'main',
+    planRoot: raw.planRoot?.trim() || 'docs',
+    runtime: raw.runtime ?? 'bun',
+    packageManager: raw.packageManager ?? inferPackageManager(cwd),
+  };
+}
+
+function requireConfigObject(
+  raw: unknown,
+  sourceLabel: string,
+): Record<string, unknown> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`${sourceLabel} must contain a JSON object.`);
+  }
+
+  return raw as Record<string, unknown>;
+}
+
+function optionalNonBlankString(
+  value: unknown,
+  fieldName: string,
+  sourceLabel: string,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(
+      `Invalid ${fieldName} in ${sourceLabel}. Expected a string.`,
+    );
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new Error(
+      `Invalid ${fieldName} in ${sourceLabel}. Expected a non-blank string.`,
+    );
+  }
+
+  return normalized;
+}
