@@ -68,15 +68,29 @@ export function createApiFetch(
     }
 
     if (url.pathname === '/api/status') {
-      return Response.json({
-        runs: repository.listRecentRunSummaries(),
-      });
+      try {
+        return Response.json({
+          runs: repository.listRecentRunSummaries(),
+        });
+      } catch {
+        return Response.json(
+          { error: 'internal server error' },
+          { status: 500 },
+        );
+      }
     }
 
     if (url.pathname === '/api/candidates') {
-      return Response.json({
-        candidates: repository.listCandidateStates(),
-      });
+      try {
+        return Response.json({
+          candidates: repository.listCandidateStates(),
+        });
+      } catch {
+        return Response.json(
+          { error: 'internal server error' },
+          { status: 500 },
+        );
+      }
     }
 
     return Response.json({ error: 'not found' }, { status: 404 });

@@ -161,6 +161,36 @@ describe('GET /api/candidates', () => {
   });
 });
 
+describe('GET /api/status — error handling', () => {
+  it('returns 500 JSON error when repository throws', async () => {
+    const deps = createDeps({
+      listRecentRunSummaries: () => {
+        throw new Error('db error');
+      },
+    });
+    const handler = createApiFetch(deps);
+    const response = handler(new Request('http://localhost/api/status'));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'internal server error' });
+  });
+});
+
+describe('GET /api/candidates — error handling', () => {
+  it('returns 500 JSON error when repository throws', async () => {
+    const deps = createDeps({
+      listCandidateStates: () => {
+        throw new Error('db error');
+      },
+    });
+    const handler = createApiFetch(deps);
+    const response = handler(new Request('http://localhost/api/candidates'));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'internal server error' });
+  });
+});
+
 describe('recordCycleInHealth', () => {
   it('records run cycle snapshot', () => {
     const health = createHealthState();
