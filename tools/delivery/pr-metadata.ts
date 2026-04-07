@@ -158,7 +158,14 @@ function isBannedPrBodyHeadingTitle(title: string): boolean {
   );
 }
 
-function stripExternalAiReviewSections(body: string): string {
+function stripMarkdownSections(
+  body: string,
+  shouldStripHeading: (heading: {
+    level: number;
+    lineCount: number;
+    title: string;
+  }) => boolean,
+): string {
   const lines = body.split('\n');
   const kept: string[] = [];
   let index = 0;
@@ -189,10 +196,7 @@ function stripExternalAiReviewSections(body: string): string {
     }
 
     const heading = parseMarkdownHeadingAt(lines, index);
-    if (
-      !heading ||
-      heading.title.trim().toLowerCase() !== 'external ai review'
-    ) {
+    if (!heading || !shouldStripHeading(heading)) {
       kept.push(lines[index]!);
       index += 1;
       continue;
@@ -236,80 +240,17 @@ function stripExternalAiReviewSections(body: string): string {
     .trimEnd();
 }
 
+function stripExternalAiReviewSections(body: string): string {
+  return stripMarkdownSections(
+    body,
+    (heading) => heading.title.trim().toLowerCase() === 'external ai review',
+  );
+}
+
 function stripBannedPrBodySections(body: string): string {
-  const lines = body.split('\n');
-  const kept: string[] = [];
-  let index = 0;
-  let activeFence: { char: '`' | '~'; length: number } | undefined;
-
-  while (index < lines.length) {
-    const line = lines[index]!;
-    const fenceMarker = parseFenceMarker(line);
-
-    if (fenceMarker) {
-      if (!activeFence) {
-        activeFence = { char: fenceMarker.char, length: fenceMarker.length };
-      } else if (
-        fenceMarker.char === activeFence.char &&
-        fenceMarker.length >= activeFence.length &&
-        fenceMarker.trailing.trim().length === 0
-      ) {
-        activeFence = undefined;
-      }
-      kept.push(line);
-      index += 1;
-      continue;
-    }
-
-    if (activeFence) {
-      kept.push(line);
-      index += 1;
-      continue;
-    }
-
-    const heading = parseMarkdownHeadingAt(lines, index);
-    if (!heading || !isBannedPrBodyHeadingTitle(heading.title)) {
-      kept.push(lines[index]!);
-      index += 1;
-      continue;
-    }
-
-    index += heading.lineCount;
-    while (index < lines.length) {
-      const nextLine = lines[index]!;
-      const nextFenceMarker = parseFenceMarker(nextLine);
-      if (nextFenceMarker) {
-        if (!activeFence) {
-          activeFence = {
-            char: nextFenceMarker.char,
-            length: nextFenceMarker.length,
-          };
-        } else if (
-          nextFenceMarker.char === activeFence.char &&
-          nextFenceMarker.length >= activeFence.length &&
-          nextFenceMarker.trailing.trim().length === 0
-        ) {
-          activeFence = undefined;
-        }
-        index += 1;
-        continue;
-      }
-      if (activeFence) {
-        index += 1;
-        continue;
-      }
-      const nextHeading = parseMarkdownHeadingAt(lines, index);
-      if (nextHeading && nextHeading.level <= heading.level) {
-        break;
-      }
-      index += 1;
-    }
-  }
-
-  return kept
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trimEnd();
+  return stripMarkdownSections(body, (heading) =>
+    isBannedPrBodyHeadingTitle(heading.title),
+  );
 }
 
 function normalizeReviewerFacingPullRequestBody(
@@ -489,6 +430,107 @@ function buildReviewCommentBullets(
   return comments.map((comment) => buildReviewCommentBullet(comment, detail));
 }
 
+type ReviewCommentGroups = {
+  currentActionableComments: AiReviewComment[];
+  currentSummaryNoiseComments: AiReviewComment[];
+  resolvedFindingComments: AiReviewComment[];
+  unresolvedFindingComments: AiReviewComment[];
+};
+
+function classifyReviewComments(input: {
+  comments?: AiReviewComment[];
+  currentHeadSha?: string;
+  reviewedHeadSha?: string;
+  reviewStatus: ReviewResult | TicketStatus;
+}): ReviewCommentGroups {
+  const appliesToCurrentHead =
+    !!input.reviewedHeadSha &&
+    !!input.currentHeadSha &&
+    input.reviewedHeadSha === input.currentHeadSha;
+  const effectiveContext =
+    input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead
+      ? 'history'
+      : 'current';
+  const currentComments =
+    effectiveContext === 'current' ? (input.comments ?? []) : [];
+  const currentActionableComments = currentComments.filter(
+    (comment) =>
+      !comment.isOutdated && !comment.isResolved && comment.kind !== 'summary',
+  );
+  const currentSummaryNoiseComments = currentComments.filter(
+    (comment) =>
+      !comment.isOutdated && !comment.isResolved && comment.kind === 'summary',
+  );
+  const staleOrResolvedComments =
+    effectiveContext === 'history'
+      ? (input.comments ?? [])
+      : (input.comments ?? []).filter(
+          (comment) => comment.isOutdated || comment.isResolved,
+        );
+
+  return {
+    currentActionableComments,
+    currentSummaryNoiseComments,
+    resolvedFindingComments: [
+      ...(input.reviewStatus === 'patched' ? currentActionableComments : []),
+      ...staleOrResolvedComments,
+    ],
+    unresolvedFindingComments:
+      input.reviewStatus === 'needs_patch' ||
+      input.reviewStatus === 'operator_input_needed'
+        ? currentActionableComments
+        : [],
+  };
+}
+
+function buildResolvedFindingBullets(input: {
+  comments: AiReviewComment[];
+  reviewStatus: ReviewResult | TicketStatus;
+  threadResolutions?: AiReviewThreadResolution[];
+  currentHeadSha?: string;
+  reviewedHeadSha?: string;
+}): string[] {
+  const appliesToCurrentHead =
+    !!input.reviewedHeadSha &&
+    !!input.currentHeadSha &&
+    input.reviewedHeadSha === input.currentHeadSha;
+  const effectiveContext =
+    input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead
+      ? 'history'
+      : 'current';
+  const resolutionByThreadId = new Map(
+    (input.threadResolutions ?? []).map((resolution) => [
+      resolution.threadId,
+      resolution,
+    ]),
+  );
+
+  return input.comments.map((comment) => {
+    const resolution = comment.threadId
+      ? resolutionByThreadId.get(comment.threadId)
+      : undefined;
+    const detail =
+      comment.isResolved || comment.isOutdated || effectiveContext === 'history'
+        ? undefined
+        : resolution
+          ? formatResolutionSuffix(resolution).replace(/^;\s*/, '')
+          : input.reviewStatus === 'patched'
+            ? 'patched'
+            : undefined;
+    return buildReviewCommentBullet(comment, detail);
+  });
+}
+
+function buildActionCommitBullets(
+  actionCommits: ReviewActionCommit[] | undefined,
+): string[] {
+  return (actionCommits ?? []).map((commit) => {
+    const vendorTag =
+      commit.vendors.length > 0 ? ` [${commit.vendors.join(',')}]` : '';
+    return `- \`${shortenSha(commit.sha)}\`${vendorTag} ${commit.subject}`;
+  });
+}
+
 export function assertReviewerFacingMarkdown(body: string): void {
   const lines = body.split('\n');
   let activeFence: { char: '`' | '~'; length: number } | undefined;
@@ -607,41 +649,17 @@ function buildAiReviewDetailLines(input: {
     );
   }
 
-  const effectiveContext =
-    input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead
-      ? 'history'
-      : 'current';
-  const currentComments =
-    effectiveContext === 'current' ? (input.comments ?? []) : [];
-  const currentActionableComments = currentComments.filter(
-    (comment) =>
-      !comment.isOutdated && !comment.isResolved && comment.kind !== 'summary',
-  );
-  const currentSummaryNoiseComments = currentComments.filter(
-    (comment) =>
-      !comment.isOutdated && !comment.isResolved && comment.kind === 'summary',
-  );
-  const staleOrResolvedComments =
-    effectiveContext === 'history'
-      ? (input.comments ?? [])
-      : (input.comments ?? []).filter(
-          (comment) => comment.isOutdated || comment.isResolved,
-        );
-
-  const resolutionByThreadId = new Map(
-    (input.threadResolutions ?? []).map((resolution) => [
-      resolution.threadId,
-      resolution,
-    ]),
-  );
-  const resolvedFindingComments = [
-    ...(reviewStatus === 'patched' ? currentActionableComments : []),
-    ...staleOrResolvedComments,
-  ];
-  const unresolvedFindingComments =
-    reviewStatus === 'needs_patch' || reviewStatus === 'operator_input_needed'
-      ? currentActionableComments
-      : [];
+  const {
+    currentActionableComments,
+    currentSummaryNoiseComments,
+    resolvedFindingComments,
+    unresolvedFindingComments,
+  } = classifyReviewComments({
+    comments: input.comments,
+    currentHeadSha: input.currentHeadSha,
+    reviewedHeadSha: input.reviewedHeadSha,
+    reviewStatus,
+  });
 
   if (
     reviewStatus === 'clean' &&
@@ -652,26 +670,14 @@ function buildAiReviewDetailLines(input: {
     lines.push('- no prudent follow-up changes were required.');
   }
 
-  const resolvedFindingBullets = resolvedFindingComments.map((comment) => {
-    const resolution = comment.threadId
-      ? resolutionByThreadId.get(comment.threadId)
-      : undefined;
-    const detail =
-      comment.isResolved || comment.isOutdated || effectiveContext === 'history'
-        ? undefined
-        : resolution
-          ? formatResolutionSuffix(resolution).replace(/^;\s*/, '')
-          : reviewStatus === 'patched'
-            ? 'patched'
-            : undefined;
-    return buildReviewCommentBullet(comment, detail);
+  const resolvedFindingBullets = buildResolvedFindingBullets({
+    comments: resolvedFindingComments,
+    currentHeadSha: input.currentHeadSha,
+    reviewStatus,
+    reviewedHeadSha: input.reviewedHeadSha,
+    threadResolutions: input.threadResolutions,
   });
-
-  const actionCommitBullets = (input.actionCommits ?? []).map((commit) => {
-    const vendorTag =
-      commit.vendors.length > 0 ? ` [${commit.vendors.join(',')}]` : '';
-    return `- \`${shortenSha(commit.sha)}\`${vendorTag} ${commit.subject}`;
-  });
+  const actionCommitBullets = buildActionCommitBullets(input.actionCommits);
 
   if (actionCommitBullets.length > 0) {
     lines.push('', '### Actions Taken', '', ...actionCommitBullets);
@@ -819,8 +825,6 @@ export function buildStandaloneAiReviewSection(
   result: Pick<
     StandaloneAiReviewResult,
     | 'actionSummary'
-    | 'artifactJsonPath'
-    | 'artifactTextPath'
     | 'comments'
     | 'incompleteAgents'
     | 'note'

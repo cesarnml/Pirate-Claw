@@ -542,8 +542,6 @@ describe('delivery orchestrator', () => {
       vendors: ['coderabbit', 'qodo'],
       actionSummary: 'Flagged 2 finding comments for follow-up.',
       nonActionSummary: 'Ignored 1 summary comment.',
-      artifactJsonPath: '.agents/ai-review/pr-32/review.json',
-      artifactTextPath: '.agents/ai-review/pr-32/review.txt',
     });
 
     expect(
@@ -834,8 +832,6 @@ describe('delivery orchestrator', () => {
     const body = buildStandaloneAiReviewSection({
       outcome: 'patched',
       note: 'Patched the prudent AI review follow-up.',
-      artifactJsonPath: '.agents/ai-review/pr-32/review.json',
-      artifactTextPath: '.agents/ai-review/pr-32/review.txt',
       vendors: ['coderabbit'],
     });
 
