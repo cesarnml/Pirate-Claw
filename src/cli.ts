@@ -187,7 +187,13 @@ export async function runCli(argv: string[]): Promise<number> {
             pruneArtifacts(artifactDir, artifactRetentionDays);
           },
           fetch: config.runtime.apiPort
-            ? createApiFetch({ repository, health })
+            ? createApiFetch({
+                repository,
+                health,
+                config,
+                pollStatePath,
+                loadPollState,
+              })
             : undefined,
         });
       } finally {
