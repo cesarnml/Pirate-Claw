@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases 01-07 of the current product roadmap are implemented on `main`. The currently documented engineering epics through Epic 03 are also implemented on `main`. Further product-surface or delivery-tooling expansion now requires a new planning pass and new approved phase/epic docs.
+Phases 01-08 of the current product roadmap are implemented on `main`. The currently documented engineering epics through Epic 03 are also implemented on `main`. Further product-surface or delivery-tooling expansion now requires a new planning pass and new approved phase/epic docs.
 
 It currently supports:
 

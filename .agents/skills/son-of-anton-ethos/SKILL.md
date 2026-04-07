@@ -28,6 +28,15 @@ Do not stop merely because:
 
 Those are normal orchestrator milestones, not permission checkpoints.
 
+## Pre-Flight Sequencing
+
+Before creating any ticket branches or worktrees for a phase:
+
+1. Commit the delivery plan and all ticket docs to the default branch first.
+2. Only then create ticket branches from the default branch tip.
+
+This avoids the rebase-dance where ticket worktrees are missing the plan docs they depend on.
+
 ## Required Behavior
 
 1. Re-read the required repo docs and handoff artifacts at each ticket boundary.
@@ -39,13 +48,29 @@ Those are normal orchestrator milestones, not permission checkpoints.
    - update the ticket rationale when behavior or implementation choices changed
    - record internal review
    - open or refresh the PR
-   - run the orchestrator's AI-review polling flow
+   - run the orchestrator's AI-review polling flow (see [AI Review Polling](#ai-review-polling) below)
    - patch prudent review findings when required
    - refresh PR state
    - advance to the next ticket
 5. During external waits, read ahead into the next ticket and nearby seams if helpful.
 6. Do not write ahead across ticket boundaries.
 7. Keep going after `advance` without asking for permission again unless a real blocker exists.
+
+## AI Review Polling
+
+During the `poll-review` window, be sabai-sabai. The developer uses this time to review earlier stacked PRs. Token usage is minimal while sleeping between polls.
+
+When results land, actually read them:
+
+- **Inline review comments** are the signal. CodeRabbit and Greptile post their actionable findings as inline code-level review threads (`pulls/{number}/comments` API), not as PR-level issue comments.
+- **Summary PR comments** (issue_comment channel) from CodeRabbit and Greptile are orchestration noise — they announce that a review started or post a walkthrough. Do not treat them as the review itself.
+- **Qodo** posts a single actionable PR comment that summarizes all findings. It is the easiest vendor output for an agent to parse, but its free tier is limited. Treat Qodo comments as actionable when present.
+- **SonarQube** posts a Quality Gate summary as a PR comment and may annotate via GitHub Checks. The PR comment is the primary signal.
+- After the polling window, cross-reference the fetcher's structured output against the raw inline comments API (`pulls/{number}/comments`). Do not treat the fetcher's `findingsCount` or `detected` flag as the sole source of truth — the fetcher's detection can lag behind actual comment delivery.
+
+### Docs-Only PRs
+
+Skip the external AI review polling window for docs-only PRs (no code changes). Static analysis and security scanning have nothing to find in markdown edits. Consistency and correctness findings on docs (like phase-status text drift) should be caught during implementation, not outsourced to a review bot. Record `clean` immediately and advance.
 
 ## Stop Conditions
 

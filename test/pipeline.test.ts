@@ -274,6 +274,55 @@ describe('runPipeline', () => {
     expect(submissions).toHaveLength(1);
     expect(submissions[0]!.downloadDir).toBe('/downloads/tv');
   });
+
+  it('passes per-media-type downloadDir for movie feed items', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const submissions: SubmitDownloadInput[] = [];
+
+    await runPipeline({
+      config: createConfig({
+        feeds: [
+          {
+            name: 'Movie Feed',
+            url: 'https://example.test/movies.rss',
+            mediaType: 'movie',
+          },
+        ],
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+          downloadDir: '/downloads/default',
+          downloadDirs: { tv: '/downloads/tv', movie: '/downloads/movies' },
+        },
+      }),
+      repository,
+      downloader: {
+        submit: async (input) => {
+          submissions.push(input);
+          return {
+            ok: true as const,
+            status: 'queued' as const,
+            torrentId: 8,
+            torrentName: 'Great Movie 2024',
+            torrentHash: 'movie123hash',
+          };
+        },
+      },
+      fetchFeed: async () => [
+        {
+          feedName: 'Movie Feed',
+          guidOrLink: 'https://example.test/releases/great-movie',
+          rawTitle: 'Great.Movie.2024.1080p.WEB.x265-GROUP',
+          publishedAt: '2026-03-30T00:00:00.000Z',
+          downloadUrl: 'https://example.test/downloads/great-movie.torrent',
+        },
+      ],
+    });
+
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]!.downloadDir).toBe('/downloads/movies');
+  });
 });
 
 describe('retryFailedCandidates', () => {

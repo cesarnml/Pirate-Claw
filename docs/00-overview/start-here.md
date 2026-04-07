@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through Phase 07.
+Pirate Claw is implemented through Phase 08.
 
 Current delivered surface:
 
