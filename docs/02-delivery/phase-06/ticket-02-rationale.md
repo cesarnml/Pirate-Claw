@@ -35,6 +35,10 @@ Bring back all of the following from the NAS validation run:
   - `ls -ld /volume1/pirate-claw /volume1/pirate-claw/config /volume1/pirate-claw/runtime /volume1/pirate-claw/logs /volume1/transmission /volume1/transmission/config /volume1/transmission/watch /volume1/media /volume1/media/downloads /volume1/media/downloads/incomplete`
   - `ls -l /volume1/pirate-claw/runtime/.p6-02-write-check /volume1/transmission/config/.p6-02-write-check /volume1/media/downloads/.p6-02-write-check`
 
-## Pending Validation Note
+## Validation Result
 
-This rationale file is intentionally a draft handoff for human validation. Do not mark `P6.02` fully validated until the screenshots and command output above have been reviewed against the runbook.
+`P6.02` is validated on the target `DS918+ / DSM 7.1.1-42962 Update 9` baseline. The reviewed DSM evidence confirmed the three shared folders on `Volume 1` and the expected setup account permissions. The reviewed NAS shell proof confirmed the documented directory tree under `/volume1`, successful `ls -ld` checks for the target paths, and successful create/remove write checks for:
+
+- `/volume1/pirate-claw/runtime/.p6-02-write-check`
+- `/volume1/transmission/config/.p6-02-write-check`
+- `/volume1/media/downloads/.p6-02-write-check`

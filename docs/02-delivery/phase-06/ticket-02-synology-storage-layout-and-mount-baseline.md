@@ -32,4 +32,4 @@ Storage layout and mount behavior are a separate failure domain from container c
 - `Why this path:` separating path preparation from container creation keeps the validation evidence clear when a later failure turns out to be a mount or permission problem rather than an application problem.
 - `Alternative considered:` folding storage and container creation together was rejected because it would blur one of the highest-risk setup boundaries for a Synology runbook.
 - `Deferred:` container runtime validation stays in later tickets once the durable storage baseline is proven.
-- `Draft note:` the current `P6.02` slice prepares the exact DS918+ storage-layout runbook section and evidence checklist for hands-on validation; the validated proof will be appended after the target NAS run.
+- `Validation result:` the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS now has validated proof that `pirate-claw`, `transmission`, and `media` exist on `volume1`, the required subdirectories exist exactly as documented, and the `.p6-02-write-check` files can be created and removed in the three expected writable paths.

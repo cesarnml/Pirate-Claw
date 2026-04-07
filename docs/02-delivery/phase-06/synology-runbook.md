@@ -74,7 +74,7 @@ Purpose:
 Create and verify the durable Synology folder layout and bind-mount targets required by both containers.
 
 Validation status:
-This section is drafted for `P6.02` and must be validated on the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS before later container tickets rely on it.
+This section is validated for `P6.02` on the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS. DSM evidence and NAS shell proof confirmed the required `volume1` shared folders, subdirectory tree, and write checks before later container tickets rely on it.
 
 Target shared folders on `volume1`:
 

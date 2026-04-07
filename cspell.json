@@ -35,7 +35,9 @@
     "upserted",
     "upserts",
     "worktrees",
-    "worktree"
+    "worktree",
+    "writeability",
+    "hostnames"
   ],
   "ignoreWords": [],
   "import": []
