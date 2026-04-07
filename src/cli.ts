@@ -188,7 +188,13 @@ export async function runCli(argv: string[]): Promise<number> {
           },
           fetch:
             config.runtime.apiPort != null
-              ? createApiFetch({ repository, health })
+              ? createApiFetch({
+                  repository,
+                  health,
+                  config,
+                  pollStatePath,
+                  loadPollState,
+                })
               : undefined,
         });
       } finally {

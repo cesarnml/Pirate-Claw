@@ -1,5 +1,7 @@
+import type { AppConfig, FeedConfig, RuntimeConfig } from './config';
+import type { PollState } from './poll-state';
+import type { CandidateStateRecord, Repository } from './repository';
 import type { CycleResult } from './runtime-artifacts';
-import type { Repository } from './repository';
 
 export type CycleSnapshot = {
   status: CycleResult['status'];
@@ -43,6 +45,9 @@ export function recordCycleInHealth(
 export type ApiFetchDeps = {
   repository: Repository;
   health: HealthState;
+  config: AppConfig;
+  pollStatePath: string;
+  loadPollState: (path: string) => PollState;
 };
 
 export function createApiFetch(
@@ -52,7 +57,7 @@ export function createApiFetch(
     return () => Response.json({ error: 'not found' }, { status: 404 });
   }
 
-  const { repository, health } = deps;
+  const { repository, health, config, pollStatePath, loadPollState } = deps;
 
   return (request: Request) => {
     const url = new URL(request.url);
@@ -93,6 +98,197 @@ export function createApiFetch(
       }
     }
 
+    if (url.pathname === '/api/shows') {
+      try {
+        const candidates = repository.listCandidateStates();
+        return Response.json({ shows: buildShowBreakdowns(candidates) });
+      } catch {
+        return Response.json(
+          { error: 'internal server error' },
+          { status: 500 },
+        );
+      }
+    }
+
+    if (url.pathname === '/api/movies') {
+      try {
+        const candidates = repository.listCandidateStates();
+        return Response.json({ movies: buildMovieBreakdowns(candidates) });
+      } catch {
+        return Response.json(
+          { error: 'internal server error' },
+          { status: 500 },
+        );
+      }
+    }
+
+    if (url.pathname === '/api/feeds') {
+      try {
+        const pollState = loadPollState(pollStatePath);
+        return Response.json({
+          feeds: buildFeedStatuses(config.feeds, pollState, config.runtime),
+        });
+      } catch {
+        return Response.json(
+          { error: 'internal server error' },
+          { status: 500 },
+        );
+      }
+    }
+
+    if (url.pathname === '/api/config') {
+      return Response.json(redactConfig(config));
+    }
+
     return Response.json({ error: 'not found' }, { status: 404 });
+  };
+}
+
+// --- Show breakdowns ---
+
+export type ShowEpisode = {
+  episode: number;
+  identityKey: string;
+  status: string;
+  lifecycleStatus?: string;
+  queuedAt?: string;
+};
+
+export type ShowSeason = {
+  season: number;
+  episodes: ShowEpisode[];
+};
+
+export type ShowBreakdown = {
+  normalizedTitle: string;
+  seasons: ShowSeason[];
+};
+
+export function buildShowBreakdowns(
+  candidates: CandidateStateRecord[],
+): ShowBreakdown[] {
+  const tvCandidates = candidates.filter((c) => c.mediaType === 'tv');
+
+  const showMap = new Map<string, Map<number, ShowEpisode[]>>();
+
+  for (const c of tvCandidates) {
+    const title = c.normalizedTitle;
+    if (!showMap.has(title)) {
+      showMap.set(title, new Map());
+    }
+    const seasonMap = showMap.get(title)!;
+    const season = c.season ?? 0;
+    if (!seasonMap.has(season)) {
+      seasonMap.set(season, []);
+    }
+    seasonMap.get(season)!.push({
+      episode: c.episode ?? 0,
+      identityKey: c.identityKey,
+      status: c.status,
+      lifecycleStatus: c.lifecycleStatus,
+      queuedAt: c.queuedAt,
+    });
+  }
+
+  const shows: ShowBreakdown[] = [];
+  for (const [title, seasonMap] of showMap) {
+    const seasons: ShowSeason[] = [];
+    for (const [season, episodes] of seasonMap) {
+      episodes.sort((a, b) => a.episode - b.episode);
+      seasons.push({ season, episodes });
+    }
+    seasons.sort((a, b) => a.season - b.season);
+    shows.push({ normalizedTitle: title, seasons });
+  }
+
+  return shows.sort((a, b) =>
+    a.normalizedTitle.localeCompare(b.normalizedTitle),
+  );
+}
+
+// --- Movie breakdowns ---
+
+export type MovieBreakdown = {
+  normalizedTitle: string;
+  year?: number;
+  resolution?: string;
+  codec?: string;
+  identityKey: string;
+  status: string;
+  lifecycleStatus?: string;
+  queuedAt?: string;
+};
+
+export function buildMovieBreakdowns(
+  candidates: CandidateStateRecord[],
+): MovieBreakdown[] {
+  return candidates
+    .filter((c) => c.mediaType === 'movie')
+    .map((c) => ({
+      normalizedTitle: c.normalizedTitle,
+      year: c.year,
+      resolution: c.resolution,
+      codec: c.codec,
+      identityKey: c.identityKey,
+      status: c.status,
+      lifecycleStatus: c.lifecycleStatus,
+      queuedAt: c.queuedAt,
+    }))
+    .sort((a, b) => a.normalizedTitle.localeCompare(b.normalizedTitle));
+}
+
+// --- Feed statuses ---
+
+export type FeedStatus = {
+  name: string;
+  url: string;
+  mediaType: string;
+  pollIntervalMinutes: number;
+  lastPolledAt: string | null;
+  isDue: boolean;
+};
+
+export function buildFeedStatuses(
+  feeds: FeedConfig[],
+  pollState: PollState,
+  runtime: RuntimeConfig,
+): FeedStatus[] {
+  const now = Date.now();
+
+  return feeds.map((feed) => {
+    const record = pollState.feeds[feed.name];
+    const intervalMinutes =
+      feed.pollIntervalMinutes ?? runtime.runIntervalMinutes;
+    const lastPolledAt = record?.lastPolledAt ?? null;
+
+    let isDue = true;
+    if (lastPolledAt) {
+      const lastPolled = Date.parse(lastPolledAt);
+      if (!Number.isNaN(lastPolled)) {
+        isDue = now - lastPolled >= intervalMinutes * 60 * 1000;
+      }
+    }
+
+    return {
+      name: feed.name,
+      url: feed.url,
+      mediaType: feed.mediaType,
+      pollIntervalMinutes: intervalMinutes,
+      lastPolledAt,
+      isDue,
+    };
+  });
+}
+
+// --- Config redaction ---
+
+export function redactConfig(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    transmission: {
+      ...config.transmission,
+      username: '[redacted]',
+      password: '[redacted]',
+    },
   };
 }
