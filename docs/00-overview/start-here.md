@@ -50,7 +50,7 @@ Last verified against `README.md` and CLI commands: 2026-04-07.
 Current planning focus:
 
 - use the roadmap to identify the active phase or bounded ticket work; phase/epic requests should flow through the delivery orchestrator until blocked or explicitly narrowed
-- the delivery orchestrator's post-PR external AI-review lifecycle convergence work is implemented; further delivery-tooling changes should treat that boundary as the new baseline
+- the delivery orchestrator's Epic 03 concern-first modularization is implemented; further delivery-tooling changes should extend the extracted module boundaries rather than rebuilding the monolith in `tools/delivery/orchestrator.ts`
 
 ## Read These Docs By Task Type
 

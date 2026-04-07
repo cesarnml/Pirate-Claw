@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
+import { getUsage, parseCliArgs, resolveOptionsForCommand } from './cli';
 import {
   loadOrchestratorConfig as loadOrchestratorConfigImpl,
   resolveOrchestratorConfig as resolveOrchestratorConfigImpl,
@@ -48,6 +49,21 @@ import {
   syncStateWithPlan as syncStateWithPlanImpl,
 } from './state';
 import {
+  buildRunBlockedEvent,
+  buildStandaloneReviewRecordedEvent,
+  emitNotificationWarnings,
+  eventsForAdvanceCommand,
+  eventsForOpenPrCommand,
+  eventsForPollReviewCommand,
+  eventsForRecordReviewCommand,
+  eventsForStartCommand,
+  formatNotificationMessage,
+  formatReviewWindowMessage,
+  notifyBestEffort,
+  resolveNotifier,
+  type DeliveryNotifier,
+} from './notifications';
+import {
   assertReviewerFacingMarkdown,
   buildExternalAiReviewSection,
   buildPullRequestBody,
@@ -71,6 +87,17 @@ import {
   type StandaloneAiReviewDependencies,
   type TicketReviewDependencies,
 } from './review';
+import {
+  advanceToNextTicket,
+  buildTicketHandoff,
+  canAdvanceTicket,
+  findNextPendingTicket,
+  findTicketByBranch,
+  openPullRequest as openPullRequestImpl,
+  recordInternalReview as recordInternalReviewImpl,
+  restackTicket as restackTicketImpl,
+  startTicket as startTicketImpl,
+} from './ticket-flow';
 
 export { parseGitWorktreeList } from './platform';
 export {
@@ -86,6 +113,21 @@ export {
   parseAiReviewTriagerOutput,
   parseResolveReviewThreadOutput,
   resolveReviewPollWindowStart,
+};
+export {
+  buildTicketHandoff,
+  canAdvanceTicket,
+  eventsForAdvanceCommand,
+  eventsForOpenPrCommand,
+  eventsForPollReviewCommand,
+  eventsForRecordReviewCommand,
+  eventsForStartCommand,
+  findNextPendingTicket,
+  findTicketByBranch,
+  formatNotificationMessage,
+  formatReviewWindowMessage,
+  notifyBestEffort,
+  resolveNotifier,
 };
 
 export type TicketStatus =
@@ -280,28 +322,6 @@ export type DeliveryNotificationEvent =
       reason: string;
     };
 
-type DeliveryNotifier =
-  | {
-      kind: 'noop';
-      enabled: false;
-    }
-  | {
-      kind: 'telegram';
-      enabled: true;
-      botToken: string;
-      chatId: string;
-    };
-
-type NotificationPayload = {
-  entities?: Array<{
-    length: number;
-    offset: number;
-    type: 'text_link';
-    url: string;
-  }>;
-  text: string;
-};
-
 export type AiReviewAgentState = 'started' | 'completed' | 'findings_detected';
 
 export type AiReviewAgentResult = {
@@ -412,7 +432,10 @@ export async function runDeliveryOrchestrator(
 
     await ensureEnvReady(cwd);
     const notifier = resolveNotifier();
-    parsed = parseCliArgs(argv);
+    const usage = getUsage(
+      generateRunDeliverInvocation(_config.packageManager),
+    );
+    parsed = parseCliArgs(argv, usage);
     if (parsed.command === 'ai-review') {
       const result = await runStandaloneAiReview(
         cwd,
@@ -425,11 +448,14 @@ export async function runDeliveryOrchestrator(
       ]);
       return 0;
     }
-    const options = await resolveOptionsForCommand(
+    const options = await resolveOptionsForCommand({
+      command: parsed.command,
+      createOptions,
       cwd,
-      parsed.command,
-      parsed.planPath,
-    );
+      inferPlanPathFromBranch,
+      planPath: parsed.planPath,
+      readCurrentBranch,
+    });
     parsed = {
       ...parsed,
       planPath: options.planPath,
@@ -542,7 +568,7 @@ export async function runDeliveryOrchestrator(
       }
       case 'advance': {
         const startNext = !parsed.flags.has('no-start-next');
-        const nextState = await advanceToNextTicket(state, cwd, startNext);
+        const nextState = await advanceToNextTicketImpl(state, cwd, startNext);
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
         await emitNotificationWarnings(
@@ -563,7 +589,7 @@ export async function runDeliveryOrchestrator(
         return 0;
       }
       default: {
-        console.error(getUsage());
+        console.error(usage);
         return 1;
       }
     }
@@ -682,26 +708,6 @@ export function syncStateWithPlan(
   });
 }
 
-export function findNextPendingTicket(
-  state: DeliveryState,
-): TicketState | undefined {
-  return state.tickets.find((ticket) => ticket.status === 'pending');
-}
-
-export function findTicketByBranch(
-  state: DeliveryState,
-  branch: string,
-): TicketState | undefined {
-  return state.tickets.find((ticket) => ticket.branch === branch);
-}
-
-export function canAdvanceTicket(ticket: TicketState): boolean {
-  return (
-    ticket.status === 'reviewed' &&
-    (ticket.reviewOutcome === 'clean' || ticket.reviewOutcome === 'patched')
-  );
-}
-
 export function deriveBranchName(
   definition: Pick<TicketDefinition, 'id' | 'slug'>,
 ): string {
@@ -733,142 +739,10 @@ export function resolveReviewTriager(): string {
   return '.agents/skills/ai-code-review/scripts/triage_ai_review.sh';
 }
 
-export function resolveNotifier(): DeliveryNotifier {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  const chatId = process.env.TELEGRAM_CHAT_ID?.trim();
-
-  if (!botToken || !chatId) {
-    return {
-      kind: 'noop',
-      enabled: false,
-    };
-  }
-
-  return {
-    kind: 'telegram',
-    enabled: true,
-    botToken,
-    chatId,
-  };
-}
-
 export function createOptions(input: {
   planPath?: string;
 }): OrchestratorOptions {
   return createOptionsImpl(input);
-}
-
-function parseCliArgs(argv: string[]): {
-  command: string;
-  positionals: string[];
-  flags: Set<string>;
-  planPath?: string;
-  prNumber?: number;
-} {
-  let planPath: string | undefined;
-  let prNumber: number | undefined;
-  const flags = new Set<string>();
-  const positionals: string[] = [];
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const value = argv[index];
-
-    if (value === '--plan') {
-      planPath = argv[index + 1];
-      index += 1;
-      continue;
-    }
-
-    if (value === '--pr') {
-      const rawNumber = argv[index + 1];
-
-      if (!rawNumber || Number.isNaN(Number(rawNumber))) {
-        throw new Error('Pass --pr <number>.');
-      }
-
-      prNumber = Number(rawNumber);
-      index += 1;
-      continue;
-    }
-
-    if (value === '--phase') {
-      throw new Error(
-        '--phase has been removed. Pass --plan <plan-path> instead.',
-      );
-    }
-
-    if (value?.startsWith('--')) {
-      flags.add(value.slice(2));
-      continue;
-    }
-
-    positionals.push(value ?? '');
-  }
-
-  const [command, ...rest] = positionals;
-
-  if (!command) {
-    throw new Error(getUsage());
-  }
-
-  return {
-    command,
-    positionals: rest,
-    flags,
-    planPath,
-    prNumber,
-  };
-}
-
-async function resolveOptionsForCommand(
-  cwd: string,
-  command: string,
-  planPath?: string,
-): Promise<OrchestratorOptions> {
-  if (planPath) {
-    return createOptions({ planPath });
-  }
-
-  if (command !== 'restack') {
-    throw new Error(
-      'Pass --plan <plan-path>. Phase aliases are no longer supported.',
-    );
-  }
-
-  const branch = readCurrentBranch(cwd);
-  const inferredPlanPath = await inferPlanPathFromBranch(cwd, branch);
-  return createOptions({ planPath: inferredPlanPath });
-}
-
-function getUsage(): string {
-  return [
-    `Usage: ${generateRunDeliverInvocation(_config.packageManager)} --plan <plan-path> <command>`,
-    '',
-    'Commands:',
-    '  ai-review [--pr <number>]',
-    '  sync',
-    '  status',
-    '  repair-state',
-    '  start [ticket-id]',
-    '  internal-review [ticket-id]',
-    '  open-pr [ticket-id]',
-    '  poll-review [ticket-id]',
-    '  record-review <ticket-id> <clean|patched|operator_input_needed> [note]',
-    '  advance [--no-start-next]',
-    '  restack [ticket-id]',
-  ].join('\n');
-}
-
-function findTicketById(
-  state: DeliveryState,
-  ticketId?: string,
-): TicketState | undefined {
-  return ticketId
-    ? state.tickets.find((ticket) => ticket.id === ticketId)
-    : (state.tickets.find((ticket) => ticket.status === 'in_review') ??
-        state.tickets.find(
-          (ticket) => ticket.status === 'operator_input_needed',
-        ));
 }
 
 export async function loadState(
@@ -977,60 +851,12 @@ async function startTicket(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const active = state.tickets.find(
-    (ticket) => ticket.status === 'in_progress',
-  );
-
-  if (active && active.id !== ticketId) {
-    throw new Error(`Ticket ${active.id} is already in progress.`);
-  }
-
-  const target =
-    (ticketId
-      ? state.tickets.find((ticket) => ticket.id === ticketId)
-      : (active ?? findNextPendingTicket(state))) ?? undefined;
-
-  if (!target) {
-    throw new Error('No pending ticket found.');
-  }
-
-  const targetIndex = state.tickets.findIndex(
-    (ticket) => ticket.id === target.id,
-  );
-  const previous = targetIndex > 0 ? state.tickets[targetIndex - 1] : undefined;
-
-  if (previous && previous.status !== 'done') {
-    throw new Error(
-      `Cannot start ${target.id} before ${previous.id} is marked done.`,
-    );
-  }
-
-  if (target.status === 'in_progress') {
-    return state;
-  }
-
-  if (!existsSync(target.worktreePath)) {
-    addWorktree(cwd, target.worktreePath, target.branch, target.baseBranch);
-  }
-
-  await copyLocalEnvIfPresent(cwd, target.worktreePath);
-  await bootstrapWorktreeIfNeeded(target.worktreePath);
-
-  const handoff = await writeTicketHandoff(state, cwd, target.id);
-
-  return {
-    ...state,
-    tickets: state.tickets.map((ticket) =>
-      ticket.id === target.id
-        ? {
-            ...ticket,
-            status: 'in_progress',
-            handoffPath: handoff.relativePath,
-            handoffGeneratedAt: handoff.generatedAt,
-          }
-        : ticket,
-    ),
-  };
+  return startTicketImpl(state, cwd, ticketId, {
+    addWorktree,
+    bootstrapWorktreeIfNeeded,
+    copyLocalEnvIfPresent,
+    relativeToRepo,
+  });
 }
 
 export async function copyLocalEnvIfPresent(
@@ -1044,42 +870,7 @@ export async function recordInternalReview(
   state: DeliveryState,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const target =
-    (ticketId
-      ? state.tickets.find((ticket) => ticket.id === ticketId)
-      : state.tickets.find((ticket) => ticket.status === 'in_progress')) ??
-    undefined;
-
-  if (!target) {
-    throw new Error(
-      'No in-progress ticket found to mark as internally reviewed.',
-    );
-  }
-
-  if (target.status === 'internally_reviewed') {
-    return state;
-  }
-
-  if (target.status !== 'in_progress') {
-    throw new Error(
-      `Ticket ${target.id} must be in progress before internal review can be recorded.`,
-    );
-  }
-
-  const completedAt = new Date().toISOString();
-
-  return {
-    ...state,
-    tickets: state.tickets.map((ticket) =>
-      ticket.id === target.id
-        ? {
-            ...ticket,
-            status: 'internally_reviewed',
-            internalReviewCompletedAt: completedAt,
-          }
-        : ticket,
-    ),
-  };
+  return recordInternalReviewImpl(state, ticketId);
 }
 
 export async function openPullRequest(
@@ -1087,82 +878,17 @@ export async function openPullRequest(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const target =
-    (ticketId
-      ? state.tickets.find((ticket) => ticket.id === ticketId)
-      : (state.tickets.find(
-          (ticket) => ticket.status === 'internally_reviewed',
-        ) ?? state.tickets.find((ticket) => ticket.status === 'in_review'))) ??
-    undefined;
-
-  if (!target) {
-    throw new Error('No internally reviewed ticket found to open as a PR.');
-  }
-
-  if (target.status === 'in_progress') {
-    throw new Error(
-      `Ticket ${target.id} must complete internal review before opening a PR.`,
-    );
-  }
-
-  if (
-    target.status !== 'internally_reviewed' &&
-    target.status !== 'in_review'
-  ) {
-    throw new Error(
-      `Ticket ${target.id} is not in a PR-openable state. Current status: ${target.status}.`,
-    );
-  }
-
-  ensureBranchPushed(target.worktreePath, target.branch);
-
-  const title = buildPullRequestTitle(
-    target,
-    readLatestCommitSubject(target.worktreePath),
-  );
-  const body = buildPullRequestBody(state, target);
-  assertReviewerFacingMarkdown(body);
-  const existingPullRequest = findOpenPullRequest(
-    target.worktreePath,
-    target.branch,
-  );
-  let prUrl: string;
-  let prNumber: number;
-
-  if (existingPullRequest) {
-    editPullRequest(target.worktreePath, existingPullRequest.number, {
-      body,
-      title,
-    });
-    prUrl = existingPullRequest.url;
-    prNumber = existingPullRequest.number;
-  } else {
-    prUrl = createPullRequest(target.worktreePath, {
-      base: target.baseBranch,
-      body,
-      head: target.branch,
-      title,
-    });
-    prNumber = parsePullRequestNumber(prUrl);
-  }
-
-  const now = new Date().toISOString();
-
-  return {
-    ...state,
-    tickets: state.tickets.map((ticket) =>
-      ticket.id === target.id
-        ? {
-            ...ticket,
-            status: 'in_review',
-            internalReviewCompletedAt: ticket.internalReviewCompletedAt,
-            prUrl,
-            prNumber,
-            prOpenedAt: now,
-          }
-        : ticket,
-    ),
-  };
+  return openPullRequestImpl(state, cwd, ticketId, {
+    assertReviewerFacingMarkdown,
+    buildPullRequestBody,
+    buildPullRequestTitle,
+    createPullRequest,
+    editPullRequest,
+    ensureBranchPushed,
+    findOpenPullRequest,
+    parsePullRequestNumber,
+    readLatestCommitSubject,
+  });
 }
 
 export async function pollReview(
@@ -1230,44 +956,15 @@ export async function recordReview(
   });
 }
 
-async function advanceToNextTicket(
+async function advanceToNextTicketImpl(
   state: DeliveryState,
   cwd: string,
   startNext: boolean,
 ): Promise<DeliveryState> {
-  const current = state.tickets.find((ticket) => ticket.status === 'reviewed');
-
-  if (!current) {
-    throw new Error('No reviewed ticket is ready to advance.');
-  }
-
-  if (!canAdvanceTicket(current)) {
-    throw new Error(
-      `Ticket ${current.id} cannot advance until review is recorded as clean or patched.`,
-    );
-  }
-
-  updatePullRequestBody(state, current);
-
-  let nextState: DeliveryState = {
-    ...state,
-    tickets: state.tickets.map((ticket) =>
-      ticket.id === current.id ? { ...ticket, status: 'done' } : ticket,
-    ),
-  };
-
-  if (!startNext) {
-    return nextState;
-  }
-
-  const nextTicket = findNextPendingTicket(nextState);
-
-  if (!nextTicket) {
-    return nextState;
-  }
-
-  nextState = await startTicket(nextState, cwd, nextTicket.id);
-  return nextState;
+  return advanceToNextTicket(state, cwd, startNext, {
+    startTicket,
+    updatePullRequestBody,
+  });
 }
 
 async function restackTicket(
@@ -1275,450 +972,25 @@ async function restackTicket(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  ensureCleanWorktree(cwd);
-  const currentBranch = readCurrentBranch(cwd);
-  const target =
-    (ticketId
-      ? state.tickets.find((ticket) => ticket.id === ticketId)
-      : findTicketByBranch(state, currentBranch)) ?? undefined;
-
-  if (!target) {
-    throw new Error(
-      ticketId
-        ? `Unknown ticket ${ticketId}.`
-        : `Current branch ${currentBranch} is not tracked by the delivery plan.`,
-    );
-  }
-
-  if (target.branch !== currentBranch) {
-    throw new Error(
-      `Restack must run from ${target.branch}. Current branch is ${currentBranch}.`,
-    );
-  }
-
-  fetchOrigin(cwd);
-
-  const targetIndex = state.tickets.findIndex(
-    (ticket) => ticket.id === target.id,
-  );
-  const previous = targetIndex > 0 ? state.tickets[targetIndex - 1] : undefined;
-
-  let nextBaseBranch = _config.defaultBranch;
-  let rebaseTarget = `origin/${_config.defaultBranch}`;
-
-  if (previous) {
-    const oldBase = readMergeBase(cwd, target.branch, previous.branch);
-
-    if (!oldBase) {
-      throw new Error(
-        `Could not determine the shared ancestor between ${target.branch} and ${previous.branch}.`,
-      );
-    }
-
-    if (!hasMergedPullRequestForBranch(cwd, previous.branch)) {
-      nextBaseBranch = previous.branch;
-      rebaseTarget = previous.branch;
-    }
-
-    rebaseOnto(cwd, rebaseTarget, oldBase);
-  } else {
-    rebaseOntoDefaultBranch(cwd, _config.defaultBranch);
-  }
-
-  const nextState: DeliveryState = {
-    ...state,
-    tickets: state.tickets.map((ticket) =>
-      ticket.id === target.id
-        ? {
-            ...ticket,
-            baseBranch: nextBaseBranch,
-          }
-        : ticket,
-    ),
-  };
-  const updatedTarget = nextState.tickets.find(
-    (ticket) => ticket.id === target.id,
-  );
-
-  if (!updatedTarget) {
-    throw new Error(`Unknown ticket ${target.id}.`);
-  }
-
-  const pullRequest = findOpenPullRequest(cwd, target.branch);
-
-  if (pullRequest) {
-    editPullRequest(cwd, pullRequest.number, {
-      base: nextBaseBranch,
-      body: buildPullRequestBody(nextState, updatedTarget),
-    });
-  }
-
-  return nextState;
+  return restackTicketImpl(state, cwd, ticketId, {
+    buildPullRequestBody,
+    defaultBranch: _config.defaultBranch,
+    editPullRequest,
+    ensureCleanWorktree,
+    fetchOrigin,
+    findOpenPullRequest,
+    hasMergedPullRequestForBranch,
+    readCurrentBranch,
+    readMergeBase,
+    rebaseOnto,
+    rebaseOntoDefaultBranch,
+  });
 }
 
 function preferDeliveryBranch(branches: string[]): string {
   return (
     branches.find((branch) => branch.startsWith('agents/')) ?? branches[0]!
   );
-}
-
-function computeExtendedReviewPollMaxWaitMinutes(
-  intervalMinutes: number,
-  maxWaitMinutes: number,
-): number {
-  return maxWaitMinutes + intervalMinutes;
-}
-
-function buildTicketStartedEvent(
-  state: DeliveryState,
-  ticket: Pick<TicketState, 'id' | 'title' | 'branch'>,
-): DeliveryNotificationEvent {
-  return {
-    kind: 'ticket_started',
-    planKey: state.planKey,
-    ticketId: ticket.id,
-    ticketTitle: ticket.title,
-    branch: ticket.branch,
-  };
-}
-
-function buildPrOpenedEvent(
-  state: DeliveryState,
-  ticket: Pick<TicketState, 'id' | 'title' | 'branch' | 'prUrl'>,
-): DeliveryNotificationEvent | undefined {
-  if (!ticket.prUrl) {
-    return undefined;
-  }
-
-  return {
-    kind: 'pr_opened',
-    planKey: state.planKey,
-    ticketId: ticket.id,
-    ticketTitle: ticket.title,
-    branch: ticket.branch,
-    prUrl: ticket.prUrl,
-  };
-}
-
-function buildReviewRecordedEvent(
-  state: DeliveryState,
-  ticket: Pick<
-    TicketState,
-    | 'id'
-    | 'title'
-    | 'branch'
-    | 'reviewOutcome'
-    | 'reviewNote'
-    | 'prUrl'
-    | 'status'
-  >,
-): DeliveryNotificationEvent | undefined {
-  const outcome =
-    ticket.reviewOutcome ??
-    (ticket.status === 'needs_patch'
-      ? 'needs_patch'
-      : ticket.status === 'operator_input_needed'
-        ? 'operator_input_needed'
-        : undefined);
-
-  if (!outcome) {
-    return undefined;
-  }
-
-  return {
-    kind: 'review_recorded',
-    planKey: state.planKey,
-    ticketId: ticket.id,
-    ticketTitle: ticket.title,
-    branch: ticket.branch,
-    outcome,
-    note: ticket.reviewNote,
-    prUrl: ticket.prUrl,
-  };
-}
-
-function buildTicketCompletedEvent(
-  state: DeliveryState,
-  ticket: Pick<TicketState, 'id' | 'title' | 'branch' | 'prUrl'>,
-): DeliveryNotificationEvent {
-  return {
-    kind: 'ticket_completed',
-    planKey: state.planKey,
-    ticketId: ticket.id,
-    ticketTitle: ticket.title,
-    branch: ticket.branch,
-    prUrl: ticket.prUrl,
-  };
-}
-
-function buildReviewWindowReadyEvent(
-  state: DeliveryState,
-  ticket: Pick<TicketState, 'id' | 'title' | 'branch' | 'prUrl' | 'prOpenedAt'>,
-): DeliveryNotificationEvent | undefined {
-  if (!ticket.prUrl || !ticket.prOpenedAt) {
-    return undefined;
-  }
-
-  const openedAt = Date.parse(ticket.prOpenedAt);
-
-  if (Number.isNaN(openedAt)) {
-    return undefined;
-  }
-
-  return {
-    kind: 'review_window_ready',
-    planKey: state.planKey,
-    ticketId: ticket.id,
-    ticketTitle: ticket.title,
-    branch: ticket.branch,
-    prUrl: ticket.prUrl,
-    reviewPollIntervalMinutes: state.reviewPollIntervalMinutes,
-    reviewPollMaxWaitMinutes: state.reviewPollMaxWaitMinutes,
-    firstCheckAt: new Date(
-      openedAt + state.reviewPollIntervalMinutes * 60_000,
-    ).toISOString(),
-    finalCheckAt: new Date(
-      openedAt + state.reviewPollMaxWaitMinutes * 60_000,
-    ).toISOString(),
-  };
-}
-
-function buildRunBlockedEvent(
-  planKey: string | undefined,
-  command: string | undefined,
-  reason: string,
-): DeliveryNotificationEvent {
-  return {
-    kind: 'run_blocked',
-    planKey,
-    command,
-    reason,
-  };
-}
-
-export function eventsForStartCommand(
-  state: DeliveryState,
-  ticketId?: string,
-): DeliveryNotificationEvent[] {
-  const ticket = ticketId
-    ? state.tickets.find((candidate) => candidate.id === ticketId)
-    : state.tickets.find((candidate) => candidate.status === 'in_progress');
-
-  return ticket ? [buildTicketStartedEvent(state, ticket)] : [];
-}
-
-export function eventsForOpenPrCommand(
-  state: DeliveryState,
-  ticketId?: string,
-): DeliveryNotificationEvent[] {
-  const ticket = findTicketById(state, ticketId);
-
-  if (!ticket) {
-    return [];
-  }
-
-  return [
-    buildPrOpenedEvent(state, ticket),
-    buildReviewWindowReadyEvent(state, ticket),
-  ].filter((event): event is DeliveryNotificationEvent => event !== undefined);
-}
-
-export function eventsForRecordReviewCommand(
-  state: DeliveryState,
-  ticketId: string,
-): DeliveryNotificationEvent[] {
-  const ticket = state.tickets.find((candidate) => candidate.id === ticketId);
-
-  return ticket
-    ? [buildReviewRecordedEvent(state, ticket)].filter(
-        (event): event is DeliveryNotificationEvent => event !== undefined,
-      )
-    : [];
-}
-
-export function eventsForPollReviewCommand(
-  state: DeliveryState,
-  ticketId?: string,
-): DeliveryNotificationEvent[] {
-  const ticket = ticketId
-    ? state.tickets.find((candidate) => candidate.id === ticketId)
-    : (state.tickets.find((candidate) => candidate.status === 'in_review') ??
-      state.tickets.find(
-        (candidate) =>
-          candidate.status === 'needs_patch' ||
-          candidate.status === 'operator_input_needed',
-      ) ??
-      state.tickets.find(
-        (candidate) =>
-          candidate.status === 'reviewed' &&
-          candidate.reviewOutcome !== undefined,
-      ));
-
-  if (
-    !ticket ||
-    (ticket.status !== 'reviewed' &&
-      ticket.status !== 'needs_patch' &&
-      ticket.status !== 'operator_input_needed') ||
-    (!ticket.reviewOutcome &&
-      ticket.status !== 'needs_patch' &&
-      ticket.status !== 'operator_input_needed')
-  ) {
-    return [];
-  }
-
-  return [buildReviewRecordedEvent(state, ticket)].filter(
-    (event): event is DeliveryNotificationEvent => event !== undefined,
-  );
-}
-
-function buildStandaloneReviewRecordedEvent(
-  result: StandaloneAiReviewResult,
-): DeliveryNotificationEvent {
-  return {
-    kind: 'standalone_review_recorded',
-    prNumber: result.prNumber,
-    prUrl: result.prUrl,
-    outcome: result.outcome,
-    note: result.note,
-  };
-}
-
-export function eventsForAdvanceCommand(
-  previousState: DeliveryState,
-  nextState: DeliveryState,
-): DeliveryNotificationEvent[] {
-  const events: DeliveryNotificationEvent[] = [];
-
-  for (const previousTicket of previousState.tickets) {
-    const nextTicket = nextState.tickets.find(
-      (candidate) => candidate.id === previousTicket.id,
-    );
-
-    if (previousTicket.status !== 'done' && nextTicket?.status === 'done') {
-      events.push(buildTicketCompletedEvent(nextState, nextTicket));
-    }
-
-    if (
-      previousTicket.status !== 'in_progress' &&
-      nextTicket?.status === 'in_progress'
-    ) {
-      events.push(buildTicketStartedEvent(nextState, nextTicket));
-    }
-  }
-
-  return events;
-}
-
-export function buildTicketHandoff(
-  state: DeliveryState,
-  ticket: Pick<
-    TicketState,
-    'id' | 'title' | 'ticketFile' | 'branch' | 'baseBranch' | 'worktreePath'
-  >,
-): string {
-  const ticketIndex = state.tickets.findIndex(
-    (candidate) => candidate.id === ticket.id,
-  );
-  const previous = ticketIndex > 0 ? state.tickets[ticketIndex - 1] : undefined;
-  const requiredReads = [
-    'docs/00-overview/start-here.md',
-    state.planPath,
-    ticket.ticketFile,
-    'docs/03-engineering/delivery-orchestrator.md',
-  ];
-  const lines = [
-    '# Ticket Handoff',
-    '',
-    `Phase plan: ${state.planPath}`,
-    `Ticket: ${ticket.id} ${ticket.title}`,
-    `Branch: ${ticket.branch}`,
-    `Base branch: ${ticket.baseBranch}`,
-    `Worktree: ${ticket.worktreePath}`,
-    '',
-    '## Required Reads',
-    '',
-    ...requiredReads.map((path) => `- \`${path}\``),
-    '',
-    '## Context Reset Contract',
-    '',
-    '- Re-read the required docs before implementing.',
-    '- Start from the current repository state and this handoff artifact, not from prior chat assumptions.',
-    '- Carry forward only explicit review notes, review artifacts, and committed branch state.',
-  ];
-
-  if (previous) {
-    lines.push('', '## Carry Forward From Previous Ticket', '');
-    lines.push(`- Previous ticket: \`${previous.id} ${previous.title}\``);
-    lines.push(`- Previous branch: \`${previous.branch}\``);
-
-    if (previous.prUrl) {
-      lines.push(`- Previous PR: ${previous.prUrl}`);
-    }
-
-    if (previous.reviewOutcome) {
-      lines.push(`- Review outcome: \`${previous.reviewOutcome}\``);
-    }
-
-    if (previous.reviewNote) {
-      lines.push(`- Review note: ${previous.reviewNote}`);
-    }
-
-    if (previous.reviewVendors && previous.reviewVendors.length > 0) {
-      lines.push(
-        `- Review vendors: ${previous.reviewVendors.map((vendor) => `\`${vendor}\``).join(', ')}`,
-      );
-    }
-
-    if (previous.reviewArtifactPath) {
-      lines.push(`- Review artifact: \`${previous.reviewArtifactPath}\``);
-    }
-
-    if (previous.reviewArtifactJsonPath) {
-      lines.push(
-        `- Review artifact (json): \`${previous.reviewArtifactJsonPath}\``,
-      );
-    }
-  }
-
-  lines.push('', '## Stop Conditions', '');
-  lines.push(
-    '- Stop if the current ticket cannot be completed safely or prerequisite state is missing.',
-  );
-  lines.push(
-    '- Stop if review triage is ambiguous enough to require user input.',
-  );
-  lines.push(
-    '- Stop if the work requires a broader redesign beyond the ticket scope.',
-  );
-
-  return lines.join('\n') + '\n';
-}
-
-async function writeTicketHandoff(
-  state: DeliveryState,
-  cwd: string,
-  ticketId: string,
-): Promise<{ relativePath: string; generatedAt: string }> {
-  const ticket = state.tickets.find((candidate) => candidate.id === ticketId);
-
-  if (!ticket) {
-    throw new Error(`Unknown ticket ${ticketId}.`);
-  }
-
-  const absolutePath = resolve(
-    cwd,
-    state.handoffsDirPath,
-    `${ticket.id.toLowerCase().replace('.', '-')}-handoff.md`,
-  );
-  const generatedAt = new Date().toISOString();
-
-  await mkdir(dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, buildTicketHandoff(state, ticket), 'utf8');
-
-  return {
-    relativePath: relativeToRepo(cwd, absolutePath),
-    generatedAt,
-  };
 }
 
 function updatePullRequestBody(
@@ -1846,67 +1118,6 @@ function listCommitSubjectsBetween(
   );
 }
 
-async function emitNotificationWarnings(
-  notifier: DeliveryNotifier,
-  cwd: string,
-  events: DeliveryNotificationEvent[],
-): Promise<void> {
-  for (const event of events) {
-    const warning = await notifyBestEffort(notifier, cwd, event);
-
-    if (warning) {
-      console.warn(warning);
-    }
-  }
-}
-
-export async function notifyBestEffort(
-  notifier: DeliveryNotifier,
-  cwd: string,
-  event: DeliveryNotificationEvent,
-): Promise<string | undefined> {
-  if (!notifier.enabled) {
-    return undefined;
-  }
-
-  try {
-    await sendTelegramMessage(notifier.botToken, notifier.chatId, {
-      ...buildNotificationPayload(cwd, event),
-    });
-    return undefined;
-  } catch (error) {
-    return `Notification warning: ${formatError(error)}`;
-  }
-}
-
-async function sendTelegramMessage(
-  botToken: string,
-  chatId: string,
-  payload: NotificationPayload,
-): Promise<void> {
-  const response = await fetch(
-    `https://api.telegram.org/bot${botToken}/sendMessage`,
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: payload.text,
-        entities: payload.entities,
-        disable_web_page_preview: true,
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Telegram sendMessage failed with ${response.status}: ${await response.text()}`,
-    );
-  }
-}
-
 function parsePullRequestNumber(prUrl: string): number {
   const match = prUrl.match(/\/pull\/(\d+)$/);
 
@@ -2002,161 +1213,6 @@ function formatRepairSummary(result: RepairStateResult): string {
   ]
     .filter((line): line is string => line !== undefined)
     .join('\n');
-}
-
-export function formatNotificationMessage(
-  cwd: string,
-  event: DeliveryNotificationEvent,
-): string {
-  const header = 'Son of Anton';
-  const standaloneHeader = `Son of Anton PR #${
-    event.kind === 'standalone_review_started' ||
-    event.kind === 'standalone_review_recorded'
-      ? event.prNumber
-      : ''
-  }`.trim();
-
-  switch (event.kind) {
-    case 'ticket_started':
-      return [
-        header,
-        `${event.ticketId} underway for ${event.planKey}.`,
-        event.ticketTitle,
-        `Branch: ${event.branch}`,
-      ].join('\n');
-    case 'pr_opened':
-      return [
-        header,
-        `${event.ticketId} is up for review in ${event.planKey}.`,
-        event.ticketTitle,
-        `Branch: ${event.branch}`,
-        `PR: ${event.prUrl}`,
-      ].join('\n');
-    case 'review_window_ready':
-      return [
-        header,
-        `Review window is open for ${event.ticketId}.`,
-        event.ticketTitle,
-        `Branch: ${event.branch}`,
-        `PR: ${event.prUrl}`,
-        `Cadence: every ${event.reviewPollIntervalMinutes} minutes up to ${event.reviewPollMaxWaitMinutes} minutes`,
-        `First check: ${event.firstCheckAt}`,
-        `Final check: ${event.finalCheckAt}`,
-      ].join('\n');
-    case 'review_recorded':
-      return [
-        header,
-        `${event.ticketId} review triaged.`,
-        event.ticketTitle,
-        `Branch: ${event.branch}`,
-        `Outcome: ${event.outcome}`,
-        event.note ? `Note: ${event.note}` : undefined,
-        event.prUrl ? `PR: ${event.prUrl}` : undefined,
-      ]
-        .filter((line): line is string => line !== undefined)
-        .join('\n');
-    case 'ticket_completed':
-      return [
-        header,
-        `${event.ticketId} cleared.`,
-        event.ticketTitle,
-        `Branch: ${event.branch}`,
-        event.prUrl ? `PR: ${event.prUrl}` : undefined,
-      ]
-        .filter((line): line is string => line !== undefined)
-        .join('\n');
-    case 'standalone_review_started':
-      return [standaloneHeader, 'AI review started.'].join('\n');
-    case 'standalone_review_recorded':
-      return [
-        standaloneHeader,
-        'AI review complete.',
-        `Outcome: ${event.outcome}`,
-        event.note ? `Note: ${event.note}` : undefined,
-      ]
-        .filter((line): line is string => line !== undefined)
-        .join('\n');
-    case 'run_blocked':
-      return [
-        header,
-        `Stopped${event.planKey ? ` in ${event.planKey}` : ''}.`,
-        event.command ? `Command: ${event.command}` : undefined,
-        `Reason: ${event.reason}`,
-      ]
-        .filter((line): line is string => line !== undefined)
-        .join('\n');
-  }
-}
-
-function buildNotificationPayload(
-  cwd: string,
-  event: DeliveryNotificationEvent,
-): NotificationPayload {
-  const text = formatNotificationMessage(cwd, event);
-
-  if (
-    event.kind !== 'standalone_review_started' &&
-    event.kind !== 'standalone_review_recorded'
-  ) {
-    return { text };
-  }
-
-  const linkLabel = `PR #${event.prNumber}`;
-  const offset = text.indexOf(linkLabel);
-
-  if (offset === -1) {
-    return { text };
-  }
-
-  return {
-    text,
-    entities: [
-      {
-        type: 'text_link',
-        offset,
-        length: linkLabel.length,
-        url: event.prUrl,
-      },
-    ],
-  };
-}
-
-export function formatReviewWindowMessage(
-  state: DeliveryState,
-  ticketId?: string,
-): string {
-  const ticket = findTicketById(state, ticketId);
-
-  if (!ticket?.prUrl || !ticket.prOpenedAt) {
-    return '';
-  }
-
-  const openedAt = Date.parse(ticket.prOpenedAt);
-
-  if (Number.isNaN(openedAt)) {
-    return '';
-  }
-
-  const checks = buildReviewPollCheckMinutes(
-    state.reviewPollIntervalMinutes,
-    state.reviewPollMaxWaitMinutes,
-  );
-  const firstCheckAt = new Date(
-    openedAt + state.reviewPollIntervalMinutes * 60_000,
-  ).toISOString();
-  const finalCheckAt = new Date(
-    openedAt + state.reviewPollMaxWaitMinutes * 60_000,
-  ).toISOString();
-
-  return [
-    'AI Review Window',
-    `- polling cadence: every ${state.reviewPollIntervalMinutes} minutes up to ${state.reviewPollMaxWaitMinutes} minutes`,
-    `- checks at: ${checks.join(', ')} minutes after PR open`,
-    `- first check at: ${firstCheckAt}`,
-    `- final check at: ${finalCheckAt}`,
-    `- if an AI review agent is still clearly in progress at ${state.reviewPollMaxWaitMinutes} minutes, the orchestrator performs one final check at ${computeExtendedReviewPollMaxWaitMinutes(state.reviewPollIntervalMinutes, state.reviewPollMaxWaitMinutes)} minutes`,
-    '- if no actionable `ai-code-review` findings are captured by the final applicable check, the orchestrator records `clean` and continues',
-  ].join('\n');
 }
 
 function formatStandaloneAiReviewResult(

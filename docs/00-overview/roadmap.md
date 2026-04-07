@@ -199,7 +199,8 @@ Planning note:
 - recently completed engineering epics:
   - `docs/03-engineering/epic-01-pr-body-reporting-unification.md`
   - `docs/03-engineering/epic-02-delivery-orchestrator-pr-flow-convergence.md`
-- any further modularity push should start from the now-converged post-PR review lifecycle rather than reopening that same boundary
+  - `docs/03-engineering/epic-03-delivery-orchestrator-modularity-and-concern-separation.md`
+- further delivery-tooling changes should extend the extracted modular boundaries rather than collapsing command, review, PR metadata, platform, and notification concerns back into `tools/delivery/orchestrator.ts`
 
 Working notes:
 
