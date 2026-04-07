@@ -8,6 +8,7 @@ import { type AppConfig, DEFAULT_RUNTIME_CONFIG } from '../src/config';
 import { FeedError } from '../src/feed';
 import { MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE } from '../src/movie-match';
 import { retryFailedCandidates, runPipeline } from '../src/pipeline';
+import type { SubmitDownloadInput } from '../src/transmission';
 import {
   createRepository,
   ensureSchema,
@@ -230,6 +231,48 @@ describe('runPipeline', () => {
         message: MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE,
       },
     ]);
+  });
+
+  it('passes per-media-type downloadDir to downloader submit', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const submissions: SubmitDownloadInput[] = [];
+
+    await runPipeline({
+      config: createConfig({
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+          downloadDir: '/downloads/default',
+          downloadDirs: { tv: '/downloads/tv', movie: '/downloads/movies' },
+        },
+      }),
+      repository,
+      downloader: {
+        submit: async (input) => {
+          submissions.push(input);
+          return {
+            ok: true as const,
+            status: 'queued' as const,
+            torrentId: 7,
+            torrentName: 'Example Show S01E02',
+            torrentHash: 'abcdef123456',
+          };
+        },
+      },
+      fetchFeed: async () => [
+        {
+          feedName: 'TV Feed',
+          guidOrLink: 'https://example.test/releases/example-show',
+          rawTitle: 'Example.Show.S01E02.1080p.WEB.x265-GROUP',
+          publishedAt: '2026-03-30T00:00:00.000Z',
+          downloadUrl: 'https://example.test/downloads/example-show.torrent',
+        },
+      ],
+    });
+
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]!.downloadDir).toBe('/downloads/tv');
   });
 });
 

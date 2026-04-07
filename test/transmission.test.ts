@@ -440,6 +440,95 @@ describe('Transmission adapter', () => {
     );
   });
 
+  it('prefers per-submission downloadDir over config downloadDir', async () => {
+    const requests: CapturedRequest[] = [];
+    let requestCount = 0;
+    const server = startTransmissionServer(async (request) => {
+      requests.push(await captureRequest(request));
+      requestCount += 1;
+
+      if (requestCount === 1) {
+        return new Response(null, {
+          status: 409,
+          headers: {
+            'x-transmission-session-id': 'session-123',
+          },
+        });
+      }
+
+      return Response.json({
+        result: 'success',
+        arguments: {
+          'torrent-added': {
+            id: 7,
+            hashString: 'abcdef123456',
+            name: 'Example Movie',
+          },
+        },
+      });
+    });
+    const downloader = createTransmissionDownloader(
+      createTransmissionConfig(server.url.origin, '/downloads/default'),
+    );
+
+    await downloader.submit({
+      downloadUrl: 'https://download.example.test/movie/example.torrent',
+      downloadDir: '/downloads/movies',
+    });
+
+    expect(requests[1]!.json).toEqual({
+      method: 'torrent-add',
+      arguments: {
+        filename: 'https://download.example.test/movie/example.torrent',
+        'download-dir': '/downloads/movies',
+      },
+    });
+  });
+
+  it('falls back to config downloadDir when per-submission downloadDir is omitted', async () => {
+    const requests: CapturedRequest[] = [];
+    let requestCount = 0;
+    const server = startTransmissionServer(async (request) => {
+      requests.push(await captureRequest(request));
+      requestCount += 1;
+
+      if (requestCount === 1) {
+        return new Response(null, {
+          status: 409,
+          headers: {
+            'x-transmission-session-id': 'session-123',
+          },
+        });
+      }
+
+      return Response.json({
+        result: 'success',
+        arguments: {
+          'torrent-added': {
+            id: 7,
+            hashString: 'abcdef123456',
+            name: 'Example Movie',
+          },
+        },
+      });
+    });
+    const downloader = createTransmissionDownloader(
+      createTransmissionConfig(server.url.origin, '/downloads/default'),
+    );
+
+    await downloader.submit({
+      downloadUrl: 'https://download.example.test/movie/example.torrent',
+    });
+
+    expect(requests[1]!.json).toEqual({
+      method: 'torrent-add',
+      arguments: {
+        filename: 'https://download.example.test/movie/example.torrent',
+        'download-dir': '/downloads/default',
+      },
+    });
+  });
+
   it('looks up torrent lifecycle details through torrent-get', async () => {
     const requests: CapturedRequest[] = [];
     let requestCount = 0;

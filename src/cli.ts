@@ -81,6 +81,7 @@ export async function runCli(argv: string[]): Promise<number> {
         const result = await retryFailedCandidates({
           repository: createRepository(database),
           downloader: createTransmissionDownloader(config.transmission),
+          transmissionConfig: config.transmission,
         });
 
         console.log(formatRunSummary(result));

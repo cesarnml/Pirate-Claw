@@ -2,6 +2,7 @@ import type { TransmissionConfig } from './config';
 
 export type SubmitDownloadInput = {
   downloadUrl: string;
+  downloadDir?: string;
   labels?: string[];
 };
 
@@ -302,11 +303,13 @@ function buildSubmitRequestBody(
     labels?: string[];
   };
 } {
+  const effectiveDir = input.downloadDir ?? config.downloadDir;
+
   return {
     method: 'torrent-add',
     arguments: {
       filename: input.downloadUrl,
-      ...(config.downloadDir ? { 'download-dir': config.downloadDir } : {}),
+      ...(effectiveDir ? { 'download-dir': effectiveDir } : {}),
       ...(input.labels && input.labels.length > 0
         ? { labels: input.labels }
         : {}),
