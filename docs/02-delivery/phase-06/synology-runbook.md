@@ -527,13 +527,128 @@ Operator verification cues:
 ## 5. Secrets And Environment Injection
 
 Purpose:
-Document the exact env and secret inputs needed by the validated baseline.
+Document the exact env and secret inputs needed by the validated baseline, the resolution order, and the operator checks that confirm correct injection.
 
-Verification cues to keep here:
+Validation status:
+This section is validated for `P6.05` on the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS.
 
-- where env values are entered in Container Manager
-- which values are examples versus operator-provided secrets
-- how the operator confirms the container received the expected non-secret settings
+### Secret inventory
+
+The validated baseline requires exactly two operator-supplied secrets:
+
+| Secret                              | Consumed by | Purpose                          |
+| ----------------------------------- | ----------- | -------------------------------- |
+| `PIRATE_CLAW_TRANSMISSION_USERNAME` | Pirate Claw | Authenticate to Transmission RPC |
+| `PIRATE_CLAW_TRANSMISSION_PASSWORD` | Pirate Claw | Authenticate to Transmission RPC |
+
+Transmission itself receives no secret through Docker env for this baseline. Its RPC credentials are set in its own `settings.json` (written on first start under `/volume1/transmission/config/`). The operator must ensure the Pirate Claw credentials above match what Transmission expects.
+
+### Non-secret environment variables
+
+| Variable | Container    | Example value     | Purpose                            |
+| -------- | ------------ | ----------------- | ---------------------------------- |
+| `PUID`   | Transmission | `1026`            | Match the DSM operator-account UID |
+| `PGID`   | Transmission | `100`             | Match the `users` group GID        |
+| `TZ`     | Transmission | `America/Chicago` | Container timezone                 |
+
+Pirate Claw does not require any Docker-level environment variables for this baseline. Its non-secret config comes from the JSON config file.
+
+### Pirate Claw secret resolution order
+
+The app resolves each Transmission credential using this priority (first match wins):
+
+1. **Inline config value** — `username` / `password` inside the `transmission` section of `pirate-claw.config.json`.
+2. **`.env` file** — a file named `.env` in the same directory as the config file. The app loads it automatically via `loadConfigEnv()`.
+3. **Process environment** — a `PIRATE_CLAW_TRANSMISSION_*` variable already in the container's process env (e.g., passed via `docker run -e`).
+
+If none of the three sources provides a non-empty value, the app fails at startup with a `ConfigError`.
+
+For the validated baseline, **use the `.env` file** (option 2). This keeps secrets out of the JSON config (which may be version-controlled) and out of Docker inspect output (which shows `-e` values in cleartext).
+
+### `.env` file format
+
+Place the file at `/volume1/pirate-claw/config/.env`:
+
+```
+PIRATE_CLAW_TRANSMISSION_USERNAME=<your-username>
+PIRATE_CLAW_TRANSMISSION_PASSWORD=<your-password>
+```
+
+Rules:
+
+- one `KEY=VALUE` per line
+- lines starting with `#` are comments
+- blank lines are ignored
+- `export KEY=VALUE` is accepted (the `export` prefix is stripped)
+- values are not shell-expanded — quotes are taken literally
+- the file is mounted read-only inside the container at `/config/.env`
+
+### How `.env` reaches the app
+
+The `.env` file is bind-mounted at `/config/.env` alongside the config file at `/config/pirate-claw.config.json`. The app resolves the `.env` path relative to the config file:
+
+```
+dirname("/config/pirate-claw.config.json") + "/.env" → "/config/.env"
+```
+
+This is why both files must be under the same container directory (`/config/`). See Section 4 for the Bun `.env` auto-load caveat that prevents mounting these under `/app/`.
+
+### Transmission credential alignment
+
+After Transmission starts for the first time, it writes a `settings.json` to `/volume1/transmission/config/`. To enable RPC authentication:
+
+1. Stop the Transmission container.
+2. Edit `/volume1/transmission/config/settings.json`:
+   - set `"rpc-authentication-required": true`
+   - set `"rpc-username"` to the same value as `PIRATE_CLAW_TRANSMISSION_USERNAME`
+   - set `"rpc-password"` to the matching password (Transmission hashes it on next start)
+3. Start the Transmission container.
+
+The operator must ensure the credentials in the Pirate Claw `.env` match the Transmission RPC credentials. A mismatch results in `401 Unauthorized` errors in the Pirate Claw daemon logs.
+
+### Operator verification
+
+Confirm Pirate Claw loaded secrets successfully:
+
+```sh
+docker logs pirate-claw --tail 30
+```
+
+Expected: `daemon started` and cycle logs with no `ConfigError` or `401` errors. If the daemon starts and processes feed cycles, the secrets were injected correctly.
+
+Confirm the `.env` file is mounted:
+
+```sh
+docker inspect pirate-claw --format '{{range .Mounts}}{{.Source}} -> {{.Destination}} ({{.Mode}}){{"\n"}}{{end}}' | grep .env
+```
+
+Expected: `/volume1/pirate-claw/config/.env -> /config/.env (ro)`.
+
+Confirm Transmission env injection:
+
+```sh
+docker inspect transmission --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E 'PUID|PGID|TZ'
+```
+
+Expected: the three non-secret env vars with the values configured at container creation.
+
+Confirm Transmission RPC auth is active:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}' http://localhost:9091/transmission/rpc/
+```
+
+Expected: `401` (authentication required) or `409` (CSRF token missing — means auth passed). A `200` with no auth challenge means RPC authentication may not be enabled in `settings.json`.
+
+### Secret rotation
+
+To change Transmission credentials:
+
+1. Update `/volume1/pirate-claw/config/.env` on the host with the new values.
+2. Update `/volume1/transmission/config/settings.json` with the matching new credentials (stop Transmission first, then restart).
+3. Restart the Pirate Claw container: `docker restart pirate-claw`.
+
+No image rebuild is required for credential changes.
 
 ## 6. Restart Semantics And Always-On Checks
 
