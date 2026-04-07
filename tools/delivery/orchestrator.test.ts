@@ -1023,6 +1023,35 @@ describe('delivery orchestrator', () => {
     );
   });
 
+  it('renders sonarqube failed-check annotations as unresolved review findings', () => {
+    const body = buildStandaloneAiReviewSection({
+      outcome: 'operator_input_needed',
+      note: 'SonarQube annotations need manual triage.',
+      reviewedHeadSha: 'abcdef1234567890',
+      comments: [
+        {
+          vendor: 'sonarqube',
+          channel: 'inline_review',
+          authorLogin: 'sonarqubecloud',
+          authorType: 'Bot',
+          body: 'Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.',
+          kind: 'unknown',
+          path: 'tools/delivery/pr-metadata.ts',
+          line: 596,
+          url: 'https://sonarcloud.io/project/issues?id=example&issues=abc',
+        },
+      ],
+      vendors: ['sonarqube'],
+    });
+
+    expect(body).toContain('### Unresolved Review Findings');
+    expect(body).toContain(
+      '[sonarqube] Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.',
+    );
+    expect(body).toContain('`tools/delivery/pr-metadata.ts:596`');
+    expect(body).toContain('- vendors: `sonarqube`');
+  });
+
   it('renders stale ai review history separately from current head status', () => {
     const body = buildPullRequestBody(
       {
@@ -1342,11 +1371,17 @@ describe('delivery orchestrator', () => {
               state: 'completed',
               note: 'review completed without actionable findings',
             },
+            {
+              agent: 'sonarqube',
+              state: 'findings_detected',
+              findingsCount: 1,
+              note: 'actionable findings captured',
+            },
           ],
           detected: true,
           artifact_text: 'normalized review artifact',
           reviewed_head_sha: 'abcdef1234567890',
-          vendors: ['coderabbit', 'qodo'],
+          vendors: ['coderabbit', 'qodo', 'sonarqube'],
           comments: [
             {
               vendor: 'coderabbit',
@@ -1372,6 +1407,19 @@ describe('delivery orchestrator', () => {
               body: 'Overall this looks good.',
               kind: 'summary',
             },
+            {
+              vendor: 'sonarqube',
+              channel: 'inline_review',
+              author_login: 'sonarqubecloud',
+              author_type: 'Bot',
+              body: 'Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.',
+              is_outdated: false,
+              is_resolved: false,
+              path: 'tools/delivery/pr-metadata.ts',
+              line: 596,
+              url: 'https://sonarcloud.io/project/issues?id=example&issues=abc',
+              kind: 'unknown',
+            },
           ],
         }),
       ),
@@ -1388,11 +1436,17 @@ describe('delivery orchestrator', () => {
           state: 'completed',
           note: 'review completed without actionable findings',
         },
+        {
+          agent: 'sonarqube',
+          state: 'findings_detected',
+          findingsCount: 1,
+          note: 'actionable findings captured',
+        },
       ],
       detected: true,
       artifactText: 'normalized review artifact',
       reviewedHeadSha: 'abcdef1234567890',
-      vendors: ['coderabbit', 'qodo'],
+      vendors: ['coderabbit', 'qodo', 'sonarqube'],
       comments: [
         {
           vendor: 'coderabbit',
@@ -1417,6 +1471,19 @@ describe('delivery orchestrator', () => {
           authorType: 'Bot',
           body: 'Overall this looks good.',
           kind: 'summary',
+        },
+        {
+          vendor: 'sonarqube',
+          channel: 'inline_review',
+          authorLogin: 'sonarqubecloud',
+          authorType: 'Bot',
+          body: 'Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.',
+          isOutdated: false,
+          isResolved: false,
+          path: 'tools/delivery/pr-metadata.ts',
+          line: 596,
+          url: 'https://sonarcloud.io/project/issues?id=example&issues=abc',
+          kind: 'unknown',
         },
       ],
     });
@@ -2198,7 +2265,12 @@ describe('delivery orchestrator', () => {
 
     expect(standaloneResult.outcome).toBe('patched');
     expect(nextState.tickets[0]?.reviewOutcome).toBe('patched');
-    expect(nextState.tickets[0]?.reviewNote).toBe(standaloneResult.note);
+    expect(nextState.tickets[0]?.reviewNote).toBe(
+      'External AI review completed without prudent follow-up changes. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+    );
+    expect(standaloneResult.note).toBe(
+      'External AI review completed without prudent follow-up changes. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+    );
   });
 
   it('matches standalone cumulative patched semantics when no later ai review appears', async () => {
@@ -2271,7 +2343,12 @@ describe('delivery orchestrator', () => {
 
     expect(standaloneResult.outcome).toBe('patched');
     expect(nextState.tickets[0]?.reviewOutcome).toBe('patched');
-    expect(nextState.tickets[0]?.reviewNote).toBe(standaloneResult.note);
+    expect(nextState.tickets[0]?.reviewNote).toBe(
+      'No AI review feedback was detected within the 8-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+    );
+    expect(standaloneResult.note).toBe(
+      'No AI review feedback was detected within the 10-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+    );
   });
 
   it('matches standalone timeout note semantics when agents stay in flight without findings', async () => {
@@ -2350,7 +2427,83 @@ describe('delivery orchestrator', () => {
     expect(nextState.tickets[0]?.reviewIncompleteAgents).toEqual(
       standaloneResult.incompleteAgents,
     );
-    expect(nextState.tickets[0]?.reviewNote).toBe(standaloneResult.note);
+    expect(nextState.tickets[0]?.reviewNote).toBe(
+      'AI review reached the 10-minute limit while waiting on: coderabbit. No actionable findings were captured. Rerun manually if needed.',
+    );
+    expect(standaloneResult.note).toBe(
+      'AI review reached the 12-minute limit while waiting on: coderabbit. No actionable findings were captured. Rerun manually if needed.',
+    );
+  });
+
+  it('uses the standalone pull request createdAt to timeout mixed vendor states immediately on late reruns', async () => {
+    const sleeps: number[] = [];
+    const standaloneResult = await runStandaloneAiReview(
+      '/tmp/pirate_claw',
+      { kind: 'noop', enabled: false },
+      undefined,
+      {
+        now: () => Date.parse('2026-04-01T10:12:00.000Z'),
+        sleep: async (milliseconds) => {
+          sleeps.push(milliseconds);
+        },
+        fetcher: () => ({
+          agents: [
+            {
+              agent: 'coderabbit' as const,
+              state: 'started' as const,
+              note: 'review still in progress',
+            },
+            {
+              agent: 'greptile' as const,
+              state: 'findings_detected' as const,
+              findingsCount: 1,
+              note: 'actionable findings captured',
+            },
+          ],
+          detected: true,
+          artifactText: 'mixed vendor artifact',
+          reviewedHeadSha: 'abcdef1234567890',
+          vendors: ['coderabbit', 'greptile'],
+          comments: [
+            {
+              vendor: 'greptile',
+              channel: 'inline_review' as const,
+              authorLogin: 'greptile-apps[bot]',
+              authorType: 'Bot' as const,
+              body: 'Guard the null return here.',
+              kind: 'unknown' as const,
+              path: 'tools/delivery/review.ts',
+              line: 700,
+            },
+          ],
+        }),
+        triager: () => ({
+          outcome: 'needs_patch' as const,
+          note: 'AI review comments were detected, but at least one item still needs manual judgment.',
+          actionSummary: 'Escalated 1 unclear comment for follow-up.',
+          vendors: ['greptile'],
+        }),
+        pullRequest: {
+          body: 'existing body',
+          createdAt: '2026-04-01T10:00:00.000Z',
+          headRefName: 'codex/sonarqube-standalone-ai-review',
+          headRefOid: 'abcdef1234567890',
+          number: 75,
+          title: 'feat: add SonarQube support to standalone ai-review flow',
+          url: 'https://example.test/pull/75',
+        },
+        updatePullRequestBody: () => {},
+        writeNote: async () => {},
+      },
+    );
+
+    expect(sleeps).toEqual([]);
+    expect(standaloneResult.outcome).toBe('operator_input_needed');
+    expect(standaloneResult.incompleteAgents).toEqual(['coderabbit']);
+    expect(standaloneResult.vendors).toEqual(['greptile']);
+    expect(standaloneResult.note).toBe(
+      'AI review reached the 12-minute limit while waiting on: coderabbit. Triage the captured findings and rerun manually if needed.',
+    );
   });
 
   it('maps standalone needs-patch triage to operator input at the shared accumulation seam', async () => {

@@ -6,7 +6,7 @@ set -euo pipefail
 #     "agents": [{"agent":"coderabbit","state":"started|completed|findings_detected","findingsCount":1,"note":"..."}],
 #     "detected": true|false,
 #     "artifact_text": "normalized text artifact",
-#     "vendors": ["coderabbit", "qodo", "greptile"],
+#     "vendors": ["coderabbit", "qodo", "greptile", "sonarqube"],
 #     "comments": [...]
 #   }
 
@@ -32,6 +32,8 @@ name="${repo##*/}"
 pr_json="$(gh pr view "$pr_number" --json number,title,url,headRefName,headRefOid,baseRefName,isDraft,state,comments,reviews)"
 temp_dir="$(mktemp -d)"
 trap 'rm -rf "$temp_dir"' EXIT
+
+head_sha="$(printf '%s' "$pr_json" | jq -r '.headRefOid')"
 
 review_comments_json="$(
   gh api --paginate "repos/$repo/pulls/$pr_number/comments?per_page=100" \
@@ -231,10 +233,57 @@ else
   review_threads_json='[]'
 fi
 
+if check_run_rows="$(
+  gh api --paginate "repos/$repo/commits/$head_sha/check-runs?per_page=100" \
+    --jq '.check_runs[]?' 2>/dev/null
+)"; then
+  if [[ -n "$check_run_rows" ]]; then
+    check_runs_json="$(printf '%s\n' "$check_run_rows" | jq -s '{check_runs: .}')"
+  else
+    check_runs_json='{"check_runs":[]}'
+  fi
+else
+  printf '%s\n' "warning: unable to fetch check runs; skipping SonarQube annotations" >&2
+  check_runs_json='{"check_runs":[]}'
+fi
+
+sonarqube_check_runs_json="$(
+  printf '%s' "$check_runs_json" | jq '
+    (.check_runs // [])
+    | map(
+        select(
+          ((.app.slug // "" | ascii_downcase) == "sonarqubecloud")
+          or ((.name // "" | ascii_downcase) == "sonarcloud code analysis")
+        )
+      )
+  '
+)"
+
+sonarqube_annotations_file="$temp_dir/sonarqube-annotations.jsonl"
+: >"$sonarqube_annotations_file"
+
+while IFS= read -r check_run_id; do
+  [[ -z "$check_run_id" ]] && continue
+  annotation_rows="$(
+    gh api --paginate "repos/$repo/check-runs/$check_run_id/annotations?per_page=100" \
+      --jq '.[]'
+  )"
+  if [[ -n "$annotation_rows" ]]; then
+    printf '%s\n' "$annotation_rows" >>"$sonarqube_annotations_file"
+  fi
+done < <(printf '%s' "$sonarqube_check_runs_json" | jq -r '.[].id')
+
+if [[ -s "$sonarqube_annotations_file" ]]; then
+  sonarqube_annotations_json="$(jq -s '.' "$sonarqube_annotations_file")"
+else
+  sonarqube_annotations_json='[]'
+fi
+
 jq -n \
   --argjson pr "$pr_json" \
   --argjson review_comments "$review_comments_json" \
-  --argjson review_threads "$review_threads_json" '
+  --argjson review_threads "$review_threads_json" \
+  --argjson sonarqube_annotations "$sonarqube_annotations_json" '
     def normalize_text:
       tostring
       | gsub("\r"; "")
@@ -256,11 +305,11 @@ jq -n \
 
     def looks_like_supported_ai_identity:
       (author_login | ascii_downcase) as $login
-      | ($login | test("qodo|coderabbit|greptile"));
+      | ($login | test("qodo|coderabbit|greptile|sonarqube"));
 
     def looks_like_supported_ai_text:
       (body_text | normalize_text) as $body
-      | ($body | test("coderabbit|code rabbit|qodo|greptile"));
+      | ($body | test("coderabbit|code rabbit|qodo|greptile|sonarqube|sonarcloud"));
 
     def looks_like_started_text:
       (body_text | normalize_text) as $body
@@ -276,6 +325,7 @@ jq -n \
       | if ($login | test("coderabbit")) or ($body | test("coderabbit|code rabbit")) then "coderabbit"
         elif ($login | test("qodo")) or ($body | test("qodo")) then "qodo"
         elif ($login | test("greptile")) or ($body | test("greptile")) then "greptile"
+        elif ($login | test("sonarqube|sonarcloud")) then "sonarqube"
         else null
         end;
 
@@ -367,6 +417,10 @@ jq -n \
           "summary"
         elif $vendor == "greptile" and $channel == "issue_comment" then
           "summary"
+        elif $vendor == "sonarqube" and $channel == "issue_comment" then
+          "summary"
+        elif $vendor == "sonarqube" and $channel == "inline_review" then
+          "unknown"
         elif $channel == "review_summary" and ($body | length) == 0 then
           "summary"
         elif looks_like_started_text or looks_like_current_greptile_started_text or looks_like_summary_noise_text then
@@ -414,14 +468,50 @@ jq -n \
           }
         end;
 
+    def annotation_url:
+      try (
+        .message
+        | capture("(?<url>https://sonarcloud\\.io[^[:space:])]+)").url
+      ) catch "";
+
+    def annotation_body:
+      ((.title // "SonarQube annotation") | tostring) as $title
+      | ((.message // "") | tostring | gsub("^\n+"; "") | gsub("\r"; "")) as $message
+      | if ($message | length) > 0 then "\($title)\n\n\($message)" else $title end;
+
+    def sonarqube_annotation_entry:
+      {
+        vendor: "sonarqube",
+        channel: "inline_review",
+        author_login: "sonarqubecloud",
+        author_type: "Bot",
+        body: annotation_body,
+        path: (.path // null),
+        line: (.start_line // .end_line // null),
+        thread_id: null,
+        thread_viewer_can_resolve: null,
+        url: annotation_url,
+        updated_at: "",
+        is_outdated: false,
+        is_resolved: false,
+        kind: "unknown",
+        derived_state: "findings_detected"
+      };
+
     ($pr.comments // [])
     | map(review_entry("issue_comment"; null; null)) as $issue_comments
     | ($pr.reviews // [])
     | map(review_entry("review_summary"; null; null)) as $review_summaries
     | $review_comments
     | map(review_entry("inline_review"; (.path // null); (.line // .original_line // null))) as $inline_comments
+    | ($sonarqube_annotations
+        | map(
+            select((.annotation_level // "") == "failure")
+            | sonarqube_annotation_entry
+          )) as $sonarqube_inline_comments
     | (
-        ($inline_comments | sort_by((.is_outdated // false), (.is_resolved // false), .vendor, .path, .line))
+        (($inline_comments + $sonarqube_inline_comments)
+          | sort_by((.is_outdated // false), (.is_resolved // false), .vendor, .path, .line))
         + ($issue_comments | sort_by(.vendor, .updated_at))
         + ($review_summaries | sort_by(.vendor, .updated_at))
       ) as $matches

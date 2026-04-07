@@ -18,7 +18,7 @@ import type {
 } from './orchestrator';
 
 const STANDALONE_REVIEW_POLL_INTERVAL_MINUTES = 2;
-const STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
+const STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES = 10;
 
 function formatError(error: unknown): string {
   if (error instanceof Error) {
@@ -1156,13 +1156,16 @@ export async function runStandaloneAiReviewLifecycle(
     ((worktreePath: string, comments: AiReviewComment[]) =>
       resolveNativeReviewThreads(worktreePath, comments, dependencies));
   const now = dependencies.now ?? Date.now;
-  const commandStartedAt = now();
+  const { pollWindowStartedAt } = resolveReviewPollWindowStart(
+    pullRequest.createdAt,
+    now,
+  );
   const reviewPollResult = await pollForAiReview(
     cwd,
     pullRequest.number,
     STANDALONE_REVIEW_POLL_INTERVAL_MINUTES,
     STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES,
-    commandStartedAt,
+    pollWindowStartedAt,
     dependencies,
   );
 

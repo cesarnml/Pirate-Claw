@@ -98,8 +98,11 @@ In this repo, supported external AI-review vendors are currently:
 - `coderabbit`
 - `qodo`
 - `greptile`
+- `sonarqube`
 
 Other vendors are out of scope unless the repo-local `ai-code-review` skill is deliberately expanded.
+
+For `sonarqube`, the repo-local fetcher reads GitHub check-run annotations rather than native PR review threads and intentionally keeps only failed-check annotations in the normalized artifact. Lower-severity warning annotations remain available in SonarQube itself but do not enter the orchestrator triage loop by default.
 
 The absence of `ai-code-review` comments after the final 8-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
 

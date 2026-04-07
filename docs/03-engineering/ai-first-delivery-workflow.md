@@ -35,8 +35,11 @@ Supported external review agents are currently:
 - `coderabbit`
 - `qodo`
 - `greptile`
+- `sonarqube`
 
 Other AI-review vendors are out of scope unless repo policy explicitly adds them.
+
+SonarQube support uses GitHub check annotations instead of native PR review comments. The standalone `ai-review` flow normalizes only failed-check annotations into the review artifact so triage stays focused on higher-signal static-analysis findings such as complexity/code-smell failures instead of importing the full warning stream.
 
 The normalized artifact now carries reviewed-commit provenance and native GitHub inline-thread identity when available. That lets the PR body distinguish current-head review from stale-history review, and it lets patched inline findings be resolved in the GitHub PR UI without vendor-specific logic.
 
