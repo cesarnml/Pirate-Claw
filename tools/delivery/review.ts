@@ -17,6 +17,9 @@ import type {
   TicketState,
 } from './orchestrator';
 
+const STANDALONE_REVIEW_POLL_INTERVAL_MINUTES = 2;
+const STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
+
 function formatError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -1137,12 +1140,13 @@ export async function runStandaloneAiReviewLifecycle(
     dependencies.resolveThreads ??
     ((worktreePath: string, comments: AiReviewComment[]) =>
       resolveNativeReviewThreads(worktreePath, comments, dependencies));
-  const commandStartedAt = Date.now();
+  const now = dependencies.now ?? Date.now;
+  const commandStartedAt = now();
   const reviewPollResult = await pollForAiReview(
     cwd,
     pullRequest.number,
-    2,
-    8,
+    STANDALONE_REVIEW_POLL_INTERVAL_MINUTES,
+    STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES,
     commandStartedAt,
     dependencies,
   );
@@ -1203,7 +1207,7 @@ export async function runStandaloneAiReviewLifecycle(
   const processedReview = processCleanAiReview({
     effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
     incompleteAgents: reviewPollResult.incompleteAgents,
-    maxWaitMinutes: 8,
+    maxWaitMinutes: STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES,
     previousOutcome,
   });
   const standaloneResult: StandaloneAiReviewResult = {

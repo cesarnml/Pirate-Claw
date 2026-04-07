@@ -1696,6 +1696,9 @@ function shortenSha(sha: string | undefined): string | undefined {
   return sha ? sha.slice(0, 12) : undefined;
 }
 
+// These helpers intentionally mirror review.ts to keep summarizeReviewMessage
+// and computeExtendedReviewPollMaxWaitMinutes local to the orchestrator's PR
+// formatting layer instead of coupling reviewer-facing copy to review lifecycle code.
 function summarizeReviewMessage(message: string): string {
   const normalized = message.replace(/\s+/g, ' ').trim();
   return normalized.length > 180
