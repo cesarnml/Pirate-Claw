@@ -32,7 +32,11 @@
     "codecPolicy": "prefer"
   },
   "transmission": {
-    "url": "http://localhost:9091/transmission/rpc"
+    "url": "http://localhost:9091/transmission/rpc",
+    "downloadDirs": {
+      "movie": "/data/movies",
+      "tv": "/data/tv"
+    }
   },
   "runtime": {
     "runIntervalMinutes": 30,

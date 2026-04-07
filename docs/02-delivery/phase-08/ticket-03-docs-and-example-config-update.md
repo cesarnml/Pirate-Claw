@@ -18,3 +18,7 @@ Update user-facing docs and the example config to reflect the new per-media-type
 ## Exit Condition
 
 An operator reading the README and example config can discover and configure per-media-type download directories without looking at source code.
+
+## Rationale
+
+The example config uses explicit paths (`/data/movies`, `/data/tv`) to make the feature discoverable without reading source code. The README inline JSON example mirrors the example config so operators see correct syntax in both places. The `docs/README.md` delivery index, `start-here.md` delivered surface list, and `roadmap.md` Phase 08 status are updated to reflect the implemented state.

@@ -218,7 +218,7 @@ Goal:
 
 Current status:
 
-- planned, not yet implemented
+- implemented on `main`
 
 Committed scope:
 

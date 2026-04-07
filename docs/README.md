@@ -54,6 +54,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-06/implementation-plan.md`: Synology runbook delivery plan
 - `phase-06/synology-runbook.md`: canonical operator-facing Synology runbook (validated)
 - `phase-07/implementation-plan.md`: config ergonomics delivery plan
+- `phase-08/implementation-plan.md`: media placement delivery plan
 
 ### `03-engineering`
 
