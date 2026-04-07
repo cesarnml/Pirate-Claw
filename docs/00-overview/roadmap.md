@@ -243,13 +243,16 @@ Goal:
 
 Current status:
 
-- planned, not yet implemented
+- implemented on `main`
 
 Committed scope:
 
-- lightweight HTTP listener in the daemon on a configurable port
-- read-only endpoints: `/api/status`, `/api/candidates`, `/api/shows`, `/api/config`
+- lightweight HTTP listener in the daemon on a configurable port (`runtime.apiPort`)
+- read-only endpoints: `/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, `/api/movies`, `/api/feeds`, `/api/config`
 - no authentication in v1 (private NAS network)
+- TV candidates with missing season/episode are skipped rather than synthesized
+- feed `isDue` logic reuses the shared `isDueFeed` helper for consistency with the scheduler
+- Transmission credentials redacted in `/api/config`
 
 Explicitly deferred:
 
@@ -260,6 +263,7 @@ Explicitly deferred:
 Working notes:
 
 - `docs/01-product/phase-09-daemon-http-api.md`
+- `docs/02-delivery/phase-09/implementation-plan.md`
 
 ## Phase 10: Read-Only SvelteKit Dashboard
 
@@ -330,8 +334,8 @@ These items emerged during ideation and are explicitly deferred beyond Phase 11:
 
 ## Current Planning Posture
 
-- product phases `01`-`07` and engineering epics `01`-`03` are complete on `main`
-- product phases `08`-`11` are planned with approved product docs but do not yet have delivery implementation plans or ticket decompositions
+- product phases `01`-`09` and engineering epics `01`-`03` are complete on `main`
+- product phases `10`-`11` are planned with approved product docs but do not yet have delivery implementation plans or ticket decompositions
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 
@@ -347,4 +351,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-07.
+Last verified against `README.md` and active delivery plans: 2026-04-08.

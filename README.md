@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases 01-08 of the current product roadmap are implemented on `main`. The currently documented engineering epics through Epic 03 are also implemented on `main`. Further product-surface or delivery-tooling expansion now requires a new planning pass and new approved phase/epic docs.
+Phases 01-09 of the current product roadmap are implemented on `main`. The currently documented engineering epics through Epic 03 are also implemented on `main`. Further product-surface or delivery-tooling expansion now requires a new planning pass and new approved phase/epic docs.
 
 It currently supports:
 
@@ -16,6 +16,7 @@ It currently supports:
 - status inspection and retry of failed submissions
 - effective config inspection through `pirate-claw config show`
 - env-backed Transmission credentials via process env or `.env`
+- read-only daemon HTTP API for external consumers when `runtime.apiPort` is configured
 
 ## Commands
 
@@ -77,7 +78,7 @@ High-level config shape:
 - `tv`: either the legacy per-show rule array or a compact `defaults + shows` object
 - `movies`: global movie intake policy
 - `transmission`: local Transmission RPC settings (optional `downloadDirs` for per-media-type download directories)
-- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults)
+- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults; `apiPort` enables the HTTP API)
 
 Example:
 
@@ -126,7 +127,8 @@ Example:
     "runIntervalMinutes": 30,
     "reconcileIntervalMinutes": 1,
     "artifactDir": ".pirate-claw/runtime",
-    "artifactRetentionDays": 7
+    "artifactRetentionDays": 7,
+    "apiPort": 3000
   }
 }
 ```
@@ -196,6 +198,54 @@ Run the daemon for continuous scheduled operation:
 ```
 
 The daemon runs in the foreground, executing run cycles every 30 minutes and reconcile cycles every 1 minute. Stop with `Ctrl+C`.
+
+## Daemon HTTP API
+
+When `runtime.apiPort` is set in the config, the daemon starts a read-only HTTP JSON API alongside the normal scheduling loop:
+
+```json
+{
+  "runtime": {
+    "apiPort": 3000
+  }
+}
+```
+
+When `runtime.apiPort` is omitted, no HTTP listener starts.
+
+### Endpoints
+
+| Endpoint              | Description                                                |
+| --------------------- | ---------------------------------------------------------- |
+| `GET /api/health`     | Uptime, start time, and last run/reconcile cycle snapshots |
+| `GET /api/status`     | Recent run summaries from the local database               |
+| `GET /api/candidates` | All tracked candidate state records                        |
+| `GET /api/shows`      | TV candidates grouped by show → season → episode           |
+| `GET /api/movies`     | Movie candidates sorted by title                           |
+| `GET /api/feeds`      | Feed config with poll state and `isDue` status             |
+| `GET /api/config`     | Effective config with Transmission credentials redacted    |
+
+### Example
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+```json
+{
+  "uptime": 3600000,
+  "startedAt": "2026-04-08T12:00:00.000Z",
+  "lastRunCycle": {
+    "status": "completed",
+    "startedAt": "...",
+    "completedAt": "...",
+    "durationMs": 1234
+  },
+  "lastReconcileCycle": null
+}
+```
+
+All endpoints are read-only. No endpoint mutates daemon state. There is no authentication in this version — it is designed for private NAS networks.
 
 ## Current Scope
 

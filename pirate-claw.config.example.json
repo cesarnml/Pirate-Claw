@@ -42,6 +42,7 @@
     "runIntervalMinutes": 30,
     "reconcileIntervalMinutes": 1,
     "artifactDir": ".pirate-claw/runtime",
-    "artifactRetentionDays": 7
+    "artifactRetentionDays": 7,
+    "apiPort": 3000
   }
 }

@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through Phase 08.
+Pirate Claw is implemented through Phase 09.
 
 Current delivered surface:
 
@@ -40,6 +40,7 @@ Current product boundary:
 - per-feed polling cadence with persistent poll state
 - shared runtime lock prevents overlapping cycles
 - machine-readable and human-readable cycle artifacts with bounded retention
+- read-only daemon HTTP API (`/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, `/api/movies`, `/api/feeds`, `/api/config`) when `runtime.apiPort` is configured
 
 Still deferred:
 
@@ -50,7 +51,7 @@ Still deferred:
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and CLI commands: 2026-04-07.
+Last verified against `README.md` and CLI commands: 2026-04-08.
 
 Current planning focus:
 
