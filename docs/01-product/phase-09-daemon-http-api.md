@@ -23,9 +23,12 @@ Phase 09 should leave Pirate Claw in a state where:
   - default port in `runtime` config (e.g., `runtime.apiPort: 2700`)
   - the listener starts alongside the daemon loop and stops on shutdown
 - expose read-only JSON endpoints:
+  - `GET /api/health` — daemon uptime and last cycle snapshots (doubles as Docker HEALTHCHECK target)
   - `GET /api/status` — recent runs and candidate states (mirrors `pirate-claw status`)
   - `GET /api/candidates` — full candidate state list with lifecycle and Transmission metadata
   - `GET /api/shows` — per-show season/episode breakdown derived from candidate state
+  - `GET /api/movies` — movie candidates grouped by title with year, resolution, codec, and lifecycle metadata
+  - `GET /api/feeds` — configured feeds with poll state (last polled, next due, poll interval)
   - `GET /api/config` — effective normalized config (mirrors `pirate-claw config show`, with Transmission credentials redacted)
 - return structured JSON with consistent error shapes
 - no authentication in this phase (the daemon is on a private NAS network)

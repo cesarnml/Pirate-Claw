@@ -48,7 +48,8 @@
     "Geminilake",
     "tmdb",
     "TMDB",
-    "unvalidated"
+    "unvalidated",
+    "HEALTHCHECK"
   ],
   "ignoreWords": [],
   "import": []
