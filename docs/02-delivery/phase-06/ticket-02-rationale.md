@@ -11,13 +11,13 @@ Run this ticket only on the target baseline:
 
 - Synology `DS918+`
 - DSM `7.1.1-42962 Update 9`
-- Synology Container Manager installed
+- Synology Docker package installed
 
 Complete all of the following before moving to `P6.03`:
 
 - shared folders `pirate-claw`, `transmission`, and `media` exist on `Volume 1`
 - the subdirectory tree in the runbook exists exactly as written
-- the DSM operator account that will manage Container Manager has `Read/Write` access to all three shared folders
+- the DSM operator account that will manage Docker containers has `Read/Write` access to all three shared folders
 - the shell validation commands in the runbook complete without permission errors
 - the temporary `.p6-02-write-check` files can be created and removed successfully
 

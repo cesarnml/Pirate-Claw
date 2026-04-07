@@ -8,7 +8,7 @@ This runbook is being validated only against:
 
 - Synology `DS918+`
 - DSM `7.1.1-42962 Update 9`
-- Synology Container Manager
+- Synology Docker package (on DSM 7.1.x the package is named `Docker`; DSM 7.2+ renamed it to `Container Manager`)
 - always-on local-LAN-first operation
 
 Treat any other Synology model, DSM version, or remote-access-first setup as non-validated unless the runbook explicitly says otherwise.
@@ -18,7 +18,7 @@ Treat any other Synology model, DSM version, or remote-access-first setup as non
 - Use one canonical known-good Pirate Claw image reference throughout the runbook once that image is validated in a later ticket.
 - Use fake-but-concrete example values in commands, paths, container names, and screenshots so the operator can map the pattern to their own NAS without leaking real secrets.
 - Keep this document operator-facing. Put only the verification cues an operator needs here. Raw proof, screenshots collected during ticket work, and detailed validation notes belong in the ticket rationale.
-- Do not widen the baseline beyond the exact validated hardware, DSM version, and Container Manager path.
+- Do not widen the baseline beyond the exact validated hardware, DSM version, and Docker package path.
 
 ## Acceptance Checklist
 
@@ -39,7 +39,7 @@ Later Phase 06 tickets are complete only when they preserve this baseline and le
 
 Use this runbook for operator instructions and lightweight verification cues such as:
 
-- where to click in DSM or Container Manager
+- where to click in DSM or the Docker UI
 - what mount or environment field should exist
 - what success state the operator should see
 - what command to run for a quick check
@@ -65,7 +65,7 @@ Verification cues to keep here:
 
 - confirm the NAS model is `DS918+`
 - confirm DSM reports `7.1.1-42962 Update 9`
-- confirm Container Manager is installed
+- confirm the Docker package is installed via `Package Center` (on DSM 7.1.x it is listed as `Docker`; DSM 7.2+ lists it as `Container Manager`)
 - confirm the operator has local-LAN access to DSM and NAS shell access if shell validation is required
 
 ## 2. Storage Layout And Shared Folder Preparation
@@ -90,6 +90,7 @@ Target directory tree:
 - `/volume1/transmission/config`
 - `/volume1/transmission/watch`
 - `/volume1/media/downloads`
+- `/volume1/media/downloads/complete`
 - `/volume1/media/downloads/incomplete`
 
 Planned bind-mount map for later tickets:
@@ -103,7 +104,7 @@ Planned bind-mount map for later tickets:
 
 Permission baseline for this phase:
 
-- create the shared folders and subdirectories with the DSM operator account that will manage Container Manager
+- create the shared folders and subdirectories with the DSM operator account that will manage Docker containers
 - confirm that account has read and write access to all three shared folders
 - do not continue if any share or subdirectory is read-only, missing, or placed outside `volume1`
 - container-specific runtime-user proof is deferred to the later container tickets, but this ticket must prove the paths exist, are durable, and are writable from the NAS baseline
@@ -122,6 +123,7 @@ DSM steps:
    - `transmission/config`
    - `transmission/watch`
    - `media/downloads`
+   - `media/downloads/complete`
    - `media/downloads/incomplete`
 4. In each shared folder's permissions view, confirm the DSM account you will use for setup has `Read/Write` access.
 5. Do not create container tasks yet. This ticket stops after the storage baseline is proven.
@@ -195,12 +197,139 @@ Validation status rule for this section:
 Purpose:
 Create the known-good Transmission container baseline that uses the validated bind mounts.
 
-Verification cues to keep here:
+Validated image reference:
 
-- image reference used
-- container name and restart policy
-- required ports and mount targets
-- UI or log checks that show Transmission is healthy
+- `linuxserver/transmission:latest`
+
+Validation status:
+This section is validated for `P6.03` on the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS.
+
+Container settings:
+
+- Container name: `transmission`
+- Restart policy: `always` (Docker UI: enable auto-restart)
+- Network: `bridge` (default)
+
+Port mappings:
+
+| Host Port | Container Port | Protocol |
+| --------- | -------------- | -------- |
+| `9091`    | `9091`         | TCP      |
+| `51413`   | `51413`        | TCP      |
+| `51413`   | `51413`        | UDP      |
+
+Bind mounts:
+
+| Host Path (on `volume1`)       | Container Path |
+| ------------------------------ | -------------- |
+| `/volume1/transmission/config` | `/config`      |
+| `/volume1/transmission/watch`  | `/watch`       |
+| `/volume1/media/downloads`     | `/downloads`   |
+
+Environment variables:
+
+| Variable | Value             | Purpose                            |
+| -------- | ----------------- | ---------------------------------- |
+| `PUID`   | `1026`            | match the DSM operator-account UID |
+| `PGID`   | `100`             | match the `users` group GID        |
+| `TZ`     | `America/Chicago` | operator timezone (use your own)   |
+
+Docker package steps:
+
+On DSM 7.1.x the UI is `Docker`. On DSM 7.2+ it is `Container Manager`. The steps below use the DSM 7.1.x names.
+
+1. Open `Docker -> Registry`.
+2. Search for `linuxserver/transmission` and download the `latest` tag.
+3. Open `Docker -> Image` and confirm `linuxserver/transmission:latest` appears.
+4. Select the image and click `Launch`.
+5. Set the container name to `transmission`.
+6. Enable auto-restart.
+7. On the port settings page, map host ports `9091 -> 9091/tcp`, `51413 -> 51413/tcp`, and `51413 -> 51413/udp`.
+8. On the volume settings page, add the three bind mounts listed above.
+9. On the environment page, add the `PUID`, `PGID`, and `TZ` variables with the values above.
+10. Review the summary and click `Done` to create and start the container.
+
+Finding your PUID and PGID:
+
+Run on the NAS shell:
+
+```sh
+id
+```
+
+Use the `uid` value for `PUID` and the `gid` value for `PGID`. The example values `1026` / `100` are typical for the first non-default DSM admin account; your actual values may differ.
+
+Synology permission note:
+
+Synology DSM shared folders are created with restrictive ACLs by default. Before starting the container, ensure the bind-mounted directories have at least `755` permissions and are owned by the PUID:PGID user. If the container logs show `Permission denied` errors for `/config/settings.json`, fix from a root shell:
+
+```sh
+chmod 755 /volume1/transmission /volume1/transmission/config /volume1/transmission/watch /volume1/media /volume1/media/downloads
+chown 1026:100 /volume1/transmission/config /volume1/transmission/watch /volume1/media/downloads
+```
+
+Restart the container after fixing permissions (`docker restart transmission`).
+
+Docker CLI note:
+
+On DSM 7.1.x, `docker` is not on the default SSH `PATH`. Use the full path or export it first:
+
+```sh
+export PATH="/var/packages/Docker/target/usr/bin:$PATH"
+```
+
+Alternatively, create the container through the Docker UI as described above and use the root shell only for validation commands.
+
+Complete directory:
+
+The `linuxserver/transmission` image expects `/downloads/complete` inside the container. Create it on the host if it does not already exist:
+
+```sh
+mkdir -p /volume1/media/downloads/complete
+chown 1026:100 /volume1/media/downloads/complete
+```
+
+Post-start verification:
+
+1. In `Docker -> Container`, confirm `transmission` shows status `Running`.
+2. Open `http://<NAS-LAN-IP>:9091` in a browser on the local LAN and confirm the Transmission web UI loads.
+
+Shell validation:
+
+Run on the NAS shell after the container is running:
+
+```sh
+docker ps --filter name=transmission --format '{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+```
+
+Expected: one line showing the `transmission` container, the `linuxserver/transmission:latest` image, an `Up` status, and the three port mappings.
+
+```sh
+docker logs transmission --tail 20
+```
+
+Expected: recent log lines showing Transmission startup without fatal errors.
+
+```sh
+ls -la /volume1/transmission/config/
+```
+
+Expected: Transmission has written its runtime config files (for example `settings.json`) into the bind-mounted config directory, proving the mount is writable from inside the container.
+
+```sh
+curl -s -o /dev/null -w '%{http_code}' http://localhost:9091/transmission/web/
+```
+
+Expected: `200`, confirming the RPC/web endpoint is healthy from the NAS itself.
+
+Operator verification cues:
+
+- the container is running and auto-restart is enabled
+- the Transmission web UI is reachable on `http://<NAS-LAN-IP>:9091` from the local LAN
+- `settings.json` exists under `/volume1/transmission/config/`, proving durable bind-mount writes
+- the `curl` health check returns `200`
+- no Pirate Claw container exists yet; this ticket validates Transmission only
+- the IPv6 LPD warning (`Couldn't initialize IPv6 LPD: No such device`) is expected in Docker bridge networking and is not a failure
 
 ## 4. Pirate Claw Container Baseline
 

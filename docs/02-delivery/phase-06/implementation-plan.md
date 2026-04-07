@@ -14,7 +14,7 @@ The validated baseline for this phase is:
 
 - Synology `DS918+`
 - DSM `7.1.1-42962 Update 9`
-- Synology Container Manager
+- Synology Docker package (on DSM 7.1.x the package is named `Docker`; DSM 7.2+ renamed it to `Container Manager`)
 - one canonical known-good Pirate Claw image reference
 - one canonical Transmission container baseline
 - bind-mounted durable state on Synology storage
@@ -72,7 +72,7 @@ The ticket order and ticket boundaries still apply. Each ticket should land as i
 
 A clean `DS918+ / DSM 7.1.1-42962 Update 9` Synology environment can be configured by following the canonical runbook only, resulting in:
 
-- always-on Transmission and Pirate Claw containers managed by Container Manager
+- always-on Transmission and Pirate Claw containers managed by the Docker package
 - durable bind-mounted config, runtime, and download/media paths on Synology storage
 - end-to-end secret and env injection documented without hidden prerequisites
 - a proven happy-path validation using one specific safe validation input
@@ -121,6 +121,6 @@ These are intentionally out of scope for Phase 06:
 Pause for review if:
 
 - the validated `DS918+ / DSM 7.1.1-42962 Update 9` baseline cannot support the existing daemon/runtime model without material product expansion
-- Container Manager setup requires undocumented build or packaging machinery beyond the agreed operator-provided image path
+- Docker package setup requires undocumented build or packaging machinery beyond the agreed operator-provided image path
 - Synology storage, permissions, or mount behavior force a broader product redesign rather than a bounded documentation or validation change
 - a required runbook claim cannot be validated on the target NAS and cannot honestly be downgraded to explicit non-validated portability guidance

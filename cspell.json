@@ -37,7 +37,10 @@
     "worktrees",
     "worktree",
     "writeability",
-    "hostnames"
+    "hostnames",
+    "PUID",
+    "PGID",
+    "unvalidated"
   ],
   "ignoreWords": [],
   "import": []
