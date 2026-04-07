@@ -347,6 +347,66 @@ describe('validateConfig', () => {
     );
   });
 
+  it('accepts a valid runtime.apiPort integer', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      runtime: { apiPort: 3000 },
+    });
+
+    expect(config.runtime.apiPort).toBe(3000);
+  });
+
+  it('leaves runtime.apiPort undefined when omitted', () => {
+    const config = validateConfig(createMinimalConfig());
+
+    expect(config.runtime.apiPort).toBeUndefined();
+  });
+
+  it('fails when runtime.apiPort is zero', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { apiPort: 0 },
+      }),
+    ).toThrow(/apiPort.*must be a positive integer/);
+  });
+
+  it('fails when runtime.apiPort is negative', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { apiPort: -1 },
+      }),
+    ).toThrow(/apiPort.*must be a positive integer/);
+  });
+
+  it('fails when runtime.apiPort is a float', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { apiPort: 3000.5 },
+      }),
+    ).toThrow(/apiPort.*must be a positive integer/);
+  });
+
+  it('fails when runtime.apiPort exceeds 65535', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { apiPort: 70000 },
+      }),
+    ).toThrow(/apiPort.*must be a positive integer/);
+  });
+
+  it('fails when runtime.apiPort is a string', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { apiPort: '3000' },
+      }),
+    ).toThrow(/apiPort.*must be a positive integer/);
+  });
+
   it('parses optional pollIntervalMinutes on feeds', () => {
     const config = validateConfig({
       ...createMinimalConfig(),

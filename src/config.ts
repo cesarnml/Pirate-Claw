@@ -47,6 +47,7 @@ export type RuntimeConfig = {
   reconcileIntervalMinutes: number;
   artifactDir: string;
   artifactRetentionDays: number;
+  apiPort?: number;
 };
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
@@ -605,6 +606,10 @@ function validateRuntime(input: unknown, path: string): RuntimeConfig {
         runtime.artifactRetentionDays,
         `${path} runtime artifactRetentionDays`,
       ) ?? DEFAULT_RUNTIME_CONFIG.artifactRetentionDays,
+    apiPort: optionalPositiveInteger(
+      runtime.apiPort,
+      `${path} runtime apiPort`,
+    ),
   };
 }
 
@@ -626,6 +631,30 @@ function optionalPositiveNumber(
   ) {
     throw new ConfigError(
       `Config file "${path}" must be a finite positive number (max ${MAX_INTERVAL_MINUTES}).`,
+    );
+  }
+
+  return input;
+}
+
+const MAX_PORT = 65_535;
+
+function optionalPositiveInteger(
+  input: unknown,
+  path: string,
+): number | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof input !== 'number' ||
+    !Number.isInteger(input) ||
+    input < 1 ||
+    input > MAX_PORT
+  ) {
+    throw new ConfigError(
+      `Config file "${path}" must be a positive integer (1–${MAX_PORT}).`,
     );
   }
 

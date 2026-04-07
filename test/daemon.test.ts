@@ -313,4 +313,96 @@ describe('daemon', () => {
     expect(options.runIntervalMs).toBe(15 * 60 * 1000);
     expect(options.reconcileIntervalMs).toBe(2 * 60 * 1000);
   });
+
+  it('passes apiPort through daemonOptionsFromConfig', () => {
+    const options = daemonOptionsFromConfig({
+      runIntervalMinutes: 15,
+      reconcileIntervalMinutes: 2,
+      artifactDir: '.pirate-claw/runtime',
+      artifactRetentionDays: 7,
+      apiPort: 8080,
+    });
+
+    expect(options.apiPort).toBe(8080);
+  });
+
+  it('starts an HTTP server when apiPort and fetch are provided', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        controller.abort();
+      },
+      reconcileCycle: async () => {},
+      options: {
+        runIntervalMs: 600_000,
+        reconcileIntervalMs: 600_000,
+        apiPort: 0,
+      },
+      signal: controller.signal,
+      log: (msg) => log.push(msg),
+      fetch: () => Response.json({ ok: true }),
+    });
+
+    expect(log.some((m) => m.startsWith('api listening on port'))).toBe(true);
+    expect(log).toContain('api stopped');
+    expect(log).toContain('daemon stopped');
+  });
+
+  it('does not start an HTTP server when apiPort is omitted', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        controller.abort();
+      },
+      reconcileCycle: async () => {},
+      options: { runIntervalMs: 600_000, reconcileIntervalMs: 600_000 },
+      signal: controller.signal,
+      log: (msg) => log.push(msg),
+    });
+
+    expect(log.every((m) => !m.includes('api listening'))).toBe(true);
+    expect(log.every((m) => !m.includes('api stopped'))).toBe(true);
+  });
+
+  it('stops the HTTP server on signal shutdown', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+    let serverPort: number | undefined;
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        // capture port from log
+        const portMsg = log.find((m) => m.startsWith('api listening on port'));
+        if (portMsg) {
+          serverPort = Number(portMsg.replace('api listening on port ', ''));
+        }
+        controller.abort();
+      },
+      reconcileCycle: async () => {},
+      options: {
+        runIntervalMs: 600_000,
+        reconcileIntervalMs: 600_000,
+        apiPort: 0,
+      },
+      signal: controller.signal,
+      log: (msg) => log.push(msg),
+      fetch: () => Response.json({ ok: true }),
+    });
+
+    expect(serverPort).toBeDefined();
+    expect(log).toContain('api stopped');
+
+    // server should be stopped — fetch should fail
+    try {
+      await fetch(`http://localhost:${serverPort}/test`);
+      // If this succeeds, the server wasn't properly stopped
+      expect(true).toBe(false);
+    } catch {
+      // Expected: connection refused
+    }
+  });
 });

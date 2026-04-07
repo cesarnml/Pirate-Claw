@@ -4,12 +4,14 @@ import type { CycleResult } from './runtime-artifacts';
 export type DaemonOptions = {
   runIntervalMs: number;
   reconcileIntervalMs: number;
+  apiPort?: number;
 };
 
 export function daemonOptionsFromConfig(runtime: RuntimeConfig): DaemonOptions {
   return {
     runIntervalMs: runtime.runIntervalMinutes * 60 * 1000,
     reconcileIntervalMs: runtime.reconcileIntervalMinutes * 60 * 1000,
+    apiPort: runtime.apiPort,
   };
 }
 
@@ -20,10 +22,21 @@ export async function runDaemonLoop(input: {
   signal: AbortSignal;
   log?: (message: string) => void;
   onCycleResult?: (result: CycleResult) => void;
+  fetch?: (request: Request) => Response | Promise<Response>;
 }): Promise<void> {
   const { runCycle, reconcileCycle, options, signal } = input;
   const log = input.log ?? console.log;
   let busy = false;
+
+  let server: ReturnType<typeof Bun.serve> | undefined;
+
+  if (options.apiPort != null && input.fetch) {
+    server = Bun.serve({
+      port: options.apiPort,
+      fetch: input.fetch,
+    });
+    log(`api listening on port ${server.port}`);
+  }
 
   const emitCycleResult = (result: CycleResult): void => {
     if (!input.onCycleResult) return;
@@ -73,6 +86,10 @@ export async function runDaemonLoop(input: {
   await guardedCycle('reconcile', reconcileCycle);
 
   if (signal.aborted) {
+    if (server) {
+      server.stop();
+      log('api stopped');
+    }
     log('daemon stopped');
     return;
   }
@@ -95,6 +112,11 @@ export async function runDaemonLoop(input: {
 
   clearInterval(runTimer);
   clearInterval(reconcileTimer);
+
+  if (server) {
+    server.stop();
+    log('api stopped');
+  }
 
   if (inFlight) {
     await inFlight;

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { join } from 'node:path';
 
+import { createApiFetch } from './api';
 import { ConfigError, loadConfig, resolveConfigPath } from './config';
 import { daemonOptionsFromConfig, runDaemonLoop } from './daemon';
 import {
@@ -182,6 +183,7 @@ export async function runCli(argv: string[]): Promise<number> {
             writeCycleArtifact(artifactDir, result);
             pruneArtifacts(artifactDir, artifactRetentionDays);
           },
+          fetch: config.runtime.apiPort ? createApiFetch() : undefined,
         });
       } finally {
         database.close();
