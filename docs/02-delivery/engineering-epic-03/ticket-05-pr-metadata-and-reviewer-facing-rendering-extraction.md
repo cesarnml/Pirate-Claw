@@ -17,3 +17,9 @@ Move reviewer-facing markdown and PR metadata updates into their own module boun
 
 - no command-handler rewrite in this ticket
 - no workflow or PR-ownership redesign
+
+## Rationale
+
+- Added `tools/delivery/pr-metadata.ts` as the isolated reviewer-facing boundary for PR title generation, PR body rendering, markdown guards, AI review section rendering, managed standalone AI review sections, and PR metadata refresh adapters.
+- Rewired the orchestrator to consume that module through thin delegates so reviewer-facing copy and PR body ownership rules no longer live inside the command/orchestration layer.
+- Preserved the current ticketed and standalone semantics by carrying forward the existing markdown stripping rules, AI review rendering behavior, and PR refresh behavior behind the new module boundary rather than redesigning the workflow in this ticket.

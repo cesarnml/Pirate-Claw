@@ -1,0 +1,978 @@
+import type {
+  AiReviewComment,
+  AiReviewThreadResolution,
+  DeliveryState,
+  DeliveryNotificationEvent,
+  ReviewResult,
+  StandaloneAiReviewResult,
+  StandalonePullRequest,
+  TicketState,
+  TicketStatus,
+} from './orchestrator';
+
+const MAX_ACTION_COMMITS = 20;
+const STANDALONE_AI_REVIEW_SECTION_START = '<!-- ai-review:start -->';
+const STANDALONE_AI_REVIEW_SECTION_END = '<!-- ai-review:end -->';
+const DEFAULT_REVIEW_POLL_INTERVAL_MINUTES = 2;
+const DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
+
+type ReviewActionCommit = {
+  sha: string;
+  subject: string;
+  vendors: string[];
+};
+
+type ReviewMetadataRefreshContext = {
+  actionCommits?: ReviewActionCommit[];
+  currentHeadSha?: string;
+};
+
+type TicketReviewMetadataRefreshTarget = Pick<
+  TicketState,
+  | 'id'
+  | 'title'
+  | 'ticketFile'
+  | 'baseBranch'
+  | 'internalReviewCompletedAt'
+  | 'reviewActionSummary'
+  | 'reviewIncompleteAgents'
+  | 'reviewComments'
+  | 'reviewHeadSha'
+  | 'status'
+  | 'reviewOutcome'
+  | 'reviewNote'
+  | 'reviewNonActionSummary'
+  | 'reviewThreadResolutions'
+  | 'reviewVendors'
+>;
+
+type ReviewMetadataRefreshBodyOptions =
+  | {
+      mode: 'standalone';
+      body: string;
+      result: StandaloneAiReviewResult;
+    }
+  | {
+      mode: 'ticketed';
+      state: DeliveryState;
+      ticket: TicketReviewMetadataRefreshTarget;
+    };
+
+type PrMetadataDependencies = {
+  editPullRequest: (
+    cwd: string,
+    prNumber: number,
+    options: {
+      base?: string;
+      body?: string;
+      title?: string;
+    },
+  ) => void;
+  listCommitSubjectsBetween: (
+    cwd: string,
+    baseRef: string,
+    headRef: string,
+    limit: number,
+  ) => string[];
+  readHeadSha: (cwd: string) => string;
+};
+
+function parseFenceMarker(line: string): {
+  char: '`' | '~';
+  length: number;
+  trailing: string;
+} | null {
+  const match = line.match(/^\s*([`~]{3,})(.*)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const marker = match[1]!;
+  const char = marker[0];
+
+  if (char !== '`' && char !== '~') {
+    return null;
+  }
+
+  return {
+    char,
+    length: marker.length,
+    trailing: match[2] ?? '',
+  };
+}
+
+function parseMarkdownHeadingAt(
+  lines: string[],
+  index: number,
+): { level: number; lineCount: number; title: string } | undefined {
+  return (
+    parseMarkdownHeading(lines[index]!) ?? parseUnderlineHeading(lines, index)
+  );
+}
+
+function parseMarkdownHeading(
+  line: string,
+): { level: number; lineCount: number; title: string } | undefined {
+  const match = line.trim().match(/^(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    level: match[1]!.length,
+    lineCount: 1,
+    title: match[2]!.trim(),
+  };
+}
+
+function parseUnderlineHeading(
+  lines: string[],
+  index: number,
+): { level: number; lineCount: number; title: string } | undefined {
+  const titleLine = lines[index]?.trim();
+  const underlineLine = lines[index + 1]?.trim();
+  if (!titleLine || !underlineLine) {
+    return undefined;
+  }
+
+  if (/^-{1,}\s*$/.test(underlineLine)) {
+    return { level: 2, lineCount: 2, title: titleLine };
+  }
+  if (/^={1,}\s*$/.test(underlineLine)) {
+    return { level: 1, lineCount: 2, title: titleLine };
+  }
+  return undefined;
+}
+
+function isBannedPrBodyHeadingTitle(title: string): boolean {
+  const normalized = title
+    .toLowerCase()
+    .replace(/[#:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (
+    /^validation\b/.test(normalized) ||
+    /^verification\b/.test(normalized) ||
+    /^summary by\b/.test(normalized)
+  );
+}
+
+function stripExternalAiReviewSections(body: string): string {
+  const lines = body.split('\n');
+  const kept: string[] = [];
+  let index = 0;
+  let activeFence: { char: '`' | '~'; length: number } | undefined;
+
+  while (index < lines.length) {
+    const line = lines[index]!;
+    const fenceMarker = parseFenceMarker(line);
+    if (fenceMarker) {
+      if (!activeFence) {
+        activeFence = { char: fenceMarker.char, length: fenceMarker.length };
+      } else if (
+        fenceMarker.char === activeFence.char &&
+        fenceMarker.length >= activeFence.length &&
+        fenceMarker.trailing.trim().length === 0
+      ) {
+        activeFence = undefined;
+      }
+      kept.push(line);
+      index += 1;
+      continue;
+    }
+
+    if (activeFence) {
+      kept.push(line);
+      index += 1;
+      continue;
+    }
+
+    const heading = parseMarkdownHeadingAt(lines, index);
+    if (
+      !heading ||
+      heading.title.trim().toLowerCase() !== 'external ai review'
+    ) {
+      kept.push(lines[index]!);
+      index += 1;
+      continue;
+    }
+
+    index += heading.lineCount;
+    while (index < lines.length) {
+      const nextLine = lines[index]!;
+      const nextFenceMarker = parseFenceMarker(nextLine);
+      if (nextFenceMarker) {
+        if (!activeFence) {
+          activeFence = {
+            char: nextFenceMarker.char,
+            length: nextFenceMarker.length,
+          };
+        } else if (
+          nextFenceMarker.char === activeFence.char &&
+          nextFenceMarker.length >= activeFence.length &&
+          nextFenceMarker.trailing.trim().length === 0
+        ) {
+          activeFence = undefined;
+        }
+        index += 1;
+        continue;
+      }
+      if (activeFence) {
+        index += 1;
+        continue;
+      }
+      const nextHeading = parseMarkdownHeadingAt(lines, index);
+      if (nextHeading && nextHeading.level <= heading.level) {
+        break;
+      }
+      index += 1;
+    }
+  }
+
+  return kept
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+}
+
+function stripBannedPrBodySections(body: string): string {
+  const lines = body.split('\n');
+  const kept: string[] = [];
+  let index = 0;
+  let activeFence: { char: '`' | '~'; length: number } | undefined;
+
+  while (index < lines.length) {
+    const line = lines[index]!;
+    const fenceMarker = parseFenceMarker(line);
+
+    if (fenceMarker) {
+      if (!activeFence) {
+        activeFence = { char: fenceMarker.char, length: fenceMarker.length };
+      } else if (
+        fenceMarker.char === activeFence.char &&
+        fenceMarker.length >= activeFence.length &&
+        fenceMarker.trailing.trim().length === 0
+      ) {
+        activeFence = undefined;
+      }
+      kept.push(line);
+      index += 1;
+      continue;
+    }
+
+    if (activeFence) {
+      kept.push(line);
+      index += 1;
+      continue;
+    }
+
+    const heading = parseMarkdownHeadingAt(lines, index);
+    if (!heading || !isBannedPrBodyHeadingTitle(heading.title)) {
+      kept.push(lines[index]!);
+      index += 1;
+      continue;
+    }
+
+    index += heading.lineCount;
+    while (index < lines.length) {
+      const nextLine = lines[index]!;
+      const nextFenceMarker = parseFenceMarker(nextLine);
+      if (nextFenceMarker) {
+        if (!activeFence) {
+          activeFence = {
+            char: nextFenceMarker.char,
+            length: nextFenceMarker.length,
+          };
+        } else if (
+          nextFenceMarker.char === activeFence.char &&
+          nextFenceMarker.length >= activeFence.length &&
+          nextFenceMarker.trailing.trim().length === 0
+        ) {
+          activeFence = undefined;
+        }
+        index += 1;
+        continue;
+      }
+      if (activeFence) {
+        index += 1;
+        continue;
+      }
+      const nextHeading = parseMarkdownHeadingAt(lines, index);
+      if (nextHeading && nextHeading.level <= heading.level) {
+        break;
+      }
+      index += 1;
+    }
+  }
+
+  return kept
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+}
+
+function normalizeReviewerFacingPullRequestBody(
+  body: string,
+  options: {
+    stripExternalAiReviewSections?: boolean;
+  } = {},
+): string {
+  const sanitized = stripBannedPrBodySections(body);
+  const withoutExternalReview = options.stripExternalAiReviewSections
+    ? stripExternalAiReviewSections(sanitized)
+    : sanitized;
+
+  return `${withoutExternalReview.trimEnd()}\n`;
+}
+
+function summarizeReviewMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  return normalized.length > 180
+    ? `${normalized.slice(0, 177).trimEnd()}...`
+    : normalized;
+}
+
+function collectActionVendors(
+  comments: AiReviewComment[] | undefined,
+  vendors: string[] | undefined,
+): string[] {
+  const fromFindings = (comments ?? [])
+    .filter((comment) => comment.kind === 'finding')
+    .map((comment) => comment.vendor);
+  const merged = fromFindings.length > 0 ? fromFindings : (vendors ?? []);
+  return [...new Set(merged)];
+}
+
+function listReviewActionCommits(
+  cwd: string,
+  reviewedHeadSha: string | undefined,
+  currentHeadSha: string | undefined,
+  comments: AiReviewComment[] | undefined,
+  vendors: string[] | undefined,
+  dependencies: Pick<PrMetadataDependencies, 'listCommitSubjectsBetween'>,
+): ReviewActionCommit[] {
+  if (
+    !reviewedHeadSha ||
+    !currentHeadSha ||
+    reviewedHeadSha === currentHeadSha
+  ) {
+    return [];
+  }
+
+  const actionVendors = collectActionVendors(comments, vendors);
+  try {
+    return dependencies
+      .listCommitSubjectsBetween(
+        cwd,
+        reviewedHeadSha,
+        currentHeadSha,
+        MAX_ACTION_COMMITS,
+      )
+      .map((line) => {
+        const [sha, subject] = line.split('\t', 2);
+        if (!sha || !subject) {
+          return undefined;
+        }
+        return {
+          sha,
+          subject: summarizeReviewMessage(subject),
+          vendors: actionVendors,
+        } satisfies ReviewActionCommit;
+      })
+      .filter((commit): commit is ReviewActionCommit => commit !== undefined);
+  } catch {
+    return [];
+  }
+}
+
+function shortenSha(sha: string | undefined): string | undefined {
+  return sha ? sha.slice(0, 12) : undefined;
+}
+
+function summarizeReviewComment(body: string): string {
+  const normalized = body.replace(/\s+/g, ' ').trim();
+  return normalized.length > 140
+    ? `${normalized.slice(0, 137).trimEnd()}...`
+    : normalized;
+}
+
+function formatReviewCommentLocation(comment: AiReviewComment): string {
+  if (!comment.path) {
+    return '';
+  }
+
+  return comment.line
+    ? ` \`${comment.path}:${comment.line}\``
+    : ` \`${comment.path}\``;
+}
+
+function formatReviewThreadLink(url: string | undefined): string {
+  return url ? ` [thread](${url})` : '';
+}
+
+function formatResolutionSuffix(
+  resolution: AiReviewThreadResolution | undefined,
+): string {
+  if (!resolution) {
+    return '';
+  }
+
+  switch (resolution.status) {
+    case 'resolved':
+      return '; native GitHub thread resolved';
+    case 'already_resolved':
+      return '; native GitHub thread was already resolved';
+    case 'unresolvable':
+      return '; native GitHub thread could not be resolved automatically';
+    case 'failed':
+      return resolution.message
+        ? `; native GitHub thread resolution failed: ${summarizeReviewMessage(resolution.message)}`
+        : '; native GitHub thread resolution failed';
+  }
+}
+
+function extractHighlightedReviewText(body: string): string | undefined {
+  const boldMatches = [...body.matchAll(/\*\*([^*]+)\*\*/g)];
+
+  for (const match of boldMatches) {
+    const candidate = match[1]?.trim();
+    if (
+      candidate &&
+      !candidate.toLowerCase().startsWith('actionable comments posted')
+    ) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function summarizeReviewerFacingFinding(body: string): string {
+  const highlighted = extractHighlightedReviewText(body);
+  if (highlighted) {
+    return highlighted;
+  }
+
+  const firstMeaningfulLine = body
+    .split('\n')
+    .map((line) => line.trim())
+    .find(
+      (line) =>
+        line.length > 0 &&
+        !line.startsWith('```') &&
+        !line.startsWith('<') &&
+        !line.startsWith('>') &&
+        !line.startsWith('<!--'),
+    );
+
+  return summarizeReviewComment(firstMeaningfulLine ?? body);
+}
+
+function buildReviewCommentBullet(
+  comment: AiReviewComment,
+  detail?: string,
+): string {
+  const base = `- [${comment.vendor}] ${summarizeReviewerFacingFinding(comment.body)}`;
+  const suffix = detail ? ` (${detail})` : '';
+  return `${base}${suffix}${formatReviewCommentLocation(comment)}${formatReviewThreadLink(comment.url)}`;
+}
+
+function buildReviewCommentBullets(
+  comments: AiReviewComment[] | undefined,
+  detail?: string,
+): string[] {
+  if (!comments || comments.length === 0) {
+    return [];
+  }
+
+  return comments.map((comment) => buildReviewCommentBullet(comment, detail));
+}
+
+export function assertReviewerFacingMarkdown(body: string): void {
+  const lines = body.split('\n');
+  let activeFence: { char: '`' | '~'; length: number } | undefined;
+  const sanitizedLines: string[] = [];
+
+  for (const line of lines) {
+    const fenceMarker = parseFenceMarker(line);
+    if (fenceMarker) {
+      if (!activeFence) {
+        activeFence = { char: fenceMarker.char, length: fenceMarker.length };
+      } else if (
+        fenceMarker.char === activeFence.char &&
+        fenceMarker.length >= activeFence.length &&
+        fenceMarker.trailing.trim().length === 0
+      ) {
+        activeFence = undefined;
+      }
+      sanitizedLines.push('');
+      continue;
+    }
+
+    if (activeFence) {
+      sanitizedLines.push('');
+      continue;
+    }
+
+    sanitizedLines.push(line.replace(/`[^`]*`/g, ''));
+  }
+
+  if (activeFence) {
+    throw new Error(
+      'PR body guard failed: markdown contains an unmatched fenced code block.',
+    );
+  }
+
+  const sanitizedBody = sanitizedLines.join('\n');
+  if (/(^|[^`])\\n(#{1,6}\s|- |\* |\d+\.\s)/.test(sanitizedBody)) {
+    throw new Error(
+      'PR body guard failed: body contains likely-escaped newline formatting sequences.',
+    );
+  }
+
+  const malformedHeading = sanitizedLines.find((line) =>
+    /^(#{1,6})(?!#)\S/.test(line.trim()),
+  );
+  if (malformedHeading) {
+    throw new Error(
+      `PR body guard failed: malformed markdown heading "${malformedHeading.trim()}".`,
+    );
+  }
+
+  const bannedHeading = sanitizedLines.find((line, index) => {
+    const heading = parseMarkdownHeadingAt(sanitizedLines, index);
+    return heading ? isBannedPrBodyHeadingTitle(heading.title) : false;
+  });
+  if (bannedHeading) {
+    throw new Error(
+      `PR body guard failed: banned section heading "${bannedHeading.trim()}".`,
+    );
+  }
+}
+
+function buildAiReviewDetailLines(input: {
+  actionCommits?: ReviewActionCommit[];
+  actionSummary?: string;
+  comments?: AiReviewComment[];
+  currentHeadSha?: string;
+  maxWaitMinutes: number;
+  nonActionSummary?: string;
+  note?: string;
+  outcome?: ReviewResult;
+  reviewedHeadSha?: string;
+  status?: TicketStatus;
+  threadResolutions?: AiReviewThreadResolution[];
+  vendors?: string[];
+}): string[] {
+  const lines: string[] = [];
+  const reviewStatus = input.outcome ?? input.status;
+
+  if (
+    !reviewStatus ||
+    (reviewStatus !== 'clean' &&
+      reviewStatus !== 'patched' &&
+      reviewStatus !== 'needs_patch' &&
+      reviewStatus !== 'operator_input_needed')
+  ) {
+    return lines;
+  }
+
+  lines.push(`- outcome: \`${reviewStatus}\``);
+
+  const appliesToCurrentHead =
+    !!input.reviewedHeadSha &&
+    !!input.currentHeadSha &&
+    input.reviewedHeadSha === input.currentHeadSha;
+
+  if (input.reviewedHeadSha) {
+    lines.push(`- reviewed commit: \`${shortenSha(input.reviewedHeadSha)}\``);
+  }
+
+  if (input.currentHeadSha) {
+    lines.push(
+      `- current branch head: \`${shortenSha(input.currentHeadSha)}\``,
+    );
+  }
+
+  if (input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead) {
+    lines.push(
+      '- the latest recorded external AI review applies to an older branch head; the prior review history is shown below for debugging.',
+    );
+  }
+
+  if (input.vendors && input.vendors.length > 0) {
+    lines.push(
+      `- vendors: ${input.vendors.map((vendor) => `\`${vendor}\``).join(', ')}`,
+    );
+  }
+
+  const effectiveContext =
+    input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead
+      ? 'history'
+      : 'current';
+  const currentComments =
+    effectiveContext === 'current' ? (input.comments ?? []) : [];
+  const currentActionableComments = currentComments.filter(
+    (comment) =>
+      !comment.isOutdated && !comment.isResolved && comment.kind !== 'summary',
+  );
+  const currentSummaryNoiseComments = currentComments.filter(
+    (comment) =>
+      !comment.isOutdated && !comment.isResolved && comment.kind === 'summary',
+  );
+  const staleOrResolvedComments =
+    effectiveContext === 'history'
+      ? (input.comments ?? [])
+      : (input.comments ?? []).filter(
+          (comment) => comment.isOutdated || comment.isResolved,
+        );
+
+  const resolutionByThreadId = new Map(
+    (input.threadResolutions ?? []).map((resolution) => [
+      resolution.threadId,
+      resolution,
+    ]),
+  );
+  const resolvedFindingComments = [
+    ...(reviewStatus === 'patched' ? currentActionableComments : []),
+    ...staleOrResolvedComments,
+  ];
+  const unresolvedFindingComments =
+    reviewStatus === 'needs_patch' || reviewStatus === 'operator_input_needed'
+      ? currentActionableComments
+      : [];
+
+  if (
+    reviewStatus === 'clean' &&
+    currentActionableComments.length === 0 &&
+    currentSummaryNoiseComments.length === 0 &&
+    resolvedFindingComments.length === 0
+  ) {
+    lines.push('- no prudent follow-up changes were required.');
+  }
+
+  const resolvedFindingBullets = resolvedFindingComments.map((comment) => {
+    const resolution = comment.threadId
+      ? resolutionByThreadId.get(comment.threadId)
+      : undefined;
+    const detail =
+      comment.isResolved || comment.isOutdated || effectiveContext === 'history'
+        ? undefined
+        : resolution
+          ? formatResolutionSuffix(resolution).replace(/^;\s*/, '')
+          : reviewStatus === 'patched'
+            ? 'patched'
+            : undefined;
+    return buildReviewCommentBullet(comment, detail);
+  });
+
+  const actionCommitBullets = (input.actionCommits ?? []).map((commit) => {
+    const vendorTag =
+      commit.vendors.length > 0 ? ` [${commit.vendors.join(',')}]` : '';
+    return `- \`${shortenSha(commit.sha)}\`${vendorTag} ${commit.subject}`;
+  });
+
+  if (actionCommitBullets.length > 0) {
+    lines.push('', '### Actions Taken', '', ...actionCommitBullets);
+  } else if (resolvedFindingBullets.length > 0) {
+    lines.push(
+      '',
+      '### Resolved Review Findings',
+      '',
+      ...resolvedFindingBullets,
+    );
+  }
+
+  const unresolvedFindingBullets = buildReviewCommentBullets(
+    unresolvedFindingComments,
+  );
+
+  if (unresolvedFindingBullets.length > 0) {
+    lines.push(
+      '',
+      '### Unresolved Review Findings',
+      '',
+      ...unresolvedFindingBullets,
+    );
+    if (input.note) {
+      lines.push('', `- triage note: ${input.note}`);
+    }
+    if (input.actionSummary) {
+      lines.push(`- triage summary: ${input.actionSummary}`);
+    }
+  }
+
+  if (input.nonActionSummary) {
+    lines.push(
+      '',
+      '### No-Action Rationale',
+      '',
+      `- ${input.nonActionSummary}`,
+    );
+  }
+
+  return lines;
+}
+
+export function buildExternalAiReviewSection(
+  result: {
+    actionSummary?: string;
+    comments?: AiReviewComment[];
+    note?: string;
+    nonActionSummary?: string;
+    outcome?: ReviewResult;
+    reviewedHeadSha?: string;
+    status?: TicketStatus;
+    threadResolutions?: AiReviewThreadResolution[];
+    vendors?: string[];
+  },
+  options: {
+    actionCommits?: ReviewActionCommit[];
+    currentHeadSha?: string;
+    incompleteAgents?: string[];
+    maxWaitMinutes: number;
+  },
+): string {
+  const lines = ['## External AI Review', ''];
+  lines.push(
+    ...buildAiReviewDetailLines({
+      actionSummary: result.actionSummary,
+      actionCommits: options.actionCommits,
+      comments: result.comments,
+      currentHeadSha: options.currentHeadSha,
+      maxWaitMinutes: options.maxWaitMinutes,
+      nonActionSummary: result.nonActionSummary,
+      note: result.note,
+      outcome: result.outcome,
+      reviewedHeadSha: result.reviewedHeadSha,
+      status: result.status,
+      threadResolutions: result.threadResolutions,
+      vendors: result.vendors,
+    }),
+  );
+
+  if (options.incompleteAgents && options.incompleteAgents.length > 0) {
+    lines.push(
+      `- incomplete agents at timeout: \`${options.incompleteAgents.join(', ')}\``,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+export function buildPullRequestBody(
+  state: DeliveryState,
+  ticket: TicketReviewMetadataRefreshTarget,
+  options: {
+    actionCommits?: ReviewActionCommit[];
+    currentHeadSha?: string;
+  } = {},
+): string {
+  const lines = [
+    '## Summary',
+    '',
+    `- delivery ticket: \`${ticket.id} ${ticket.title}\``,
+    `- ticket file: \`${ticket.ticketFile}\``,
+    `- stacked base branch: \`${ticket.baseBranch}\``,
+  ];
+
+  if (ticket.internalReviewCompletedAt) {
+    lines.push(
+      `- internal review: completed at \`${ticket.internalReviewCompletedAt}\``,
+    );
+  }
+
+  if (
+    ticket.reviewOutcome ||
+    ticket.status === 'needs_patch' ||
+    ticket.status === 'operator_input_needed'
+  ) {
+    lines.push(
+      '',
+      buildExternalAiReviewSection(
+        {
+          actionSummary: ticket.reviewActionSummary,
+          comments: ticket.reviewComments,
+          note: ticket.reviewNote,
+          nonActionSummary: ticket.reviewNonActionSummary,
+          outcome: ticket.reviewOutcome,
+          reviewedHeadSha: ticket.reviewHeadSha,
+          status: ticket.status,
+          threadResolutions: ticket.reviewThreadResolutions,
+          vendors: ticket.reviewVendors,
+        },
+        {
+          actionCommits: options.actionCommits,
+          currentHeadSha: options.currentHeadSha,
+          incompleteAgents: ticket.reviewIncompleteAgents,
+          maxWaitMinutes: state.reviewPollMaxWaitMinutes,
+        },
+      ),
+    );
+  }
+
+  return normalizeReviewerFacingPullRequestBody(lines.join('\n'));
+}
+
+export function buildStandaloneAiReviewSection(
+  result: Pick<
+    StandaloneAiReviewResult,
+    | 'actionSummary'
+    | 'artifactJsonPath'
+    | 'artifactTextPath'
+    | 'comments'
+    | 'incompleteAgents'
+    | 'note'
+    | 'nonActionSummary'
+    | 'outcome'
+    | 'reviewedHeadSha'
+    | 'threadResolutions'
+    | 'vendors'
+  >,
+  options: {
+    actionCommits?: ReviewActionCommit[];
+    currentHeadSha?: string;
+  } = {},
+): string {
+  const section = buildExternalAiReviewSection(result, {
+    actionCommits: options.actionCommits,
+    currentHeadSha: options.currentHeadSha,
+    incompleteAgents: result.incompleteAgents,
+    maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+  });
+
+  return [
+    STANDALONE_AI_REVIEW_SECTION_START,
+    section,
+    STANDALONE_AI_REVIEW_SECTION_END,
+  ].join('\n');
+}
+
+export function mergeStandaloneAiReviewSection(
+  body: string,
+  section: string,
+): string {
+  const pattern = new RegExp(
+    `${STANDALONE_AI_REVIEW_SECTION_START}[\\s\\S]*?${STANDALONE_AI_REVIEW_SECTION_END}`,
+    'g',
+  );
+  const bodyWithoutAiReviewSections = body.replace(pattern, '').trimEnd();
+  const normalizedBody = normalizeReviewerFacingPullRequestBody(
+    bodyWithoutAiReviewSections,
+    {
+      stripExternalAiReviewSections: true,
+    },
+  ).trimEnd();
+  const mergedBody =
+    normalizedBody.length > 0
+      ? `${normalizedBody}\n\n${section}\n`
+      : `${section}\n`;
+
+  return normalizeReviewerFacingPullRequestBody(mergedBody);
+}
+
+export function buildReviewMetadataRefreshBody(
+  options: ReviewMetadataRefreshBodyOptions,
+  context: ReviewMetadataRefreshContext = {},
+): string {
+  if (options.mode === 'ticketed') {
+    return buildPullRequestBody(options.state, options.ticket, context);
+  }
+
+  return mergeStandaloneAiReviewSection(
+    options.body,
+    buildStandaloneAiReviewSection(options.result, context),
+  );
+}
+
+export function buildPullRequestTitle(
+  ticket: Pick<TicketState, 'id' | 'title'>,
+  commitSubject?: string,
+): string {
+  const fallbackSubject = `feat: ${ticket.title.toLowerCase()}`;
+  const baseSubject = (commitSubject?.trim() || fallbackSubject).replace(
+    /\s+\[[A-Z0-9.]+\]$/,
+    '',
+  );
+
+  return `${baseSubject} [${ticket.id}]`;
+}
+
+export function updatePullRequestBody(
+  state: DeliveryState,
+  ticket: TicketState,
+  dependencies: PrMetadataDependencies,
+): void {
+  if (!ticket.prNumber) {
+    return;
+  }
+
+  const currentHeadSha = dependencies.readHeadSha(ticket.worktreePath);
+  const body = buildReviewMetadataRefreshBody(
+    {
+      mode: 'ticketed',
+      state,
+      ticket,
+    },
+    {
+      actionCommits: listReviewActionCommits(
+        ticket.worktreePath,
+        ticket.reviewHeadSha,
+        currentHeadSha,
+        ticket.reviewComments,
+        ticket.reviewVendors,
+        dependencies,
+      ),
+      currentHeadSha,
+    },
+  );
+  assertReviewerFacingMarkdown(body);
+
+  dependencies.editPullRequest(ticket.worktreePath, ticket.prNumber, { body });
+}
+
+export function updateStandalonePullRequestBody(
+  cwd: string,
+  pullRequest: StandalonePullRequest,
+  result: StandaloneAiReviewResult,
+  dependencies: Pick<
+    PrMetadataDependencies,
+    'editPullRequest' | 'listCommitSubjectsBetween'
+  >,
+): void {
+  const nextBody = buildReviewMetadataRefreshBody(
+    {
+      body: pullRequest.body,
+      mode: 'standalone',
+      result,
+    },
+    {
+      actionCommits: listReviewActionCommits(
+        cwd,
+        result.reviewedHeadSha,
+        pullRequest.headRefOid,
+        result.comments,
+        result.vendors,
+        dependencies,
+      ),
+      currentHeadSha: pullRequest.headRefOid,
+    },
+  );
+  assertReviewerFacingMarkdown(nextBody);
+
+  dependencies.editPullRequest(cwd, pullRequest.number, { body: nextBody });
+}
+
+export function buildStandaloneReviewStartedEvent(
+  prNumber: number,
+  prUrl: string,
+): DeliveryNotificationEvent {
+  return {
+    kind: 'standalone_review_started',
+    prNumber,
+    prUrl,
+    reviewPollIntervalMinutes: DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
+    reviewPollMaxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+  };
+}
