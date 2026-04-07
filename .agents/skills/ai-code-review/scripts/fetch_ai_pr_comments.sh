@@ -233,9 +233,19 @@ else
   review_threads_json='[]'
 fi
 
-check_runs_json="$(
-  gh api "repos/$repo/commits/$head_sha/check-runs?per_page=100"
-)"
+if check_run_rows="$(
+  gh api --paginate "repos/$repo/commits/$head_sha/check-runs?per_page=100" \
+    --jq '.check_runs[]?' 2>/dev/null
+)"; then
+  if [[ -n "$check_run_rows" ]]; then
+    check_runs_json="$(printf '%s\n' "$check_run_rows" | jq -s '{check_runs: .}')"
+  else
+    check_runs_json='{"check_runs":[]}'
+  fi
+else
+  printf '%s\n' "warning: unable to fetch check runs; skipping SonarQube annotations" >&2
+  check_runs_json='{"check_runs":[]}'
+fi
 
 sonarqube_check_runs_json="$(
   printf '%s' "$check_runs_json" | jq '
@@ -315,7 +325,7 @@ jq -n \
       | if ($login | test("coderabbit")) or ($body | test("coderabbit|code rabbit")) then "coderabbit"
         elif ($login | test("qodo")) or ($body | test("qodo")) then "qodo"
         elif ($login | test("greptile")) or ($body | test("greptile")) then "greptile"
-        elif ($login | test("sonarqube")) or ($body | test("sonarqube|sonarcloud")) then "sonarqube"
+        elif ($login | test("sonarqube|sonarcloud")) then "sonarqube"
         else null
         end;
 
@@ -481,16 +491,11 @@ jq -n \
         thread_id: null,
         thread_viewer_can_resolve: null,
         url: annotation_url,
-        updated_at: null,
+        updated_at: "",
         is_outdated: false,
         is_resolved: false,
         kind: "unknown",
-        derived_state:
-          (if ((.annotation_level // "") == "failure") then
-             "findings_detected"
-           else
-             "completed"
-           end)
+        derived_state: "findings_detected"
       };
 
     ($pr.comments // [])
