@@ -27,13 +27,13 @@ Wire `GET /api/shows`, `GET /api/movies`, `GET /api/feeds`, and `GET /api/config
 
 ## Exit Condition
 
-`curl http://localhost:<port>/api/shows` returns a JSON breakdown of TV shows with season/episode structure. `curl http://localhost:<port>/api/movies` returns a JSON list of movie candidates grouped by title. `curl http://localhost:<port>/api/feeds` returns feed status with last polled and next due times. `curl http://localhost:<port>/api/config` returns the full effective config with credentials redacted. No endpoint mutates daemon state.
+`curl http://localhost:<port>/api/shows` returns a JSON breakdown of TV shows with season/episode structure. `curl http://localhost:<port>/api/movies` returns a JSON list of movie candidates grouped by title. `curl http://localhost:<port>/api/feeds` returns feed status with last polled time and an `isDue` boolean. `curl http://localhost:<port>/api/config` returns the full effective config with nested `transmission.username` and `transmission.password` redacted. No endpoint mutates daemon state.
 
 ## Rationale
 
-- **Show grouping**: `buildShowBreakdowns` groups TV candidates by `normalizedTitle` → season → episodes, providing a structured hierarchy that mirrors how users think about TV content (show → season → episode).
+- **Show grouping**: `buildShowBreakdowns` groups TV candidates by `normalizedTitle` → season → episodes, providing a structured hierarchy that mirrors how users think about TV content (show → season → episode). TV candidates with missing season or episode are skipped rather than synthesized as 0, to avoid collision with real specials (S00).
 - **Movie grouping**: `buildMovieBreakdowns` filters candidates to movies only and maps to a flat list since movies lack the season/episode hierarchy.
-- **Feed status with poll state**: `buildFeedStatuses` combines static feed config with persisted poll state timestamps and computes `isDue` based on the configured `pollIntervalMinutes`, giving operators a single view of feed health.
-- **Credential redaction**: `redactConfig` uses a shallow spread copy to replace known credential fields (`transmissionPassword`, `transmissionUsername`) with `'[redacted]'` without mutating the original config object. Shallow copy is sufficient because we only redact top-level string fields.
+- **Feed status with poll state**: `buildFeedStatuses` combines static feed config with persisted poll state timestamps and computes an `isDue` boolean by delegating to the shared `isDueFeed()` helper from `poll-state.ts`, keeping the API and daemon scheduler in lockstep.
+- **Credential redaction**: `redactConfig` uses a shallow spread copy to replace nested `transmission.username` and `transmission.password` with `'[redacted]'` without mutating the original config object.
 - **Dependency injection expansion**: `ApiFetchDeps` grew to include `config`, `pollStatePath`, and `loadPollState` alongside the existing `repository` and `health`. This keeps the fetch handler fully testable with stubs — no file I/O or real config needed in tests.
 - **No router library**: URL pathname matching remains a simple `switch` statement. Seven routes do not justify a dependency.

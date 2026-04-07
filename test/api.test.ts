@@ -513,6 +513,25 @@ describe('buildShowBreakdowns', () => {
     expect(shows[0].seasons[0].episodes[1].episode).toBe(2);
     expect(shows[1].normalizedTitle).toBe('z show');
   });
+
+  it('skips TV candidates with missing season or episode', () => {
+    const candidates = [
+      tvCandidate({ identityKey: 'k1', season: 1, episode: 1 }),
+      { ...tvCandidate({ identityKey: 'k2' }), season: undefined, episode: 3 },
+      { ...tvCandidate({ identityKey: 'k3' }), season: 2, episode: undefined },
+      {
+        ...tvCandidate({ identityKey: 'k4' }),
+        season: undefined,
+        episode: undefined,
+      },
+    ];
+
+    const shows = buildShowBreakdowns(candidates as never);
+
+    expect(shows).toHaveLength(1);
+    expect(shows[0].seasons[0].episodes).toHaveLength(1);
+    expect(shows[0].seasons[0].episodes[0].identityKey).toBe('k1');
+  });
 });
 
 describe('buildMovieBreakdowns', () => {

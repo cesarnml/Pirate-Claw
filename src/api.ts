@@ -1,4 +1,5 @@
 import type { AppConfig, FeedConfig, RuntimeConfig } from './config';
+import { isDueFeed } from './poll-state';
 import type { PollState } from './poll-state';
 import type { CandidateStateRecord, Repository } from './repository';
 import type { CycleResult } from './runtime-artifacts';
@@ -137,7 +138,14 @@ export function createApiFetch(
     }
 
     if (url.pathname === '/api/config') {
-      return Response.json(redactConfig(config));
+      try {
+        return Response.json(redactConfig(config));
+      } catch {
+        return Response.json(
+          { error: 'internal server error' },
+          { status: 500 },
+        );
+      }
     }
 
     return Response.json({ error: 'not found' }, { status: 404 });
@@ -172,17 +180,21 @@ export function buildShowBreakdowns(
   const showMap = new Map<string, Map<number, ShowEpisode[]>>();
 
   for (const c of tvCandidates) {
+    if (c.season === undefined || c.episode === undefined) {
+      continue;
+    }
+
     const title = c.normalizedTitle;
     if (!showMap.has(title)) {
       showMap.set(title, new Map());
     }
     const seasonMap = showMap.get(title)!;
-    const season = c.season ?? 0;
+    const season = c.season;
     if (!seasonMap.has(season)) {
       seasonMap.set(season, []);
     }
     seasonMap.get(season)!.push({
-      episode: c.episode ?? 0,
+      episode: c.episode,
       identityKey: c.identityKey,
       status: c.status,
       lifecycleStatus: c.lifecycleStatus,
@@ -242,7 +254,7 @@ export function buildMovieBreakdowns(
 export type FeedStatus = {
   name: string;
   url: string;
-  mediaType: string;
+  mediaType: 'tv' | 'movie';
   pollIntervalMinutes: number;
   lastPolledAt: string | null;
   isDue: boolean;
@@ -252,22 +264,13 @@ export function buildFeedStatuses(
   feeds: FeedConfig[],
   pollState: PollState,
   runtime: RuntimeConfig,
+  now: number = Date.now(),
 ): FeedStatus[] {
-  const now = Date.now();
-
   return feeds.map((feed) => {
     const record = pollState.feeds[feed.name];
     const intervalMinutes =
       feed.pollIntervalMinutes ?? runtime.runIntervalMinutes;
     const lastPolledAt = record?.lastPolledAt ?? null;
-
-    let isDue = true;
-    if (lastPolledAt) {
-      const lastPolled = Date.parse(lastPolledAt);
-      if (!Number.isNaN(lastPolled)) {
-        isDue = now - lastPolled >= intervalMinutes * 60 * 1000;
-      }
-    }
 
     return {
       name: feed.name,
@@ -275,7 +278,7 @@ export function buildFeedStatuses(
       mediaType: feed.mediaType,
       pollIntervalMinutes: intervalMinutes,
       lastPolledAt,
-      isDue,
+      isDue: isDueFeed(feed, pollState, runtime, now),
     };
   });
 }
