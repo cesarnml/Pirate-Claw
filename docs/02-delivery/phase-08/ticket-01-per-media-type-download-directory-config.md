@@ -19,3 +19,7 @@ Add `transmission.downloadDirs` to the config type and validation so operators c
 ## Exit Condition
 
 `validateConfig` accepts `transmission.downloadDirs` with movie and/or tv fields, rejects invalid shapes, and the parsed `TransmissionConfig` carries the new fields through to consumers.
+
+## Rationale
+
+`downloadDirs` is validated as a separate optional object on `TransmissionConfig` rather than replacing the existing `downloadDir` field. This preserves backward compatibility — operators with a single global `downloadDir` continue to work unchanged. The per-type fields use the same `movie` / `tv` media-type vocabulary already established by `FeedConfig.mediaType`. Unknown keys inside `downloadDirs` are rejected at config load time to catch typos early.

@@ -39,6 +39,7 @@ export type TransmissionConfig = {
   username: string;
   password: string;
   downloadDir?: string;
+  downloadDirs?: { movie?: string; tv?: string };
 };
 
 export type RuntimeConfig = {
@@ -346,6 +347,35 @@ function validateTransmission(
       input.downloadDir === undefined
         ? undefined
         : expectString(input.downloadDir, `${path} transmission downloadDir`),
+    downloadDirs: validateDownloadDirs(
+      input.downloadDirs,
+      `${path} transmission downloadDirs`,
+    ),
+  };
+}
+
+function validateDownloadDirs(
+  input: unknown,
+  path: string,
+): { movie?: string; tv?: string } | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  const dirs = expectRecord(input, path);
+
+  const allowed = new Set(['movie', 'tv']);
+  for (const key of Object.keys(dirs)) {
+    if (!allowed.has(key)) {
+      throw new ConfigError(
+        `Config file "${path}" has unknown key "${key}"; expected only "movie" and/or "tv".`,
+      );
+    }
+  }
+
+  return {
+    movie: optionalString(dirs.movie, `${path} movie`),
+    tv: optionalString(dirs.tv, `${path} tv`),
   };
 }
 

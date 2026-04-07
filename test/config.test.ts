@@ -532,6 +532,115 @@ describe('validateConfig', () => {
       await Bun.$`rm -rf ${directory}`;
     }
   });
+
+  it('accepts transmission.downloadDirs with movie and tv paths', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      transmission: {
+        url: 'http://localhost:9091/transmission/rpc',
+        username: 'user',
+        password: 'pass',
+        downloadDirs: { movie: '/data/movies', tv: '/data/tv' },
+      },
+    });
+
+    expect(config.transmission.downloadDirs).toEqual({
+      movie: '/data/movies',
+      tv: '/data/tv',
+    });
+  });
+
+  it('accepts transmission.downloadDirs with only movie', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      transmission: {
+        url: 'http://localhost:9091/transmission/rpc',
+        username: 'user',
+        password: 'pass',
+        downloadDirs: { movie: '/data/movies' },
+      },
+    });
+
+    expect(config.transmission.downloadDirs).toEqual({
+      movie: '/data/movies',
+    });
+  });
+
+  it('accepts transmission.downloadDirs with only tv', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      transmission: {
+        url: 'http://localhost:9091/transmission/rpc',
+        username: 'user',
+        password: 'pass',
+        downloadDirs: { tv: '/data/tv' },
+      },
+    });
+
+    expect(config.transmission.downloadDirs).toEqual({
+      tv: '/data/tv',
+    });
+  });
+
+  it('omits transmission.downloadDirs when not configured', () => {
+    const config = validateConfig(createMinimalConfig());
+
+    expect(config.transmission.downloadDirs).toBeUndefined();
+  });
+
+  it('fails when transmission.downloadDirs is not an object', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+          downloadDirs: 'not-an-object',
+        },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config transmission downloadDirs" must be an object.',
+      ),
+    );
+  });
+
+  it('fails when transmission.downloadDirs has unknown keys', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+          downloadDirs: { movie: '/data/movies', music: '/data/music' },
+        },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config transmission downloadDirs" has unknown key "music"; expected only "movie" and/or "tv".',
+      ),
+    );
+  });
+
+  it('fails when transmission.downloadDirs movie value is not a string', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+          downloadDirs: { movie: 42 },
+        },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config transmission downloadDirs movie" must be a non-empty string.',
+      ),
+    );
+  });
 });
 
 function createMinimalConfig() {
