@@ -146,7 +146,8 @@ Current status:
 - `P6.01` is on `main`: the canonical runbook skeleton and acceptance checklist are established
 - `P6.02` is on `main`: the `volume1` storage layout, directory tree, and writeability checks were validated on the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS
 - `P6.03` is on `main`: the `linuxserver/transmission:latest` container baseline is validated with bind mounts, ports, restart policy, and healthy RPC on the target NAS; DSM 7.1.x `Docker` package naming and Synology permission fixes are documented
-- `P6.04+` remain validation-driven and must stay anchored to the `DS918+ / DSM 7.1.1-42962 Update 9` baseline
+- `P6.04` is on `main`: the `pirate-claw:latest` container baseline is validated with daemon mode, durable DB bind mount, host networking, and runtime cycle artifacts on the target NAS; `Dockerfile` and `.dockerignore` added to the repo
+- `P6.05+` remain validation-driven and must stay anchored to the `DS918+ / DSM 7.1.1-42962 Update 9` baseline
 
 Committed scope:
 

@@ -95,7 +95,8 @@ Target directory tree:
 
 Planned bind-mount map for later tickets:
 
-- Pirate Claw config: `/volume1/pirate-claw/config`
+- Pirate Claw config file: `/volume1/pirate-claw/config/pirate-claw.config.json` (read-only)
+- Pirate Claw database: `/volume1/pirate-claw/config/pirate-claw.db`
 - Pirate Claw runtime: `/volume1/pirate-claw/runtime`
 - Pirate Claw logs: `/volume1/pirate-claw/logs`
 - Transmission config: `/volume1/transmission/config`
@@ -336,12 +337,165 @@ Operator verification cues:
 Purpose:
 Create the known-good Pirate Claw container baseline and run the existing daemon mode against the validated storage paths.
 
-Verification cues to keep here:
+Validated image reference:
 
-- image reference used
-- container command or entrypoint used for daemon mode
-- required bind mounts and config path expectations
-- log or status checks that show the daemon is running truthfully
+- `pirate-claw:latest` (built from repo `Dockerfile`, targeting `linux/amd64`)
+
+Validation status:
+This section is validated for `P6.04` on the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS.
+
+Container settings:
+
+- Container name: `pirate-claw`
+- Restart policy: `always` (Docker UI: enable auto-restart)
+- Network: `host`
+
+Network note:
+
+The Pirate Claw container uses `--network host` so it can reach the Transmission RPC endpoint at `localhost:9091` without bridge networking or `host.docker.internal` (which is unavailable on Docker 20.10.x shipped with DSM 7.1.x).
+
+Bind mounts:
+
+| Host Path (on `volume1`)                              | Container Path                 | Mode |
+| ----------------------------------------------------- | ------------------------------ | ---- |
+| `/volume1/pirate-claw/config/pirate-claw.config.json` | `/app/pirate-claw.config.json` | `ro` |
+| `/volume1/pirate-claw/config/pirate-claw.db`          | `/app/pirate-claw.db`          |      |
+| `/volume1/pirate-claw/runtime`                        | `/data/runtime`                |      |
+| `/volume1/pirate-claw/logs`                           | `/data/logs`                   |      |
+| `/volume1/media/downloads`                            | `/downloads`                   |      |
+
+Database durability note:
+
+Pirate Claw writes its SQLite database to `pirate-claw.db` in the container working directory (`/app`). Without a bind mount this file would be ephemeral. The mount above maps it to `/volume1/pirate-claw/config/pirate-claw.db` on the host so it survives container recreation.
+
+Before creating the container for the first time, create the empty file on the host:
+
+```sh
+touch /volume1/pirate-claw/config/pirate-claw.db
+```
+
+Environment variables:
+
+| Variable                            | Value             | Purpose                                                                                        |
+| ----------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
+| `PIRATE_CLAW_TRANSMISSION_USERNAME` | operator-provided | Transmission RPC username (required by config validator even if Transmission auth is disabled) |
+| `PIRATE_CLAW_TRANSMISSION_PASSWORD` | operator-provided | Transmission RPC password (required by config validator even if Transmission auth is disabled) |
+
+Config file:
+
+Place the Pirate Claw config file at `/volume1/pirate-claw/config/pirate-claw.config.json`. The config must include a `runtime` section with `artifactDir` set to `/data/runtime` (matching the runtime bind mount inside the container). Set the Transmission URL to `http://localhost:9091/transmission/rpc` (reachable because the container uses host networking).
+
+Example minimal config for validation:
+
+```json
+{
+  "feeds": [],
+  "tv": {
+    "defaults": { "resolutions": ["1080p"], "codecs": ["x265"] },
+    "shows": []
+  },
+  "movies": {
+    "years": [2026],
+    "resolutions": ["1080p"],
+    "codecs": ["x265"],
+    "codecPolicy": "prefer"
+  },
+  "transmission": {
+    "url": "http://localhost:9091/transmission/rpc"
+  },
+  "runtime": {
+    "runIntervalMinutes": 30,
+    "reconcileIntervalMinutes": 1,
+    "artifactDir": "/data/runtime",
+    "artifactRetentionDays": 7
+  }
+}
+```
+
+Building the image:
+
+The repo includes a `Dockerfile` for the Pirate Claw image. Build for the DS918+ architecture:
+
+```sh
+docker build --platform linux/amd64 -t pirate-claw:latest .
+```
+
+Transfer to the NAS (from the build machine):
+
+```sh
+docker save pirate-claw:latest | gzip > /tmp/pirate-claw-latest.tar.gz
+scp -O -P <NAS-SSH-PORT> /tmp/pirate-claw-latest.tar.gz <user>@<NAS-IP>:/tmp/
+```
+
+Load on the NAS (root shell):
+
+```sh
+docker load < /tmp/pirate-claw-latest.tar.gz
+```
+
+Synology SCP note:
+
+Synology's SSH server does not support the SFTP subsystem by default. Use the `-O` flag with `scp` to force the legacy SCP protocol.
+
+Docker package steps:
+
+1. Confirm `pirate-claw:latest` appears under `Docker -> Image`.
+2. Select the image and click `Launch`.
+3. Set the container name to `pirate-claw`.
+4. Enable auto-restart.
+5. On the network page, select `Use the same network as Docker Host`.
+6. On the volume settings page, add the five bind mounts listed above.
+7. On the environment page, add `PIRATE_CLAW_TRANSMISSION_USERNAME` and `PIRATE_CLAW_TRANSMISSION_PASSWORD`.
+8. Review the summary and click `Done` to create and start the container.
+
+Shell validation:
+
+Run on the NAS shell after the container is running:
+
+```sh
+docker ps --filter name=pirate-claw --format '{{.Names}}\t{{.Image}}\t{{.Status}}'
+```
+
+Expected: one line showing the `pirate-claw` container, the `pirate-claw:latest` image, and an `Up` status with no restart loop.
+
+```sh
+docker logs pirate-claw --tail 20
+```
+
+Expected: `daemon started` followed by `run cycle` and `reconcile cycle` log lines without fatal errors.
+
+```sh
+docker inspect pirate-claw --format '{{.HostConfig.RestartPolicy.Name}}'
+```
+
+Expected: `always`.
+
+```sh
+docker inspect pirate-claw --format '{{range .Mounts}}{{.Source}} -> {{.Destination}} ({{.Mode}}){{"\n"}}{{end}}'
+```
+
+Expected: five mount lines matching the bind-mount table above.
+
+```sh
+ls -la /volume1/pirate-claw/config/pirate-claw.db
+```
+
+Expected: non-zero file size, proving the database is being written to the durable host path.
+
+```sh
+ls /volume1/pirate-claw/runtime/cycles/ | tail -5
+```
+
+Expected: timestamped cycle artifact files (`.json` and `.md`), proving the daemon is writing runtime artifacts to the durable bind mount.
+
+Operator verification cues:
+
+- the container is running with restart policy `always` and host networking
+- `daemon started` appears in the logs and cycle logs show no fatal errors
+- `pirate-claw.db` exists on the host at `/volume1/pirate-claw/config/pirate-claw.db` with non-zero size
+- runtime cycle artifacts are being written to `/volume1/pirate-claw/runtime/cycles/`
+- the config file is mounted read-only; operator changes require a container restart
+- both `pirate-claw` and `transmission` containers are running simultaneously
 
 ## 5. Secrets And Environment Injection
 

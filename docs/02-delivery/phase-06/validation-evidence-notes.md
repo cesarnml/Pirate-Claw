@@ -116,12 +116,47 @@ Notes:
 ## P6.04 Pirate Claw Container Baseline
 
 Status:
-Pending validation.
+Validated on the target `DS918+ / DSM 7.1.1-42962 Update 9` NAS.
+
+What was proven:
+
+- `pirate-claw:latest` image built from repo `Dockerfile` (`oven/bun:1-alpine` base, `linux/amd64`), image ID `fb09ca0b2679`, 109MB
+- image transferred via `scp -O` and loaded on NAS with `docker load`
+- container name `pirate-claw`, restart policy `always`, network `host`
+- entrypoint `[bun run src/cli.ts]` with CMD `[daemon]` — existing daemon mode used directly
+- five bind mounts validated: config (ro), db, runtime, logs, downloads
+- database written to durable host path `/volume1/pirate-claw/config/pirate-claw.db` (28672 bytes after schema initialization)
+- runtime cycle artifacts written to `/volume1/pirate-claw/runtime/cycles/` (both `.json` and `.md` files)
+- daemon started successfully: `daemon started`, `run cycle: no feeds due`, `reconcile cycle completed`
+- both `pirate-claw` and `transmission` containers running simultaneously on the NAS
+
+Issues found and resolved during validation:
+
+- `host.docker.internal` is not available on Docker 20.10.3 (DSM 7.1.x ships 20.10.3); used `--network host` so Pirate Claw reaches Transmission at `localhost:9091`
+- the database defaults to `pirate-claw.db` in the container working directory (`/app`), which is ephemeral; added a bind mount (`/volume1/pirate-claw/config/pirate-claw.db:/app/pirate-claw.db`) to make it durable
+- config validator requires non-empty `PIRATE_CLAW_TRANSMISSION_USERNAME` and `PIRATE_CLAW_TRANSMISSION_PASSWORD` even when Transmission RPC auth is disabled; placeholder values must be provided via env vars
+- Synology `scp` requires the `-O` flag (legacy SCP protocol) because the SFTP subsystem is not enabled by default
+- files created by the container inside bind-mounted directories inherit Synology restrictive ACLs (`----------+`); functional but worth noting for troubleshooting
+
+Evidence captured:
+
+- `docker ps`: container running with correct image and stable uptime (no restart loop)
+- `docker logs`: `daemon started`, clean run and reconcile cycles
+- `docker inspect`: restart policy `always`, network mode `host`, five correct mount entries
+- `ls -la /volume1/pirate-claw/config/pirate-claw.db`: 28672 bytes on host
+- `ls /volume1/pirate-claw/runtime/cycles/`: timestamped cycle artifacts present
+- `docker ps` showing both `pirate-claw` and `transmission` containers running
+- `docker inspect` confirming entrypoint `[bun run src/cli.ts] [daemon]`
+
+Redaction applied:
+
+- no secrets or IPs in the Pirate Claw container output required redaction
 
 Notes:
 
-- capture image reference, daemon command or entrypoint, bind mounts, env inputs, and first healthy log proof here
-- note any mismatch between repo expectations and Container Manager UX while it is fresh
+- Docker version on DSM 7.1.x is 20.10.3, which lacks `host.docker.internal` support
+- Pirate Claw container runs as root inside the container; the `PUID`/`PGID` pattern used by `linuxserver` images is not applicable here
+- a `Dockerfile` and `.dockerignore` were added to the repo as part of this ticket
 
 ## P6.05 Secrets And Env Injection
 
