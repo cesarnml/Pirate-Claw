@@ -25,3 +25,13 @@ Wire `GET /api/health`, `GET /api/status`, and `GET /api/candidates` into the da
 ## Exit Condition
 
 `curl http://localhost:<port>/api/health` returns daemon uptime and last cycle snapshots. `curl http://localhost:<port>/api/status` returns a JSON array of recent runs with counts. `curl http://localhost:<port>/api/candidates` returns a JSON array of candidate state records. All endpoints work while the daemon is running its normal cycle loop.
+
+## Rationale
+
+**Health state tracking via `onCycleResult`.** Rather than adding new daemon plumbing, the existing `onCycleResult` callback is the insertion point for health tracking. `recordCycleInHealth` is called in the same callback alongside artifact writes. The `HealthState` object is mutable and shared with the fetch handler — this is safe because Bun is single-threaded and the health state only has last-cycle snapshots (no arrays to grow).
+
+**`createApiFetch` dependency injection.** The fetch handler accepts an optional `ApiFetchDeps` object containing the repository and health state. When no deps are provided (P9.01 stub path), it returns a bare 404 handler. This preserves backward compatibility and keeps tests simple — unit tests stub the repository interface, no real database needed.
+
+**URL-pathname routing.** Routes use `new URL(request.url).pathname` for matching instead of a router library. Three routes don't justify a dependency.
+
+**Uptime as milliseconds.** The health endpoint returns `uptime` in milliseconds (integer) rather than seconds. Millisecond precision matches `durationMs` in cycle snapshots and avoids floating-point rounding.
