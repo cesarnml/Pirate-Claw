@@ -589,10 +589,10 @@ export function resolveReviewThread(
 export function resolveGitHubRepo(
   cwd: string,
   runtime: Runtime,
-): { name: string; owner: string } | undefined {
+): { defaultBranch: string; name: string; owner: string } | undefined {
   const result = runProcessResult(
     cwd,
-    ['gh', 'repo', 'view', '--json', 'nameWithOwner'],
+    ['gh', 'repo', 'view', '--json', 'nameWithOwner,defaultBranchRef'],
     runtime,
   );
 
@@ -601,8 +601,12 @@ export function resolveGitHubRepo(
   }
 
   try {
-    const parsed = JSON.parse(result.stdout) as { nameWithOwner?: string };
+    const parsed = JSON.parse(result.stdout) as {
+      defaultBranchRef?: { name?: string };
+      nameWithOwner?: string;
+    };
     const nameWithOwner = parsed.nameWithOwner;
+    const defaultBranch = parsed.defaultBranchRef?.name ?? 'main';
     if (!nameWithOwner?.includes('/')) {
       return undefined;
     }
@@ -610,12 +614,13 @@ export function resolveGitHubRepo(
     if (!owner || !name) {
       return undefined;
     }
-    return { name, owner };
+    return { defaultBranch, name, owner };
   } catch {
     return undefined;
   }
 }
 
+// Body is expected to be single-line plain text.
 export function replyToReviewComment(
   cwd: string,
   owner: string,

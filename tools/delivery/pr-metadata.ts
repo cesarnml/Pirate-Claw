@@ -25,7 +25,7 @@ export type ReviewActionCommit = {
 type ReviewMetadataRefreshContext = {
   actionCommits?: ReviewActionCommit[];
   currentHeadSha?: string;
-  githubRepo?: { name: string; owner: string };
+  githubRepo?: { defaultBranch: string; name: string; owner: string };
 };
 
 type TicketReviewMetadataRefreshTarget = Pick<
@@ -78,7 +78,7 @@ type PrMetadataDependencies = {
   readHeadSha: (cwd: string) => string;
   resolveGitHubRepo?: (
     cwd: string,
-  ) => { name: string; owner: string } | undefined;
+  ) => { defaultBranch: string; name: string; owner: string } | undefined;
 };
 
 function parseFenceMarker(line: string): {
@@ -603,7 +603,7 @@ function buildAiReviewDetailLines(input: {
   actionSummary?: string;
   comments?: AiReviewComment[];
   currentHeadSha?: string;
-  githubRepo?: { name: string; owner: string };
+  githubRepo?: { defaultBranch: string; name: string; owner: string };
   maxWaitMinutes: number;
   nonActionSummary?: string;
   note?: string;
@@ -777,7 +777,7 @@ export function buildExternalAiReviewSection(
   options: {
     actionCommits?: ReviewActionCommit[];
     currentHeadSha?: string;
-    githubRepo?: { name: string; owner: string };
+    githubRepo?: { defaultBranch: string; name: string; owner: string };
     incompleteAgents?: string[];
     maxWaitMinutes: number;
   },
@@ -816,7 +816,7 @@ export function buildPullRequestBody(
   options: {
     actionCommits?: ReviewActionCommit[];
     currentHeadSha?: string;
-    githubRepo?: { name: string; owner: string };
+    githubRepo?: { defaultBranch: string; name: string; owner: string };
   } = {},
 ): string {
   const lines = [
@@ -828,7 +828,7 @@ export function buildPullRequestBody(
   if (options.githubRepo) {
     const rel = ticket.ticketFile.replace(/\\/g, '/');
     lines.push(
-      `- ticket file: [${rel}](https://github.com/${options.githubRepo.owner}/${options.githubRepo.name}/blob/main/${rel})`,
+      `- ticket file: [${rel}](https://github.com/${options.githubRepo.owner}/${options.githubRepo.name}/blob/${options.githubRepo.defaultBranch}/${rel})`,
     );
   } else {
     lines.push(`- ticket file: \`${ticket.ticketFile}\``);
@@ -891,7 +891,7 @@ export function buildStandaloneAiReviewSection(
   options: {
     actionCommits?: ReviewActionCommit[];
     currentHeadSha?: string;
-    githubRepo?: { name: string; owner: string };
+    githubRepo?: { defaultBranch: string; name: string; owner: string };
   } = {},
 ): string {
   const section = buildExternalAiReviewSection(result, {

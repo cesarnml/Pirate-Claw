@@ -1032,12 +1032,22 @@ function resolveGitHubRepoForOrchestrator(cwd: string) {
   return resolvePlatformGitHubRepo(cwd, _config.runtime);
 }
 
+const REPO_CACHE_BY_WORKTREE = new Map<
+  string,
+  ReturnType<typeof resolveGitHubRepoForOrchestrator>
+>();
+
 function replyToReviewThreadForOrchestrator(
   worktreePath: string,
   databaseId: number,
   body: string,
 ): void {
-  const repo = resolvePlatformGitHubRepo(worktreePath, _config.runtime);
+  const cached = REPO_CACHE_BY_WORKTREE.get(worktreePath);
+  const repo =
+    cached ?? resolvePlatformGitHubRepo(worktreePath, _config.runtime);
+  if (!cached) {
+    REPO_CACHE_BY_WORKTREE.set(worktreePath, repo);
+  }
   if (!repo) {
     return;
   }

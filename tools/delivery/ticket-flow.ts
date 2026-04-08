@@ -278,7 +278,7 @@ export function openPullRequest(
       options?: {
         actionCommits?: ReviewActionCommit[];
         currentHeadSha?: string;
-        githubRepo?: { name: string; owner: string };
+        githubRepo?: { defaultBranch: string; name: string; owner: string };
       },
     ) => string;
     buildPullRequestTitle: (
@@ -312,7 +312,7 @@ export function openPullRequest(
     readLatestCommitSubject: (cwd: string) => string;
     resolveGitHubRepo?: (
       cwd: string,
-    ) => { name: string; owner: string } | undefined;
+    ) => { defaultBranch: string; name: string; owner: string } | undefined;
   },
 ): DeliveryState {
   const target =
@@ -457,7 +457,7 @@ export function restackTicket(
       options?: {
         actionCommits?: ReviewActionCommit[];
         currentHeadSha?: string;
-        githubRepo?: { name: string; owner: string };
+        githubRepo?: { defaultBranch: string; name: string; owner: string };
       },
     ) => string;
     defaultBranch: string;
@@ -487,7 +487,7 @@ export function restackTicket(
     rebaseOntoDefaultBranch: (cwd: string, defaultBranch: string) => void;
     resolveGitHubRepo?: (
       cwd: string,
-    ) => { name: string; owner: string } | undefined;
+    ) => { defaultBranch: string; name: string; owner: string } | undefined;
   },
 ): DeliveryState {
   dependencies.ensureCleanWorktree(cwd);
