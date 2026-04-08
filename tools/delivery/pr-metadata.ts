@@ -701,6 +701,9 @@ function buildAiReviewDetailLines(input: {
     comments: resolvedFindingComments,
     reviewStatus,
     threadResolutions: input.threadResolutions,
+  }).filter((bullet, index) => {
+    const source = resolvedFindingComments[index];
+    return source?.kind !== 'summary';
   });
   const actionCommitBullets = buildActionCommitBullets(input.actionCommits);
 

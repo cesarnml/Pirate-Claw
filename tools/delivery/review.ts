@@ -617,7 +617,7 @@ function shouldResolveDetectedReviewThreads(
     return outcome === 'patched';
   }
 
-  return outcome === 'clean' || outcome === 'patched';
+  return outcome === 'patched';
 }
 
 function defaultSleep(milliseconds: number): Promise<void> {
