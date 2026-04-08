@@ -50,7 +50,8 @@ export type RuntimeConfig = {
   apiPort?: number;
   /**
    * How often to run TMDB cache refresh in the daemon (independent of RSS polling).
-   * Omitted or zero disables the background pass (lazy API reads still work).
+   * Zero disables the background pass; omitted uses the default (see `DEFAULT_RUNTIME_CONFIG` and `validateRuntime`).
+   * Lazy API reads still work when background refresh is disabled.
    */
   tmdbRefreshIntervalMinutes?: number;
 };

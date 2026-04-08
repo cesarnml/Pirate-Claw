@@ -49,7 +49,7 @@ function tmdbMovieEnrichDeps(
   log: (message: string) => void,
 ): MovieEnrichDeps | undefined {
   const tmdbResolved = resolveTmdbSettings(config);
-  if (!tmdbResolved || config.runtime.apiPort == null) {
+  if (!tmdbResolved) {
     return undefined;
   }
   return {
@@ -69,7 +69,7 @@ function tmdbShowsEnrichDeps(
   log: (message: string) => void,
 ): TvEnrichDeps | undefined {
   const tmdbResolved = resolveTmdbSettings(config);
-  if (!tmdbResolved || config.runtime.apiPort == null) {
+  if (!tmdbResolved) {
     return undefined;
   }
   return {
@@ -197,7 +197,7 @@ export async function runCli(argv: string[]): Promise<number> {
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
         const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
         const tmdbRefreshIntervalMinutes =
-          config.runtime.tmdbRefreshIntervalMinutes ?? 360;
+          config.runtime.tmdbRefreshIntervalMinutes!;
         const scheduleTmdbRefresh =
           (tmdbMovies || tmdbShows) && tmdbRefreshIntervalMinutes > 0;
 

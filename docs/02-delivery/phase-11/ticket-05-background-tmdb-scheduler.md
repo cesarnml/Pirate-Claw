@@ -28,3 +28,9 @@ Lazy API reads ship value first; this ticket adds operational completeness after
 - `runtime.tmdbRefreshIntervalMinutes` (default 360; set `0` to disable) drives a `setInterval` in `runDaemonLoop` that is **not** gated by the RSS `busy` lock.
 - `runTmdbBackgroundRefresh` (`src/tmdb/background-refresh.ts`) reuses `buildMovieBreakdowns` / `buildShowBreakdowns` plus `enrichMovieBreakdowns` / `enrichShowBreakdowns` — same cache/TTL behavior as API reads, no duplicate TMDB client logic.
 - TMDB refresh is only scheduled when `tmdbMovieEnrichDeps` / `tmdbShowsEnrichDeps` resolve (TMDB API key configured).
+
+**Review follow-up (PR #98):**
+
+- `RuntimeConfig` JSDoc for `tmdbRefreshIntervalMinutes` now matches `validateRuntime`: omitted → default interval, `0` disables; lazy reads still work without background refresh.
+- TMDB enrich deps no longer require `runtime.apiPort` (HTTP API is optional); background refresh runs in daemon-only mode when TMDB is configured. `createApiFetch` remains gated on `apiPort` for API-specific paths.
+- Daemon scheduling reads `tmdbRefreshIntervalMinutes` with a non-null assertion after `loadConfig` because `validateRuntime` always sets the field while `RuntimeConfig` still types it optional.
