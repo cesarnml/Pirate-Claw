@@ -862,6 +862,32 @@ docker restart pirate-claw
 
 No container recreation is needed — just a restart so the app re-reads the config.
 
+Example: enabling the daemon HTTP API. Add `"apiPort"` to the `runtime` block in `/volume1/pirate-claw/config/pirate-claw.config.json`:
+
+```json
+"runtime": {
+  "runIntervalMinutes": 30,
+  "reconcileIntervalMinutes": 1,
+  "artifactDir": "/data/runtime",
+  "artifactRetentionDays": 7,
+  "apiPort": 3000
+}
+```
+
+Then restart:
+
+```sh
+docker restart pirate-claw
+```
+
+Verify the API is listening by checking logs:
+
+```sh
+docker logs pirate-claw --tail 5
+```
+
+Expected: a line reading `api listening on port 3000`. Since pirate-claw runs on host networking, the endpoints are immediately reachable from any browser on the LAN at `http://<NAS-LAN-IP>:3000/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, and `/api/movies`. No port mapping or container recreation is required.
+
 ## 8. Fresh End-To-End Validation
 
 Purpose:
