@@ -23,3 +23,11 @@ Show detail pages show TMDB-backed season/episode context when configured; grace
 ## Rationale
 
 TV is the heavier TMDB shape; it lands after movies so shared UI and cache patterns are already proven while keeping tickets reviewable.
+
+**Implementation notes (P11.03 delivered):**
+
+- Added `src/tmdb/tv-enrichment.ts` with lazy TV show + per-season TMDB fetch, mirroring movie enrichment: negative cache **only** on `searchTv` miss; no negative rows on transient `getTv` / `getTvSeason` failures or cache read errors (cache reads stay inside `try`).
+- `GET /api/shows` is async and enriches when TMDB deps are wired (same shared `TmdbCache` + `TmdbHttpClient` as movies via `tmdbShows` in `ApiFetchDeps`).
+- Show breakdown types live in `src/tv-api-types.ts` (show + episode TMDB fields) to avoid circular imports with enrichment.
+- `src/tmdb/constants.ts`: `stillUrl()` for episode stills (`w300`).
+- Dashboard show detail (`web/src/routes/shows/[slug]/+page.svelte`): poster, backdrop tint, rating when vote average exists, season count, overview, table columns for TMDB still + episode title + air date alongside local status.

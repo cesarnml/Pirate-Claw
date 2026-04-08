@@ -1,12 +1,23 @@
 import type { AppConfig, FeedConfig, RuntimeConfig } from './config';
 import type { MovieBreakdown } from './movie-api-types';
 export type { MovieBreakdown, TmdbMoviePublic } from './movie-api-types';
+import type { ShowBreakdown, ShowEpisode, ShowSeason } from './tv-api-types';
+
+export type {
+  ShowBreakdown,
+  ShowEpisode,
+  ShowSeason,
+  TmdbTvEpisodeMeta,
+  TmdbTvShowMeta,
+} from './tv-api-types';
 import { isDueFeed } from './poll-state';
 import type { PollState } from './poll-state';
 import type { CandidateStateRecord, Repository } from './repository';
 import type { CycleResult } from './runtime-artifacts';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import { enrichMovieBreakdowns } from './tmdb/movie-enrichment';
+import type { TvEnrichDeps } from './tmdb/tv-enrichment';
+import { enrichShowBreakdowns } from './tmdb/tv-enrichment';
 
 export type CycleSnapshot = {
   status: CycleResult['status'];
@@ -55,6 +66,8 @@ export type ApiFetchDeps = {
   loadPollState: (path: string) => PollState;
   /** When set (TMDB configured), GET /api/movies lazily enriches from cache + TMDB. */
   tmdbMovies?: MovieEnrichDeps;
+  /** When set (TMDB configured), GET /api/shows lazily enriches from cache + TMDB. */
+  tmdbShows?: TvEnrichDeps;
 };
 
 function json500(): Response {
@@ -83,6 +96,7 @@ export function createApiFetch(
     pollStatePath,
     loadPollState,
     tmdbMovies,
+    tmdbShows,
   } = deps;
 
   return async (request: Request) => {
@@ -109,10 +123,16 @@ export function createApiFetch(
     }
 
     if (path === '/api/shows') {
-      return safeJson(() => {
+      try {
         const candidates = repository.listCandidateStates();
-        return { shows: buildShowBreakdowns(candidates) };
-      });
+        const base = buildShowBreakdowns(candidates);
+        const shows = tmdbShows
+          ? await enrichShowBreakdowns(base, tmdbShows)
+          : base;
+        return Response.json({ shows });
+      } catch {
+        return json500();
+      }
     }
 
     if (path === '/api/movies') {
@@ -146,24 +166,6 @@ export function createApiFetch(
 }
 
 // --- Show breakdowns ---
-
-export type ShowEpisode = {
-  episode: number;
-  identityKey: string;
-  status: string;
-  lifecycleStatus?: string;
-  queuedAt?: string;
-};
-
-export type ShowSeason = {
-  season: number;
-  episodes: ShowEpisode[];
-};
-
-export type ShowBreakdown = {
-  normalizedTitle: string;
-  seasons: ShowSeason[];
-};
 
 export function buildShowBreakdowns(
   candidates: CandidateStateRecord[],

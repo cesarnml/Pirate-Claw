@@ -5,6 +5,9 @@ export const TMDB_POSTER_SIZE = 'w500';
 
 export const TMDB_BACKDROP_SIZE = 'w1280';
 
+/** Episode still images (smaller than posters). */
+export const TMDB_STILL_SIZE = 'w300';
+
 export const TMDB_API_BASE = 'https://api.themoviedb.org/3';
 
 export function posterUrl(
@@ -23,4 +26,13 @@ export function backdropUrl(
     return undefined;
   }
   return `${TMDB_IMAGE_BASE}/${TMDB_BACKDROP_SIZE}${backdropPath}`;
+}
+
+export function stillUrl(
+  stillPath: string | null | undefined,
+): string | undefined {
+  if (!stillPath) {
+    return undefined;
+  }
+  return `${TMDB_IMAGE_BASE}/${TMDB_STILL_SIZE}${stillPath}`;
 }

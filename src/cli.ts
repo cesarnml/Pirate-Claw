@@ -38,6 +38,7 @@ import {
 import { TmdbCache } from './tmdb/cache';
 import { TmdbHttpClient } from './tmdb/client';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
+import type { TvEnrichDeps } from './tmdb/tv-enrichment';
 import { resolveTmdbSettings } from './tmdb/settings';
 import { createTransmissionDownloader } from './transmission';
 
@@ -59,6 +60,14 @@ function tmdbMovieEnrichDeps(
     negativeCacheTtlMs: tmdbResolved.negativeCacheTtlMs,
     log: (m: string) => log(`[tmdb] ${m}`),
   };
+}
+
+function tmdbShowsEnrichDeps(
+  database: Database,
+  config: AppConfig,
+  log: (message: string) => void,
+): TvEnrichDeps | undefined {
+  return tmdbMovieEnrichDeps(database, config, log) as TvEnrichDeps | undefined;
 }
 
 export async function runCli(argv: string[]): Promise<number> {
@@ -173,6 +182,7 @@ export async function runCli(argv: string[]): Promise<number> {
         const health = createHealthState();
 
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
+        const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
 
         await runDaemonLoop({
           runCycle: async () => {
@@ -228,6 +238,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   pollStatePath,
                   loadPollState,
                   tmdbMovies,
+                  tmdbShows,
                 })
               : undefined,
         });

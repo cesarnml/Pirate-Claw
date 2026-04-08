@@ -44,12 +44,31 @@ export type CandidateStateRecord = {
 	updatedAt: string;
 };
 
+export type TmdbTvEpisodeMeta = {
+	name?: string;
+	stillUrl?: string;
+	airDate?: string;
+	overview?: string;
+};
+
+export type TmdbTvShowMeta = {
+	tmdbId?: number;
+	name?: string;
+	posterUrl?: string;
+	backdropUrl?: string;
+	overview?: string;
+	voteAverage?: number;
+	voteCount?: number;
+	numberOfSeasons?: number;
+};
+
 export type ShowEpisode = {
 	episode: number;
 	identityKey: string;
 	status: CandidateStatus;
 	lifecycleStatus?: string;
 	queuedAt?: string;
+	tmdb?: TmdbTvEpisodeMeta;
 };
 
 export type ShowSeason = {
@@ -60,6 +79,7 @@ export type ShowSeason = {
 export type ShowBreakdown = {
 	normalizedTitle: string;
 	seasons: ShowSeason[];
+	tmdb?: TmdbTvShowMeta;
 };
 
 export type TmdbMoviePublic = {
