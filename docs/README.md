@@ -36,6 +36,9 @@ Phase-level product definitions.
 - `phase-09-daemon-http-api.md`: read-only JSON API served by the daemon
 - `phase-10-read-only-dashboard.md`: SvelteKit browser-based read-only dashboard
 - `phase-11-tmdb-metadata-enrichment.md`: TMDB ratings, posters, and metadata enrichment
+- `phase-12-dashboard-design-system-and-read-ui.md`: shadcn-svelte dashboard redesign (read-only; not yet implemented)
+- `phase-13-daemon-config-write-api-and-settings.md`: bounded config write API and Settings (not yet implemented)
+- `phase-14-feeds-rules-ui-placeholder.md`: future feeds/rules UI scope (placeholder only)
 
 ### `02-delivery`
 

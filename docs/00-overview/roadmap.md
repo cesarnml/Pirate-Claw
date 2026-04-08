@@ -338,19 +338,82 @@ Working notes:
 - `docs/01-product/phase-11-tmdb-metadata-enrichment.md`
 - `docs/02-delivery/phase-11/implementation-plan.md`
 
+## Phase 12: Dashboard Design System and Read-Only UI Redesign
+
+Goal:
+
+- replace functional-only dashboard styling with a cohesive shadcn-svelte–based UI that approximates the Stitch design reference, while remaining read-only against the daemon API
+
+Current status:
+
+- product definition only — see [`docs/01-product/phase-12-dashboard-design-system-and-read-ui.md`](../01-product/phase-12-dashboard-design-system-and-read-ui.md)
+
+Committed scope:
+
+- shadcn-svelte primitives, shared layout and navigation, and migrated read-only views (home, candidates, show detail, movies, read-only config)
+- no daemon API contract changes; no mutating HTTP routes
+- accessibility and responsive baselines; `web/` Docker deployment remains viable
+
+Explicitly deferred:
+
+- config writes, Settings persistence, feed/rule editing (later phases)
+
+Working notes:
+
+- `docs/01-product/phase-12-dashboard-design-system-and-read-ui.md`
+
+## Phase 13: Daemon Config Write API and Settings (Bounded)
+
+Goal:
+
+- opt-in bearer-protected config updates via the daemon API and a bounded Settings UI (runtime and other safe operational fields), with ETag concurrency and SvelteKit server-side proxying
+
+Current status:
+
+- product definition only — see [`docs/01-product/phase-13-daemon-config-write-api-and-settings.md`](../01-product/phase-13-daemon-config-write-api-and-settings.md)
+
+Committed scope:
+
+- mutating routes only when a write token is configured; `Authorization: Bearer` on writes; atomic file write; validate with CLI-equivalent rules; ETag / If-Match / 409 conflicts
+- Settings forms for an approved subset; restart required for changes to take effect in v1
+
+Explicit deferrals:
+
+- feeds and rules authoring in the UI (Phase 14 placeholder)
+- TLS, SSO, or full API auth beyond bearer-on-write
+- hot reload without daemon restart
+
+Working notes:
+
+- `docs/01-product/phase-13-daemon-config-write-api-and-settings.md`
+
+## Phase 14: Feeds and Rules Authoring in the UI (Placeholder)
+
+Goal:
+
+- structured editing of feeds and matching rules (and remaining config not covered by Phase 13), building on Phase 13 write patterns
+
+Current status:
+
+- placeholder only — not scheduled; see [`docs/01-product/phase-14-feeds-rules-ui-placeholder.md`](../01-product/phase-14-feeds-rules-ui-placeholder.md)
+
 ## Future Deferrals
 
-These items emerged during ideation and are explicitly deferred beyond Phase 11:
+These items are still explicitly deferred or not yet assigned a numbered phase:
 
-- **Config editor via web UI** — deferred until the API has a write path and the dashboard is stable
 - **Release calendar** — deferred as a feature inside the TMDB/dashboard surface, not its own phase
 - **Rating-based intake gating** — deferred until TMDB integration is stable and display-only has been validated
-- **Show/movie search-to-add from the UI** — deferred to the config editor phase
-- **Visual polish iteration** — iteration on the working dashboard, not a standalone phase
+- **Show/movie search-to-add from the UI** — deferred to Phase 14–style config expansion once feed and rule editing is in scope
+
+The following items are **mapped** to numbered phases (no longer “unbounded” deferrals):
+
+- **Config editor via web UI (bounded)** — Phase 13 (runtime subset); Phase 14 placeholder for feeds/rules
+- **Visual polish / design system iteration** — Phase 12
 
 ## Current Planning Posture
 
 - product phases `01`–`11` and engineering epics `01`–`04` are complete on `main`
+- product phases `12`–`14` are defined in `docs/01-product/`; **Phase 12** and **Phase 13** are not implemented until an approved ticket decomposition exists
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 

@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 11** on `main` (product phases 01–11; see [`roadmap.md`](./roadmap.md)). Delivery artifacts and tickets for Phase 11 live under [`docs/02-delivery/phase-11/`](../02-delivery/phase-11/).
+Pirate Claw is implemented through **Phase 11** on `main` (product phases 01–11; see [`roadmap.md`](./roadmap.md)). Delivery artifacts and tickets for Phase 11 live under [`docs/02-delivery/phase-11/`](../02-delivery/phase-11/). Product definitions for **Phase 12** (dashboard design system, read-only), **Phase 13** (bounded config write API and Settings), and **Phase 14** (feeds/rules UI placeholder) live under [`docs/01-product/`](../01-product/) and are **not yet implemented** until approved tickets exist.
 
 Current delivered surface:
 
@@ -47,7 +47,7 @@ Current product boundary:
 
 Still deferred:
 
-- config editing through the web UI
+- full feeds and rules authoring through the web UI (see Phase 14 placeholder; bounded runtime Settings planned for Phase 13)
 - remote feed capture
 - hosted persistence
 - download renaming or organization rules
