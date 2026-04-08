@@ -210,6 +210,19 @@ Current status:
 - this remains a separate engineering epic, not a product phase
 - any further delivery-tooling work should start from the current extracted module boundaries rather than reopening the original monolith-vs-modules decision
 
+## Engineering Epic 04: Reviewer-Facing PR Body And Thread Hygiene
+
+Goal:
+
+- improve reviewer-facing clarity for patched external AI-review outcomes in orchestrated delivery tooling
+
+Current status:
+
+- implemented on `main`
+- covers ticket stack `EE4.01`-`EE4.04` under `docs/02-delivery/engineering-epic-04/`
+- adds per-finding patched disposition rendering, stale-review resolution phrasing, thread reply-before-resolve behavior, and PR metadata polish
+- this remains a separate engineering epic, not a product phase
+
 ## Phase 08: Media Placement
 
 Goal:
@@ -337,7 +350,7 @@ These items emerged during ideation and are explicitly deferred beyond Phase 11:
 
 ## Current Planning Posture
 
-- product phases `01`–`11` and engineering epics `01`–`03` are complete on `main`
+- product phases `01`–`11` and engineering epics `01`–`04` are complete on `main`
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 
@@ -345,6 +358,8 @@ Working notes:
 
 - `docs/03-engineering/epic-03-delivery-orchestrator-modularity-and-concern-separation.md`
 - `docs/02-delivery/engineering-epic-03/implementation-plan.md`
+- `docs/03-engineering/epic-04-reviewer-facing-pr-body-and-thread-hygiene.md`
+- `docs/02-delivery/engineering-epic-04/implementation-plan.md`
 
 ## Planning Rules
 

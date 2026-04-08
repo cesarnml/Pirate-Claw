@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–11** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment). The documented engineering epics through Epic 03 are also on `main`. For future stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks. Further product-surface or delivery-tooling expansion beyond the current roadmap still requires a new planning pass and new approved phase/epic docs when the work is not a small bounded change.
+Phases **01–11** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment). The documented engineering epics through Epic 04 are also on `main`. For future stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks. Further product-surface or delivery-tooling expansion beyond the current roadmap still requires a new planning pass and new approved phase/epic docs when the work is not a small bounded change.
 
 It currently supports:
 

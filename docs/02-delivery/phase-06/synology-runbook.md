@@ -1127,3 +1127,97 @@ Docker 20.10.x does not support `host.docker.internal`. The Pirate Claw containe
 - DSM 6.x or earlier
 - Clustered or high-availability Synology setups
 - Automated backup or snapshot strategies for the database
+
+## 11. Phase 11 Parity Findings (2026-04-09)
+
+Purpose:
+Document a validated parity pass that aligned a running NAS setup with the current local Phase 11 repo state, including the read-only web dashboard container.
+
+Validation status:
+Validated on the same baseline (`DS918+`, DSM `7.1.1-42962 Update 9`, Docker 20.10.x, kernel `4.4.x`).
+
+### Outcome summary
+
+- `pirate-claw:latest` rebuilt from local repo `main` and redeployed.
+- `pirate-claw-web:latest` built from `web/Dockerfile` and deployed.
+- `/volume1/pirate-claw/config/.env` now matches local repo `.env`.
+- `/volume1/pirate-claw/config/web/.env` now matches local repo `web/.env`.
+- `/volume1/pirate-claw/config/pirate-claw.config.json` is parity with local config except the NAS keeps its larger `tv.shows` list.
+- Bun `.env` caveat remains enforced: mount `.env` at `/config/.env`, never `/app/.env`.
+
+### Phase 11 parity deployment commands
+
+Build and export images on the build machine:
+
+```sh
+docker build --platform linux/amd64 -t pirate-claw:latest .
+docker build --platform linux/amd64 -f web/Dockerfile -t pirate-claw-web:latest .
+docker save pirate-claw:latest | gzip > /tmp/pirate-claw-latest.tar.gz
+docker save pirate-claw-web:latest | gzip > /tmp/pirate-claw-web-latest.tar.gz
+scp -O -P <NAS-SSH-PORT> /tmp/pirate-claw-latest.tar.gz /tmp/pirate-claw-web-latest.tar.gz <user>@<NAS-IP>:/tmp/
+```
+
+Load on NAS and recreate containers:
+
+```sh
+export PATH="/var/packages/Docker/target/usr/bin:$PATH"
+docker load < /tmp/pirate-claw-latest.tar.gz
+docker load < /tmp/pirate-claw-web-latest.tar.gz
+
+docker stop pirate-claw || true
+docker rm pirate-claw || true
+docker create \
+  --name pirate-claw \
+  --restart always \
+  --network host \
+  -v /volume1/pirate-claw/config/pirate-claw.config.json:/config/pirate-claw.config.json:ro \
+  -v /volume1/pirate-claw/config/.env:/config/.env:ro \
+  -v /volume1/pirate-claw/data/pirate-claw.db:/app/pirate-claw.db \
+  -v /volume1/pirate-claw/data/runtime:/app/.pirate-claw/runtime \
+  -v /volume1/pirate-claw/data/poll-state.json:/app/poll-state.json \
+  pirate-claw:latest daemon --config /config/pirate-claw.config.json
+docker start pirate-claw
+
+docker stop pirate-claw-web || true
+docker rm pirate-claw-web || true
+docker create \
+  --name pirate-claw-web \
+  --restart always \
+  --network host \
+  --env-file /volume1/pirate-claw/config/web/.env \
+  pirate-claw-web:latest
+docker start pirate-claw-web
+```
+
+Why `/app/.pirate-claw/runtime`:
+Phase 11 local config uses `runtime.artifactDir: ".pirate-claw/runtime"`. With that config, the durable runtime bind mount must target `/app/.pirate-claw/runtime` (not `/data/runtime`).
+
+### Config and env parity check
+
+The validated parity check compared SHA-256 hashes:
+
+- local `.env` vs `/volume1/pirate-claw/config/.env`
+- local `web/.env` vs `/volume1/pirate-claw/config/web/.env`
+- local `pirate-claw.config.json` vs NAS config after removing `tv.shows`
+
+Example check commands:
+
+```sh
+shasum -a 256 .env web/.env
+jq -S 'del(.tv.shows)' pirate-claw.config.json | shasum -a 256
+```
+
+```sh
+sha256sum /volume1/pirate-claw/config/.env /volume1/pirate-claw/config/web/.env
+jq -S 'del(.tv.shows)' /volume1/pirate-claw/config/pirate-claw.config.json | sha256sum
+jq '.tv.shows|length' /volume1/pirate-claw/config/pirate-claw.config.json
+```
+
+### Post-deploy verification cues
+
+- `docker ps` shows `pirate-claw`, `pirate-claw-web`, and `transmission` all `Up`.
+- `docker logs pirate-claw --tail 20` shows `api listening on port 3000` and `daemon started`.
+- `docker logs pirate-claw-web --tail 20` shows `Listening on http://0.0.0.0:3001`.
+- `curl http://localhost:3000/api/config` returns config including Phase 11 fields (`runtime.tmdbRefreshIntervalMinutes`, `tmdb` block when configured).
+- `curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/` returns `200`.
+- `docker inspect pirate-claw` mount list includes `/config/.env` and does not include `/app/.env`.
