@@ -5,19 +5,26 @@ export type DaemonOptions = {
   runIntervalMs: number;
   reconcileIntervalMs: number;
   apiPort?: number;
+  /** When set (TMDB configured + interval > 0), daemon schedules background refreshes. */
+  tmdbRefreshIntervalMs?: number;
 };
 
 export function daemonOptionsFromConfig(runtime: RuntimeConfig): DaemonOptions {
+  const tmdbMin = runtime.tmdbRefreshIntervalMinutes;
   return {
     runIntervalMs: runtime.runIntervalMinutes * 60 * 1000,
     reconcileIntervalMs: runtime.reconcileIntervalMinutes * 60 * 1000,
     apiPort: runtime.apiPort,
+    tmdbRefreshIntervalMs:
+      tmdbMin != null && tmdbMin > 0 ? tmdbMin * 60 * 1000 : undefined,
   };
 }
 
 export async function runDaemonLoop(input: {
   runCycle: () => Promise<void>;
   reconcileCycle: () => Promise<void>;
+  /** Optional TMDB cache refresh; does not share the RSS `busy` lock. */
+  tmdbRefreshCycle?: () => Promise<void>;
   options: DaemonOptions;
   signal: AbortSignal;
   log?: (message: string) => void;
@@ -56,6 +63,8 @@ export async function runDaemonLoop(input: {
     }
   };
   let inFlight: Promise<void> | undefined;
+  let tmdbInFlight: Promise<void> | undefined;
+  let tmdbBusy = false;
 
   async function guardedCycle(
     type: string,
@@ -87,6 +96,38 @@ export async function runDaemonLoop(input: {
     }
   }
 
+  async function runTmdbRefresh(): Promise<void> {
+    if (!input.tmdbRefreshCycle) {
+      return;
+    }
+    if (tmdbBusy) {
+      log('tmdb_refresh cycle skipped: already_running');
+      emitCycleResult({
+        type: 'tmdb_refresh',
+        status: 'skipped',
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: 0,
+        skipReason: 'already_running',
+      });
+      return;
+    }
+    tmdbBusy = true;
+    const promise = executeCycle(
+      'tmdb_refresh',
+      input.tmdbRefreshCycle,
+      log,
+      emitCycleResult,
+    );
+    tmdbInFlight = promise;
+    try {
+      await promise;
+    } finally {
+      tmdbBusy = false;
+      tmdbInFlight = undefined;
+    }
+  }
+
   log('daemon started');
 
   await guardedCycle('run', runCycle);
@@ -108,6 +149,17 @@ export async function runDaemonLoop(input: {
     guardedCycle('reconcile', reconcileCycle);
   }, options.reconcileIntervalMs);
 
+  let tmdbTimer: ReturnType<typeof setInterval> | undefined;
+  if (
+    options.tmdbRefreshIntervalMs != null &&
+    options.tmdbRefreshIntervalMs > 0 &&
+    input.tmdbRefreshCycle
+  ) {
+    tmdbTimer = setInterval(() => {
+      void runTmdbRefresh();
+    }, options.tmdbRefreshIntervalMs);
+  }
+
   await new Promise<void>((resolve) => {
     if (signal.aborted) {
       resolve();
@@ -119,6 +171,9 @@ export async function runDaemonLoop(input: {
 
   clearInterval(runTimer);
   clearInterval(reconcileTimer);
+  if (tmdbTimer) {
+    clearInterval(tmdbTimer);
+  }
 
   if (server) {
     server.stop();
@@ -127,6 +182,10 @@ export async function runDaemonLoop(input: {
 
   if (inFlight) {
     await inFlight;
+  }
+
+  if (tmdbInFlight) {
+    await tmdbInFlight;
   }
 
   log('daemon stopped');

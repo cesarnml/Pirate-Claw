@@ -283,6 +283,7 @@ describe('validateConfig', () => {
     expect(config.runtime.reconcileIntervalMinutes).toBe(1);
     expect(config.runtime.artifactDir).toBe('.pirate-claw/runtime');
     expect(config.runtime.artifactRetentionDays).toBe(7);
+    expect(config.runtime.tmdbRefreshIntervalMinutes).toBe(360);
   });
 
   it('applies all runtime overrides when fully specified', () => {
@@ -301,6 +302,7 @@ describe('validateConfig', () => {
       reconcileIntervalMinutes: 5,
       artifactDir: '/custom/path',
       artifactRetentionDays: 14,
+      tmdbRefreshIntervalMinutes: 360,
     });
   });
 
@@ -354,6 +356,23 @@ describe('validateConfig', () => {
     });
 
     expect(config.runtime.apiPort).toBe(3000);
+  });
+
+  it('accepts runtime.tmdbRefreshIntervalMinutes zero to disable background refresh', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      runtime: { tmdbRefreshIntervalMinutes: 0 },
+    });
+    expect(config.runtime.tmdbRefreshIntervalMinutes).toBe(0);
+  });
+
+  it('fails when runtime.tmdbRefreshIntervalMinutes is negative', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { tmdbRefreshIntervalMinutes: -1 },
+      }),
+    ).toThrow(/tmdbRefreshIntervalMinutes/);
   });
 
   it('leaves runtime.apiPort undefined when omitted', () => {

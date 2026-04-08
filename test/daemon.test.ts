@@ -422,4 +422,30 @@ describe('daemon', () => {
       // Expected: connection refused
     }
   });
+
+  it('schedules tmdb_refresh independently of run/reconcile', async () => {
+    const log: string[] = [];
+    const controller = new AbortController();
+    let tmdbCount = 0;
+    setTimeout(() => controller.abort(), 80);
+    await runDaemonLoop({
+      runCycle: async () => {},
+      reconcileCycle: async () => {},
+      tmdbRefreshCycle: async () => {
+        tmdbCount += 1;
+      },
+      options: {
+        runIntervalMs: 600_000,
+        reconcileIntervalMs: 600_000,
+        tmdbRefreshIntervalMs: 10,
+      },
+      signal: controller.signal,
+      log: (msg) => log.push(msg),
+    });
+
+    expect(tmdbCount).toBeGreaterThanOrEqual(1);
+    expect(log.some((m) => m.includes('tmdb_refresh cycle completed'))).toBe(
+      true,
+    );
+  });
 });

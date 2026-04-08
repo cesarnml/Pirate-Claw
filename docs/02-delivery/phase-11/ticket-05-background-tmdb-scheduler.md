@@ -22,3 +22,9 @@ With TMDB configured, metadata stays fresh within TTL without requiring every en
 ## Rationale
 
 Lazy API reads ship value first; this ticket adds operational completeness after all read paths exist, matching the grill-me ordering (scheduler after candidates slice).
+
+**Implementation notes (P11.05 delivered):**
+
+- `runtime.tmdbRefreshIntervalMinutes` (default 360; set `0` to disable) drives a `setInterval` in `runDaemonLoop` that is **not** gated by the RSS `busy` lock.
+- `runTmdbBackgroundRefresh` (`src/tmdb/background-refresh.ts`) reuses `buildMovieBreakdowns` / `buildShowBreakdowns` plus `enrichMovieBreakdowns` / `enrichShowBreakdowns` — same cache/TTL behavior as API reads, no duplicate TMDB client logic.
+- TMDB refresh is only scheduled when `tmdbMovieEnrichDeps` / `tmdbShowsEnrichDeps` resolve (TMDB API key configured).

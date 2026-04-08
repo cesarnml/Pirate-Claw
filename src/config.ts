@@ -48,6 +48,11 @@ export type RuntimeConfig = {
   artifactDir: string;
   artifactRetentionDays: number;
   apiPort?: number;
+  /**
+   * How often to run TMDB cache refresh in the daemon (independent of RSS polling).
+   * Omitted or zero disables the background pass (lazy API reads still work).
+   */
+  tmdbRefreshIntervalMinutes?: number;
 };
 
 /** Optional TMDB enrichment (Phase 11). API key may be supplied via env instead. */
@@ -64,6 +69,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   reconcileIntervalMinutes: 1,
   artifactDir: '.pirate-claw/runtime',
   artifactRetentionDays: 7,
+  tmdbRefreshIntervalMinutes: 360,
 };
 
 export type AppConfig = {
@@ -680,10 +686,41 @@ function validateRuntime(input: unknown, path: string): RuntimeConfig {
       runtime.apiPort,
       `${path} runtime apiPort`,
     ),
+    tmdbRefreshIntervalMinutes:
+      validateOptionalTmdbRefreshInterval(
+        runtime.tmdbRefreshIntervalMinutes,
+        `${path} runtime tmdbRefreshIntervalMinutes`,
+      ) ?? DEFAULT_RUNTIME_CONFIG.tmdbRefreshIntervalMinutes,
   };
 }
 
 const MAX_INTERVAL_MINUTES = 44_640;
+
+function validateOptionalTmdbRefreshInterval(
+  input: unknown,
+  label: string,
+): number | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof input !== 'number' ||
+    !Number.isFinite(input) ||
+    input < 0 ||
+    input > MAX_INTERVAL_MINUTES
+  ) {
+    throw new ConfigError(
+      `Config file "${label}" must be a finite non-negative number of minutes (max ${MAX_INTERVAL_MINUTES}), or omit to use the default.`,
+    );
+  }
+
+  if (input === 0) {
+    return 0;
+  }
+
+  return input;
+}
 
 function optionalPositiveNumber(
   input: unknown,

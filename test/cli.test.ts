@@ -612,6 +612,7 @@ describe('pirate-claw config show', () => {
         reconcileIntervalMinutes: 1,
         artifactDir: '.pirate-claw/runtime',
         artifactRetentionDays: 7,
+        tmdbRefreshIntervalMinutes: 360,
       },
     });
   });
