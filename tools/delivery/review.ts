@@ -17,8 +17,19 @@ import type {
   TicketState,
 } from './orchestrator';
 
-const STANDALONE_REVIEW_POLL_INTERVAL_MINUTES = 2;
-const STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES = 10;
+import {
+  type ReviewPollingProfile,
+  DEFAULT_REVIEW_POLLING_PROFILE,
+  computeExtendedReviewPollMaxWaitMinutes,
+  resolveDeliveryReviewPollingProfile,
+} from './review-polling-profile';
+
+export {
+  type ReviewPollingProfile,
+  DEFAULT_REVIEW_POLLING_PROFILE,
+  computeExtendedReviewPollMaxWaitMinutes,
+  resolveDeliveryReviewPollingProfile,
+} from './review-polling-profile';
 
 function formatError(error: unknown): string {
   if (error instanceof Error) {
@@ -374,7 +385,7 @@ export type StandaloneAiReviewDependencies = Pick<
     ) => Promise<void>;
   };
 
-type PollForAiReviewResult =
+export type PollForAiReviewResult =
   | {
       status: 'triage_ready';
       result: AiReviewFetcherResult;
@@ -487,13 +498,6 @@ function formatIncompleteAiReviewWithoutFindingsNote(
 
 function formatNoAiReviewFeedbackNote(maxWaitMinutes: number): string {
   return `No AI review feedback was detected within the ${maxWaitMinutes}-minute polling window.`;
-}
-
-function computeExtendedReviewPollMaxWaitMinutes(
-  intervalMinutes: number,
-  maxWaitMinutes: number,
-): number {
-  return maxWaitMinutes + intervalMinutes;
 }
 
 function mergeReviewOutcome(
@@ -715,11 +719,10 @@ export function resolveNativeReviewThreads(
   return resolutions;
 }
 
-async function pollForAiReview(
+export async function pollForAiReview(
   worktreePath: string,
   prNumber: number,
-  intervalMinutes: number,
-  maxWaitMinutes: number,
+  profile: ReviewPollingProfile,
   pollWindowStartedAt: number,
   dependencies: Pick<TicketReviewDependencies, 'fetcher' | 'now' | 'sleep'> &
     ReviewCoreDependencies,
@@ -730,6 +733,8 @@ async function pollForAiReview(
     dependencies.fetcher ??
     ((nextWorktreePath: string, nextPrNumber: number) =>
       runAiReviewFetcher(nextWorktreePath, nextPrNumber, dependencies));
+  const intervalMinutes = profile.intervalMinutes;
+  const maxWaitMinutes = profile.maxWaitMinutes;
   const checks = buildReviewPollCheckMinutes(intervalMinutes, maxWaitMinutes);
   const extendedMaxWaitMinutes = computeExtendedReviewPollMaxWaitMinutes(
     intervalMinutes,
@@ -763,6 +768,7 @@ async function pollForAiReview(
     }
 
     if (
+      profile.extendByOneInterval &&
       !extended &&
       checkMinute === maxWaitMinutes &&
       hasInFlightReviewAgents(result)
@@ -1045,6 +1051,44 @@ async function persistStandaloneAiReviewResult(
   return result;
 }
 
+export type AiReviewLifecycleHooks<T> = {
+  onTriageOrPartial: (
+    reviewPollResult: Extract<
+      PollForAiReviewResult,
+      { status: 'triage_ready' | 'partial_timeout' }
+    >,
+  ) => Promise<T>;
+  onCleanTimeout: (reviewPollResult: PollForAiReviewResult) => Promise<T>;
+};
+
+export async function runAiReviewLifecycleWithAdapters<T>(input: {
+  profile: ReviewPollingProfile;
+  worktreePath: string;
+  prNumber: number;
+  pollWindowStartedAt: number;
+  dependencies: Pick<TicketReviewDependencies, 'fetcher' | 'now' | 'sleep'> &
+    ReviewCoreDependencies;
+  onTriageOrPartial: AiReviewLifecycleHooks<T>['onTriageOrPartial'];
+  onCleanTimeout: AiReviewLifecycleHooks<T>['onCleanTimeout'];
+}): Promise<T> {
+  const reviewPollResult = await pollForAiReview(
+    input.worktreePath,
+    input.prNumber,
+    input.profile,
+    input.pollWindowStartedAt,
+    input.dependencies,
+  );
+
+  if (
+    reviewPollResult.status === 'triage_ready' ||
+    reviewPollResult.status === 'partial_timeout'
+  ) {
+    return input.onTriageOrPartial(reviewPollResult);
+  }
+
+  return input.onCleanTimeout(reviewPollResult);
+}
+
 export async function runTicketReviewLifecycle(
   state: DeliveryState,
   cwd: string,
@@ -1070,102 +1114,103 @@ export async function runTicketReviewLifecycle(
       resolveNativeReviewThreads(worktreePath, comments, dependencies));
   const { pollWindowStartedAt, pollWindowStartedAtIso } =
     resolveReviewPollWindowStart(target.prOpenedAt, now);
-  const reviewPollResult = await pollForAiReview(
-    target.worktreePath,
-    target.prNumber,
-    state.reviewPollIntervalMinutes,
-    state.reviewPollMaxWaitMinutes,
+  const profile = resolveDeliveryReviewPollingProfile(state);
+
+  return runAiReviewLifecycleWithAdapters({
+    profile,
+    worktreePath: target.worktreePath,
+    prNumber: target.prNumber,
     pollWindowStartedAt,
     dependencies,
-  );
-
-  if (
-    reviewPollResult.status === 'triage_ready' ||
-    reviewPollResult.status === 'partial_timeout'
-  ) {
-    const processedReview = await processDetectedAiReview({
-      artifactStemPath: resolve(
-        cwd,
-        state.reviewsDirPath,
-        `${target.id}-ai-review`,
-      ),
-      detectedReview: reviewPollResult.result,
-      effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
-      incompleteAgents:
-        reviewPollResult.status === 'partial_timeout'
-          ? reviewPollResult.incompleteAgents
-          : undefined,
-      mode: 'ticketed',
-      previousOutcome: target.reviewOutcome,
-      resolveThreads,
-      triager,
-      worktreePath: target.worktreePath,
-    });
-    const nextStatus =
-      processedReview.outcome === 'needs_patch' ? 'needs_patch' : 'reviewed';
-    return applyTicketReviewUpdate(
-      state,
-      target.id,
-      (ticket) => ({
-        ...ticket,
-        prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
-        status: nextStatus,
-        reviewActionSummary: processedReview.actionSummary,
-        reviewComments: processedReview.comments,
-        reviewArtifactJsonPath: dependencies.relativeToRepo(
+    async onTriageOrPartial(reviewPollResult) {
+      const processedReview = await processDetectedAiReview({
+        artifactStemPath: resolve(
           cwd,
-          processedReview.artifactJsonPath,
+          state.reviewsDirPath,
+          `${target.id}-ai-review`,
         ),
-        reviewArtifactPath: dependencies.relativeToRepo(
-          cwd,
-          processedReview.artifactTextPath,
-        ),
-        reviewFetchedAt: new Date(now()).toISOString(),
-        reviewHeadSha: processedReview.reviewedHeadSha,
-        reviewNonActionSummary: processedReview.nonActionSummary,
-        reviewOutcome: accumulateTicketReviewOutcome(
-          ticket.reviewOutcome,
-          processedReview.outcome,
-        ),
-        reviewNote: processedReview.note,
-        reviewIncompleteAgents: processedReview.incompleteAgents,
-        reviewThreadResolutions: processedReview.threadResolutions,
-        reviewVendors: processedReview.vendors,
-      }),
-      dependencies,
-    );
-  }
-
-  const processedReview = processCleanAiReview({
-    effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
-    incompleteAgents: reviewPollResult.incompleteAgents,
-    maxWaitMinutes: state.reviewPollMaxWaitMinutes,
-    previousOutcome: target.reviewOutcome,
+        detectedReview: reviewPollResult.result,
+        effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
+        incompleteAgents:
+          reviewPollResult.status === 'partial_timeout'
+            ? reviewPollResult.incompleteAgents
+            : undefined,
+        mode: 'ticketed',
+        previousOutcome: target.reviewOutcome,
+        resolveThreads,
+        triager,
+        worktreePath: target.worktreePath,
+      });
+      const nextStatus =
+        processedReview.outcome === 'needs_patch' ? 'needs_patch' : 'reviewed';
+      return applyTicketReviewUpdate(
+        state,
+        target.id,
+        (ticket) => ({
+          ...ticket,
+          prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
+          status: nextStatus,
+          reviewActionSummary: processedReview.actionSummary,
+          reviewComments: processedReview.comments,
+          reviewArtifactJsonPath: dependencies.relativeToRepo(
+            cwd,
+            processedReview.artifactJsonPath,
+          ),
+          reviewArtifactPath: dependencies.relativeToRepo(
+            cwd,
+            processedReview.artifactTextPath,
+          ),
+          reviewFetchedAt: new Date(now()).toISOString(),
+          reviewHeadSha: processedReview.reviewedHeadSha,
+          reviewNonActionSummary: processedReview.nonActionSummary,
+          reviewOutcome: accumulateTicketReviewOutcome(
+            ticket.reviewOutcome,
+            processedReview.outcome,
+          ),
+          reviewNote: processedReview.note,
+          reviewIncompleteAgents: processedReview.incompleteAgents,
+          reviewThreadResolutions: processedReview.threadResolutions,
+          reviewVendors: processedReview.vendors,
+        }),
+        dependencies,
+      );
+    },
+    async onCleanTimeout(reviewPollResult) {
+      const processedReview = processCleanAiReview({
+        effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
+        incompleteAgents:
+          reviewPollResult.status === 'clean_timeout'
+            ? reviewPollResult.incompleteAgents
+            : undefined,
+        maxWaitMinutes: profile.maxWaitMinutes,
+        previousOutcome: target.reviewOutcome,
+      });
+      return applyTicketReviewUpdate(
+        state,
+        target.id,
+        (ticket) => ({
+          ...ticket,
+          prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
+          status: 'reviewed',
+          reviewActionSummary: undefined,
+          reviewComments: undefined,
+          reviewArtifactJsonPath: undefined,
+          reviewArtifactPath: undefined,
+          reviewHeadSha: undefined,
+          reviewNonActionSummary: undefined,
+          reviewOutcome: accumulateTicketReviewOutcome(
+            ticket.reviewOutcome,
+            processedReview.outcome,
+          ),
+          reviewNote: processedReview.note,
+          reviewIncompleteAgents: processedReview.incompleteAgents,
+          reviewThreadResolutions: undefined,
+          reviewVendors: [],
+        }),
+        dependencies,
+      );
+    },
   });
-  return applyTicketReviewUpdate(
-    state,
-    target.id,
-    (ticket) => ({
-      ...ticket,
-      prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
-      status: 'reviewed',
-      reviewActionSummary: undefined,
-      reviewComments: undefined,
-      reviewArtifactJsonPath: undefined,
-      reviewArtifactPath: undefined,
-      reviewHeadSha: undefined,
-      reviewNonActionSummary: undefined,
-      reviewOutcome: accumulateTicketReviewOutcome(
-        ticket.reviewOutcome,
-        processedReview.outcome,
-      ),
-      reviewNote: processedReview.note,
-      reviewIncompleteAgents: processedReview.incompleteAgents,
-      reviewThreadResolutions: undefined,
-      reviewVendors: [],
-    }),
-    dependencies,
-  );
 }
 
 export async function runStandaloneAiReviewLifecycle(
@@ -1192,88 +1237,89 @@ export async function runStandaloneAiReviewLifecycle(
     pullRequest.createdAt,
     now,
   );
-  const reviewPollResult = await pollForAiReview(
-    cwd,
-    pullRequest.number,
-    STANDALONE_REVIEW_POLL_INTERVAL_MINUTES,
-    STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES,
+  const profile = DEFAULT_REVIEW_POLLING_PROFILE;
+
+  return runAiReviewLifecycleWithAdapters({
+    profile,
+    worktreePath: cwd,
+    prNumber: pullRequest.number,
     pollWindowStartedAt,
     dependencies,
-  );
-
-  if (
-    reviewPollResult.status === 'triage_ready' ||
-    reviewPollResult.status === 'partial_timeout'
-  ) {
-    const processedReview = await processDetectedAiReview({
-      artifactStemPath: resolve(
+    async onTriageOrPartial(reviewPollResult) {
+      const processedReview = await processDetectedAiReview({
+        artifactStemPath: resolve(
+          cwd,
+          '.agents/ai-review',
+          `pr-${pullRequest.number}`,
+          'review',
+        ),
+        detectedReview: reviewPollResult.result,
+        effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
+        incompleteAgents:
+          reviewPollResult.status === 'partial_timeout'
+            ? reviewPollResult.incompleteAgents
+            : undefined,
+        mapOutcome: mapStandaloneReviewOutcome,
+        mode: 'standalone',
+        previousOutcome,
+        resolveThreads,
+        triager,
+        worktreePath: cwd,
+      });
+      const standaloneResult: StandaloneAiReviewResult = {
+        actionSummary: processedReview.actionSummary,
+        artifactJsonPath: dependencies.relativeToRepo(
+          cwd,
+          processedReview.artifactJsonPath,
+        ),
+        artifactTextPath: dependencies.relativeToRepo(
+          cwd,
+          processedReview.artifactTextPath,
+        ),
+        incompleteAgents: processedReview.incompleteAgents,
+        note: processedReview.note,
+        comments: processedReview.comments,
+        nonActionSummary: processedReview.nonActionSummary,
+        outcome: processedReview.outcome,
+        prNumber: pullRequest.number,
+        prUrl: pullRequest.url,
+        reviewedHeadSha: processedReview.reviewedHeadSha,
+        threadResolutions: processedReview.threadResolutions,
+        vendors: processedReview.vendors,
+      };
+      return persistStandaloneAiReviewResult(
         cwd,
-        '.agents/ai-review',
-        `pr-${pullRequest.number}`,
-        'review',
-      ),
-      detectedReview: reviewPollResult.result,
-      effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
-      incompleteAgents:
-        reviewPollResult.status === 'partial_timeout'
-          ? reviewPollResult.incompleteAgents
-          : undefined,
-      mapOutcome: mapStandaloneReviewOutcome,
-      mode: 'standalone',
-      previousOutcome,
-      resolveThreads,
-      triager,
-      worktreePath: cwd,
-    });
-    const standaloneResult: StandaloneAiReviewResult = {
-      actionSummary: processedReview.actionSummary,
-      artifactJsonPath: dependencies.relativeToRepo(
+        pullRequest,
+        standaloneResult,
+        dependencies,
+      );
+    },
+    async onCleanTimeout(reviewPollResult) {
+      const processedReview = processCleanAiReview({
+        effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
+        incompleteAgents:
+          reviewPollResult.status === 'clean_timeout'
+            ? reviewPollResult.incompleteAgents
+            : undefined,
+        maxWaitMinutes: profile.maxWaitMinutes,
+        previousOutcome,
+      });
+      const standaloneResult: StandaloneAiReviewResult = {
+        incompleteAgents: processedReview.incompleteAgents,
+        note: processedReview.note,
+        outcome: processedReview.outcome,
+        prNumber: pullRequest.number,
+        prUrl: pullRequest.url,
+        vendors: [],
+      };
+      return persistStandaloneAiReviewResult(
         cwd,
-        processedReview.artifactJsonPath,
-      ),
-      artifactTextPath: dependencies.relativeToRepo(
-        cwd,
-        processedReview.artifactTextPath,
-      ),
-      incompleteAgents: processedReview.incompleteAgents,
-      note: processedReview.note,
-      comments: processedReview.comments,
-      nonActionSummary: processedReview.nonActionSummary,
-      outcome: processedReview.outcome,
-      prNumber: pullRequest.number,
-      prUrl: pullRequest.url,
-      reviewedHeadSha: processedReview.reviewedHeadSha,
-      threadResolutions: processedReview.threadResolutions,
-      vendors: processedReview.vendors,
-    };
-    return persistStandaloneAiReviewResult(
-      cwd,
-      pullRequest,
-      standaloneResult,
-      dependencies,
-    );
-  }
-
-  const processedReview = processCleanAiReview({
-    effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
-    incompleteAgents: reviewPollResult.incompleteAgents,
-    maxWaitMinutes: STANDALONE_REVIEW_POLL_MAX_WAIT_MINUTES,
-    previousOutcome,
+        pullRequest,
+        standaloneResult,
+        dependencies,
+      );
+    },
   });
-  const standaloneResult: StandaloneAiReviewResult = {
-    incompleteAgents: processedReview.incompleteAgents,
-    note: processedReview.note,
-    outcome: processedReview.outcome,
-    prNumber: pullRequest.number,
-    prUrl: pullRequest.url,
-    vendors: [],
-  };
-  return persistStandaloneAiReviewResult(
-    cwd,
-    pullRequest,
-    standaloneResult,
-    dependencies,
-  );
 }
 
 export async function writeStandaloneAiReviewNote(

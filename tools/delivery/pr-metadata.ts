@@ -9,12 +9,11 @@ import type {
   TicketState,
   TicketStatus,
 } from './orchestrator';
+import { DEFAULT_REVIEW_POLLING_PROFILE } from './review-polling-profile';
 
 const MAX_ACTION_COMMITS = 20;
 const STANDALONE_AI_REVIEW_SECTION_START = '<!-- ai-review:start -->';
 const STANDALONE_AI_REVIEW_SECTION_END = '<!-- ai-review:end -->';
-const DEFAULT_REVIEW_POLL_INTERVAL_MINUTES = 2;
-const DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
 
 export type ReviewActionCommit = {
   sha: string;
@@ -925,7 +924,7 @@ export function buildStandaloneAiReviewSection(
     currentHeadSha: options.currentHeadSha,
     githubRepo: options.githubRepo,
     incompleteAgents: result.incompleteAgents,
-    maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+    maxWaitMinutes: DEFAULT_REVIEW_POLLING_PROFILE.maxWaitMinutes,
   });
 
   return [
@@ -1062,7 +1061,7 @@ export function buildStandaloneReviewStartedEvent(
     kind: 'standalone_review_started',
     prNumber,
     prUrl,
-    reviewPollIntervalMinutes: DEFAULT_REVIEW_POLL_INTERVAL_MINUTES,
-    reviewPollMaxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
+    reviewPollIntervalMinutes: DEFAULT_REVIEW_POLLING_PROFILE.intervalMinutes,
+    reviewPollMaxWaitMinutes: DEFAULT_REVIEW_POLLING_PROFILE.maxWaitMinutes,
   };
 }

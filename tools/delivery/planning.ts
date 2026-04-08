@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import type { OrchestratorOptions, TicketDefinition } from './orchestrator';
+import { DEFAULT_REVIEW_POLLING_PROFILE } from './review-polling-profile';
 
 export function parsePlan(
   markdown: string,
@@ -76,8 +77,8 @@ export function createOptions(input: {
     statePath: `.agents/delivery/${planKey}/state.json`,
     reviewsDirPath: `.agents/delivery/${planKey}/reviews`,
     handoffsDirPath: `.agents/delivery/${planKey}/handoffs`,
-    reviewPollIntervalMinutes: 2,
-    reviewPollMaxWaitMinutes: 8,
+    reviewPollIntervalMinutes: DEFAULT_REVIEW_POLLING_PROFILE.intervalMinutes,
+    reviewPollMaxWaitMinutes: DEFAULT_REVIEW_POLLING_PROFILE.maxWaitMinutes,
   };
 }
 
