@@ -339,7 +339,7 @@ function buildGitHubCommitLink(input: {
   githubRepo: { defaultBranch: string; name: string; owner: string };
   sha: string;
 }): string {
-  const short = shortenSha(input.sha);
+  const short = input.sha.slice(0, 12);
   return `[\`${short}\`](https://github.com/${input.githubRepo.owner}/${input.githubRepo.name}/commit/${input.sha})`;
 }
 
