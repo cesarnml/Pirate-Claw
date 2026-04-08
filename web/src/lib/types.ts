@@ -106,3 +106,34 @@ export type AppConfig = {
 	movies: MoviePolicy;
 	transmission: TransmissionConfig;
 	runtime: RuntimeConfig;
+};
+
+export type FeedItemOutcomeStatus =
+	| 'queued'
+	| 'failed'
+	| 'skipped_duplicate'
+	| 'skipped_no_match';
+
+export type RunStatus = 'running' | 'completed' | 'failed';
+
+export type RunSummaryRecord = {
+	id: number;
+	startedAt: string;
+	status: RunStatus;
+	completedAt?: string;
+	counts: Record<FeedItemOutcomeStatus, number>;
+};
+
+export type CycleSnapshot = {
+	status: RunStatus;
+	startedAt: string;
+	completedAt?: string;
+	durationMs?: number;
+};
+
+export type DaemonHealth = {
+	uptime: number;
+	startedAt: string;
+	lastRunCycle?: CycleSnapshot;
+	lastReconcileCycle?: CycleSnapshot;
+};

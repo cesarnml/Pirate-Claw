@@ -8,7 +8,7 @@
     "pirate-claw": "./bin/pirate-claw"
   },
   "scripts": {
-    "ci": "bun run verify && bun run test",
+    "ci": "bun run verify && bun run test && bun run test:web",
     "deliver": "bun run ./scripts/deliver.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -20,6 +20,7 @@
     "closeout-stack": "bun run ./scripts/closeout-stack.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
+    "test:web": "bun install --cwd web --frozen-lockfile && bun run --cwd web test",
     "typecheck": "tsc --noEmit",
     "verify": "bun run format:check && bun run typecheck && bun run lint && bun run spellcheck"
   },
