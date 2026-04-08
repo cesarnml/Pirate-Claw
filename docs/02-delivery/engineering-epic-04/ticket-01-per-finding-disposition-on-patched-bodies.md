@@ -1,4 +1,4 @@
-# EE4.02 — Per-Finding Disposition on Patched PR Bodies
+# EE4.01 — Per-Finding Disposition on Patched PR Bodies
 
 ## Goal
 
@@ -57,4 +57,4 @@ PR #84's format (which received good reviewer feedback) is the reference: findin
 
 - `effectiveContext === 'history'` currently nullifies all `detail`. The fix should allow detail when `resolution` is present, regardless of context.
 - The history-context finding rows may still lack action commit cross-references (commits are listed separately in the current model). That's acceptable.
-- Consider whether to keep `### Actions Taken` alongside the findings or drop it — either is acceptable as long as all findings are individually visible.
+- Drop `### Actions Taken` when `patched` + stale-SHA and finding comments are present. The commit SHA already appears in the stale-SHA metadata block as `current branch head`.

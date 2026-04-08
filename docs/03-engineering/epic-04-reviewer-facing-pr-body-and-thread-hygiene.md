@@ -55,11 +55,11 @@ All three gaps are in the same reviewer-facing rendering and thread-lifecycle pa
 
 ## In Scope
 
-- `pr-metadata.ts`: stale-SHA resolution sentence; finding disposition on patched bodies
+- `pr-metadata.ts`: finding disposition on patched bodies; stale-SHA resolution sentence; ticket permalink; SHA links; human-readable timestamp
 - `review.ts`: thread reply before resolve; disposition text derivation
-- `platform.ts`: `replyToReviewThread` function (REST or GraphQL path)
-- comment fetch query: expose `databaseId` (numeric REST ID) if needed for the reply endpoint
-- test coverage for all three behaviors under the `patched` + stale-SHA condition
+- `platform.ts`: `replyToReviewThread` function (REST path via `databaseId`)
+- comment fetch query: expose `databaseId` (numeric REST ID) on `AiReviewComment`
+- test coverage for all behaviors
 
 ## Intentionally Out of Scope
 
@@ -67,15 +67,19 @@ All three gaps are in the same reviewer-facing rendering and thread-lifecycle pa
 - ticket orchestration or delivery-state repair
 - `closeout-stack` behavior
 - changing when or how reviews are polled or triaged
-- reviewer-facing body changes outside the `patched` + stale-SHA scenario
+- per-finding disposition in thread replies (follow-up after EE4.03)
 
 ## Locked Decisions
 
-- the three gaps are addressed in ticket order: stale-SHA sentence → finding disposition → thread reply
-- thread reply is best-effort and never blocks resolution or the patched record
-- finding disposition on patched bodies should match the format already used when review SHA equals head SHA (i.e., use `buildResolvedFindingBullets`, not a new format)
-- `replyToReviewThread` lives in `platform.ts` alongside `resolveReviewThread`
-- if `databaseId` is not already in the comment schema, it must be added to the GraphQL fetch before ticket EE4.03 can land
+- ticket order: finding disposition → stale-SHA sentence → thread reply → metadata polish
+- EE4.01 before EE4.02: finding disposition rewrites the rendering section EE4.02 adds a sentence into — doing EE4.01 first avoids merge noise
+- `### Actions Taken` is dropped (not kept alongside findings) in `patched` + stale-SHA context; commit SHA remains visible in the stale-SHA metadata block
+- thread reply is generic ("Addressed during patch phase — see PR body for full finding disposition"), best-effort, never blocks resolution
+- `replyToReviewThread` uses REST `POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/replies` with `databaseId` from GraphQL fetch (Option A)
+- ticket file line renders as a GitHub permalink targeting `main`
+- reviewed/head commit SHAs render as clickable commit links
+- ISO timestamp humanized to `YYYY-MM-DD HH:mm UTC`
+- owner/repo threaded through at orchestrator call time; render functions stay pure
 
 ## Out of Scope
 
@@ -87,9 +91,10 @@ All three gaps are in the same reviewer-facing rendering and thread-lifecycle pa
 ## Target Decomposition
 
 ```
-EE4.01 — stale-SHA resolution sentence
-EE4.02 — per-finding disposition on patched PR bodies
-EE4.03 — thread reply before resolve
+EE4.01 — per-finding disposition on patched PR bodies   [base]
+EE4.02 — stale-SHA resolution sentence                  [stacks on EE4.01]
+EE4.03 — thread reply before resolve                    [stacks on EE4.02]
+EE4.04 — PR body metadata polish                        [stacks on EE4.03]
 ```
 
-All three are in `pr-metadata.ts` / `review.ts` / `platform.ts`. Ticket order matters: EE4.01 and EE4.02 are independent of each other but both lay groundwork that makes EE4.03's reply text meaningful.
+All four tickets are in `pr-metadata.ts` / `review.ts` / `platform.ts`. EE4.01 must land first — it rewrites the rendering section that EE4.02 extends and EE4.03/EE4.04 supplement.

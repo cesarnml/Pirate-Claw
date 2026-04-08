@@ -12,14 +12,8 @@ Before the orchestrator resolves a GitHub review thread, post a reply on that th
 
 Before resolving each thread:
 
-1. Determine the disposition:
-   - If outcome is `patched`: "Fixed in patch commits after `<reviewedHeadSha>`."
-   - If thread is being resolved but outcome is not patched: "Resolved as part of review triage — finding noted."
-   - (Stretch) If a specific actionable finding linked to a commit SHA is available, include the sha: "Fixed in `<sha>`."
-
-2. Post the reply via GitHub API (REST or GraphQL — see notes).
-
-3. Then call `resolveReviewThread` as today.
+1. Post a generic reply: "Addressed during patch phase — see PR body for full finding disposition."
+2. Then call `resolveReviewThread` as today.
 
 Reply failures are best-effort: a failed reply must not block thread resolution.
 
@@ -27,16 +21,9 @@ Reply failures are best-effort: a failed reply must not block thread resolution.
 
 The GitHub REST reply endpoint `POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/replies` requires the **numeric REST databaseId** of the first comment in the thread, not the GraphQL node ID (`threadId`).
 
-Current state: `AiReviewComment` stores `threadId` (GraphQL node ID) but not `databaseId` (numeric REST ID).
+**Approach: Option A** — add `databaseId` to the `reviewComments` GraphQL fetch and store it in `AiReviewComment`. Use the REST reply endpoint `POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/replies`.
 
-This ticket must resolve one of:
-
-- **Option A**: Add `databaseId` to the `reviewComments` GraphQL fetch and store it in `AiReviewComment`. Use REST reply endpoint.
-- **Option B**: Find and use a GraphQL mutation for adding a thread reply (if one exists in the GitHub schema). Use `threadId` directly.
-
-Option A is more canonical and avoids GraphQL mutation discovery. Option B avoids schema/type changes.
-
-If neither option is feasible within a thin PR, the reply can be omitted and this ticket re-scoped to just platform plumbing (adding `replyToReviewThread` to `platform.ts` with a no-op stub and a follow-up ticket for full wiring).
+The reply text is generic: "Addressed during patch phase — see PR body for full finding disposition." Per-finding disposition in thread replies is a follow-up concern.
 
 ## Change Surface
 

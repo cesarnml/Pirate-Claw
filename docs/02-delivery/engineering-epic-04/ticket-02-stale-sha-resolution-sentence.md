@@ -1,4 +1,4 @@
-# EE4.01 — Stale-SHA Resolution Sentence
+# EE4.02 — Stale-SHA Resolution Sentence
 
 ## Goal
 
