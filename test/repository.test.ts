@@ -546,6 +546,28 @@ describe('SQLite repository', () => {
       },
     ]);
   });
+
+  it('creates TMDB cache tables in ensureSchema', async () => {
+    const path = await createDatabasePath();
+    const database = openDatabase(path);
+
+    openDatabases.push(database);
+    ensureSchema(database);
+
+    const rows = database
+      .query(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'tmdb_%' ORDER BY name`,
+      )
+      .all() as Array<{ name: string }>;
+
+    const names = rows.map((row) => row.name);
+
+    expect(names).toEqual([
+      'tmdb_movie_cache',
+      'tmdb_tv_cache',
+      'tmdb_tv_season_cache',
+    ]);
+  });
 });
 
 function createTestRepository(path: string) {

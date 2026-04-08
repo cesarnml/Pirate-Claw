@@ -556,6 +556,11 @@ describe('validateConfig', () => {
   });
 
   it('loads transmission credentials from a sibling .env file', async () => {
+    const prevUser = process.env.PIRATE_CLAW_TRANSMISSION_USERNAME;
+    const prevPass = process.env.PIRATE_CLAW_TRANSMISSION_PASSWORD;
+    delete process.env.PIRATE_CLAW_TRANSMISSION_USERNAME;
+    delete process.env.PIRATE_CLAW_TRANSMISSION_PASSWORD;
+
     const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-config-'));
     try {
       const configPath = join(directory, 'pirate-claw.config.json');
@@ -590,6 +595,16 @@ describe('validateConfig', () => {
       });
     } finally {
       await Bun.$`rm -rf ${directory}`;
+      if (prevUser !== undefined) {
+        process.env.PIRATE_CLAW_TRANSMISSION_USERNAME = prevUser;
+      } else {
+        delete process.env.PIRATE_CLAW_TRANSMISSION_USERNAME;
+      }
+      if (prevPass !== undefined) {
+        process.env.PIRATE_CLAW_TRANSMISSION_PASSWORD = prevPass;
+      } else {
+        delete process.env.PIRATE_CLAW_TRANSMISSION_PASSWORD;
+      }
     }
   });
 
@@ -718,6 +733,32 @@ describe('validateConfig', () => {
         'Config file "config transmission downloadDirs tv" must be a non-empty string.',
       ),
     );
+  });
+
+  it('accepts optional tmdb block', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      tmdb: {
+        apiKey: 'test-key',
+        cacheTtlDays: 14,
+        negativeCacheTtlDays: 2,
+      },
+    });
+
+    expect(config.tmdb).toEqual({
+      apiKey: 'test-key',
+      cacheTtlDays: 14,
+      negativeCacheTtlDays: 2,
+    });
+  });
+
+  it('fails when tmdb cacheTtlDays is out of range', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        tmdb: { cacheTtlDays: 0 },
+      }),
+    ).toThrow(ConfigError);
   });
 });
 

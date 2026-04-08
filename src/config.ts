@@ -50,6 +50,15 @@ export type RuntimeConfig = {
   apiPort?: number;
 };
 
+/** Optional TMDB enrichment (Phase 11). API key may be supplied via env instead. */
+export type TmdbConfig = {
+  apiKey?: string;
+  /** Successful fetch TTL; default 7 days. */
+  cacheTtlDays?: number;
+  /** Miss / error TTL; default 1 day. */
+  negativeCacheTtlDays?: number;
+};
+
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   runIntervalMinutes: 30,
   reconcileIntervalMinutes: 1,
@@ -63,6 +72,7 @@ export type AppConfig = {
   movies: MoviePolicy;
   transmission: TransmissionConfig;
   runtime: RuntimeConfig;
+  tmdb?: TmdbConfig;
 };
 
 const DEFAULT_CONFIG_PATH = 'pirate-claw.config.json';
@@ -119,6 +129,7 @@ export function validateConfig(
     movies: validateMoviePolicy(movies, path),
     transmission: validateTransmission(transmission, path, env),
     runtime: validateRuntime(input.runtime, path),
+    tmdb: validateOptionalTmdb(input.tmdb, path),
   };
 }
 
@@ -575,6 +586,65 @@ const supportedCodecs = new Set(['x264', 'x265']);
 function expectString(input: unknown, path: string): string {
   if (typeof input !== 'string' || input.length === 0) {
     throw new ConfigError(`Config file "${path}" must be a non-empty string.`);
+  }
+
+  return input;
+}
+
+function validateOptionalTmdb(
+  input: unknown,
+  path: string,
+): TmdbConfig | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  const tmdb = expectRecord(input, `${path} tmdb`);
+
+  const apiKey =
+    tmdb.apiKey === undefined
+      ? undefined
+      : typeof tmdb.apiKey === 'string'
+        ? tmdb.apiKey
+        : (() => {
+            throw new ConfigError(
+              `Config file "${path} tmdb apiKey" must be a string.`,
+            );
+          })();
+
+  const cacheTtlDays = validateOptionalTmdbDayCount(
+    tmdb.cacheTtlDays,
+    `${path} tmdb cacheTtlDays`,
+  );
+  const negativeCacheTtlDays = validateOptionalTmdbDayCount(
+    tmdb.negativeCacheTtlDays,
+    `${path} tmdb negativeCacheTtlDays`,
+  );
+
+  return {
+    apiKey,
+    cacheTtlDays,
+    negativeCacheTtlDays,
+  };
+}
+
+function validateOptionalTmdbDayCount(
+  input: unknown,
+  label: string,
+): number | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof input !== 'number' ||
+    !Number.isFinite(input) ||
+    input <= 0 ||
+    input > 3650
+  ) {
+    throw new ConfigError(
+      `Config file "${label}" must be a finite positive number of days (max 3650).`,
+    );
   }
 
   return input;

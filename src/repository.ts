@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 
+import { ensureTmdbSchema } from './tmdb/schema';
 import type { RawFeedItem } from './feed';
 import type { NormalizedFeedItem } from './normalize';
 
@@ -240,6 +241,8 @@ export function ensureSchema(database: Database): void {
   ensureCandidateStateColumn(database, 'transmission_percent_done', 'REAL');
   ensureCandidateStateColumn(database, 'transmission_done_date', 'TEXT');
   ensureCandidateStateColumn(database, 'transmission_download_dir', 'TEXT');
+
+  ensureTmdbSchema(database);
 }
 
 export function hasStatusSchema(database: Database): boolean {

@@ -286,7 +286,7 @@ export function buildFeedStatuses(
 // --- Config redaction ---
 
 export function redactConfig(config: AppConfig): AppConfig {
-  return {
+  const next: AppConfig = {
     ...config,
     transmission: {
       ...config.transmission,
@@ -294,4 +294,10 @@ export function redactConfig(config: AppConfig): AppConfig {
       password: '[redacted]',
     },
   };
+
+  if (next.tmdb?.apiKey) {
+    next.tmdb = { ...next.tmdb, apiKey: '[redacted]' };
+  }
+
+  return next;
 }

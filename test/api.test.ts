@@ -607,4 +607,19 @@ describe('redactConfig', () => {
     expect(redacted.transmission.password).toBe('[redacted]');
     expect(config.transmission.username).toBe('user');
   });
+
+  it('redacts tmdb apiKey when present', () => {
+    const config: AppConfig = {
+      ...stubConfig(),
+      tmdb: {
+        apiKey: 'secret-tmdb',
+        cacheTtlDays: 14,
+        negativeCacheTtlDays: 2,
+      },
+    };
+    const redacted = redactConfig(config);
+
+    expect(redacted.tmdb?.apiKey).toBe('[redacted]');
+    expect(config.tmdb?.apiKey).toBe('secret-tmdb');
+  });
 });

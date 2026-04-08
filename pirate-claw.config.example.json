@@ -44,5 +44,10 @@
     "artifactDir": ".pirate-claw/runtime",
     "artifactRetentionDays": 7,
     "apiPort": 3000
+  },
+  "tmdb": {
+    "apiKey": "your-tmdb-api-key",
+    "cacheTtlDays": 7,
+    "negativeCacheTtlDays": 1
   }
 }
