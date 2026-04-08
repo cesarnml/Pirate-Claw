@@ -33,7 +33,7 @@ Bootstrap the `web/` SvelteKit application with the full toolchain, a working na
 
 **Why this path:** manually creating the SvelteKit project files rather than using `sv create` (which is fully interactive with no non-interactive flags). All files follow the SvelteKit 2 + Svelte 5 minimal template conventions exactly.
 
-**`$env/dynamic/private` over `$env/static/private`:** the API URL is a runtime value that differs between dev and production. `$env/static/private` inlines the value at build time, which is wrong for this use case.
+**`$env/dynamic/private` over `$env/static/private`:** the API URL is a runtime value that differs between dev and production. `$env/static/private` bakes the value in at build time, which is wrong for this use case.
 
 **`resolve.conditions: ['browser']` at config root:** Svelte 5's `mount()` is browser-only. Without this, Vitest resolves `svelte/index-server.js` instead of the browser bundle and `@testing-library/svelte` fails. The condition must be at the vite config root, not nested under `test`.
 
