@@ -36,11 +36,15 @@ The reply text is generic: "Addressed during patch phase — see PR body for ful
 
 ## Acceptance Criteria
 
-- [ ] `bun run verify && bun run test` pass
-- [ ] Test case: thread resolution flow calls reply before resolve
-- [ ] Test case: reply failure (thrown error) does not block resolution — thread is resolved despite failed reply
-- [ ] Existing thread resolution tests pass without regression
-- [ ] `replyToReviewThread` in `platform.ts` is tested in isolation (or through integration with `review.ts`)
+- [x] `bun run verify && bun run test` pass
+- [x] Test case: thread resolution flow calls reply before resolve
+- [x] Test case: reply failure (thrown error) does not block resolution — thread is resolved despite failed reply
+- [x] Existing thread resolution tests pass without regression
+- [x] `replyToReviewComment` in `platform.ts` is exercised via `resolveNativeReviewThreads` tests
+
+## Rationale
+
+`AiReviewComment` accepts optional `databaseId` from the fetcher (`database_id`). `resolveNativeReviewThreads` calls `replyToReviewThread` (best-effort REST reply via `gh api`) before GraphQL resolve when `databaseId` is present. The orchestrator wires a default implementation that resolves owner/repo once per worktree.
 
 ## Notes
 

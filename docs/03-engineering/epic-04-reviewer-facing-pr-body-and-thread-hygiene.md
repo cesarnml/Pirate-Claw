@@ -6,7 +6,7 @@ It is intentionally not a numbered Pirate Claw product phase. The target is deli
 
 ## Current Status
 
-- planned; not yet started
+- implemented in `tools/delivery/` (stacked delivery tickets EE4.01–EE4.04)
 
 ## Problem
 
