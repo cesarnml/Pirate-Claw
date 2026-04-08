@@ -90,7 +90,7 @@
 			</div>
 			<div class="flex gap-2">
 				<dt class="text-gray-400">Password:</dt>
-				<dd class="text-gray-200">{config.transmission.password}</dd>
+				<dd class="text-gray-200">••••••••</dd>
 			</div>
 			{#if config.transmission.downloadDir}
 				<div class="flex gap-2">

@@ -6,7 +6,8 @@ export const load: PageServerLoad = async () => {
 	try {
 		const config = await apiFetch<AppConfig>('/api/config');
 		return { config, error: null };
-	} catch {
+	} catch (err) {
+		console.error('[config] failed to load config:', err);
 		return { config: null as AppConfig | null, error: 'Could not reach the API.' };
 	}
 };

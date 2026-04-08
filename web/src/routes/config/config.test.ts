@@ -55,4 +55,15 @@ describe('/config', () => {
 		render(Page, { data: { config: null, error: 'Could not reach the API.' } });
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
+
+	it('renders empty state when feeds and tv rules are empty', () => {
+		render(Page, {
+			data: {
+				config: { ...mockConfig, feeds: [], tv: [] },
+				error: null,
+			},
+		});
+		expect(screen.getByText('No feeds configured.')).toBeInTheDocument();
+		expect(screen.getByText('No TV rules configured.')).toBeInTheDocument();
+	});
 });
