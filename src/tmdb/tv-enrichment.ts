@@ -76,6 +76,8 @@ async function resolveShow(
 
     const details = await deps.client.getTv(search.id);
     if (!details) {
+      // Same policy as movie enrichment: do not negative-cache detail fetch
+      // failures (may be transient HTTP/network); only search miss is negative.
       deps.log(
         `tmdb tv details unavailable: ${matchKey} (id=${String(search.id)})`,
       );
@@ -146,6 +148,9 @@ async function loadSeasonEpisodes(
         air_date?: string;
         overview?: string;
       }[];
+      if (parsed.length === 0) {
+        return undefined;
+      }
       return parsed;
     }
 
@@ -154,6 +159,12 @@ async function loadSeasonEpisodes(
       deps.log(
         `tmdb tv season unavailable: ${showMatchKey} s${String(seasonNumber)}`,
       );
+      deps.cache.upsertTvSeason({
+        showMatchKey,
+        seasonNumber,
+        expiresAt: expiresAtIso(deps.negativeCacheTtlMs),
+        episodesJson: '[]',
+      });
       return undefined;
     }
 
@@ -224,29 +235,25 @@ export async function enrichShowBreakdowns(
   shows: ShowBreakdown[],
   deps: TvEnrichDeps,
 ): Promise<ShowBreakdown[]> {
-  const out: ShowBreakdown[] = [];
+  return Promise.all(
+    shows.map(async (show) => {
+      const key = tvMatchKey(show.normalizedTitle);
+      const showMeta = await resolveShow(key, show.normalizedTitle, deps);
 
-  for (const show of shows) {
-    const key = tvMatchKey(show.normalizedTitle);
-    const showMeta = await resolveShow(key, show.normalizedTitle, deps);
+      if (!showMeta?.tmdbId) {
+        return showMeta ? { ...show, tmdb: showMeta } : show;
+      }
 
-    if (!showMeta?.tmdbId) {
-      out.push(showMeta ? { ...show, tmdb: showMeta } : show);
-      continue;
-    }
+      const tvId = showMeta.tmdbId;
+      const seasons = await Promise.all(
+        show.seasons.map((season) => enrichSeason(key, tvId, season, deps)),
+      );
 
-    const tvId = showMeta.tmdbId;
-    const seasons: ShowSeason[] = [];
-    for (const season of show.seasons) {
-      seasons.push(await enrichSeason(key, tvId, season, deps));
-    }
-
-    out.push({
-      normalizedTitle: show.normalizedTitle,
-      seasons,
-      tmdb: showMeta,
-    });
-  }
-
-  return out;
+      return {
+        normalizedTitle: show.normalizedTitle,
+        seasons,
+        tmdb: showMeta,
+      };
+    }),
+  );
 }

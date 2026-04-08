@@ -26,7 +26,7 @@ TV is the heavier TMDB shape; it lands after movies so shared UI and cache patte
 
 **Implementation notes (P11.03 delivered):**
 
-- Added `src/tmdb/tv-enrichment.ts` with lazy TV show + per-season TMDB fetch, mirroring movie enrichment: negative cache **only** on `searchTv` miss; no negative rows on transient `getTv` / `getTvSeason` failures or cache read errors (cache reads stay inside `try`).
+- Added `src/tmdb/tv-enrichment.ts` with lazy TV show + per-season TMDB fetch: negative cache on `searchTv` miss; **season** detail miss (`getTvSeason` empty) upserts `episodesJson: '[]'` with negative TTL so we do not hammer TMDB; cached `[]` is treated as “no episodes” on read. **Show** detail miss after a successful search (`getTv` null) is **not** negative-cached (same policy as movie detail fetches—may be transient). CLI wires `TvEnrichDeps` explicitly (no cast from movie deps). `enrichShowBreakdowns` runs shows and seasons in parallel (`Promise.all`); HTTP remains serialized by the TMDB client throttle.
 - `GET /api/shows` is async and enriches when TMDB deps are wired (same shared `TmdbCache` + `TmdbHttpClient` as movies via `tmdbShows` in `ApiFetchDeps`).
 - Show breakdown types live in `src/tv-api-types.ts` (show + episode TMDB fields) to avoid circular imports with enrichment.
 - `src/tmdb/constants.ts`: `stillUrl()` for episode stills (`w300`).

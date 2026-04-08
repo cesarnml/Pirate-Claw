@@ -67,7 +67,19 @@ function tmdbShowsEnrichDeps(
   config: AppConfig,
   log: (message: string) => void,
 ): TvEnrichDeps | undefined {
-  return tmdbMovieEnrichDeps(database, config, log) as TvEnrichDeps | undefined;
+  const tmdbResolved = resolveTmdbSettings(config);
+  if (!tmdbResolved || config.runtime.apiPort == null) {
+    return undefined;
+  }
+  return {
+    cache: new TmdbCache(database),
+    client: new TmdbHttpClient(tmdbResolved.apiKey, (m: string) =>
+      log(`[tmdb] ${m}`),
+    ),
+    cacheTtlMs: tmdbResolved.cacheTtlMs,
+    negativeCacheTtlMs: tmdbResolved.negativeCacheTtlMs,
+    log: (m: string) => log(`[tmdb] ${m}`),
+  };
 }
 
 export async function runCli(argv: string[]): Promise<number> {
