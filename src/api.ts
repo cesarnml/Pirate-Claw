@@ -1,8 +1,12 @@
 import type { AppConfig, FeedConfig, RuntimeConfig } from './config';
+import type { MovieBreakdown } from './movie-api-types';
+export type { MovieBreakdown, TmdbMoviePublic } from './movie-api-types';
 import { isDueFeed } from './poll-state';
 import type { PollState } from './poll-state';
 import type { CandidateStateRecord, Repository } from './repository';
 import type { CycleResult } from './runtime-artifacts';
+import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
+import { enrichMovieBreakdowns } from './tmdb/movie-enrichment';
 
 export type CycleSnapshot = {
   status: CycleResult['status'];
@@ -49,18 +53,27 @@ export type ApiFetchDeps = {
   config: AppConfig;
   pollStatePath: string;
   loadPollState: (path: string) => PollState;
+  /** When set (TMDB configured), GET /api/movies lazily enriches from cache + TMDB. */
+  tmdbMovies?: MovieEnrichDeps;
 };
 
 export function createApiFetch(
   deps?: ApiFetchDeps,
-): (request: Request) => Response {
+): (request: Request) => Response | Promise<Response> {
   if (!deps) {
     return () => Response.json({ error: 'not found' }, { status: 404 });
   }
 
-  const { repository, health, config, pollStatePath, loadPollState } = deps;
+  const {
+    repository,
+    health,
+    config,
+    pollStatePath,
+    loadPollState,
+    tmdbMovies,
+  } = deps;
 
-  return (request: Request) => {
+  return async (request: Request) => {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/health') {
@@ -114,7 +127,11 @@ export function createApiFetch(
     if (url.pathname === '/api/movies') {
       try {
         const candidates = repository.listCandidateStates();
-        return Response.json({ movies: buildMovieBreakdowns(candidates) });
+        const base = buildMovieBreakdowns(candidates);
+        const movies = tmdbMovies
+          ? await enrichMovieBreakdowns(base, tmdbMovies)
+          : base;
+        return Response.json({ movies });
       } catch {
         return Response.json(
           { error: 'internal server error' },
@@ -219,17 +236,6 @@ export function buildShowBreakdowns(
 }
 
 // --- Movie breakdowns ---
-
-export type MovieBreakdown = {
-  normalizedTitle: string;
-  year?: number;
-  resolution?: string;
-  codec?: string;
-  identityKey: string;
-  status: string;
-  lifecycleStatus?: string;
-  queuedAt?: string;
-};
 
 export function buildMovieBreakdowns(
   candidates: CandidateStateRecord[],

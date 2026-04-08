@@ -28,6 +28,9 @@ import {
   type CandidateStateRecord,
   type RunSummaryRecord,
 } from './repository';
+import { TmdbCache } from './tmdb/cache';
+import { TmdbHttpClient } from './tmdb/client';
+import { resolveTmdbSettings } from './tmdb/settings';
 import { createTransmissionDownloader } from './transmission';
 
 export async function runCli(argv: string[]): Promise<number> {
@@ -141,6 +144,20 @@ export async function runCli(argv: string[]): Promise<number> {
 
         const health = createHealthState();
 
+        const tmdbResolved = resolveTmdbSettings(config);
+        const tmdbMovies =
+          tmdbResolved && config.runtime.apiPort != null
+            ? {
+                cache: new TmdbCache(database),
+                client: new TmdbHttpClient(tmdbResolved.apiKey, (m: string) =>
+                  log(`[tmdb] ${m}`),
+                ),
+                cacheTtlMs: tmdbResolved.cacheTtlMs,
+                negativeCacheTtlMs: tmdbResolved.negativeCacheTtlMs,
+                log: (m: string) => log(`[tmdb] ${m}`),
+              }
+            : undefined;
+
         await runDaemonLoop({
           runCycle: async () => {
             let pollState = loadPollState(pollStatePath);
@@ -194,6 +211,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   config,
                   pollStatePath,
                   loadPollState,
+                  tmdbMovies,
                 })
               : undefined,
         });

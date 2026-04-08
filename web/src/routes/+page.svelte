@@ -93,6 +93,7 @@
 
 	<nav class="mt-8 flex gap-4 text-sm">
 		<a href="/candidates" class="text-blue-400 hover:underline">View Candidates</a>
+		<a href="/movies" class="text-blue-400 hover:underline">Movies</a>
 		<a href="/config" class="text-blue-400 hover:underline">View Config</a>
 	</nav>
 {:else}

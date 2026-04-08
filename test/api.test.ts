@@ -77,16 +77,16 @@ function createDeps(overrides: Partial<Repository> = {}): ApiFetchDeps {
 }
 
 describe('createApiFetch', () => {
-  it('returns 404 for any request when no deps provided', () => {
+  it('returns 404 for any request when no deps provided', async () => {
     const handler = createApiFetch();
-    const response = handler(new Request('http://localhost/anything'));
+    const response = await handler(new Request('http://localhost/anything'));
 
     expect(response.status).toBe(404);
   });
 
   it('returns JSON error body when no deps provided', async () => {
     const handler = createApiFetch();
-    const response = handler(new Request('http://localhost/anything'));
+    const response = await handler(new Request('http://localhost/anything'));
     const body = await response.json();
 
     expect(body).toEqual({ error: 'not found' });
@@ -95,7 +95,7 @@ describe('createApiFetch', () => {
   it('returns 404 for unknown routes', async () => {
     const deps = createDeps();
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/unknown'));
+    const response = await handler(new Request('http://localhost/unknown'));
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'not found' });
@@ -106,7 +106,7 @@ describe('GET /api/health', () => {
   it('returns uptime and startedAt', async () => {
     const deps = createDeps();
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/health'));
+    const response = await handler(new Request('http://localhost/api/health'));
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -130,7 +130,7 @@ describe('GET /api/health', () => {
     };
     recordCycleInHealth(deps.health, runResult);
 
-    const response = handler(new Request('http://localhost/api/health'));
+    const response = await handler(new Request('http://localhost/api/health'));
     const body = await response.json();
 
     expect(body.lastRunCycle).toEqual({
@@ -161,7 +161,7 @@ describe('GET /api/status', () => {
     ];
     const deps = createDeps({ listRecentRunSummaries: () => runs });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/status'));
+    const response = await handler(new Request('http://localhost/api/status'));
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -194,7 +194,9 @@ describe('GET /api/candidates', () => {
     ];
     const deps = createDeps({ listCandidateStates: () => candidates as never });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/candidates'));
+    const response = await handler(
+      new Request('http://localhost/api/candidates'),
+    );
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -210,7 +212,7 @@ describe('GET /api/status — error handling', () => {
       },
     });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/status'));
+    const response = await handler(new Request('http://localhost/api/status'));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'internal server error' });
@@ -225,7 +227,9 @@ describe('GET /api/candidates — error handling', () => {
       },
     });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/candidates'));
+    const response = await handler(
+      new Request('http://localhost/api/candidates'),
+    );
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'internal server error' });
@@ -367,7 +371,7 @@ describe('GET /api/shows', () => {
       listCandidateStates: () => candidates as never,
     });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/shows'));
+    const response = await handler(new Request('http://localhost/api/shows'));
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -388,7 +392,7 @@ describe('GET /api/shows', () => {
       listCandidateStates: () => candidates as never,
     });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/shows'));
+    const response = await handler(new Request('http://localhost/api/shows'));
     const body = await response.json();
 
     expect(body.shows).toHaveLength(1);
@@ -402,7 +406,7 @@ describe('GET /api/movies', () => {
       listCandidateStates: () => candidates as never,
     });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/movies'));
+    const response = await handler(new Request('http://localhost/api/movies'));
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -420,7 +424,7 @@ describe('GET /api/movies', () => {
       listCandidateStates: () => candidates as never,
     });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/movies'));
+    const response = await handler(new Request('http://localhost/api/movies'));
     const body = await response.json();
 
     expect(body.movies).toHaveLength(1);
@@ -435,7 +439,7 @@ describe('GET /api/feeds', () => {
     const deps = createDeps();
     deps.loadPollState = () => pollState;
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/feeds'));
+    const response = await handler(new Request('http://localhost/api/feeds'));
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -450,7 +454,7 @@ describe('GET /api/feeds', () => {
     const deps = createDeps();
     deps.loadPollState = () => ({ feeds: {} });
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/feeds'));
+    const response = await handler(new Request('http://localhost/api/feeds'));
     const body = await response.json();
 
     expect(body.feeds[0].isDue).toBe(true);
@@ -462,7 +466,7 @@ describe('GET /api/config', () => {
   it('returns config with redacted credentials', async () => {
     const deps = createDeps();
     const handler = createApiFetch(deps);
-    const response = handler(new Request('http://localhost/api/config'));
+    const response = await handler(new Request('http://localhost/api/config'));
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -476,7 +480,7 @@ describe('GET /api/config', () => {
   it('does not mutate the original config object', async () => {
     const deps = createDeps();
     const handler = createApiFetch(deps);
-    handler(new Request('http://localhost/api/config'));
+    await handler(new Request('http://localhost/api/config'));
 
     expect(deps.config.transmission.username).toBe('user');
     expect(deps.config.transmission.password).toBe('pass');

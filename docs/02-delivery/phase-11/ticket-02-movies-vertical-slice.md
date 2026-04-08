@@ -24,3 +24,10 @@ With TMDB configured, an operator can browse movie-related dashboard views and s
 ## Rationale
 
 Movies are the first vertical slice after foundation so the simpler TMDB entity (single title+year match) validates client, cache, and UI patterns before TV season/episode complexity.
+
+**Implementation notes (P11.02):**
+
+- `GET /api/movies` uses `buildMovieBreakdowns` then `enrichMovieBreakdowns` when the daemon has resolved TMDB settings (`tmdbMovies` on `ApiFetchDeps`): SQLite cache read, TTL via `isCacheExpired`, TMDB search + movie details on miss, positive/negative cache rows.
+- JSON adds optional `tmdb` on each movie row (`posterUrl`, `backdropUrl`, `overview`, `voteAverage`, `voteCount`, `tmdbId`, `title`).
+- Dashboard: new `/movies` route listing movie candidates with poster placeholder, rating badge, and overview when present.
+- `createApiFetch` returns an async `fetch` handler; callers `await` the handler result.
