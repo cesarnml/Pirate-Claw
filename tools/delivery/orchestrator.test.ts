@@ -54,6 +54,7 @@ import {
   runProcessResult,
   type DeliveryState,
 } from './orchestrator';
+import { resolveNativeReviewThreads } from './review';
 
 describe('delivery orchestrator', () => {
   it('parses an implementation plan into ordered tickets', () => {
@@ -709,13 +710,17 @@ describe('delivery orchestrator', () => {
 
     expect(section).toContain('## External AI Review');
     expect(section).toContain('- outcome: `patched`');
-    expect(section).toContain('### Actions Taken');
+    expect(section).toContain('### Resolved Review Findings');
     expect(section).toContain(
-      '`c87f955ca43a` [coderabbit] resolve null-guard follow-up',
+      '[coderabbit] Guard the null return here. (native GitHub thread resolved)',
+    );
+    expect(section).toContain(
+      'patch commits after `abcdef123456` address all findings from that review.',
     );
     expect(section).toContain(
       'the latest recorded external AI review applies to an older branch head',
     );
+    expect(section).not.toContain('### Actions Taken');
   });
 
   it('uses the shared refresh adapter while preserving ticketed and standalone body ownership', () => {
@@ -820,6 +825,9 @@ describe('delivery orchestrator', () => {
 
     expect(ticketBody).toContain(
       '- delivery ticket: `E2.05 Shared Review Metadata Refresh Adapter`',
+    );
+    expect(ticketBody).toContain(
+      '- internal review: completed at 2026-04-07 00:00 UTC',
     );
     expect(ticketBody).toContain(expectedReviewSection);
     expect(standaloneBody).toContain('- preserve this author-owned context');
@@ -1052,6 +1060,23 @@ describe('delivery orchestrator', () => {
     expect(body).toContain('- vendors: `sonarqube`');
   });
 
+  it('omits the stale-sha patch resolution sentence when outcome is not patched', () => {
+    const section = buildExternalAiReviewSection(
+      {
+        outcome: 'clean',
+        note: 'External AI review completed without prudent follow-up changes.',
+        reviewedHeadSha: 'abcdef1234567890',
+        vendors: ['coderabbit'],
+      },
+      {
+        currentHeadSha: 'fedcba0987654321',
+        maxWaitMinutes: 8,
+      },
+    );
+
+    expect(section).not.toContain('patch commits after');
+  });
+
   it('renders stale ai review history separately from current head status', () => {
     const body = buildPullRequestBody(
       {
@@ -1107,6 +1132,9 @@ describe('delivery orchestrator', () => {
 
     expect(body).toContain(
       'the latest recorded external AI review applies to an older branch head',
+    );
+    expect(body).toContain(
+      'patch commits after `abcdef123456` address all findings from that review.',
     );
     expect(body).toContain('### Resolved Review Findings');
     expect(body).toContain('[coderabbit] Guard the null return here.');
@@ -3329,5 +3357,91 @@ describe('delivery orchestrator', () => {
         packageManager: 'bun',
       });
     }
+  });
+
+  it('replies to a thread before resolving when databaseId is present', () => {
+    const calls: string[] = [];
+    const finding = {
+      vendor: 'coderabbit',
+      channel: 'inline_review' as const,
+      authorLogin: 'a',
+      authorType: 'Bot',
+      body: 'Fix this',
+      kind: 'finding' as const,
+      databaseId: 42,
+      threadId: 't1',
+      threadViewerCanResolve: true,
+    };
+    resolveNativeReviewThreads('/tmp/wt', [finding], {
+      relativeToRepo: () => '',
+      resolveReviewFetcher: () => '',
+      resolveReviewTriager: () => '',
+      runProcess: () => '',
+      replyToReviewThread: (wp, id) => {
+        calls.push(`reply:${id}`);
+      },
+      resolveReviewThread: () => {
+        calls.push('resolve');
+        return '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}';
+      },
+    });
+    expect(calls).toEqual(['reply:42', 'resolve']);
+  });
+
+  it('still resolves when replyToReviewThread throws', () => {
+    const calls: string[] = [];
+    const finding = {
+      vendor: 'coderabbit',
+      channel: 'inline_review' as const,
+      authorLogin: 'a',
+      authorType: 'Bot',
+      body: 'Fix this',
+      kind: 'finding' as const,
+      databaseId: 42,
+      threadId: 't1',
+      threadViewerCanResolve: true,
+    };
+    resolveNativeReviewThreads('/tmp/wt', [finding], {
+      relativeToRepo: () => '',
+      resolveReviewFetcher: () => '',
+      resolveReviewTriager: () => '',
+      runProcess: () => '',
+      replyToReviewThread: () => {
+        throw new Error('reply failed');
+      },
+      resolveReviewThread: () => {
+        calls.push('resolve');
+        return '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}';
+      },
+    });
+    expect(calls).toEqual(['resolve']);
+  });
+
+  it('skips reply when databaseId is absent', () => {
+    const calls: string[] = [];
+    const finding = {
+      vendor: 'coderabbit',
+      channel: 'inline_review' as const,
+      authorLogin: 'a',
+      authorType: 'Bot',
+      body: 'Fix this',
+      kind: 'finding' as const,
+      threadId: 't1',
+      threadViewerCanResolve: true,
+    };
+    resolveNativeReviewThreads('/tmp/wt', [finding], {
+      relativeToRepo: () => '',
+      resolveReviewFetcher: () => '',
+      resolveReviewTriager: () => '',
+      runProcess: () => '',
+      replyToReviewThread: () => {
+        calls.push('reply');
+      },
+      resolveReviewThread: () => {
+        calls.push('resolve');
+        return '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}';
+      },
+    });
+    expect(calls).toEqual(['resolve']);
   });
 });

@@ -16,7 +16,7 @@ const STANDALONE_AI_REVIEW_SECTION_END = '<!-- ai-review:end -->';
 const DEFAULT_REVIEW_POLL_INTERVAL_MINUTES = 2;
 const DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES = 8;
 
-type ReviewActionCommit = {
+export type ReviewActionCommit = {
   sha: string;
   subject: string;
   vendors: string[];
@@ -25,6 +25,7 @@ type ReviewActionCommit = {
 type ReviewMetadataRefreshContext = {
   actionCommits?: ReviewActionCommit[];
   currentHeadSha?: string;
+  githubRepo?: { name: string; owner: string };
 };
 
 type TicketReviewMetadataRefreshTarget = Pick<
@@ -75,6 +76,9 @@ type PrMetadataDependencies = {
     limit: number,
   ) => string[];
   readHeadSha: (cwd: string) => string;
+  resolveGitHubRepo?: (
+    cwd: string,
+  ) => { name: string; owner: string } | undefined;
 };
 
 function parseFenceMarker(line: string): {
@@ -331,6 +335,20 @@ function shortenSha(sha: string | undefined): string | undefined {
   return sha ? sha.slice(0, 12) : undefined;
 }
 
+function formatHumanUtcTimestamp(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) {
+    return iso;
+  }
+  const d = new Date(parsed);
+  const y = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const hours = String(d.getUTCHours()).padStart(2, '0');
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${y}-${month}-${day} ${hours}:${minutes} UTC`;
+}
+
 function summarizeReviewComment(body: string): string {
   const normalized = body.replace(/\s+/g, ' ').trim();
   return normalized.length > 140
@@ -487,17 +505,7 @@ function buildResolvedFindingBullets(input: {
   comments: AiReviewComment[];
   reviewStatus: ReviewResult | TicketStatus;
   threadResolutions?: AiReviewThreadResolution[];
-  currentHeadSha?: string;
-  reviewedHeadSha?: string;
 }): string[] {
-  const appliesToCurrentHead =
-    !!input.reviewedHeadSha &&
-    !!input.currentHeadSha &&
-    input.reviewedHeadSha === input.currentHeadSha;
-  const effectiveContext =
-    input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead
-      ? 'history'
-      : 'current';
   const resolutionByThreadId = new Map(
     (input.threadResolutions ?? []).map((resolution) => [
       resolution.threadId,
@@ -509,14 +517,11 @@ function buildResolvedFindingBullets(input: {
     const resolution = comment.threadId
       ? resolutionByThreadId.get(comment.threadId)
       : undefined;
-    const detail =
-      comment.isResolved || comment.isOutdated || effectiveContext === 'history'
-        ? undefined
-        : resolution
-          ? formatResolutionSuffix(resolution).replace(/^;\s*/, '')
-          : input.reviewStatus === 'patched'
-            ? 'patched'
-            : undefined;
+    const detail = resolution
+      ? formatResolutionSuffix(resolution).replace(/^;\s*/, '')
+      : input.reviewStatus === 'patched'
+        ? 'patched'
+        : undefined;
     return buildReviewCommentBullet(comment, detail);
   });
 }
@@ -598,6 +603,7 @@ function buildAiReviewDetailLines(input: {
   actionSummary?: string;
   comments?: AiReviewComment[];
   currentHeadSha?: string;
+  githubRepo?: { name: string; owner: string };
   maxWaitMinutes: number;
   nonActionSummary?: string;
   note?: string;
@@ -628,19 +634,40 @@ function buildAiReviewDetailLines(input: {
     input.reviewedHeadSha === input.currentHeadSha;
 
   if (input.reviewedHeadSha) {
-    lines.push(`- reviewed commit: \`${shortenSha(input.reviewedHeadSha)}\``);
+    const short = shortenSha(input.reviewedHeadSha);
+    if (input.githubRepo) {
+      lines.push(
+        `- reviewed commit: [\`${short}\`](https://github.com/${input.githubRepo.owner}/${input.githubRepo.name}/commit/${input.reviewedHeadSha})`,
+      );
+    } else {
+      lines.push(`- reviewed commit: \`${short}\``);
+    }
   }
 
   if (input.currentHeadSha) {
-    lines.push(
-      `- current branch head: \`${shortenSha(input.currentHeadSha)}\``,
-    );
+    const short = shortenSha(input.currentHeadSha);
+    if (input.githubRepo) {
+      lines.push(
+        `- current branch head: [\`${short}\`](https://github.com/${input.githubRepo.owner}/${input.githubRepo.name}/commit/${input.currentHeadSha})`,
+      );
+    } else {
+      lines.push(`- current branch head: \`${short}\``);
+    }
   }
 
   if (input.reviewedHeadSha && input.currentHeadSha && !appliesToCurrentHead) {
     lines.push(
       '- the latest recorded external AI review applies to an older branch head; the prior review history is shown below for debugging.',
     );
+    if (
+      reviewStatus === 'patched' &&
+      ((input.actionCommits?.length ?? 0) > 0 ||
+        (input.threadResolutions?.length ?? 0) > 0)
+    ) {
+      lines.push(
+        `- patch commits after \`${shortenSha(input.reviewedHeadSha)}\` address all findings from that review.`,
+      );
+    }
   }
 
   if (input.vendors && input.vendors.length > 0) {
@@ -672,14 +699,28 @@ function buildAiReviewDetailLines(input: {
 
   const resolvedFindingBullets = buildResolvedFindingBullets({
     comments: resolvedFindingComments,
-    currentHeadSha: input.currentHeadSha,
     reviewStatus,
-    reviewedHeadSha: input.reviewedHeadSha,
     threadResolutions: input.threadResolutions,
   });
   const actionCommitBullets = buildActionCommitBullets(input.actionCommits);
 
-  if (actionCommitBullets.length > 0) {
+  const hasStaleSha =
+    !!input.reviewedHeadSha &&
+    !!input.currentHeadSha &&
+    input.reviewedHeadSha !== input.currentHeadSha;
+  const showStalePatchedFindingsOnly =
+    reviewStatus === 'patched' &&
+    resolvedFindingBullets.length > 0 &&
+    hasStaleSha;
+
+  if (showStalePatchedFindingsOnly) {
+    lines.push(
+      '',
+      '### Resolved Review Findings',
+      '',
+      ...resolvedFindingBullets,
+    );
+  } else if (actionCommitBullets.length > 0) {
     lines.push('', '### Actions Taken', '', ...actionCommitBullets);
   } else if (resolvedFindingBullets.length > 0) {
     lines.push(
@@ -736,6 +777,7 @@ export function buildExternalAiReviewSection(
   options: {
     actionCommits?: ReviewActionCommit[];
     currentHeadSha?: string;
+    githubRepo?: { name: string; owner: string };
     incompleteAgents?: string[];
     maxWaitMinutes: number;
   },
@@ -747,6 +789,7 @@ export function buildExternalAiReviewSection(
       actionCommits: options.actionCommits,
       comments: result.comments,
       currentHeadSha: options.currentHeadSha,
+      githubRepo: options.githubRepo,
       maxWaitMinutes: options.maxWaitMinutes,
       nonActionSummary: result.nonActionSummary,
       note: result.note,
@@ -773,19 +816,29 @@ export function buildPullRequestBody(
   options: {
     actionCommits?: ReviewActionCommit[];
     currentHeadSha?: string;
+    githubRepo?: { name: string; owner: string };
   } = {},
 ): string {
   const lines = [
     '## Summary',
     '',
     `- delivery ticket: \`${ticket.id} ${ticket.title}\``,
-    `- ticket file: \`${ticket.ticketFile}\``,
-    `- stacked base branch: \`${ticket.baseBranch}\``,
   ];
+
+  if (options.githubRepo) {
+    const rel = ticket.ticketFile.replace(/\\/g, '/');
+    lines.push(
+      `- ticket file: [${rel}](https://github.com/${options.githubRepo.owner}/${options.githubRepo.name}/blob/main/${rel})`,
+    );
+  } else {
+    lines.push(`- ticket file: \`${ticket.ticketFile}\``);
+  }
+
+  lines.push(`- stacked base branch: \`${ticket.baseBranch}\``);
 
   if (ticket.internalReviewCompletedAt) {
     lines.push(
-      `- internal review: completed at \`${ticket.internalReviewCompletedAt}\``,
+      `- internal review: completed at ${formatHumanUtcTimestamp(ticket.internalReviewCompletedAt)}`,
     );
   }
 
@@ -811,6 +864,7 @@ export function buildPullRequestBody(
         {
           actionCommits: options.actionCommits,
           currentHeadSha: options.currentHeadSha,
+          githubRepo: options.githubRepo,
           incompleteAgents: ticket.reviewIncompleteAgents,
           maxWaitMinutes: state.reviewPollMaxWaitMinutes,
         },
@@ -837,11 +891,13 @@ export function buildStandaloneAiReviewSection(
   options: {
     actionCommits?: ReviewActionCommit[];
     currentHeadSha?: string;
+    githubRepo?: { name: string; owner: string };
   } = {},
 ): string {
   const section = buildExternalAiReviewSection(result, {
     actionCommits: options.actionCommits,
     currentHeadSha: options.currentHeadSha,
+    githubRepo: options.githubRepo,
     incompleteAgents: result.incompleteAgents,
     maxWaitMinutes: DEFAULT_REVIEW_POLL_MAX_WAIT_MINUTES,
   });
@@ -913,6 +969,7 @@ export function updatePullRequestBody(
   }
 
   const currentHeadSha = dependencies.readHeadSha(ticket.worktreePath);
+  const githubRepo = dependencies.resolveGitHubRepo?.(ticket.worktreePath);
   const body = buildReviewMetadataRefreshBody(
     {
       mode: 'ticketed',
@@ -929,6 +986,7 @@ export function updatePullRequestBody(
         dependencies,
       ),
       currentHeadSha,
+      githubRepo,
     },
   );
   assertReviewerFacingMarkdown(body);
@@ -942,9 +1000,10 @@ export function updateStandalonePullRequestBody(
   result: StandaloneAiReviewResult,
   dependencies: Pick<
     PrMetadataDependencies,
-    'editPullRequest' | 'listCommitSubjectsBetween'
+    'editPullRequest' | 'listCommitSubjectsBetween' | 'resolveGitHubRepo'
   >,
 ): void {
+  const githubRepo = dependencies.resolveGitHubRepo?.(cwd);
   const nextBody = buildReviewMetadataRefreshBody(
     {
       body: pullRequest.body,
@@ -961,6 +1020,7 @@ export function updateStandalonePullRequestBody(
         dependencies,
       ),
       currentHeadSha: pullRequest.headRefOid,
+      githubRepo,
     },
   );
   assertReviewerFacingMarkdown(nextBody);

@@ -173,6 +173,7 @@ export function parseAiReviewFetcherOutput(
       authorType: entry.author_type,
       body: entry.body,
       channel: entry.channel,
+      databaseId: parseOptionalNumber(entry.database_id),
       isOutdated: parseOptionalBoolean(entry.is_outdated),
       isResolved: parseOptionalBoolean(entry.is_resolved),
       kind: entry.kind,
@@ -306,8 +307,16 @@ export function parseResolveReviewThreadOutput(output: string): {
   };
 }
 
+const THREAD_REPLY_BEFORE_RESOLVE =
+  'Addressed during patch phase — see PR body for full finding disposition.';
+
 type ReviewCoreDependencies = {
   relativeToRepo: (cwd: string, absolutePath: string) => string;
+  replyToReviewThread?: (
+    worktreePath: string,
+    databaseId: number,
+    body: string,
+  ) => void;
   resolveReviewFetcher: () => string;
   resolveReviewThread: (worktreePath: string, threadId: string) => string;
   resolveReviewTriager: () => string;
@@ -317,6 +326,7 @@ type ReviewCoreDependencies = {
 export type TicketReviewDependencies = {
   fetcher?: (worktreePath: string, prNumber: number) => AiReviewFetcherResult;
   now?: () => number;
+  replyToReviewThread?: ReviewCoreDependencies['replyToReviewThread'];
   resolveThreads?: (
     worktreePath: string,
     comments: AiReviewComment[],
@@ -334,7 +344,12 @@ export type TicketReviewDependencies = {
 
 export type StandaloneAiReviewDependencies = Pick<
   TicketReviewDependencies,
-  'fetcher' | 'now' | 'resolveThreads' | 'sleep' | 'triager'
+  | 'fetcher'
+  | 'now'
+  | 'replyToReviewThread'
+  | 'resolveThreads'
+  | 'sleep'
+  | 'triager'
 > &
   ReviewCoreDependencies & {
     previousOutcome?: ReviewOutcome;
@@ -611,7 +626,7 @@ function defaultSleep(milliseconds: number): Promise<void> {
   });
 }
 
-function resolveNativeReviewThreads(
+export function resolveNativeReviewThreads(
   worktreePath: string,
   comments: AiReviewComment[],
   dependencies: ReviewCoreDependencies,
@@ -641,6 +656,18 @@ function resolveNativeReviewThreads(
         message: 'GitHub did not expose this review thread as resolvable.',
       });
       continue;
+    }
+
+    if (dependencies.replyToReviewThread && comment.databaseId !== undefined) {
+      try {
+        dependencies.replyToReviewThread(
+          worktreePath,
+          comment.databaseId,
+          THREAD_REPLY_BEFORE_RESOLVE,
+        );
+      } catch {
+        // Reply is best-effort; resolution still proceeds.
+      }
     }
 
     try {
@@ -797,6 +824,7 @@ async function writeAiReviewArtifacts(
           author_type: comment.authorType,
           body: comment.body,
           channel: comment.channel,
+          database_id: comment.databaseId ?? null,
           is_outdated: comment.isOutdated ?? null,
           is_resolved: comment.isResolved ?? null,
           kind: comment.kind,
@@ -1299,6 +1327,7 @@ export async function recordTicketReview(
     TicketReviewDependencies,
     | 'resolveThreads'
     | 'updatePullRequestBody'
+    | 'replyToReviewThread'
     | 'resolveReviewThread'
     | 'relativeToRepo'
     | 'resolveReviewFetcher'

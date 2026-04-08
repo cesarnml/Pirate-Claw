@@ -28,6 +28,8 @@ import {
   readMergeBase as readPlatformMergeBase,
   rebaseOnto as rebasePlatformOnto,
   rebaseOntoDefaultBranch as rebasePlatformOntoDefaultBranch,
+  replyToReviewComment as replyPlatformToReviewComment,
+  resolveGitHubRepo as resolvePlatformGitHubRepo,
   resolveReviewThread as resolvePlatformReviewThread,
   resolveStandalonePullRequest as resolvePlatformStandalonePullRequest,
   runProcess as runPlatformProcess,
@@ -343,6 +345,7 @@ export type AiReviewComment = {
   authorType: string;
   body: string;
   channel: AiReviewCommentChannel;
+  databaseId?: number;
   isOutdated?: boolean;
   isResolved?: boolean;
   kind: AiReviewCommentKind;
@@ -888,6 +891,7 @@ export async function openPullRequest(
     findOpenPullRequest,
     parsePullRequestNumber,
     readLatestCommitSubject,
+    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
   });
 }
 
@@ -900,6 +904,8 @@ export async function pollReview(
   return runTicketReviewLifecycle(state, cwd, ticketId, {
     ...dependencies,
     relativeToRepo,
+    replyToReviewThread:
+      dependencies.replyToReviewThread ?? replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
     resolveReviewThread,
     resolveReviewTriager,
@@ -926,6 +932,8 @@ export async function runStandaloneAiReview(
     ...dependencies,
     pullRequest,
     relativeToRepo,
+    replyToReviewThread:
+      dependencies.replyToReviewThread ?? replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
     resolveReviewThread,
     resolveReviewTriager,
@@ -947,6 +955,8 @@ export async function recordReview(
   return recordTicketReview(state, cwd, ticketId, outcome, note, {
     ...dependencies,
     relativeToRepo,
+    replyToReviewThread:
+      dependencies.replyToReviewThread ?? replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
     resolveReviewThread,
     resolveReviewTriager,
@@ -984,6 +994,7 @@ async function restackTicket(
     readMergeBase,
     rebaseOnto,
     rebaseOntoDefaultBranch,
+    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
   });
 }
 
@@ -1001,6 +1012,7 @@ function updatePullRequestBody(
     editPullRequest,
     listCommitSubjectsBetween,
     readHeadSha,
+    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
   });
 }
 
@@ -1012,7 +1024,36 @@ function updateStandalonePullRequestBody(
   return updateStandalonePrMetadataPullRequestBody(cwd, pullRequest, result, {
     editPullRequest,
     listCommitSubjectsBetween,
+    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
   });
+}
+
+function resolveGitHubRepoForOrchestrator(cwd: string) {
+  return resolvePlatformGitHubRepo(cwd, _config.runtime);
+}
+
+function replyToReviewThreadForOrchestrator(
+  worktreePath: string,
+  databaseId: number,
+  body: string,
+): void {
+  const repo = resolvePlatformGitHubRepo(worktreePath, _config.runtime);
+  if (!repo) {
+    return;
+  }
+
+  try {
+    replyPlatformToReviewComment(
+      worktreePath,
+      repo.owner,
+      repo.name,
+      databaseId,
+      body,
+      _config.runtime,
+    );
+  } catch {
+    // Best-effort; thread resolution still proceeds.
+  }
 }
 
 function findOpenPullRequest(

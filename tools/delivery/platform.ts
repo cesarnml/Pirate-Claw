@@ -586,6 +586,59 @@ export function resolveReviewThread(
   );
 }
 
+export function resolveGitHubRepo(
+  cwd: string,
+  runtime: Runtime,
+): { name: string; owner: string } | undefined {
+  const result = runProcessResult(
+    cwd,
+    ['gh', 'repo', 'view', '--json', 'nameWithOwner'],
+    runtime,
+  );
+
+  if (result.exitCode !== 0) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout) as { nameWithOwner?: string };
+    const nameWithOwner = parsed.nameWithOwner;
+    if (!nameWithOwner?.includes('/')) {
+      return undefined;
+    }
+    const [owner, name] = nameWithOwner.split('/');
+    if (!owner || !name) {
+      return undefined;
+    }
+    return { name, owner };
+  } catch {
+    return undefined;
+  }
+}
+
+export function replyToReviewComment(
+  cwd: string,
+  owner: string,
+  repo: string,
+  commentDatabaseId: number,
+  body: string,
+  runtime: Runtime,
+): void {
+  runProcess(
+    cwd,
+    [
+      'gh',
+      'api',
+      '--method',
+      'POST',
+      `repos/${owner}/${repo}/pulls/comments/${String(commentDatabaseId)}/replies`,
+      '-f',
+      `body=${body}`,
+    ],
+    runtime,
+  );
+}
+
 export function fetchOrigin(cwd: string, runtime: Runtime): void {
   runProcess(cwd, ['git', 'fetch', 'origin'], runtime);
 }
