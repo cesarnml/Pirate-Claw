@@ -251,6 +251,13 @@ export async function runCli(argv: string[]): Promise<number> {
                   loadPollState,
                   tmdbMovies,
                   tmdbShows,
+                  tmdbCache: tmdbMovies?.cache ?? tmdbShows?.cache,
+                  onCandidateTmdbCacheError: (err, c) =>
+                    log(
+                      `[tmdb] candidate cache enrich failed ${c.identityKey}: ${
+                        err instanceof Error ? err.message : String(err)
+                      }`,
+                    ),
                 })
               : undefined,
         });

@@ -26,6 +26,20 @@ const mockCandidate: CandidateStateRecord = {
 };
 
 describe('/candidates', () => {
+	it('renders TMDB rating when candidate includes tmdb metadata', () => {
+		const withTmdb: CandidateStateRecord = {
+			...mockCandidate,
+			tmdb: {
+				name: 'The Show TMDB',
+				posterUrl: 'https://example.com/poster.jpg',
+				voteAverage: 8.2,
+			},
+		};
+		render(Page, { data: { candidates: [withTmdb], error: null } });
+		expect(screen.getByText('The Show TMDB')).toBeInTheDocument();
+		expect(screen.getByTitle('TMDB vote average')).toHaveTextContent('★ 8.2');
+	});
+
 	it('renders table with candidate data', () => {
 		render(Page, { data: { candidates: [mockCandidate], error: null } });
 		expect(screen.getByText('The Show')).toBeInTheDocument();

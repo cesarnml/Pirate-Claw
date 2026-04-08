@@ -6,7 +6,7 @@ import type {
   TmdbTvShowMeta,
 } from '../tv-api-types';
 import type { TmdbHttpClient } from './client';
-import type { TmdbCache } from './cache';
+import type { TmdbCache, TmdbTvCacheRow } from './cache';
 import { backdropUrl, posterUrl, stillUrl } from './constants';
 import { tvMatchKey } from './keys';
 import { expiresAtIso, isCacheExpired } from './settings';
@@ -39,6 +39,16 @@ function tvRowToShowMeta(row: {
     voteCount: row.voteCount ?? undefined,
     numberOfSeasons: row.numberOfSeasons ?? undefined,
   };
+}
+
+/** Map a cache row to show meta; returns undefined for negative (miss) rows. */
+export function tvCacheRowToShowMeta(
+  row: TmdbTvCacheRow,
+): TmdbTvShowMeta | undefined {
+  if (row.isNegative) {
+    return undefined;
+  }
+  return tvRowToShowMeta(row);
 }
 
 async function resolveShow(

@@ -14,6 +14,8 @@ import { isDueFeed } from './poll-state';
 import type { PollState } from './poll-state';
 import type { CandidateStateRecord, Repository } from './repository';
 import type { CycleResult } from './runtime-artifacts';
+import type { TmdbCache } from './tmdb/cache';
+import { enrichCandidatesFromCache } from './tmdb/candidate-cache-enrich';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import { enrichMovieBreakdowns } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
@@ -68,6 +70,16 @@ export type ApiFetchDeps = {
   tmdbMovies?: MovieEnrichDeps;
   /** When set (TMDB configured), GET /api/shows lazily enriches from cache + TMDB. */
   tmdbShows?: TvEnrichDeps;
+  /**
+   * When set (TMDB configured), GET /api/candidates attaches TMDB fields from the
+   * SQLite cache only — same rows as movies/shows enrichment, no extra HTTP.
+   */
+  tmdbCache?: TmdbCache;
+  /** Optional hook when a cache read throws during candidate enrichment (fail-open). */
+  onCandidateTmdbCacheError?: (
+    error: unknown,
+    candidate: CandidateStateRecord,
+  ) => void;
 };
 
 function json500(): Response {
@@ -97,6 +109,8 @@ export function createApiFetch(
     loadPollState,
     tmdbMovies,
     tmdbShows,
+    tmdbCache,
+    onCandidateTmdbCacheError,
   } = deps;
 
   return async (request: Request) => {
@@ -117,9 +131,19 @@ export function createApiFetch(
     }
 
     if (path === '/api/candidates') {
-      return safeJson(() => ({
-        candidates: repository.listCandidateStates(),
-      }));
+      try {
+        const list = repository.listCandidateStates();
+        const candidates = tmdbCache
+          ? enrichCandidatesFromCache(
+              list,
+              tmdbCache,
+              onCandidateTmdbCacheError,
+            )
+          : list;
+        return Response.json({ candidates });
+      } catch {
+        return json500();
+      }
     }
 
     if (path === '/api/shows') {

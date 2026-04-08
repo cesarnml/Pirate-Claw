@@ -22,3 +22,10 @@ The operator’s primary queue view benefits from TMDB when configured; when TMD
 ## Rationale
 
 Candidates are last among the read paths so lazy enrichment reuses movie and TV caches; a dedicated ticket prevents duplicating TMDB calls across three surfaces.
+
+**Implementation notes (P11.04 delivered):**
+
+- `GET /api/candidates` uses `enrichCandidatesFromCache` (`src/tmdb/candidate-cache-enrich.ts`): reads only `TmdbCache` rows keyed with `movieMatchKey` / `tvMatchKey` — no TMDB HTTP. Reuses `movieCacheRowToPublic` and `tvCacheRowToShowMeta` from existing enrichment modules.
+- CLI passes `tmdbCache: tmdbMovies?.cache ?? tmdbShows?.cache` so the cache is wired whenever TMDB deps exist.
+- Dashboard candidates table: poster column, TMDB rating column, display title prefers cached TMDB name/title when present (list view; TV still links to show detail).
+- `onCandidateTmdbCacheError` logs cache read failures without failing the request; tests cover movie + TV cache paths with `try/finally` DB cleanup.

@@ -1,6 +1,8 @@
 import { Database } from 'bun:sqlite';
 
+import type { TmdbMoviePublic } from './movie-api-types';
 import { ensureTmdbSchema } from './tmdb/schema';
+import type { TmdbTvShowMeta } from './tv-api-types';
 import type { RawFeedItem } from './feed';
 import type { NormalizedFeedItem } from './normalize';
 
@@ -85,6 +87,8 @@ export type CandidateStateRecord = {
   lastSeenRunId: number;
   lastFeedItemId?: number;
   updatedAt: string;
+  /** Present on API responses when TMDB cache has a hit for this identity. */
+  tmdb?: TmdbMoviePublic | TmdbTvShowMeta;
 };
 
 export type RecordCandidateOutcomeInput = {

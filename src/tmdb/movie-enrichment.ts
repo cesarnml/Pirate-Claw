@@ -1,7 +1,7 @@
 import type { MovieBreakdown, TmdbMoviePublic } from '../movie-api-types';
 import { backdropUrl, posterUrl } from './constants';
 import type { TmdbHttpClient } from './client';
-import type { TmdbCache } from './cache';
+import type { TmdbCache, TmdbMovieCacheRow } from './cache';
 import { movieMatchKey } from './keys';
 import { expiresAtIso, isCacheExpired } from './settings';
 
@@ -31,6 +31,16 @@ function cacheRowToPublic(row: {
     voteAverage: row.voteAverage ?? undefined,
     voteCount: row.voteCount ?? undefined,
   };
+}
+
+/** Map a cache row to API fields; returns undefined for negative (miss) rows. */
+export function movieCacheRowToPublic(
+  row: TmdbMovieCacheRow,
+): TmdbMoviePublic | undefined {
+  if (row.isNegative) {
+    return undefined;
+  }
+  return cacheRowToPublic(row);
 }
 
 async function resolveMatchKey(

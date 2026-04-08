@@ -21,6 +21,21 @@
 		return encodeURIComponent(c.normalizedTitle);
 	}
 
+	function formatRating(v: number | undefined): string {
+		if (v === undefined) return '—';
+		return v.toFixed(1);
+	}
+
+	function displayTitle(c: CandidateStateRecord): string {
+		if (c.mediaType === 'movie' && c.tmdb && 'title' in c.tmdb && c.tmdb.title) {
+			return c.tmdb.title;
+		}
+		if (c.mediaType === 'tv' && c.tmdb && 'name' in c.tmdb && c.tmdb.name) {
+			return c.tmdb.name;
+		}
+		return c.normalizedTitle;
+	}
+
 	const statusColors: Record<string, string> = {
 		queued: 'bg-gray-700 text-gray-200',
 		skipped: 'bg-gray-600 text-gray-300',
@@ -58,6 +73,7 @@
 		<table class="w-full table-auto border-collapse text-sm">
 			<thead>
 				<tr class="border-b border-gray-700 text-left text-gray-400">
+					<th class="py-2 pr-2 w-14" aria-hidden="true"></th>
 					<th class="py-2 pr-4">Title</th>
 					<th
 						class="py-2 pr-4"
@@ -71,6 +87,7 @@
 					</th>
 					<th class="py-2 pr-4">Rule</th>
 					<th class="py-2 pr-4">Resolution</th>
+					<th class="py-2 pr-4">TMDB</th>
 					<th
 						class="py-2 pr-4"
 						aria-sort={sortKey === 'status' ? (sortAsc ? 'ascending' : 'descending') : 'none'}
@@ -88,18 +105,46 @@
 			<tbody>
 				{#each sorted as candidate (candidate.identityKey)}
 					<tr class="border-b border-gray-800 hover:bg-gray-800/40">
+						<td class="py-2 pr-2 align-top">
+							{#if candidate.tmdb?.posterUrl}
+								<img
+									src={candidate.tmdb.posterUrl}
+									alt=""
+									class="h-12 w-8 rounded object-cover"
+									loading="lazy"
+								/>
+							{:else}
+								<div
+									class="flex h-12 w-8 items-center justify-center rounded bg-gray-800 text-[10px] text-gray-600"
+								>
+									—
+								</div>
+							{/if}
+						</td>
 						<td class="py-2 pr-4 font-medium">
 							{#if candidate.mediaType === 'tv'}
 								<a href="/shows/{showSlug(candidate)}" class="text-blue-400 hover:underline">
-									{candidate.normalizedTitle}
+									{displayTitle(candidate)}
 								</a>
 							{:else}
-								{candidate.normalizedTitle}
+								{displayTitle(candidate)}
 							{/if}
 						</td>
 						<td class="py-2 pr-4 text-gray-300">{candidate.mediaType}</td>
 						<td class="py-2 pr-4 text-gray-300">{candidate.ruleName}</td>
 						<td class="py-2 pr-4 text-gray-300">{candidate.resolution ?? '—'}</td>
+						<td class="py-2 pr-4 text-gray-300">
+							{#if candidate.tmdb?.voteAverage !== undefined}
+								<span
+									class="rounded bg-amber-900/60 px-1.5 py-0.5 text-xs text-amber-100"
+									title="TMDB vote average"
+								>
+									★ {formatRating(candidate.tmdb.voteAverage)}
+								</span>
+							{:else}
+								—
+							{/if}
+						</td>
 						<td class="py-2 pr-4">
 
 								<span
