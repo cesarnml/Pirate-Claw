@@ -43,3 +43,21 @@ export type CandidateStateRecord = {
 	lastFeedItemId?: number;
 	updatedAt: string;
 };
+
+export type ShowEpisode = {
+	episode: number;
+	identityKey: string;
+	status: string;
+	lifecycleStatus?: string;
+	queuedAt?: string;
+};
+
+export type ShowSeason = {
+	season: number;
+	episodes: ShowEpisode[];
+};
+
+export type ShowBreakdown = {
+	normalizedTitle: string;
+	seasons: ShowSeason[];
+};
