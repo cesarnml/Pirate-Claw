@@ -310,6 +310,10 @@ export function parseResolveReviewThreadOutput(output: string): {
 const THREAD_REPLY_BEFORE_RESOLVE =
   'Addressed during patch phase — see PR body for full finding disposition.';
 
+function sanitizeThreadReplyBody(body: string): string {
+  return body.replace(/\s+/g, ' ').trim();
+}
+
 type ReviewCoreDependencies = {
   relativeToRepo: (cwd: string, absolutePath: string) => string;
   replyToReviewThread?: (
@@ -663,7 +667,7 @@ export function resolveNativeReviewThreads(
         dependencies.replyToReviewThread(
           worktreePath,
           comment.databaseId,
-          THREAD_REPLY_BEFORE_RESOLVE,
+          sanitizeThreadReplyBody(THREAD_REPLY_BEFORE_RESOLVE),
         );
       } catch {
         // Reply is best-effort; resolution still proceeds.
