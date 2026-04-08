@@ -61,3 +61,48 @@ export type ShowBreakdown = {
 	normalizedTitle: string;
 	seasons: ShowSeason[];
 };
+
+export type FeedConfig = {
+	name: string;
+	url: string;
+	mediaType: 'tv' | 'movie';
+	parserHints?: Record<string, unknown>;
+	pollIntervalMinutes?: number;
+};
+
+export type TvRule = {
+	name: string;
+	matchPattern?: string;
+	resolutions: string[];
+	codecs: string[];
+};
+
+export type MoviePolicy = {
+	years: number[];
+	resolutions: string[];
+	codecs: string[];
+	codecPolicy: 'prefer' | 'require';
+};
+
+export type TransmissionConfig = {
+	url: string;
+	username: string;
+	password: string;
+	downloadDir?: string;
+	downloadDirs?: { movie?: string; tv?: string };
+};
+
+export type RuntimeConfig = {
+	runIntervalMinutes: number;
+	reconcileIntervalMinutes: number;
+	artifactDir: string;
+	artifactRetentionDays: number;
+	apiPort?: number;
+};
+
+export type AppConfig = {
+	feeds: FeedConfig[];
+	tv: TvRule[];
+	movies: MoviePolicy;
+	transmission: TransmissionConfig;
+	runtime: RuntimeConfig;
