@@ -62,6 +62,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-09/implementation-plan.md`: daemon HTTP API delivery plan
 - `phase-10/implementation-plan.md`: read-only SvelteKit dashboard delivery plan
 - `phase-11/implementation-plan.md`: TMDB metadata enrichment delivery plan (tickets P11.01–P11.06; delivered on `main`)
+- `phase-12/implementation-plan.md`: dashboard design system and read-only UI redesign (tickets P12.01–P12.08; not yet implemented)
 
 ### `03-engineering`
 
