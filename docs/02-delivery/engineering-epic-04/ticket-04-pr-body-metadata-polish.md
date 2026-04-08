@@ -64,11 +64,15 @@ Drop milliseconds, drop the `T`/`Z` ISO separators, keep UTC suffix.
 
 ## Acceptance Criteria
 
-- [ ] `bun run verify && bun run test` pass
-- [ ] Ticket file line renders as a Markdown link targeting `https://github.com/{owner}/{repo}/blob/main/{path}`
-- [ ] `reviewed commit` and `current branch head` lines render as Markdown links targeting the full commit SHA URL
-- [ ] `internal review: completed at` line uses `YYYY-MM-DD HH:mm UTC` format, no milliseconds
-- [ ] No change to any other PR body section
+- [x] `bun run verify && bun run test` pass
+- [x] Ticket file line renders as a Markdown link targeting `https://github.com/{owner}/{repo}/blob/main/{path}`
+- [x] `reviewed commit` and `current branch head` lines render as Markdown links targeting the full commit SHA URL
+- [x] `internal review: completed at` line uses `YYYY-MM-DD HH:mm UTC` format, no milliseconds
+- [x] No change to any other PR body section
+
+## Rationale
+
+`resolveGitHubRepo` reads `nameWithOwner` via `gh repo view` at orchestrator call sites (`updatePullRequestBody`, `openPullRequest`, `restack`, standalone refresh) and passes `githubRepo` into `buildPullRequestBody` / `buildExternalAiReviewSection` so render functions stay pure and never call `gh` inside the markdown builders.
 
 ## Notes
 

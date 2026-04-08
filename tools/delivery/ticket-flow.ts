@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 import type { PullRequestSummary } from './platform';
+import type { ReviewActionCommit } from './pr-metadata';
 import type { DeliveryState, TicketState } from './orchestrator';
 
 export function findNextPendingTicket(
@@ -271,7 +272,15 @@ export function openPullRequest(
   ticketId: string | undefined,
   dependencies: {
     assertReviewerFacingMarkdown: (markdown: string) => void;
-    buildPullRequestBody: (state: DeliveryState, ticket: TicketState) => string;
+    buildPullRequestBody: (
+      state: DeliveryState,
+      ticket: TicketState,
+      options?: {
+        actionCommits?: ReviewActionCommit[];
+        currentHeadSha?: string;
+        githubRepo?: { defaultBranch: string; name: string; owner: string };
+      },
+    ) => string;
     buildPullRequestTitle: (
       ticket: Pick<TicketState, 'id' | 'title'>,
       commitSubject?: string,
@@ -301,6 +310,9 @@ export function openPullRequest(
     ) => PullRequestSummary | undefined;
     parsePullRequestNumber: (prUrl: string) => number;
     readLatestCommitSubject: (cwd: string) => string;
+    resolveGitHubRepo?: (
+      cwd: string,
+    ) => { defaultBranch: string; name: string; owner: string } | undefined;
   },
 ): DeliveryState {
   const target =
@@ -336,7 +348,9 @@ export function openPullRequest(
     target,
     dependencies.readLatestCommitSubject(target.worktreePath),
   );
-  const body = dependencies.buildPullRequestBody(state, target);
+  const body = dependencies.buildPullRequestBody(state, target, {
+    githubRepo: dependencies.resolveGitHubRepo?.(target.worktreePath),
+  });
   dependencies.assertReviewerFacingMarkdown(body);
   const existingPullRequest = dependencies.findOpenPullRequest(
     target.worktreePath,
@@ -437,7 +451,15 @@ export function restackTicket(
   cwd: string,
   ticketId: string | undefined,
   dependencies: {
-    buildPullRequestBody: (state: DeliveryState, ticket: TicketState) => string;
+    buildPullRequestBody: (
+      state: DeliveryState,
+      ticket: TicketState,
+      options?: {
+        actionCommits?: ReviewActionCommit[];
+        currentHeadSha?: string;
+        githubRepo?: { defaultBranch: string; name: string; owner: string };
+      },
+    ) => string;
     defaultBranch: string;
     editPullRequest: (
       cwd: string,
@@ -463,6 +485,9 @@ export function restackTicket(
     ) => string;
     rebaseOnto: (cwd: string, rebaseTarget: string, oldBase: string) => void;
     rebaseOntoDefaultBranch: (cwd: string, defaultBranch: string) => void;
+    resolveGitHubRepo?: (
+      cwd: string,
+    ) => { defaultBranch: string; name: string; owner: string } | undefined;
   },
 ): DeliveryState {
   dependencies.ensureCleanWorktree(cwd);
@@ -543,7 +568,9 @@ export function restackTicket(
   if (pullRequest) {
     dependencies.editPullRequest(cwd, pullRequest.number, {
       base: nextBaseBranch,
-      body: dependencies.buildPullRequestBody(nextState, updatedTarget),
+      body: dependencies.buildPullRequestBody(nextState, updatedTarget, {
+        githubRepo: dependencies.resolveGitHubRepo?.(cwd),
+      }),
     });
   }
 

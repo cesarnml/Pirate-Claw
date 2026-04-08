@@ -464,7 +464,8 @@ jq -n \
             is_outdated: ($thread_state.is_outdated // false),
             is_resolved: ($thread_state.is_resolved // false),
             kind: comment_kind($channel),
-            derived_state: derived_agent_state($channel)
+            derived_state: derived_agent_state($channel),
+            database_id: (.databaseId // .id // null)
           }
         end;
 
@@ -495,7 +496,8 @@ jq -n \
         is_outdated: false,
         is_resolved: false,
         kind: "unknown",
-        derived_state: "findings_detected"
+        derived_state: "findings_detected",
+        database_id: null
       };
 
     ($pr.comments // [])

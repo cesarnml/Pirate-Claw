@@ -47,11 +47,15 @@ PR #84's format (which received good reviewer feedback) is the reference: findin
 
 ## Acceptance Criteria
 
-- [ ] `bun run verify && bun run test` pass
-- [ ] Test case: `patched` + stale SHA + finding comments → `Resolved Review Findings` section with per-finding rows
-- [ ] Test case: `patched` + stale SHA + thread resolutions → resolution suffix appears in finding rows
-- [ ] Test case: `patched` + matching SHA (existing behavior) unchanged
-- [ ] No regression on `clean`, `needs_patch`, `operator_input_needed` outcomes
+- [x] `bun run verify && bun run test` pass
+- [x] Test case: `patched` + stale SHA + finding comments → `Resolved Review Findings` section with per-finding rows
+- [x] Test case: `patched` + stale SHA + thread resolutions → resolution suffix appears in finding rows
+- [x] Test case: `patched` + matching SHA (existing behavior) unchanged
+- [x] No regression on `clean`, `needs_patch`, `operator_input_needed` outcomes
+
+## Rationale
+
+`buildResolvedFindingBullets` now derives disposition from thread resolution when present, otherwise `patched` for patched outcomes. When the review head is stale and the outcome is `patched`, `### Resolved Review Findings` is emitted instead of `### Actions Taken` so reviewers see per-finding rows rather than a single commit-line substitute.
 
 ## Notes
 

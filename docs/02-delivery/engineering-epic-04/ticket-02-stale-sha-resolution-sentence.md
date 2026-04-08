@@ -32,10 +32,14 @@ When the above condition is true AND `reviewStatus === 'patched'`, append:
 
 ## Acceptance Criteria
 
-- [ ] `bun run verify && bun run test` pass
-- [ ] A test case covers: `reviewedHeadSha !== currentHeadSha` + `reviewStatus === 'patched'` → sentence appears
-- [ ] A test case covers: `reviewedHeadSha !== currentHeadSha` + `reviewStatus !== 'patched'` → sentence absent
-- [ ] No change to the stale-SHA notice text itself
+- [x] `bun run verify && bun run test` pass
+- [x] A test case covers: `reviewedHeadSha !== currentHeadSha` + `reviewStatus === 'patched'` → sentence appears
+- [x] A test case covers: `reviewedHeadSha !== currentHeadSha` + `reviewStatus !== 'patched'` → sentence absent
+- [x] No change to the stale-SHA notice text itself
+
+## Rationale
+
+After the stale-SHA notice line, `buildAiReviewDetailLines` appends a one-line confirmation only when the outcome is `patched` and there is at least one action commit or thread-resolution record, so the sentence does not claim certainty without evidence.
 
 ## Notes
 
