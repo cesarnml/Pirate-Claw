@@ -27,11 +27,16 @@ Bootstrap the `web/` SvelteKit application with the full toolchain, a working na
 
 `bun run --cwd web dev` starts without error. All four nav links render. `bun run --cwd web build` produces a `build/` output. `docker build -f web/Dockerfile .` succeeds from repo root.
 
-## Test
+## Rationale
 
-```ts
-// web/src/routes/layout.test.ts
-// render +layout.svelte, assert nav contains links to /, /candidates, /shows, /config
-```
+**Red first:** nav smoke test failed — `mount(...)` is not available on the server — before the vitest config was corrected.
 
-Render the layout with mock children, assert all four nav links are present with correct `href` attributes.
+**Why this path:** manually creating the SvelteKit project files rather than using `sv create` (which is fully interactive with no non-interactive flags). All files follow the SvelteKit 2 + Svelte 5 minimal template conventions exactly.
+
+**`$env/dynamic/private` over `$env/static/private`:** the API URL is a runtime value that differs between dev and production. `$env/static/private` bakes the value in at build time, which is wrong for this use case.
+
+**`resolve.conditions: ['browser']` at config root:** Svelte 5's `mount()` is browser-only. Without this, Vitest resolves `svelte/index-server.js` instead of the browser bundle and `@testing-library/svelte` fails. The condition must be at the vite config root, not nested under `test`.
+
+**Alternate considered:** using `@sveltejs/vite-plugin-svelte` directly in vitest.config instead of `sveltekit()` — rejected because it breaks SvelteKit path aliases (`$lib`, `$env`, `$app`) that view tests in later tickets will need.
+
+**Deferred:** Dockerfile Docker build validation deferred to manual NAS deployment (consistent with phases 06/09 exit conditions). The build output and adapter-node configuration are verified by the Vite build step.

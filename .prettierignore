@@ -2,3 +2,4 @@ node_modules/
 .vscode/
 bun.lock
 .codex/analysis/
+web/

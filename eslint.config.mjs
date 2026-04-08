@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/', '.vscode/', 'test/fixtures/'],
+    ignores: ['node_modules/', '.vscode/', 'test/fixtures/', 'web/'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
