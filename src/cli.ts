@@ -183,7 +183,7 @@ export async function runCli(argv: string[]): Promise<number> {
             writeCycleArtifact(artifactDir, result);
             pruneArtifacts(artifactDir, artifactRetentionDays);
           },
-          fetch: config.runtime.apiPort ? createApiFetch() : undefined,
+          fetch: config.runtime.apiPort != null ? createApiFetch() : undefined,
         });
       } finally {
         database.close();

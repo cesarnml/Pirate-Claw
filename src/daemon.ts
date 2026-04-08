@@ -39,6 +39,7 @@ export async function runDaemonLoop(input: {
   if (options.apiPort != null && input.fetch) {
     server = Bun.serve({
       port: options.apiPort,
+      hostname: '127.0.0.1',
       fetch: input.fetch,
     });
     log(`api listening on port ${server.port}`);
