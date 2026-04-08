@@ -91,6 +91,8 @@ Target directory tree:
 - `/volume1/transmission/watch`
 - `/volume1/media/downloads`
 - `/volume1/media/downloads/complete`
+- `/volume1/media/downloads/complete/movies`
+- `/volume1/media/downloads/complete/tv`
 - `/volume1/media/downloads/incomplete`
 
 Planned bind-mount map for later tickets:
@@ -125,6 +127,8 @@ DSM steps:
    - `transmission/watch`
    - `media/downloads`
    - `media/downloads/complete`
+   - `media/downloads/complete/movies`
+   - `media/downloads/complete/tv`
    - `media/downloads/incomplete`
 4. In each shared folder's permissions view, confirm the DSM account you will use for setup has `Read/Write` access.
 5. Do not create container tasks yet. This ticket stops after the storage baseline is proven.
@@ -283,11 +287,11 @@ Alternatively, create the container through the Docker UI as described above and
 
 Complete directory:
 
-The `linuxserver/transmission` image expects `/downloads/complete` inside the container. Create it on the host if it does not already exist:
+The `linuxserver/transmission` image expects `/downloads/complete` inside the container. Create the media-type subdirectories so Pirate Claw can route downloads by type:
 
 ```sh
-mkdir -p /volume1/media/downloads/complete
-chown 1026:100 /volume1/media/downloads/complete
+mkdir -p /volume1/media/downloads/complete/movies /volume1/media/downloads/complete/tv
+chown 1026:100 /volume1/media/downloads/complete /volume1/media/downloads/complete/movies /volume1/media/downloads/complete/tv
 ```
 
 Post-start verification:
@@ -395,6 +399,8 @@ Config file:
 
 Place the Pirate Claw config file at `/volume1/pirate-claw/config/pirate-claw.config.json`. The config must include a `runtime` section with `artifactDir` set to `/data/runtime` (matching the runtime bind mount inside the container). Set the Transmission URL to `http://localhost:9091/transmission/rpc` (reachable because the container uses host networking). Do not include `username` or `password` in the `transmission` section — those come from the `.env` file.
 
+The `downloadDirs` section routes completed downloads by media type. The paths are container-internal paths inside Transmission's `/downloads` mount. Without `downloadDirs`, all completed downloads land flat in Transmission's default download directory with no media-type separation.
+
 Example minimal config for validation:
 
 ```json
@@ -411,7 +417,11 @@ Example minimal config for validation:
     "codecPolicy": "prefer"
   },
   "transmission": {
-    "url": "http://localhost:9091/transmission/rpc"
+    "url": "http://localhost:9091/transmission/rpc",
+    "downloadDirs": {
+      "movie": "/downloads/complete/movies",
+      "tv": "/downloads/complete/tv"
+    }
   },
   "runtime": {
     "runIntervalMinutes": 30,
@@ -421,6 +431,8 @@ Example minimal config for validation:
   }
 }
 ```
+
+The `downloadDirs` paths are container-internal. Since Transmission mounts `/volume1/media/downloads` as `/downloads`, the path `/downloads/complete/movies` maps to `/volume1/media/downloads/complete/movies` on the NAS host. Both directories must exist before the first torrent is submitted — see the "Complete directory" setup step in Section 3.
 
 Building the image:
 
