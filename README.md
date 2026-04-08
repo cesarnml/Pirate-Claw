@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases 01-09 of the current product roadmap are implemented on `main`. The currently documented engineering epics through Epic 03 are also implemented on `main`. Further product-surface or delivery-tooling expansion now requires a new planning pass and new approved phase/epic docs.
+Phases 01–10 of the current product roadmap are implemented on `main`. The currently documented engineering epics through Epic 03 are also implemented on `main`. Phase 11 (TMDB metadata enrichment) is implemented in the phase-11 delivery stack; after review, merge the stacked PRs with `bun run closeout-stack --plan docs/02-delivery/phase-11/implementation-plan.md` rather than ad hoc cherry-picks. Further product-surface or delivery-tooling expansion beyond that still requires a new planning pass and new approved phase/epic docs when the work is not a small bounded change.
 
 It currently supports:
 
@@ -17,6 +17,8 @@ It currently supports:
 - effective config inspection through `pirate-claw config show`
 - env-backed Transmission credentials via process env or `.env`
 - read-only daemon HTTP API for external consumers when `runtime.apiPort` is configured
+- optional TMDB-backed posters, ratings, and metadata on API and dashboard when a `tmdb` API key is configured (see `pirate-claw.config.example.json`)
+- read-only browser dashboard in `web/` that talks to the daemon API (Phase 10)
 
 ## Commands
 
@@ -78,7 +80,8 @@ High-level config shape:
 - `tv`: either the legacy per-show rule array or a compact `defaults + shows` object
 - `movies`: global movie intake policy
 - `transmission`: local Transmission RPC settings (optional `downloadDirs` for per-media-type download directories)
-- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults; `apiPort` enables the HTTP API)
+- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults; `apiPort` enables the HTTP API; `tmdbRefreshIntervalMinutes` controls background TMDB cache refresh, default 360 minutes, `0` disables)
+- `tmdb`: optional TMDB API key (`apiKey` or env `PIRATE_CLAW_TMDB_API_KEY`) and optional cache TTL overrides
 
 Example:
 
@@ -246,6 +249,12 @@ curl http://localhost:3000/api/health
 ```
 
 All endpoints are read-only. No endpoint mutates daemon state. There is no authentication in this version — it is designed for private NAS networks.
+
+Candidate, show, and movie payloads include TMDB fields when a match exists in the local cache; otherwise they fall back to Phase-10-style local data.
+
+## Read-only dashboard (`web/`)
+
+With the daemon listening (`runtime.apiPort`), run the SvelteKit app from `web/` (`bun install --cwd web` then `bun run --cwd web dev`, configured to reach your daemon base URL) to browse candidates, shows, and movies in the browser. TMDB posters and ratings appear when configured.
 
 ## Current Scope
 

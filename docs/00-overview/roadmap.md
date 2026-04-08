@@ -273,7 +273,7 @@ Goal:
 
 Current status:
 
-- planned, not yet implemented
+- implemented on `main`
 
 Committed scope:
 
@@ -285,9 +285,10 @@ Committed scope:
 Explicitly deferred:
 
 - config editing through the UI
-- TMDB metadata, posters, or ratings
 - visually rich styling or theming
 - Docker Compose orchestration
+
+TMDB metadata, posters, and ratings are covered by Phase 11, not Phase 10.
 
 Working notes:
 
@@ -301,7 +302,7 @@ Goal:
 
 Current status:
 
-- product doc approved; delivery ticket decomposition in `docs/02-delivery/phase-11/implementation-plan.md` — implementation not started
+- implemented per approved tickets `P11.01`–`P11.06` in `docs/02-delivery/phase-11/implementation-plan.md` (stacked PR delivery; merge onto `main` with `bun run closeout-stack --plan docs/02-delivery/phase-11/implementation-plan.md` after developer review)
 
 Committed scope:
 
@@ -309,6 +310,7 @@ Committed scope:
 - candidate-to-TMDB matching for movies and TV
 - SQLite-cached metadata with configurable TTL
 - enriched API responses and dashboard views with posters and ratings
+- background TMDB refresh on a daemon timer (`runtime.tmdbRefreshIntervalMinutes`, independent of RSS polling)
 - display-only — ratings do not gate the intake pipeline
 
 Explicitly deferred:
@@ -335,9 +337,8 @@ These items emerged during ideation and are explicitly deferred beyond Phase 11:
 
 ## Current Planning Posture
 
-- product phases `01`-`09` and engineering epics `01`-`03` are complete on `main`
-- product phase `10` is planned with an approved product doc and a delivery implementation plan
-- product phase `11` is planned with an approved product doc and an approved ticket decomposition (`docs/02-delivery/phase-11/`), but implementation has not started
+- product phases `01`–`10` and engineering epics `01`–`03` are complete on `main`
+- product phase `11` is implemented in the phase-11 stacked PR queue; durable docs and exit verification are ticket `P11.06`
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 
@@ -353,4 +354,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-09.
+Last verified against `README.md` and active delivery plans: 2026-04-08.

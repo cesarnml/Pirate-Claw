@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through Phase 09.
+Pirate Claw is implemented through Phase 10 on `main`, with Phase 11 (TMDB enrichment) delivered in the phase-11 stacked PR path (`docs/02-delivery/phase-11/`).
 
 Current delivered surface:
 
@@ -28,10 +28,12 @@ Current delivered surface:
 - movie codec policy mode via `movies.codecPolicy` (`prefer` by default, `require` for strict matching)
 - queue-time Transmission `movie` / `tv` labels with warning+retry fallback when labels are unsupported
 - per-media-type Transmission download directories via `transmission.downloadDirs`
+- read-only SvelteKit dashboard in `web/` that consumes the daemon HTTP API (run the daemon with `runtime.apiPort`, then `bun run --cwd web dev` or the production build)
+- optional TMDB enrichment: `tmdb` config block and/or `PIRATE_CLAW_TMDB_API_KEY`, SQLite-backed cache, lazy enrichment on API reads, and an optional daemon background refresh cadence via `runtime.tmdbRefreshIntervalMinutes` (default 6 hours; set `0` to disable)
 
 Current product boundary:
 
-- local CLI only
+- local CLI plus optional read-only browser dashboard
 - Transmission is the downloader adapter
 - SQLite is the local persistence boundary
 - real-world feed compatibility for EZTV and Atlas is implemented
@@ -41,10 +43,11 @@ Current product boundary:
 - shared runtime lock prevents overlapping cycles
 - machine-readable and human-readable cycle artifacts with bounded retention
 - read-only daemon HTTP API (`/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, `/api/movies`, `/api/feeds`, `/api/config`) when `runtime.apiPort` is configured
+- TMDB metadata is display-only and does not gate RSS intake
 
 Still deferred:
 
-- web UI
+- config editing through the web UI
 - remote feed capture
 - hosted persistence
 - download renaming or organization rules
@@ -55,7 +58,7 @@ Last verified against `README.md` and CLI commands: 2026-04-08.
 
 Current planning focus:
 
-- see [`roadmap.md`](./roadmap.md) for numbered phases: Phase 10 (read-only dashboard) and Phase 11 (TMDB enrichment) have approved product docs; Phase 11 also has an approved ticket decomposition under `docs/02-delivery/phase-11/`
+- see [`roadmap.md`](./roadmap.md) for numbered phases and what is on `main` versus the phase-11 stack
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
 
