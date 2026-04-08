@@ -69,6 +69,10 @@ When results land, actually read them:
 - **SonarQube** posts a Quality Gate summary as a PR comment and may annotate via GitHub Checks. The PR comment is the primary signal.
 - After the polling window, cross-reference the fetcher's structured output against the raw inline comments API (`pulls/{number}/comments`). Do not treat the fetcher's `findingsCount` or `detected` flag as the sole source of truth — the fetcher's detection can lag behind actual comment delivery.
 
+### Review Outcome Recording
+
+Record `clean` only when no actionable feedback was found during the review window. If actionable feedback was found and prudently fixed, record `patched`. Do not downgrade `patched` to `clean` just because later polling is quiet.
+
 ### Docs-Only PRs
 
 Skip the external AI review polling window for docs-only PRs (no code changes). Static analysis and security scanning have nothing to find in markdown edits. Consistency and correctness findings on docs (like phase-status text drift) should be caught during implementation, not outsourced to a review bot. Record `clean` immediately and advance.
