@@ -24,3 +24,21 @@ Documentation reflects Phase 11 delivery plan location; roadmap/start-here/READM
 ## Rationale
 
 Keeps durable docs aligned with AGENTS ticket-completion expectations and avoids shipping code without discoverable plan links.
+
+**P11.06 delivered:**
+
+- `docs/README.md` already indexed `phase-11/implementation-plan.md`; left consistent.
+- `docs/00-overview/roadmap.md`: Phase 10 marked implemented on `main`; Phase 11 marked implemented via stacked delivery with `closeout-stack` merge note; planning posture updated; Phase 10 deferral text adjusted so TMDB is attributed to Phase 11.
+- `docs/00-overview/start-here.md`: current state through Phase 10 on `main` and Phase 11 in the stack; dashboard + TMDB surfaces; deferred list no longer claims “web UI” is missing.
+- `README.md`: Phase 11 / closeout pointer, TMDB and `tmdbRefreshIntervalMinutes` in config shape, dashboard subsection.
+
+**Exit condition checklist** (vs `docs/01-product/phase-11-tmdb-metadata-enrichment.md`):
+
+| Product exit criterion                                                   | Status                                                         |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Dashboard shows TMDB posters and ratings when TMDB is configured         | Met (candidates/show/movie views; stack implements enrichment) |
+| Show detail shows TMDB season/episode metadata with local download state | Met                                                            |
+| Movie candidates show TMDB overview, rating, poster                      | Met                                                            |
+| Graceful degrade when TMDB missing or unreachable                        | Met (lazy enrichment + logging; UI tolerates absent fields)    |
+
+**Explicit deferrals** in the product doc remain unchanged (rating gates, search-to-add, calendar, UI config editor, speculative unmatched candidates, local image CDN, etc.).
