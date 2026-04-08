@@ -223,7 +223,7 @@ export async function startTicket(
   };
 }
 
-export function recordInternalReview(
+export function recordPostVerifySelfAudit(
   state: DeliveryState,
   ticketId?: string,
   now: () => string = () => new Date().toISOString(),
@@ -236,17 +236,17 @@ export function recordInternalReview(
 
   if (!target) {
     throw new Error(
-      'No in-progress ticket found to mark as internally reviewed.',
+      'No in-progress ticket found to mark post-verify self-audit complete.',
     );
   }
 
-  if (target.status === 'internally_reviewed') {
+  if (target.status === 'post_verify_self_audit_complete') {
     return state;
   }
 
   if (target.status !== 'in_progress') {
     throw new Error(
-      `Ticket ${target.id} must be in progress before internal review can be recorded.`,
+      `Ticket ${target.id} must be in progress before post-verify self-audit can be recorded.`,
     );
   }
 
@@ -258,13 +258,16 @@ export function recordInternalReview(
       ticket.id === target.id
         ? {
             ...ticket,
-            status: 'internally_reviewed',
-            internalReviewCompletedAt: completedAt,
+            status: 'post_verify_self_audit_complete',
+            postVerifySelfAuditCompletedAt: completedAt,
           }
         : ticket,
     ),
   };
 }
+
+/** @deprecated Use `recordPostVerifySelfAudit`. */
+export const recordInternalReview = recordPostVerifySelfAudit;
 
 export function openPullRequest(
   state: DeliveryState,
@@ -319,22 +322,24 @@ export function openPullRequest(
     (ticketId
       ? state.tickets.find((ticket) => ticket.id === ticketId)
       : (state.tickets.find(
-          (ticket) => ticket.status === 'internally_reviewed',
+          (ticket) => ticket.status === 'post_verify_self_audit_complete',
         ) ?? state.tickets.find((ticket) => ticket.status === 'in_review'))) ??
     undefined;
 
   if (!target) {
-    throw new Error('No internally reviewed ticket found to open as a PR.');
+    throw new Error(
+      'No ticket in post-verify self-audit complete state found to open as a PR.',
+    );
   }
 
   if (target.status === 'in_progress') {
     throw new Error(
-      `Ticket ${target.id} must complete internal review before opening a PR.`,
+      `Ticket ${target.id} must complete post-verify self-audit before opening a PR.`,
     );
   }
 
   if (
-    target.status !== 'internally_reviewed' &&
+    target.status !== 'post_verify_self_audit_complete' &&
     target.status !== 'in_review'
   ) {
     throw new Error(

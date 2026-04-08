@@ -15,7 +15,7 @@ Policy lifted from [`AGENTS.md`](../../../AGENTS.md) and [`docs/03-engineering/d
 
 1. **Entrypoint and config.** Prefer `bun run deliver` as the operator entrypoint. Read repo-root `orchestrator.config.json` when relevant and `docs/03-engineering/delivery-orchestrator.md` for command surface and behavior—not ad hoc substitutes for what the orchestrator already implements.
 2. **When to use this path.** Smaller bounded product changes may ship as **standalone PRs without a new phase/epic**. For those, use the orchestrator's **standalone `ai-review` path**—`bun run deliver ai-review [--pr <number>]`—**not** the ticketed stacked flow (`--plan …`, `poll-review`, `advance`, `closeout-stack`, etc.).
-3. **Before external AI-agent review.** Complete implement → verify (e.g. `bun run verify` and scoped tests). Perform a **discretionary internal self-review** of the diff (human or agent); there is **no** `internal-review` CLI for standalone PRs, but the step is still required—do not skip straight to `ai-review` without that pass and without stating what you verified.
+3. **Before external AI-agent review.** Complete implement → verify (e.g. `bun run verify` and scoped tests) in **build mode**, then switch to **self-audit mode**: re-read the diff against the ticket and second-pass risky areas before publishing the PR. For **ticket stacks**, run `bun run deliver --plan … post-verify-self-audit` after self-audit mode; standalone PRs have **no** `post-verify-self-audit` CLI, but the same mode switch applies—do not skip straight to `ai-review` without self-audit and without stating what was verified.
 4. **Running `ai-review`.** The standalone command uses **real wall-clock** polling intervals. Surface that before starting a long run; do not background it silently or treat “invoke” as permission to hide time cost from the developer.
 5. **Commits.** Follow AGENTS **Pre-Commit** (Prettier for touched files; spellcheck when docs or user-facing copy changed).
 6. **Product-scope gates** in AGENTS (planning pass, approved decomposition, handoffs) apply to **new product phase/epic** work—not to standalone PRs that AGENTS already allows outside a new phase. Do not expand scope into a faux epic without developer direction.
@@ -60,7 +60,7 @@ This avoids a sequencing problem where ticket worktrees are missing the plan doc
    - implement
    - verify
    - update the ticket rationale when behavior or implementation choices changed
-   - record internal review
+   - switch from build mode to self-audit mode, then `post-verify-self-audit` (records delivery state)
    - open or refresh the PR
    - run the orchestrator's AI-review polling flow (see [AI Review Polling](#ai-review-polling) below)
    - patch prudent review findings when required

@@ -45,13 +45,13 @@ Full SHA in the URL, shortened display label. Reviewer can one-click to the comm
 **Current:**
 
 ```
-- internal review: completed at 2026-04-08T00:01:49.533Z
+- post-verify self-audit: completed at 2026-04-08T00:01:49.533Z
 ```
 
 **Target:**
 
 ```
-- internal review: completed at 2026-04-08 00:01 UTC
+- post-verify self-audit: completed at 2026-04-08 00:01 UTC
 ```
 
 Drop milliseconds, drop the `T`/`Z` ISO separators, keep UTC suffix.
@@ -67,7 +67,7 @@ Drop milliseconds, drop the `T`/`Z` ISO separators, keep UTC suffix.
 - [x] `bun run verify && bun run test` pass
 - [x] Ticket file line renders as a Markdown link targeting `https://github.com/{owner}/{repo}/blob/main/{path}`
 - [x] `reviewed commit` and `current branch head` lines render as Markdown links targeting the full commit SHA URL
-- [x] `internal review: completed at` line uses `YYYY-MM-DD HH:mm UTC` format, no milliseconds
+- [x] `post-verify self-audit: completed at` line uses `YYYY-MM-DD HH:mm UTC` format, no milliseconds
 - [x] No change to any other PR body section
 
 ## Rationale

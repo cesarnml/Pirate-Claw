@@ -33,7 +33,7 @@ type TicketReviewMetadataRefreshTarget = Pick<
   | 'title'
   | 'ticketFile'
   | 'baseBranch'
-  | 'internalReviewCompletedAt'
+  | 'postVerifySelfAuditCompletedAt'
   | 'reviewActionSummary'
   | 'reviewIncompleteAgents'
   | 'reviewComments'
@@ -861,9 +861,9 @@ export function buildPullRequestBody(
 
   lines.push(`- stacked base branch: \`${ticket.baseBranch}\``);
 
-  if (ticket.internalReviewCompletedAt) {
+  if (ticket.postVerifySelfAuditCompletedAt) {
     lines.push(
-      `- internal review: completed at ${formatHumanUtcTimestamp(ticket.internalReviewCompletedAt)}`,
+      `- post-verify self-audit: completed at ${formatHumanUtcTimestamp(ticket.postVerifySelfAuditCompletedAt)}`,
     );
   }
 

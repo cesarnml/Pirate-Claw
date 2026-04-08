@@ -96,7 +96,7 @@ import {
   findNextPendingTicket,
   findTicketByBranch,
   openPullRequest as openPullRequestImpl,
-  recordInternalReview as recordInternalReviewImpl,
+  recordPostVerifySelfAudit as recordPostVerifySelfAuditImpl,
   restackTicket as restackTicketImpl,
   startTicket as startTicketImpl,
 } from './ticket-flow';
@@ -145,7 +145,7 @@ export {
 export type TicketStatus =
   | 'pending'
   | 'in_progress'
-  | 'internally_reviewed'
+  | 'post_verify_self_audit_complete'
   | 'in_review'
   | 'needs_patch'
   | 'operator_input_needed'
@@ -172,7 +172,7 @@ export type TicketState = TicketDefinition & {
   worktreePath: string;
   handoffPath?: string;
   handoffGeneratedAt?: string;
-  internalReviewCompletedAt?: string;
+  postVerifySelfAuditCompletedAt?: string;
   prNumber?: number;
   prUrl?: string;
   prOpenedAt?: string;
@@ -507,8 +507,14 @@ export async function runDeliveryOrchestrator(
         );
         return 0;
       }
+      case 'post-verify-self-audit':
       case 'internal-review': {
-        const nextState = await recordInternalReview(
+        if (parsed.command === 'internal-review') {
+          console.error(
+            'Note: `internal-review` is deprecated; use `post-verify-self-audit`.',
+          );
+        }
+        const nextState = await recordPostVerifySelfAudit(
           state,
           parsed.positionals[0],
         );
@@ -879,11 +885,19 @@ export async function copyLocalEnvIfPresent(
   await copyPlatformEnvIfPresent(sourceWorktreePath, targetWorktreePath);
 }
 
+export async function recordPostVerifySelfAudit(
+  state: DeliveryState,
+  ticketId?: string,
+): Promise<DeliveryState> {
+  return recordPostVerifySelfAuditImpl(state, ticketId);
+}
+
+/** @deprecated Use `recordPostVerifySelfAudit`. */
 export async function recordInternalReview(
   state: DeliveryState,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  return recordInternalReviewImpl(state, ticketId);
+  return recordPostVerifySelfAuditImpl(state, ticketId);
 }
 
 export async function openPullRequest(
@@ -1236,8 +1250,8 @@ export function formatStatus(state: DeliveryState): string {
         `title=${ticket.title}`,
         `worktree=${ticket.worktreePath}`,
         ticket.handoffPath ? `handoff=${ticket.handoffPath}` : undefined,
-        ticket.internalReviewCompletedAt
-          ? `internal_review_completed_at=${ticket.internalReviewCompletedAt}`
+        ticket.postVerifySelfAuditCompletedAt
+          ? `post_verify_self_audit_completed_at=${ticket.postVerifySelfAuditCompletedAt}`
           : undefined,
         ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
         ticket.reviewArtifactJsonPath

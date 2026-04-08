@@ -45,7 +45,7 @@ The recommended decomposition is concern-first with thin mode adapters:
 - `cli/`: argv parsing, usage text, top-level command dispatch
 - `planning/`: plan parsing, plan-key derivation, implementation-plan discovery
 - `state/`: load/save/sync/repair/infer-from-repo
-- `ticket-flow/`: `start`, `internal-review`, `advance`, `restack`, handoff generation
+- `ticket-flow/`: `start`, `post-verify-self-audit`, `advance`, `restack`, handoff generation
 - `review/`: fetcher/triager parsers, polling loop, artifact persistence, thread resolution, review result accumulation
 - `pr-metadata/`: PR title/body builders, refresh adapters, reviewer-facing markdown guards
 - `platform/`: process runner, git/GitHub wrappers, worktree/bootstrap helpers

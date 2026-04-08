@@ -147,6 +147,21 @@ To avoid pretending that work never happened, `sync` can infer progress from the
 
 That inference is intentionally conservative. It reconstructs enough state to resume a stacked phase without requiring a fresh restart.
 
+## Post-verify self-audit (ticket stacks)
+
+After **build mode** (implementation and automated verification, for example `bun run verify` and any scoped tests the ticket implies), the agent switches to **self-audit mode**: a deliberate pass over the diff and ticket acceptance before publishing the branch for external AI code review. Stay in the same implementation session—this is a mode switch, not a handoff.
+
+The `post-verify-self-audit` command **records** that self-audit mode completed (ticket status and timestamp in local delivery state). It does **not** run checks or read the diff; the agent performs verification in build mode and the diff review in self-audit mode, then invokes this command.
+
+**Before `post-verify-self-audit`, confirm at least:**
+
+- The diff matches the ticket and handoff; no unrelated scope crept in.
+- Automated verification for this change is green.
+- Higher-risk areas changed in the diff (data shape, migrations, auth, API contracts) got a second read in self-audit mode.
+- The delivery ticket doc has an updated **Rationale** when behavior or trade-offs changed (repo policy).
+
+Then run `post-verify-self-audit`, then `open-pr`. The deprecated alias `internal-review` still works and prints a notice.
+
 ## Commands
 
 Use the supported repo command:
@@ -162,7 +177,7 @@ Available commands:
 - `repair-state`
 - `ai-review [--pr <number>]`
 - `start [ticket-id]`
-- `internal-review [ticket-id]`
+- `post-verify-self-audit [ticket-id]` (alias: `internal-review`, deprecated)
 - `open-pr [ticket-id]`
 - `poll-review [ticket-id]`
 - `record-review <ticket-id> <clean|patched|operator_input_needed> [note]`
@@ -177,7 +192,7 @@ Separate post-delivery closeout command:
 
 ```bash
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
-bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md internal-review
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md post-verify-self-audit
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md open-pr
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-review
 # if the triager hook leaves the ticket in needs_patch, follow up and then record the final outcome
@@ -202,7 +217,7 @@ bun run deliver ai-review
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
-After implementation and verification, record the internal polish pass with `internal-review` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator should surface the ai-review polling cadence and check timestamps. `poll-review` checks at 2, 4, 6, and 8 minutes after PR open, waits for all detected review agents to become triage-ready, performs one final bounded check when review is still clearly in flight, writes `json` and `txt` artifacts, runs the triager hook, and otherwise auto-records `clean` at the final applicable check.
+After implementation and verification in build mode, complete **self-audit mode** (see above), then record it with `post-verify-self-audit` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator should surface the ai-review polling cadence and check timestamps. `poll-review` checks at 2, 4, 6, and 8 minutes after PR open, waits for all detected review agents to become triage-ready, performs one final bounded check when review is still clearly in flight, writes `json` and `txt` artifacts, runs the triager hook, and otherwise auto-records `clean` at the final applicable check.
 
 If a parent ticket was squash-merged onto `main`, run:
 

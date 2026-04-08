@@ -19,6 +19,58 @@ import type {
   TicketStatus,
 } from './orchestrator';
 
+/** Persisted tickets may use legacy status and timestamp keys until re-saved. */
+type PersistedTicketFields = Partial<TicketState> & {
+  internalReviewCompletedAt?: string;
+  status?: string;
+};
+
+function pickPostVerifySelfAuditCompletedAt(
+  ticket: PersistedTicketFields | undefined,
+): string | undefined {
+  if (!ticket) {
+    return undefined;
+  }
+
+  return (
+    ticket.postVerifySelfAuditCompletedAt ?? ticket.internalReviewCompletedAt
+  );
+}
+
+function normalizeLegacyTicketStatus(status: string | undefined): TicketStatus {
+  if (status === 'internally_reviewed') {
+    return 'post_verify_self_audit_complete';
+  }
+
+  if (status === undefined) {
+    return 'pending';
+  }
+
+  return status as TicketStatus;
+}
+
+export function normalizeDeliveryStateFromPersisted(
+  raw: unknown,
+): DeliveryState {
+  const root = raw as Record<string, unknown>;
+  const rawTickets = root.tickets;
+
+  if (!Array.isArray(rawTickets)) {
+    return raw as DeliveryState;
+  }
+
+  const tickets = rawTickets.map((entry) => {
+    const t = entry as PersistedTicketFields & Record<string, unknown>;
+    const next: Record<string, unknown> = { ...t };
+    delete next.internalReviewCompletedAt;
+    next.status = normalizeLegacyTicketStatus(t.status);
+    next.postVerifySelfAuditCompletedAt = pickPostVerifySelfAuditCompletedAt(t);
+    return next;
+  });
+
+  return { ...root, tickets } as DeliveryState;
+}
+
 type LoadPlanContextResult = {
   absoluteStatePath: string;
   inferred: DeliveryState;
@@ -60,9 +112,9 @@ export async function loadState(
     );
   }
 
-  const existing = JSON.parse(
-    await readFile(absoluteStatePath, 'utf8'),
-  ) as DeliveryState;
+  const existing = normalizeDeliveryStateFromPersisted(
+    JSON.parse(await readFile(absoluteStatePath, 'utf8')),
+  );
 
   return syncStateWithPlan(
     existing,
@@ -106,9 +158,9 @@ export async function repairState(
     };
   }
 
-  const existing = JSON.parse(
-    await readFile(absoluteStatePath, 'utf8'),
-  ) as DeliveryState;
+  const existing = normalizeDeliveryStateFromPersisted(
+    JSON.parse(await readFile(absoluteStatePath, 'utf8')),
+  );
   const changes = summarizeStateDifferences(existing, repairedState);
   let backupPath: string | undefined;
 
@@ -206,9 +258,11 @@ export function syncStateWithPlan(
         handoffPath: previous?.handoffPath ?? inferredTicket?.handoffPath,
         handoffGeneratedAt:
           previous?.handoffGeneratedAt ?? inferredTicket?.handoffGeneratedAt,
-        internalReviewCompletedAt:
-          previous?.internalReviewCompletedAt ??
-          inferredTicket?.internalReviewCompletedAt,
+        postVerifySelfAuditCompletedAt:
+          pickPostVerifySelfAuditCompletedAt(previous) ??
+          pickPostVerifySelfAuditCompletedAt(
+            inferredTicket as PersistedTicketFields | undefined,
+          ),
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
@@ -472,7 +526,7 @@ function statusRank(status: TicketStatus): number {
       return 0;
     case 'in_progress':
       return 1;
-    case 'internally_reviewed':
+    case 'post_verify_self_audit_complete':
       return 2;
     case 'in_review':
       return 3;

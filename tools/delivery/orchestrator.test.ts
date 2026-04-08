@@ -41,7 +41,7 @@ import {
   parseAiReviewTriagerOutput,
   parsePlan,
   pollReview,
-  recordInternalReview,
+  recordPostVerifySelfAudit,
   recordReview,
   resolveOrchestratorConfig,
   resolvePlanPathForBranch,
@@ -54,6 +54,7 @@ import {
   runProcessResult,
   type DeliveryState,
 } from './orchestrator';
+import { normalizeDeliveryStateFromPersisted } from './state';
 import { resolveNativeReviewThreads } from './review';
 
 describe('delivery orchestrator', () => {
@@ -788,7 +789,7 @@ describe('delivery orchestrator', () => {
           ticketFile:
             'docs/02-delivery/engineering-epic-02/ticket-05-shared-review-metadata-refresh-adapter.md',
           baseBranch: 'agents/e2-04-shared-clean-and-timeout-recording-core',
-          internalReviewCompletedAt: '2026-04-07T00:00:00.000Z',
+          postVerifySelfAuditCompletedAt: '2026-04-07T00:00:00.000Z',
           reviewActionSummary: reviewState.actionSummary,
           reviewIncompleteAgents: undefined,
           reviewComments: reviewState.comments,
@@ -827,7 +828,7 @@ describe('delivery orchestrator', () => {
       '- delivery ticket: `E2.05 Shared Review Metadata Refresh Adapter`',
     );
     expect(ticketBody).toContain(
-      '- internal review: completed at 2026-04-07 00:00 UTC',
+      '- post-verify self-audit: completed at 2026-04-07 00:00 UTC',
     );
     expect(ticketBody).toContain(expectedReviewSection);
     expect(standaloneBody).toContain('- preserve this author-owned context');
@@ -1560,7 +1561,7 @@ describe('delivery orchestrator', () => {
     });
   });
 
-  it('records internal review before opening a PR', async () => {
+  it('records post-verify self-audit before opening a PR', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
       planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
@@ -1585,10 +1586,42 @@ describe('delivery orchestrator', () => {
       ],
     };
 
-    const nextState = await recordInternalReview(state, 'P3.01');
+    const nextState = await recordPostVerifySelfAudit(state, 'P3.01');
 
-    expect(nextState.tickets[0]?.status).toBe('internally_reviewed');
-    expect(nextState.tickets[0]?.internalReviewCompletedAt).toBeTruthy();
+    expect(nextState.tickets[0]?.status).toBe(
+      'post_verify_self_audit_complete',
+    );
+    expect(nextState.tickets[0]?.postVerifySelfAuditCompletedAt).toBeTruthy();
+  });
+
+  it('normalizes legacy persisted ticket status and timestamps', () => {
+    const raw = {
+      planKey: 'p',
+      planPath: 'plan.md',
+      statePath: 's.json',
+      reviewsDirPath: 'r',
+      handoffsDirPath: 'h',
+      reviewPollIntervalMinutes: 2,
+      reviewPollMaxWaitMinutes: 10,
+      tickets: [
+        {
+          id: 'T1',
+          title: 't',
+          slug: 's',
+          ticketFile: 'f.md',
+          status: 'internally_reviewed',
+          branch: 'b',
+          baseBranch: 'main',
+          worktreePath: '/w',
+          internalReviewCompletedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    };
+    const next = normalizeDeliveryStateFromPersisted(raw);
+    expect(next.tickets[0]?.status).toBe('post_verify_self_audit_complete');
+    expect(next.tickets[0]?.postVerifySelfAuditCompletedAt).toBe(
+      '2026-01-01T00:00:00.000Z',
+    );
   });
 
   it('rejects pr bodies that contain literal escaped newlines', () => {
@@ -1661,7 +1694,7 @@ describe('delivery orchestrator', () => {
     ).not.toThrow();
   });
 
-  it('requires internal review before opening a ticket-linked PR', async () => {
+  it('requires post-verify self-audit before opening a ticket-linked PR', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
       planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
@@ -1689,7 +1722,7 @@ describe('delivery orchestrator', () => {
     await expect(
       openPullRequest(state, '/tmp/pirate_claw', 'P3.01'),
     ).rejects.toThrow(
-      'Ticket P3.01 must complete internal review before opening a PR.',
+      'Ticket P3.01 must complete post-verify self-audit before opening a PR.',
     );
   });
 
