@@ -98,6 +98,20 @@ If you are doing workflow or delivery-tooling work:
 
 ## Planning Workflow
 
+New product-scope expansion follows this sequence before any implementation starts:
+
+1. **Ideate and scope** — use `grill-me` to pressure-test the phase goal, dependencies, and ticket boundaries. The developer stays in the conversation here. Plan Mode can help structure it, but is not a repo policy requirement.
+
+2. **Decompose into tickets** — produce a set of thin, vertically-sliced delivery tickets. Each ticket should be small enough to explain clearly in one PR review.
+
+3. **Developer approves the stack** — the developer reads the decomposed tickets and signs off on the slice boundaries before any branch or code is created. This is a required control point, not ceremony.
+
+4. **Commit plan and tickets to `main`** — the implementation plan and all ticket docs must land on the default branch before the orchestrator creates any ticket branches. Skipping this breaks the orchestrator's branch sequencing.
+
+5. **Hand off to the orchestrator** — once the plan is on `main`, invoke `bun run deliver --plan <path> start` to begin ticket-by-ticket orchestrated delivery. The orchestrator runs until the phase is done or a real blocker stops it.
+
+If a request arrives to implement new product scope without a completed planning pass and developer-approved ticket decomposition, surface the missing control point, point here and to `docs/02-delivery/phase-implementation-guidance.md`, and wait for the developer to close the gap before proceeding.
+
 If the request names a phase or epic and the user says to implement, start, begin, run, or resume it, treat that as a full orchestrated delivery request: work the ticket stack in order and keep going until you hit a blocker or the user changes scope.
 
 When shaping a new phase or revising an existing one:

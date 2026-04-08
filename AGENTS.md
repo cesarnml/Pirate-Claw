@@ -7,15 +7,15 @@
 - The delivery orchestrator reads `orchestrator.config.json` at the repo root for default branch, plan root, runtime internals, and package-manager-aware bootstrap defaults. See `docs/03-engineering/delivery-orchestrator.md` for field details and scope.
 - Prefer `bun run deliver --plan ...` over ad hoc implementation. In this repo, `bun run deliver` remains the supported operator entrypoint even though the orchestrator internals are more configurable.
 - For orchestrated ticket work, the handoff under `.agents/delivery/<plan-key>/handoffs/` is required input alongside the plan and ticket docs.
-- If the user asks to implement, start, begin, run, or resume a phase or epic, treat that as a full orchestrated delivery request and keep advancing ticket-by-ticket until blocked or the user narrows scope; do not reduce it to a single ticket just because of the verb used.
-- Do not start implementing a new product phase/epic until the developer has reviewed and approved the delivery decomposition into thin, reviewable tickets.
-- If asked to implement a new product phase/epic without an explicit planning pass plus approved ticket decomposition, do not begin implementation. Explain the missing control point, point to the required planning docs, and stop. This is a soft refusal rule for product-scope expansion, not a ban on small docs-only or tooling-only follow-ups that do not expand the product surface.
-- Not every product-surface change needs a new phase/epic. Smaller bounded implementation changes may still proceed as standalone PR work. When they do, use the orchestrator's standalone `ai-review` path instead of the ticketed stacked flow.
-- `begin phase` / `implement phase` means run the stacked-ticket workflow until blocked, not just the first ticket.
+- A request to implement, start, begin, run, or resume a phase or epic is a full orchestrated delivery request. Run the stacked flow ticket-by-ticket until the phase is complete or a repo-valid blocker appears. The verb alone does not narrow scope to a single ticket.
+- New product phase/epic implementation starts only after the developer has reviewed and approved the delivery decomposition into thin, reviewable tickets.
+- New product-scope expansion requires a planning pass and developer-approved ticket decomposition before implementation begins. When those are missing, surface the gap, point to the required planning docs, and wait. Docs-only, cleanup-only, and tooling-only changes that do not expand the product surface skip this requirement.
+- Smaller bounded product changes can proceed as standalone PRs without a new phase/epic. Use the orchestrator's standalone `ai-review` path for those rather than the ticketed stacked flow.
+- 'begin phase' and 'implement phase' mean run the full stacked-ticket workflow to completion, not just the first ticket.
 - Phase flow: implement, verify, push/open PR, run the configured `ai-code-review` polling window, patch prudent findings if any appear, refresh PR state, then advance.
 - No `ai-code-review` feedback by the final polling check is not a blocker. Record `clean` only when no actionable feedback was found during the review window. If actionable feedback was found and prudently fixed, preserve `patched` as the final outcome; do not downgrade `patched` to `clean` just because later polling is quiet.
 - During external waits, read-ahead into the next ticket, handoff, and adjacent seams is encouraged. Do not write ahead until the current ticket is cleared.
-- Stop only for unsafe work, missing prerequisites, ambiguous review triage, orchestrator blockage, or explicit user interruption.
+- The only valid reasons to stop orchestrated delivery work are: unsafe operations, missing prerequisites the repo context cannot resolve, ambiguous review triage that needs developer judgment, orchestrator blockage, or explicit user scope change.
 - Final merge or advance of delivered stacked PR slices remains a developer approval step.
 - After developer approval of a completed stacked phase, close it with `bun run closeout-stack --plan <plan-path>` rather than manual merge/cherry-pick steps.
 

@@ -62,19 +62,19 @@ The orchestrator owns process mechanics:
 - durable local state under `.agents/delivery/<plan-key>/`
 - per-ticket handoff artifacts under `.agents/delivery/<plan-key>/handoffs/`
 - deterministic branch and worktree naming
-- copying a local `.env` into fresh ticket work trees when the invoking worktree has one
-- bootstrapping fresh ticket work trees using lockfile-aware package-manager defaults before implementation starts
+- copying a local `.env` into fresh ticket worktrees when the invoking worktree has one
+- bootstrapping fresh ticket worktrees using lockfile-aware package-manager defaults before implementation starts
 - stacked PR base chaining
 - idempotent PR open/update behavior for already-pushed ticket branches
-- a 2/4/6/8-minute ai-review polling loop after PR open
-- invoking the repo-local `ai-code-review` fetcher and persisting structured `json` plus rendered `txt` artifacts when AI review is detected
+- a 2/4/6/8-minute AI-review polling loop after PR open
+- invoking the repo-local `ai-code-review` fetcher and persisting structured JSON plus rendered text artifacts when AI review is detected
 - optional Telegram milestone notifications for long-running delivery runs
-- blocking advancement until review has been explicitly recorded or auto-recorded as `clean` after the final polling check
-- refreshing the current PR body from recorded ai-cr follow-up notes immediately before advancing to the next ticket
-- resolving native GitHub inline review threads for patched AI-review findings when the saved review artifact exposes a resolvable thread identity
-- converging ticket-linked and standalone post-PR review handling through shared lifecycle helpers for detected-review processing, clean/timeout recording, metadata refresh, and final persistence
+- blocking advancement until review is explicitly recorded or auto-recorded as `clean` after the final polling check
+- refreshing the current PR body from recorded follow-up notes immediately before advancing to the next ticket
+- resolving native GitHub inline review threads for patched AI-review findings when the saved artifact exposes a resolvable thread identity
+- sharing ticket-linked and standalone post-PR review handling through common lifecycle helpers for detected-review processing, clean/timeout recording, metadata refresh, and final persistence
 
-It does **not** own AI-review detection heuristics or triage judgment.
+The orchestrator does **not** own AI-review detection heuristics or triage judgment.
 
 That boundary is intentional. The repo-local `ai-code-review` skill under `.agents/skills/ai-code-review/` already defines the repo stance for AI review:
 
