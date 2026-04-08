@@ -117,6 +117,16 @@ export {
   resolveReviewPollWindowStart,
 };
 export {
+  type AiReviewLifecycleHooks,
+  DEFAULT_REVIEW_POLLING_PROFILE,
+  type PollForAiReviewResult,
+  type ReviewPollingProfile,
+  computeExtendedReviewPollMaxWaitMinutes,
+  pollForAiReview,
+  resolveDeliveryReviewPollingProfile,
+  runAiReviewLifecycleWithAdapters,
+} from './review';
+export {
   buildTicketHandoff,
   canAdvanceTicket,
   eventsForAdvanceCommand,

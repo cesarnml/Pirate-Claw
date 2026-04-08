@@ -1,4 +1,5 @@
 import { buildReviewPollCheckMinutes } from './review';
+import { computeExtendedReviewPollMaxWaitMinutes } from './review-polling-profile';
 import type {
   DeliveryState,
   DeliveryNotificationEvent,
@@ -41,13 +42,6 @@ function findTicketById(
         state.tickets.find(
           (ticket) => ticket.status === 'operator_input_needed',
         ));
-}
-
-function computeExtendedReviewPollMaxWaitMinutes(
-  intervalMinutes: number,
-  maxWaitMinutes: number,
-): number {
-  return maxWaitMinutes + intervalMinutes;
 }
 
 function buildTicketStartedEvent(
