@@ -1316,7 +1316,10 @@ export async function runReconcileLateTicketReview(
     async onCleanTimeout(reviewPollResult) {
       const processedReview = processCleanAiReview({
         effectiveMaxWaitMinutes: reviewPollResult.effectiveMaxWaitMinutes,
-        incompleteAgents: reviewPollResult.incompleteAgents,
+        incompleteAgents:
+          reviewPollResult.status === 'clean_timeout'
+            ? reviewPollResult.incompleteAgents
+            : undefined,
         maxWaitMinutes: profile.maxWaitMinutes,
         previousOutcome: target.reviewOutcome,
       });
