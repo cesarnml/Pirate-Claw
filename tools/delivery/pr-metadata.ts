@@ -536,6 +536,13 @@ function buildActionCommitBullets(
   });
 }
 
+function hasPatchEvidence(input: {
+  actionCommits?: ReviewActionCommit[];
+  threadResolutions?: AiReviewThreadResolution[];
+}): boolean {
+  return (input.actionCommits?.length ?? 0) > 0;
+}
+
 export function assertReviewerFacingMarkdown(body: string): void {
   const lines = body.split('\n');
   let activeFence: { char: '`' | '~'; length: number } | undefined;
@@ -661,8 +668,10 @@ function buildAiReviewDetailLines(input: {
     );
     if (
       reviewStatus === 'patched' &&
-      ((input.actionCommits?.length ?? 0) > 0 ||
-        (input.threadResolutions?.length ?? 0) > 0)
+      hasPatchEvidence({
+        actionCommits: input.actionCommits,
+        threadResolutions: input.threadResolutions,
+      })
     ) {
       lines.push(
         `- patch commits after \`${shortenSha(input.reviewedHeadSha)}\` address all findings from that review.`,

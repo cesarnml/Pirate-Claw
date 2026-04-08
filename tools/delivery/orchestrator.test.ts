@@ -1133,7 +1133,7 @@ describe('delivery orchestrator', () => {
     expect(body).toContain(
       'the latest recorded external AI review applies to an older branch head',
     );
-    expect(body).toContain(
+    expect(body).not.toContain(
       'patch commits after `abcdef123456` address all findings from that review.',
     );
     expect(body).toContain('### Resolved Review Findings');
