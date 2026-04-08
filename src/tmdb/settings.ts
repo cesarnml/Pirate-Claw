@@ -12,7 +12,7 @@ export function resolveTmdbSettings(
 ): ResolvedTmdbSettings | null {
   const fromEnv = env.PIRATE_CLAW_TMDB_API_KEY?.trim();
   const fromFile = config.tmdb?.apiKey?.trim();
-  const apiKey = (fromEnv ?? fromFile ?? '').trim();
+  const apiKey = fromEnv ?? fromFile ?? '';
   if (!apiKey) {
     return null;
   }
@@ -32,5 +32,6 @@ export function expiresAtIso(ttlMs: number): string {
 }
 
 export function isCacheExpired(expiresAt: string): boolean {
-  return Date.parse(expiresAt) <= Date.now();
+  const parsed = Date.parse(expiresAt);
+  return Number.isNaN(parsed) || parsed <= Date.now();
 }

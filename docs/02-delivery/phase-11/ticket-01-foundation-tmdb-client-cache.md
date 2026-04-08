@@ -31,3 +31,4 @@ This ticket isolates persistence and external API risk so later vertical slices 
 - Optional `tmdb` config supports `cacheTtlDays` and `negativeCacheTtlDays` (defaults in code); `GET /api/config` redacts `tmdb.apiKey` like Transmission credentials.
 - `ensureSchema` applies `tmdb_movie_cache`, `tmdb_tv_cache`, and `tmdb_tv_season_cache` via `ensureTmdbSchema`.
 - Tests cover match-key helpers, config validation, TMDB table presence after migration, config redaction, and isolated `.env` loading for Transmission so parent env does not mask sibling `.env` values.
+- Follow-up from AI review: TMDB client uses slot reservation in `throttle()` for concurrent safety; HTTP 429 without `Retry-After` falls back to exponential backoff; `ensureTmdbSchema` uses one statement per `database.run` inside a transaction; invalid cache expiry timestamps are treated as expired.

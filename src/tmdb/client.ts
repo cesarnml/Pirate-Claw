@@ -61,12 +61,17 @@ export class TmdbHttpClient {
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
   ) {}
 
+  /** Reserves the next allowed request time so concurrent callers serialize. */
   private async throttle(): Promise<void> {
-    const elapsed = Date.now() - this.lastRequestAt;
-    if (elapsed < MIN_REQUEST_INTERVAL_MS) {
-      await new Promise((r) =>
-        setTimeout(r, MIN_REQUEST_INTERVAL_MS - elapsed),
-      );
+    const now = Date.now();
+    const scheduled = Math.max(
+      this.lastRequestAt + MIN_REQUEST_INTERVAL_MS,
+      now,
+    );
+    this.lastRequestAt = scheduled;
+    const waitMs = scheduled - now;
+    if (waitMs > 0) {
+      await new Promise((r) => setTimeout(r, waitMs));
     }
   }
 
@@ -84,15 +89,16 @@ export class TmdbHttpClient {
       const message = error instanceof Error ? error.message : String(error);
       this.log(`tmdb request failed: ${path} (${message})`);
       return null;
-    } finally {
-      this.lastRequestAt = Date.now();
     }
 
     if (response.status === 429) {
-      const retryAfter = Number(response.headers.get('retry-after'));
-      const waitSec = Number.isFinite(retryAfter)
-        ? retryAfter
-        : Math.min(2 ** retry429, 32);
+      const retryAfterRaw = response.headers.get('retry-after');
+      const retryAfter =
+        retryAfterRaw !== null ? Number(retryAfterRaw) : Number.NaN;
+      const waitSec =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? retryAfter
+          : Math.min(2 ** retry429, 32);
       this.log(`tmdb rate limited (429) on ${path}; waiting ${waitSec}s`);
       if (retry429 < 4) {
         await new Promise((r) => setTimeout(r, waitSec * 1000));
