@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through Phase 10 on `main`, with Phase 11 (TMDB enrichment) delivered in the phase-11 stacked PR path (`docs/02-delivery/phase-11/`).
+Pirate Claw is implemented through **Phase 11** on `main` (product phases 01–11; see [`roadmap.md`](./roadmap.md)). Delivery artifacts and tickets for Phase 11 live under [`docs/02-delivery/phase-11/`](../02-delivery/phase-11/).
 
 Current delivered surface:
 
@@ -54,11 +54,11 @@ Still deferred:
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and CLI commands: 2026-04-08.
+Last verified against `README.md` and CLI commands: 2026-04-09.
 
 Current planning focus:
 
-- see [`roadmap.md`](./roadmap.md) for numbered phases and what is on `main` versus the phase-11 stack
+- see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
 

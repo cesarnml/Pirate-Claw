@@ -19,7 +19,7 @@ The docs are organized by purpose so later phases can be added without flattenin
 Entry-point docs for new contributors or new AI-agent threads.
 
 - `start-here.md`: onboarding and immediate next action
-- `roadmap.md`: phase-level view of what comes next
+- `roadmap.md`: phase-level view of shipped scope and future deferrals
 
 ### `01-product`
 
@@ -57,7 +57,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-08/implementation-plan.md`: media placement delivery plan
 - `phase-09/implementation-plan.md`: daemon HTTP API delivery plan
 - `phase-10/implementation-plan.md`: read-only SvelteKit dashboard delivery plan
-- `phase-11/implementation-plan.md`: TMDB metadata enrichment delivery plan (tickets P11.01–P11.06)
+- `phase-11/implementation-plan.md`: TMDB metadata enrichment delivery plan (tickets P11.01–P11.06; delivered on `main`)
 
 ### `03-engineering`
 

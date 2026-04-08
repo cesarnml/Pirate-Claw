@@ -1,5 +1,7 @@
 # Phase 11 Implementation Plan
 
+**Status:** Delivered on `main` (tickets `P11.01`–`P11.06`).
+
 Phase 11 integrates TMDB as the external metadata source for movies and TV shows, enriching the daemon API and dashboard with ratings, posters, and descriptive metadata without changing the core RSS intake or matching pipeline.
 
 **Product contract:** [`docs/01-product/phase-11-tmdb-metadata-enrichment.md`](../../01-product/phase-11-tmdb-metadata-enrichment.md)

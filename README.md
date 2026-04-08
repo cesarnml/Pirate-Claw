@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases 01–10 of the current product roadmap are implemented on `main`. The currently documented engineering epics through Epic 03 are also implemented on `main`. Phase 11 (TMDB metadata enrichment) is implemented in the phase-11 delivery stack; after review, merge the stacked PRs with `bun run closeout-stack --plan docs/02-delivery/phase-11/implementation-plan.md` rather than ad hoc cherry-picks. Further product-surface or delivery-tooling expansion beyond that still requires a new planning pass and new approved phase/epic docs when the work is not a small bounded change.
+Phases **01–11** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment). The documented engineering epics through Epic 03 are also on `main`. For future stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks. Further product-surface or delivery-tooling expansion beyond the current roadmap still requires a new planning pass and new approved phase/epic docs when the work is not a small bounded change.
 
 It currently supports:
 
@@ -18,7 +18,7 @@ It currently supports:
 - env-backed Transmission credentials via process env or `.env`
 - read-only daemon HTTP API for external consumers when `runtime.apiPort` is configured
 - optional TMDB-backed posters, ratings, and metadata on API and dashboard when a `tmdb` API key is configured (see `pirate-claw.config.example.json`)
-- read-only browser dashboard in `web/` that talks to the daemon API (Phase 10)
+- read-only browser dashboard (SvelteKit app in `web/`) that talks to the daemon HTTP API (Phase 10)
 
 ## Commands
 
@@ -252,9 +252,36 @@ All endpoints are read-only. No endpoint mutates daemon state. There is no authe
 
 Candidate, show, and movie payloads include TMDB fields when a match exists in the local cache; otherwise they fall back to Phase-10-style local data.
 
-## Read-only dashboard (`web/`)
+## SvelteKit dashboard server (`web/`)
 
-With the daemon listening (`runtime.apiPort`), run the SvelteKit app from `web/` (`bun install --cwd web` then `bun run --cwd web dev`, configured to reach your daemon base URL) to browse candidates, shows, and movies in the browser. TMDB posters and ratings appear when configured.
+The dashboard is a **SvelteKit** app under [`web/`](./web/). Pages load data through **server-side** requests to the daemon JSON API (the browser never talks to Transmission or SQLite directly). There is no login in this version—use it only on networks you trust, same as the daemon API.
+
+### Prerequisites
+
+1. **Daemon HTTP API enabled** — set `runtime.apiPort` in your config (for example `3000`) and run the daemon (`pirate-claw daemon` or `./bin/pirate-claw daemon --config …`). See [Daemon HTTP API](#daemon-http-api) above.
+2. **API base URL for the web app** — copy [`web/.env.example`](./web/.env.example) to `web/.env` and set `PIRATE_CLAW_API_URL` to the daemon’s base URL (no trailing slash), e.g. `http://localhost:3000`. The SvelteKit server reads this at runtime; if it is missing, API-backed routes error until you set it.
+
+### Development (local UI server)
+
+From the repo root (after `bun install` at the root for the CLI):
+
+```bash
+bun install --cwd web
+bun run --cwd web dev
+```
+
+This starts the Vite-powered SvelteKit dev server (by default **http://localhost:5173**; the terminal shows the exact URL). Open it in a browser to browse candidates, shows, movies, and effective config. When a TMDB API key is configured, posters and ratings show where cached.
+
+### Production-style run (optional)
+
+To serve a built app instead of `dev`:
+
+```bash
+bun run --cwd web build
+cd web && PIRATE_CLAW_API_URL=http://localhost:3000 PORT=5174 node build/index.js
+```
+
+The Node adapter defaults to **port `3000`** and host **`0.0.0.0`** if you omit `PORT` and `HOST`. If your daemon already uses `3000` for its API, set **`PORT`** to another value for the dashboard (for example `5174` as above). The process prints `Listening on http://…` on startup. Keep `PIRATE_CLAW_API_URL` pointed at the daemon; the dashboard URL and the daemon API URL are different ports.
 
 ## Current Scope
 

@@ -302,7 +302,7 @@ Goal:
 
 Current status:
 
-- implemented per approved tickets `P11.01`–`P11.06` in `docs/02-delivery/phase-11/implementation-plan.md` (stacked PR delivery; merge onto `main` with `bun run closeout-stack --plan docs/02-delivery/phase-11/implementation-plan.md` after developer review)
+- implemented on `main` per approved tickets `P11.01`–`P11.06` in [`docs/02-delivery/phase-11/implementation-plan.md`](../02-delivery/phase-11/implementation-plan.md) (delivered via the stacked PR workflow and `closeout-stack` merge)
 
 Committed scope:
 
@@ -337,8 +337,7 @@ These items emerged during ideation and are explicitly deferred beyond Phase 11:
 
 ## Current Planning Posture
 
-- product phases `01`–`10` and engineering epics `01`–`03` are complete on `main`
-- product phase `11` is implemented in the phase-11 stacked PR queue; durable docs and exit verification are ticket `P11.06`
+- product phases `01`–`11` and engineering epics `01`–`03` are complete on `main`
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 
@@ -354,4 +353,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-08.
+Last verified against `README.md` and active delivery plans: 2026-04-09.
