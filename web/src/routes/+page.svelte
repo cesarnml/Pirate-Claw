@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Alert, AlertDescription } from '$lib/components/ui/alert';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import {
@@ -37,6 +37,7 @@
 
 {#if data.error}
 	<Alert variant="destructive" class="mt-6">
+		<AlertTitle>API unavailable</AlertTitle>
 		<AlertDescription>{data.error}</AlertDescription>
 	</Alert>
 {:else if data.health}
@@ -122,5 +123,6 @@
 		<Button variant="outline" size="sm" href="/config">View Config</Button>
 	</nav>
 {:else}
+	<!-- Defensive: load currently returns either health or error, not both null -->
 	<p class="mt-6 text-sm text-muted-foreground">Loading…</p>
 {/if}

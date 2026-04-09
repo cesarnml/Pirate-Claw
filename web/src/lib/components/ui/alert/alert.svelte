@@ -25,17 +25,22 @@
 		ref = $bindable(null),
 		class: className,
 		variant = "default",
+		role: roleProp,
 		children,
 		...restProps
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
 		variant?: AlertVariant;
 	} = $props();
+
+	const effectiveRole = $derived(
+		roleProp ?? (variant === "destructive" ? "alert" : "status"),
+	);
 </script>
 
 <div
 	bind:this={ref}
 	data-slot="alert"
-	role="alert"
+	role={effectiveRole}
 	class={cn(alertVariants({ variant }), className)}
 	{...restProps}
 >
