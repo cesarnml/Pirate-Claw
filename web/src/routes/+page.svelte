@@ -1,4 +1,15 @@
 <script lang="ts">
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
+	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import {
+		Table,
+		TableBody,
+		TableCell,
+		TableHead,
+		TableHeader,
+		TableRow
+	} from '$lib/components/ui/table';
 	import type { PageData } from './$types';
 
 	const { data }: { data: PageData } = $props();
@@ -22,81 +33,96 @@
 	}
 </script>
 
-<h1 class="text-2xl font-semibold">Dashboard</h1>
+<h1 class="text-3xl font-bold tracking-tight">Dashboard</h1>
 
 {#if data.error}
-	<p class="mt-4 text-red-400" role="alert">{data.error}</p>
+	<Alert variant="destructive" class="mt-6">
+		<AlertTitle>API unavailable</AlertTitle>
+		<AlertDescription>{data.error}</AlertDescription>
+	</Alert>
 {:else if data.health}
 	{@const health = data.health}
 	{@const runs = data.runs}
 
-	<section class="mt-6">
-		<h2 class="text-lg font-semibold text-gray-200">Daemon</h2>
-		<dl class="mt-2 rounded bg-gray-800 p-3 text-sm">
-			<div class="flex gap-2">
-				<dt class="text-gray-400">Uptime:</dt>
-				<dd class="text-gray-200">{formatUptime(health.uptime)}</dd>
-			</div>
-			<div class="flex gap-2">
-				<dt class="text-gray-400">Started at:</dt>
-				<dd class="text-gray-200">{formatDate(health.startedAt)}</dd>
-			</div>
-			{#if health.lastRunCycle}
-				<div class="flex gap-2">
-					<dt class="text-gray-400">Last run cycle:</dt>
-					<dd class="text-gray-200">{formatDate(health.lastRunCycle.startedAt)}</dd>
-				</div>
-			{/if}
-			{#if health.lastReconcileCycle}
-				<div class="flex gap-2">
-					<dt class="text-gray-400">Last reconcile:</dt>
-					<dd class="text-gray-200">{formatDate(health.lastReconcileCycle.startedAt)}</dd>
-				</div>
-			{/if}
-		</dl>
+	<section class="mt-8 space-y-6">
+		<Card>
+			<CardHeader class="pb-3">
+				<h2 class="text-lg font-semibold tracking-tight">Daemon</h2>
+			</CardHeader>
+			<CardContent>
+				<dl class="grid gap-3 text-sm">
+					<div class="flex flex-wrap gap-2">
+						<dt class="text-muted-foreground">Uptime</dt>
+						<dd class="font-medium">{formatUptime(health.uptime)}</dd>
+					</div>
+					<div class="flex flex-wrap gap-2">
+						<dt class="text-muted-foreground">Started at</dt>
+						<dd class="font-medium">{formatDate(health.startedAt)}</dd>
+					</div>
+					{#if health.lastRunCycle}
+						<div class="flex flex-wrap gap-2">
+							<dt class="text-muted-foreground">Last run cycle</dt>
+							<dd class="font-medium">{formatDate(health.lastRunCycle.startedAt)}</dd>
+						</div>
+					{/if}
+					{#if health.lastReconcileCycle}
+						<div class="flex flex-wrap gap-2">
+							<dt class="text-muted-foreground">Last reconcile</dt>
+							<dd class="font-medium">{formatDate(health.lastReconcileCycle.startedAt)}</dd>
+						</div>
+					{/if}
+				</dl>
+			</CardContent>
+		</Card>
+
+		<Card>
+			<CardHeader class="pb-3">
+				<h2 class="text-lg font-semibold tracking-tight">Recent Runs</h2>
+			</CardHeader>
+			<CardContent>
+				{#if runs.length === 0}
+					<p class="text-sm text-muted-foreground">No runs recorded yet.</p>
+				{:else}
+					<div class="rounded-md border border-border">
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>ID</TableHead>
+									<TableHead>Started</TableHead>
+									<TableHead>Status</TableHead>
+									<TableHead class="text-right">Queued</TableHead>
+									<TableHead class="text-right">Failed</TableHead>
+									<TableHead class="text-right">Skipped</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{#each runs as run}
+									<TableRow>
+										<TableCell class="font-mono text-xs">{run.id}</TableCell>
+										<TableCell>{formatDate(run.startedAt)}</TableCell>
+										<TableCell>{run.status}</TableCell>
+										<TableCell class="text-right">{run.counts.queued ?? 0}</TableCell>
+										<TableCell class="text-right">{run.counts.failed ?? 0}</TableCell>
+										<TableCell class="text-right"
+											>{(run.counts.skipped_duplicate ?? 0) +
+												(run.counts.skipped_no_match ?? 0)}</TableCell
+										>
+									</TableRow>
+								{/each}
+							</TableBody>
+						</Table>
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
 	</section>
 
-	<section class="mt-6">
-		<h2 class="text-lg font-semibold text-gray-200">Recent Runs</h2>
-		{#if runs.length === 0}
-			<p class="mt-2 text-gray-400">No runs recorded yet.</p>
-		{:else}
-			<table class="mt-2 w-full text-left text-sm">
-				<thead>
-					<tr class="border-b border-gray-700 text-gray-400">
-						<th class="py-2 pr-4">ID</th>
-						<th class="py-2 pr-4">Started</th>
-						<th class="py-2 pr-4">Status</th>
-						<th class="py-2 pr-4">Queued</th>
-						<th class="py-2 pr-4">Failed</th>
-						<th class="py-2 pr-4">Skipped</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each runs as run}
-						<tr class="border-b border-gray-800 text-gray-300">
-							<td class="py-2 pr-4 font-mono">{run.id}</td>
-							<td class="py-2 pr-4">{formatDate(run.startedAt)}</td>
-							<td class="py-2 pr-4">{run.status}</td>
-							<td class="py-2 pr-4">{run.counts.queued ?? 0}</td>
-							<td class="py-2 pr-4">{run.counts.failed ?? 0}</td>
-							<td class="py-2 pr-4"
-								>{(run.counts.skipped_duplicate ?? 0) +
-									(run.counts.skipped_no_match ?? 0)}</td
-							>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{/if}
-	</section>
-
-	<nav class="mt-8 flex gap-4 text-sm">
-		<a href="/candidates" class="text-blue-400 hover:underline">View Candidates</a>
-		<a href="/movies" class="text-blue-400 hover:underline">Movies</a>
-		<a href="/config" class="text-blue-400 hover:underline">View Config</a>
+	<nav class="mt-8 flex flex-wrap gap-2" aria-label="Quick links">
+		<Button variant="outline" size="sm" href="/candidates">View Candidates</Button>
+		<Button variant="outline" size="sm" href="/movies">Movies</Button>
+		<Button variant="outline" size="sm" href="/config">View Config</Button>
 	</nav>
 {:else}
-	<p class="mt-4 text-gray-400">Loading…</p>
+	<!-- Defensive: load currently returns either health or error, not both null -->
+	<p class="mt-6 text-sm text-muted-foreground">Loading…</p>
 {/if}
-

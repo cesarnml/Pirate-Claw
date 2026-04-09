@@ -38,6 +38,7 @@ describe('/', () => {
 			'/candidates',
 		);
 		expect(screen.getByRole('link', { name: 'View Config' })).toHaveAttribute('href', '/config');
+		expect(screen.getByRole('link', { name: 'Movies' })).toHaveAttribute('href', '/movies');
 	});
 
 	it('renders error state when API is unreachable', () => {
