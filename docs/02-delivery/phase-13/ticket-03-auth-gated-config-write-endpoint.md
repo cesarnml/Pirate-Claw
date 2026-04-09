@@ -25,4 +25,6 @@ Write endpoint(s) exist with token gating and disabled-by-default behavior, writ
 
 ## Rationale
 
-To be completed during implementation with behavior/tradeoff notes.
+- Added `PUT /api/config` with explicit disabled/unauthorized/forbidden responses so mutating behavior is opt-in and token-gated by default.
+- Limited write payloads to `runtime` updates only to avoid expanding config mutation surface before dedicated ticket scope.
+- Reused `validateConfig` for merged-on-disk config validation and persisted changes via atomic temp-file rename to reduce corruption risk on partial writes.

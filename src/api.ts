@@ -1,5 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { renameSync, writeFileSync } from 'node:fs';
 import type { AppConfig, FeedConfig, RuntimeConfig } from './config';
+import { ConfigError, validateConfig } from './config';
 import type { MovieBreakdown } from './movie-api-types';
 export type { MovieBreakdown, TmdbMoviePublic } from './movie-api-types';
 import type { ShowBreakdown, ShowEpisode, ShowSeason } from './tv-api-types';
@@ -65,6 +67,7 @@ export type ApiFetchDeps = {
   repository: Repository;
   health: HealthState;
   config: AppConfig;
+  configPath: string;
   pollStatePath: string;
   loadPollState: (path: string) => PollState;
   /** When set (TMDB configured), GET /api/movies lazily enriches from cache + TMDB. */
@@ -106,6 +109,7 @@ export function createApiFetch(
     repository,
     health,
     config,
+    configPath,
     pollStatePath,
     loadPollState,
     tmdbMovies,
@@ -113,6 +117,7 @@ export function createApiFetch(
     tmdbCache,
     onCandidateTmdbCacheError,
   } = deps;
+  let activeConfig = config;
 
   return async (request: Request) => {
     const path = new URL(request.url).pathname;
@@ -173,24 +178,93 @@ export function createApiFetch(
       }
     }
 
-    if (path === '/api/feeds') {
+    if (path === '/api/feeds' && request.method === 'GET') {
       return safeJson(() => {
         const pollState = loadPollState(pollStatePath);
         return {
-          feeds: buildFeedStatuses(config.feeds, pollState, config.runtime),
+          feeds: buildFeedStatuses(
+            activeConfig.feeds,
+            pollState,
+            activeConfig.runtime,
+          ),
         };
       });
     }
 
-    if (path === '/api/config') {
+    if (path === '/api/config' && request.method === 'GET') {
       try {
-        const redacted = redactConfig(config);
+        const redacted = redactConfig(activeConfig);
         return Response.json(redacted, {
           headers: {
             ETag: buildConfigEtag(redacted),
           },
         });
       } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/config' && request.method === 'PUT') {
+      const writeToken = activeConfig.runtime.apiWriteToken;
+      if (!writeToken) {
+        return Response.json(
+          { error: 'config writes are disabled' },
+          { status: 403 },
+        );
+      }
+
+      const bearer = parseBearerToken(request.headers.get('authorization'));
+      if (!bearer) {
+        return Response.json(
+          { error: 'missing bearer token' },
+          { status: 401 },
+        );
+      }
+      if (bearer !== writeToken) {
+        return Response.json({ error: 'forbidden' }, { status: 403 });
+      }
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
+        const patch = expectRecord(body, 'request body');
+        const runtimePatch = requireRecord(patch, 'runtime', 'request body');
+
+        // Runtime-only updates for now; non-runtime updates are out-of-scope in this phase.
+        for (const key of Object.keys(patch)) {
+          if (key !== 'runtime') {
+            throw new ConfigError(
+              `Config file "request body ${key}" is not writable; only "runtime" is supported.`,
+            );
+          }
+        }
+
+        const baseOnDisk = await readConfigFileRecord(configPath);
+        const merged = {
+          ...baseOnDisk,
+          runtime: {
+            ...(isRecord(baseOnDisk.runtime) ? baseOnDisk.runtime : {}),
+            ...runtimePatch,
+          },
+        };
+
+        const validated = validateConfig(merged, 'config');
+        writeConfigAtomically(configPath, merged);
+        activeConfig = validated;
+
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch (error) {
+        if (error instanceof ConfigError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
         return json500();
       }
     }
@@ -328,4 +402,51 @@ function buildConfigEtag(config: AppConfig): string {
   const serialized = JSON.stringify(config);
   const digest = createHash('sha256').update(serialized).digest('hex');
   return `"${digest}"`;
+}
+
+function parseBearerToken(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match?.[1]?.trim() || null;
+}
+
+async function readConfigFileRecord(
+  path: string,
+): Promise<Record<string, unknown>> {
+  const file = Bun.file(path);
+  const parsed = await file.json();
+  return expectRecord(parsed, 'config');
+}
+
+function writeConfigAtomically(
+  path: string,
+  config: Record<string, unknown>,
+): void {
+  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
+  renameSync(tempPath, path);
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+function expectRecord(input: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(input)) {
+    throw new ConfigError(`Config file "${label}" must be an object.`);
+  }
+  return input;
+}
+
+function requireRecord(
+  input: Record<string, unknown>,
+  key: string,
+  label: string,
+): Record<string, unknown> {
+  return expectRecord(input[key], `${label} ${key}`);
 }
