@@ -21,4 +21,6 @@ Show detail page matches Phase 12; tests pass; no loss of displayed fields vs pr
 
 ## Rationale
 
-_To be filled during implementation._
+Rebuilt show detail with **shadcn** `Alert` (API error), `Card` (not-found + per-season blocks), `Table` for episode rows, and `Badge` for TMDB vote average. The back control is a ghost **`Button` → `/shows`** (aligned with the new list route). Hero backdrop uses **`hsl(var(--background) / 0.92)`** over the TMDB backdrop so the overlay tracks theme tokens. Episode stills use non-empty **`alt`** when a title exists. `shows.test.ts` assertions are unchanged (headings, E01, error/not-found).
+
+Follow-up (AI review): backdrop **`url()`** only uses **parsed `https:`** URLs; hero poster **`loading="eager"`** + **`fetchpriority="high"`**; vote **`Badge`** uses **`aria-label`**; first table column header has **`sr-only` “Still image”**.
