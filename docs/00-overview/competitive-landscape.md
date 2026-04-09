@@ -34,14 +34,27 @@ A useful reference point for how far Pirate Claw should or should not move towar
 
 TV automation in the same broad family as Sonarr. Reinforces the pattern that TV tools tend to sprawl once they own post-processing and library behavior — a useful reminder when deciding what Pirate Claw should defer.
 
-## Where Pirate Claw Sits
+## Pirate Claw: Unique Value Proposition
 
-Between generic automation and full library management:
+Compared to other open-source solutions, Pirate Claw delivers:
 
-- more product-shaped and identity-aware than a raw downloader automation script
-- smaller and more hackable than Sonarr or Radarr
-- local-first and operator-driven rather than UI-first
-- intentionally bounded around matching, dedupe, queueing, and downloader lifecycle visibility
+- **Local-first, privacy-respecting automation:** All config, state, and media stay on the user's server/NAS. No cloud, no vendor lock-in, no forced telemetry.
+- **Modern, approachable web UI:** A guided, multi-step onboarding and intuitive config experience for core use cases—no YAML or raw JSON required for most users.
+- **Thin, reliable, and hackable:** Focused on matching, dedupe, queueing, and lifecycle visibility—without the sprawl of full library managers (Sonarr/Radarr/Medusa) or the complexity of generic automation engines (FlexGet).
+- **Separation of automation and UI:** The ingestion engine runs independently of the web UI, ensuring reliability and safe upgrades. The UI is a controller, not a single point of failure.
+- **Admin-focused, safe editing:** Write access is protected by a token; the UI is read-only until the admin is ready. All changes are validated and surfaced with clear feedback.
+- **Rich visual insight:** Dashboards and per-title breakdowns let users see what’s being ingested, matched, or missed—enabling rapid troubleshooting and fine-tuning.
+- **Simple, robust deployment:** Designed for single-command startup on NAS/home server platforms, with Transmission bundled and minimal manual setup.
+- **Future-proofing:** Versioned config/db schemas and a clear upgrade path; breaking changes are explicit and never silent.
+
+### Why Use Pirate Claw?
+
+- You want a self-hosted, privacy-first media automation tool that is easy to set up, easy to trust, and easy to maintain.
+- You want a modern web UI for setup and monitoring, but you don’t want to give up the reliability and control of a CLI/daemon.
+- You don’t need (or want) a sprawling library manager—just robust, transparent intake and queueing.
+- You value clear boundaries, explicit configuration, and a product that won’t break on upgrade or force you into a cloud ecosystem.
+
+**In summary:** Pirate Claw is the “set it and trust it” media automation solution for power users and NAS owners—offering the best of both worlds: a modern, user-friendly interface and the rock-solid reliability and control of a true self-hosted tool.
 
 ## Questions For Future Phases
 

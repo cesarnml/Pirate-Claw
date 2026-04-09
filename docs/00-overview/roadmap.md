@@ -387,15 +387,56 @@ Working notes:
 
 - `docs/01-product/phase-13-daemon-config-write-api-and-settings.md`
 
-## Phase 14: Feeds and Rules Authoring in the UI (Placeholder)
+## Phase 14: Feed Setup & Target Management MVP
 
-Goal:
+- Add/remove RSS feeds (TV/movie) via web UI
+- Add/remove TV show targets and movie years via web UI
+- Set global codec/resolution for TV, and codec/resolution/year for movies
+- Minimal validation (feed fetch, allowed codecs/resolutions)
+- Manual .env write token required for config writes
+- No advanced options, no per-target rules, no suggestions
+- UI is read-only until write token is set
 
-- structured editing of feeds and matching rules (and remaining config not covered by Phase 13), building on Phase 13 write patterns
+See [`docs/01-product/phase-14-feed-setup-and-target-mvp.md`](../01-product/phase-14-feed-setup-and-target-mvp.md)
 
-Current status:
+## Phase 15: Rich Visual State & Activity Views
 
-- placeholder only — not scheduled; see [`docs/01-product/phase-14-feeds-rules-ui-placeholder.md`](../01-product/phase-14-feeds-rules-ui-placeholder.md)
+- Overview dashboard: active downloads, completed items, system status
+- TV Shows/Movies views: progress, per-show/season/episode breakdown, per-movie status
+- Filter/search for ingested and unmatched candidates
+- Manual refresh per view (no real-time updates)
+- Download directory paths surfaced (no validation)
+
+See [`docs/01-product/phase-15-rich-visual-state-and-activity.md`](../01-product/phase-15-rich-visual-state-and-activity.md)
+
+## Phase 16: Config Editing, Hot Reload, and Daemon Controls
+
+- Form-based config editing for all supported fields (no raw editor)
+- Hot reload on config changes; toast on failure
+- Daemon restart button on config page
+- Banner for read-only mode if write token missing
+- eTag or similar for basic write collision avoidance (optional)
+
+See [`docs/01-product/phase-16-config-editing-hot-reload-daemon.md`](../01-product/phase-16-config-editing-hot-reload-daemon.md)
+
+## Phase 17: Onboarding & Empty State Experience
+
+- Multi-step onboarding form for first-time/empty config
+- Feed type selection (TV/movie) determines setup flow
+- Guidance and validation for each step
+- No sample data or suggestions
+
+See [`docs/01-product/phase-17-onboarding-and-empty-state.md`](../01-product/phase-17-onboarding-and-empty-state.md)
+
+## Phase 18: Security, Permissions, and Extensibility Baseline
+
+- Write access protected by PIRATE_CLAW_API_WRITE_TOKEN
+- Single-admin model, no user accounts
+- Config/db schema versioning and compatibility check on startup
+- Document breaking change policy (major version = new schema)
+- No audit logs, plugin, or extension support in v1
+
+See [`docs/01-product/phase-18-security-permissions-extensibility.md`](../01-product/phase-18-security-permissions-extensibility.md)
 
 ## Future Deferrals
 
