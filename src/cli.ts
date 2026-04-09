@@ -262,6 +262,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   repository,
                   health,
                   config,
+                  configPath: resolvedConfigPath,
                   pollStatePath,
                   loadPollState,
                   tmdbMovies,
