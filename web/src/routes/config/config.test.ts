@@ -43,13 +43,13 @@ describe('/config', () => {
 	it('renders config sections with mock data', () => {
 		render(Page, { data: { config: mockConfig, error: null, etag: '"rev-1"' }, form: undefined });
 		expect(screen.getByRole('heading', { name: 'Feeds' })).toBeInTheDocument();
-		expect(screen.getByRole('heading', { name: 'TV Rules' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'TV shows' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Movies' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Transmission' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Runtime' })).toBeInTheDocument();
 		expect(screen.getByText('TestFeed')).toBeInTheDocument();
-		expect(screen.getByText('hd-tv')).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Save runtime settings' })).toBeInTheDocument();
+		expect(screen.getByDisplayValue('hd-tv')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
 	});
 
 	it('renders error state when API is unreachable', () => {
@@ -60,7 +60,7 @@ describe('/config', () => {
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 
-	it('renders empty state when feeds and tv rules are empty', () => {
+	it('renders when feeds list is empty and tv list is empty', () => {
 		render(Page, {
 			data: {
 				config: { ...mockConfig, feeds: [], tv: [] },
@@ -70,7 +70,7 @@ describe('/config', () => {
 			form: undefined
 		});
 		expect(screen.getByText('No feeds configured.')).toBeInTheDocument();
-		expect(screen.getByText('No TV rules configured.')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Add show' })).toBeInTheDocument();
 	});
 
 	it('renders save error message from action data', () => {
@@ -81,22 +81,19 @@ describe('/config', () => {
 		expect(screen.getByRole('alert')).toHaveTextContent('config revision conflict');
 	});
 
-	it('renders restart-required success messaging', () => {
+	it('renders success messaging for combined save', () => {
 		render(Page, {
 			data: { config: mockConfig, error: null, etag: '"rev-1"' },
 			form: {
 				success: true,
-				message: 'Settings saved. Restart the daemon for changes to take effect.',
+				message:
+					'Settings saved. TV show list updates apply on the next daemon run cycle. Restart the daemon to apply a new API port or timer intervals.',
 				etag: '"rev-2"'
 			}
 		});
-		expect(screen.getByRole('status')).toHaveTextContent(
-			'Restart the daemon for changes to take effect'
+		expect(screen.getByRole('alert')).toHaveTextContent(
+			/TV show list updates apply on the next daemon run cycle/
 		);
-		expect(
-			screen.getByText(
-				/Restart the daemon process to apply new runtime intervals and port changes/i
-			)
-		).toBeInTheDocument();
+		expect(screen.getByText(/Daemon timers and the API listen port/i)).toBeInTheDocument();
 	});
 });

@@ -65,7 +65,7 @@ function validateRuntimeBounds(
 }
 
 export const actions: Actions = {
-	saveRuntime: async ({ request }) => {
+	saveSettings: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
 			return fail(500, { message: 'Server write token is not configured.' });
@@ -74,6 +74,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const allowedFields = new Set([
 			'ifMatch',
+			'showName',
 			'runIntervalMinutes',
 			'reconcileIntervalMinutes',
 			'tmdbRefreshIntervalMinutes',
@@ -88,6 +89,12 @@ export const actions: Actions = {
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
 		if (!ifMatch) {
 			return fail(400, { message: 'Missing config revision. Reload and try again.' });
+		}
+
+		const rawShowNames = formData.getAll('showName').map((v) => String(v).trim());
+		const showNames = rawShowNames.filter((n) => n.length > 0);
+		if (showNames.length < 1) {
+			return fail(400, { message: 'At least one TV show name is required.' });
 		}
 
 		const runIntervalMinutes = parseOptionalInt(formData.get('runIntervalMinutes'));
@@ -123,6 +130,9 @@ export const actions: Actions = {
 				reconcileIntervalMinutes,
 				tmdbRefreshIntervalMinutes: tmdbRefreshIntervalMinutes ?? 0,
 				...(apiPort === undefined ? {} : { apiPort })
+			},
+			tv: {
+				shows: showNames
 			}
 		};
 
@@ -153,7 +163,8 @@ export const actions: Actions = {
 
 			return {
 				success: true,
-				message: 'Settings saved. Restart the daemon for changes to take effect.',
+				message:
+					'Settings saved. TV show list updates apply on the next daemon run cycle. Restart the daemon to apply a new API port or timer intervals.',
 				etag: response.headers.get('etag')
 			};
 		} catch (error) {

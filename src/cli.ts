@@ -201,14 +201,17 @@ export async function runCli(argv: string[]): Promise<number> {
         const scheduleTmdbRefresh =
           (tmdbMovies || tmdbShows) && tmdbRefreshIntervalMinutes > 0;
 
+        const configHolder = { current: config };
+
         await runDaemonLoop({
           runCycle: async () => {
+            const active = configHolder.current;
             let pollState = loadPollState(pollStatePath);
             const now = Date.now();
             const dueFeeds = filterDueFeeds(
-              config.feeds,
+              active.feeds,
               pollState,
-              config.runtime,
+              active.runtime,
               now,
             );
 
@@ -218,7 +221,7 @@ export async function runCli(argv: string[]): Promise<number> {
             }
 
             const result = await runPipeline({
-              config: { ...config, feeds: dueFeeds },
+              config: { ...active, feeds: dueFeeds },
               repository,
               downloader,
             });
@@ -262,6 +265,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   repository,
                   health,
                   config,
+                  configHolder,
                   configPath: resolvedConfigPath,
                   pollStatePath,
                   loadPollState,
