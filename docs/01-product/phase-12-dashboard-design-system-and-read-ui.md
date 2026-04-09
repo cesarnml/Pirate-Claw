@@ -1,6 +1,6 @@
 # Phase 12 Dashboard Design System and Read-Only UI Redesign
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-12/` implementation plan until tickets are approved.
+**Delivery status:** Delivered via stacked PRs — see [`docs/02-delivery/phase-12/implementation-plan.md`](../02-delivery/phase-12/implementation-plan.md).
 
 Phase 12 replaces the Phase 10 “functional styling only” dashboard with a cohesive UI built on **shadcn-svelte**, themed to approximate the Stitch design reference, while remaining **read-only** against the existing daemon HTTP API (Phase 09). There is no runtime dependency on Stitch or any MCP tool — design tokens and components live in the repo and CI builds the `web/` app without external design tooling.
 

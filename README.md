@@ -254,7 +254,7 @@ Candidate, show, and movie payloads include TMDB fields when a match exists in t
 
 ## SvelteKit dashboard server (`web/`)
 
-The dashboard is a **SvelteKit** app under [`web/`](./web/). Pages load data through **server-side** requests to the daemon JSON API (the browser never talks to Transmission or SQLite directly). There is no login in this version—use it only on networks you trust, same as the daemon API.
+The dashboard is a **SvelteKit** app under [`web/`](./web/). The UI is built with **shadcn-svelte** on **Tailwind CSS 4** (see [`web/components.json`](./web/components.json) and [`web/src/app.css`](./web/src/app.css)). Pages load data through **server-side** requests to the daemon JSON API (the browser never talks to Transmission or SQLite directly). There is no login in this version—use it only on networks you trust, same as the daemon API.
 
 ### Prerequisites
 

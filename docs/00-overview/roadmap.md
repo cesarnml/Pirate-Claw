@@ -346,7 +346,7 @@ Goal:
 
 Current status:
 
-- product definition only — see [`docs/01-product/phase-12-dashboard-design-system-and-read-ui.md`](../01-product/phase-12-dashboard-design-system-and-read-ui.md)
+- delivered (stacked PRs) — see [`docs/02-delivery/phase-12/implementation-plan.md`](../02-delivery/phase-12/implementation-plan.md) and [`docs/01-product/phase-12-dashboard-design-system-and-read-ui.md`](../01-product/phase-12-dashboard-design-system-and-read-ui.md)
 
 Committed scope:
 
@@ -413,7 +413,7 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 ## Current Planning Posture
 
 - product phases `01`–`11` and engineering epics `01`–`04` are complete on `main`
-- product phases `12`–`14` are defined in `docs/01-product/`; **Phase 12** and **Phase 13** are not implemented until an approved ticket decomposition exists
+- product phases `12`–`14` are defined in `docs/01-product/`; **Phase 12** is delivered via [`docs/02-delivery/phase-12/implementation-plan.md`](../02-delivery/phase-12/implementation-plan.md); **Phase 13** is not implemented until an approved ticket decomposition exists
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 

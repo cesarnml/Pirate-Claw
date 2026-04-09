@@ -81,3 +81,7 @@ Pause for review if:
 ## Developer approval gate
 
 **Do not begin implementation** until these ticket documents are merged to `main` and the ticket stack is explicitly approved for delivery (per `.agents/skills/grill-me/SKILL.md` phase → ticket workflow).
+
+## Delivery status
+
+Implementation proceeded via stacked PRs **P12.01–P12.08**; merge to `main` follows the developer closeout step when the stack is approved (`bun run closeout-stack --plan docs/02-delivery/phase-12/implementation-plan.md`).
