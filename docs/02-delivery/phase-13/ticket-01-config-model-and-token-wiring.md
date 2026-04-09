@@ -27,4 +27,7 @@ Config parsing and validation support token wiring with env precedence, tests pa
 
 ## Rationale
 
-To be completed during implementation with behavior/tradeoff notes.
+- Added `runtime.apiWriteToken` as an optional runtime field so existing configs remain valid when the token is omitted.
+- Enforced precedence `PIRATE_CLAW_API_WRITE_TOKEN` > config file token to support operational secret management without file edits.
+- Treating empty token values as disabled avoids accidental write enablement while still allowing explicit opt-out in file-backed config.
+- Extended API config redaction to include `runtime.apiWriteToken` so read endpoints continue to avoid leaking secrets.

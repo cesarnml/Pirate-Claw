@@ -48,6 +48,7 @@ export type RuntimeConfig = {
   artifactDir: string;
   artifactRetentionDays: number;
   apiPort?: number;
+  apiWriteToken?: string;
   /**
    * How often to run TMDB cache refresh in the daemon (independent of RSS polling).
    * Zero disables the background pass; omitted uses the default (see `DEFAULT_RUNTIME_CONFIG` and `validateRuntime`).
@@ -85,6 +86,7 @@ export type AppConfig = {
 const DEFAULT_CONFIG_PATH = 'pirate-claw.config.json';
 const TRANSMISSION_USERNAME_ENV = 'PIRATE_CLAW_TRANSMISSION_USERNAME';
 const TRANSMISSION_PASSWORD_ENV = 'PIRATE_CLAW_TRANSMISSION_PASSWORD';
+const API_WRITE_TOKEN_ENV = 'PIRATE_CLAW_API_WRITE_TOKEN';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -135,7 +137,7 @@ export function validateConfig(
     tv: validateTvConfig(input.tv, path),
     movies: validateMoviePolicy(movies, path),
     transmission: validateTransmission(transmission, path, env),
-    runtime: validateRuntime(input.runtime, path),
+    runtime: validateRuntime(input.runtime, path, env),
     tmdb: validateOptionalTmdb(input.tmdb, path),
   };
 }
@@ -657,7 +659,11 @@ function validateOptionalTmdbDayCount(
   return input;
 }
 
-function validateRuntime(input: unknown, path: string): RuntimeConfig {
+function validateRuntime(
+  input: unknown,
+  path: string,
+  env: Record<string, string | undefined>,
+): RuntimeConfig {
   if (input === undefined) {
     return { ...DEFAULT_RUNTIME_CONFIG };
   }
@@ -687,12 +693,38 @@ function validateRuntime(input: unknown, path: string): RuntimeConfig {
       runtime.apiPort,
       `${path} runtime apiPort`,
     ),
+    apiWriteToken: resolveApiWriteToken(
+      runtime.apiWriteToken,
+      env[API_WRITE_TOKEN_ENV],
+      `${path} runtime apiWriteToken`,
+    ),
     tmdbRefreshIntervalMinutes:
       validateOptionalTmdbRefreshInterval(
         runtime.tmdbRefreshIntervalMinutes,
         `${path} runtime tmdbRefreshIntervalMinutes`,
       ) ?? DEFAULT_RUNTIME_CONFIG.tmdbRefreshIntervalMinutes,
   };
+}
+
+function resolveApiWriteToken(
+  inlineValue: unknown,
+  envValue: string | undefined,
+  path: string,
+): string | undefined {
+  if (typeof envValue === 'string' && envValue.length > 0) {
+    return envValue;
+  }
+
+  if (inlineValue === undefined) {
+    return undefined;
+  }
+
+  if (typeof inlineValue !== 'string') {
+    throw new ConfigError(`Config file "${path}" must be a string.`);
+  }
+
+  // Empty string in config intentionally disables write auth.
+  return inlineValue.length > 0 ? inlineValue : undefined;
 }
 
 const MAX_INTERVAL_MINUTES = 44_640;

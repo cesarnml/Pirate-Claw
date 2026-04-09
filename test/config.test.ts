@@ -381,6 +381,54 @@ describe('validateConfig', () => {
     expect(config.runtime.apiPort).toBeUndefined();
   });
 
+  it('leaves runtime.apiWriteToken undefined when omitted', () => {
+    const config = validateConfig(createMinimalConfig());
+
+    expect(config.runtime.apiWriteToken).toBeUndefined();
+  });
+
+  it('accepts runtime.apiWriteToken from config', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      runtime: { apiWriteToken: 'config-token' },
+    });
+
+    expect(config.runtime.apiWriteToken).toBe('config-token');
+  });
+
+  it('treats empty runtime.apiWriteToken as disabled', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      runtime: { apiWriteToken: '' },
+    });
+
+    expect(config.runtime.apiWriteToken).toBeUndefined();
+  });
+
+  it('prefers PIRATE_CLAW_API_WRITE_TOKEN env override over config token', () => {
+    const config = validateConfig(
+      {
+        ...createMinimalConfig(),
+        runtime: { apiWriteToken: 'config-token' },
+      },
+      'config',
+      {
+        PIRATE_CLAW_API_WRITE_TOKEN: 'env-token',
+      },
+    );
+
+    expect(config.runtime.apiWriteToken).toBe('env-token');
+  });
+
+  it('fails when runtime.apiWriteToken is not a string', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { apiWriteToken: 12345 },
+      }),
+    ).toThrow(/runtime apiWriteToken.*must be a string/);
+  });
+
   it('fails when runtime.apiPort is zero', () => {
     expect(() =>
       validateConfig({
@@ -589,6 +637,7 @@ describe('validateConfig', () => {
         [
           'PIRATE_CLAW_TRANSMISSION_USERNAME=dotenv-user',
           'PIRATE_CLAW_TRANSMISSION_PASSWORD="dotenv-pass"',
+          'PIRATE_CLAW_API_WRITE_TOKEN=dotenv-write-token',
         ].join('\n'),
       );
       await Bun.write(
@@ -598,6 +647,9 @@ describe('validateConfig', () => {
             ...createMinimalConfig(),
             transmission: {
               url: 'http://localhost:9091/transmission/rpc',
+            },
+            runtime: {
+              apiWriteToken: 'config-write-token',
             },
           },
           null,
@@ -612,6 +664,7 @@ describe('validateConfig', () => {
         username: 'dotenv-user',
         password: 'dotenv-pass',
       });
+      expect(config.runtime.apiWriteToken).toBe('dotenv-write-token');
     } finally {
       await Bun.$`rm -rf ${directory}`;
       if (prevUser !== undefined) {

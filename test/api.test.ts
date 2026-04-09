@@ -549,6 +549,7 @@ describe('GET /api/feeds', () => {
 describe('GET /api/config', () => {
   it('returns config with redacted credentials', async () => {
     const deps = createDeps();
+    deps.config.runtime.apiWriteToken = 'write-token';
     const handler = createApiFetch(deps);
     const response = await handler(new Request('http://localhost/api/config'));
 
@@ -559,6 +560,7 @@ describe('GET /api/config', () => {
     expect(body.transmission.url).toBe(
       'http://localhost:9091/transmission/rpc',
     );
+    expect(body.runtime.apiWriteToken).toBe('[redacted]');
   });
 
   it('does not mutate the original config object', async () => {
@@ -689,11 +691,14 @@ describe('buildFeedStatuses', () => {
 describe('redactConfig', () => {
   it('redacts transmission username and password', () => {
     const config = stubConfig();
+    config.runtime.apiWriteToken = 'write-token';
     const redacted = redactConfig(config);
 
     expect(redacted.transmission.username).toBe('[redacted]');
     expect(redacted.transmission.password).toBe('[redacted]');
+    expect(redacted.runtime.apiWriteToken).toBe('[redacted]');
     expect(config.transmission.username).toBe('user');
+    expect(config.runtime.apiWriteToken).toBe('write-token');
   });
 
   it('redacts tmdb apiKey when present', () => {

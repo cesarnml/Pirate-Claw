@@ -296,6 +296,10 @@ export function buildFeedStatuses(
 export function redactConfig(config: AppConfig): AppConfig {
   const next: AppConfig = {
     ...config,
+    runtime: {
+      ...config.runtime,
+      ...(config.runtime.apiWriteToken ? { apiWriteToken: '[redacted]' } : {}),
+    },
     transmission: {
       ...config.transmission,
       username: '[redacted]',
