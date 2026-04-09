@@ -116,12 +116,7 @@
 			</CardContent>
 		</Card>
 	</section>
-
-	<nav class="mt-8 flex flex-wrap gap-2" aria-label="Quick links">
-		<Button variant="outline" size="sm" href="/candidates">View Candidates</Button>
-		<Button variant="outline" size="sm" href="/movies">Movies</Button>
-		<Button variant="outline" size="sm" href="/config">View Config</Button>
-	</nav>
+	
 {:else}
 	<!-- Defensive: load currently returns either health or error, not both null -->
 	<p class="mt-6 text-sm text-muted-foreground">Loading…</p>

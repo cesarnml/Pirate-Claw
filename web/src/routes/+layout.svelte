@@ -17,6 +17,14 @@
 	];
 </script>
 
+<svelte:head>
+	<title>Pirate Claw</title>
+<meta
+  name="description"
+  content="Local read-only dashboard for Pirate Claw: candidates, shows, movies, and daemon status via the HTTP API."
+/>
+</svelte:head>
+
 <div class="dark min-h-screen bg-background text-foreground">
 	<header class="border-b border-border bg-card">
 		<nav

@@ -53,6 +53,32 @@
 		return c.normalizedTitle;
 	}
 
+		function displayStatus(status: string): string {
+		return status === "skipped_duplicate" ? "skipped" : status;
+	}
+
+	function displayLifeCycleStatus(lifeCycleStatus: string): string {
+		return lifeCycleStatus === "missing_from_transmission" ? "missing" : lifeCycleStatus;
+	}
+
+	function displayDate(iso?: string): string {
+		if (!iso) return '—';
+
+		return new Date(iso).toLocaleString('en-US', {
+			dateStyle: 'medium',
+			timeZone: 'UTC',
+		});
+	}
+
+	function displayTime(iso?: string): string {
+		if (!iso) return '';
+
+		return new Date(iso).toLocaleString('en-US', {
+			timeStyle: 'short',
+			timeZone: 'UTC',
+		});
+	}
+		
 	const statusBadgeClass: Record<string, string> = {
 		queued: 'border-transparent bg-muted text-foreground',
 		skipped: 'border-transparent bg-muted/80 text-muted-foreground',
@@ -173,21 +199,27 @@
 										—
 									{/if}
 								</TableCell>
-								<TableCell>
+								<TableCell class="flex flex-col items-center gap-1">
 									<Badge
 										variant="outline"
 										class={cn('font-semibold', statusBadgeClass[candidate.status] ?? '')}
 									>
-										{candidate.status}
+										{displayStatus(candidate.status)}
 									</Badge>
 									{#if candidate.lifecycleStatus}
-										<span class="ml-1 text-xs text-muted-foreground">
-											({candidate.lifecycleStatus})
-										</span>
+										<div class="ml-1 text-xs text-muted-foreground">
+											({displayLifeCycleStatus(candidate.lifecycleStatus)})
+										</div>
 									{/if}
 								</TableCell>
-								<TableCell class="text-muted-foreground">{candidate.queuedAt ?? '—'}</TableCell>
-								<TableCell class="text-muted-foreground">{candidate.updatedAt}</TableCell>
+								<TableCell class="text-muted-foreground">
+									<div class="text-center">{displayDate(candidate.queuedAt)}</div>
+									<div class="text-center">{displayTime(candidate.queuedAt)}</div>
+								</TableCell>
+								<TableCell class="text-muted-foreground">
+									<div class="text-center">{displayDate(candidate.updatedAt)}</div>
+									<div class="text-center">{displayTime(candidate.updatedAt)}</div>
+								</TableCell>
 							</TableRow>
 						{/each}
 					</TableBody>
