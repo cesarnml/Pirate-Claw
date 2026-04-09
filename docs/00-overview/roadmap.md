@@ -370,7 +370,7 @@ Goal:
 
 Current status:
 
-- product definition only — see [`docs/01-product/phase-13-daemon-config-write-api-and-settings.md`](../01-product/phase-13-daemon-config-write-api-and-settings.md)
+- implemented on `main` via `P13.01`-`P13.07` stacked delivery
 
 Committed scope:
 

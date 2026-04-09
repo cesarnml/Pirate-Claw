@@ -16,9 +16,9 @@ It currently supports:
 - status inspection and retry of failed submissions
 - effective config inspection through `pirate-claw config show`
 - env-backed Transmission credentials via process env or `.env`
-- read-only daemon HTTP API for external consumers when `runtime.apiPort` is configured
+- daemon HTTP API with read endpoints and bounded opt-in runtime config writes when `runtime.apiPort` is configured
 - optional TMDB-backed posters, ratings, and metadata on API and dashboard when a `tmdb` API key is configured (see `pirate-claw.config.example.json`)
-- read-only browser dashboard (SvelteKit app in `web/`) that talks to the daemon HTTP API (Phase 10)
+- browser dashboard (SvelteKit app in `web/`) with read views plus bounded runtime Settings save flow (Phase 13)
 
 ## Commands
 
@@ -80,7 +80,7 @@ High-level config shape:
 - `tv`: either the legacy per-show rule array or a compact `defaults + shows` object
 - `movies`: global movie intake policy
 - `transmission`: local Transmission RPC settings (optional `downloadDirs` for per-media-type download directories)
-- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults; `apiPort` enables the HTTP API; `tmdbRefreshIntervalMinutes` controls background TMDB cache refresh, default 360 minutes, `0` disables)
+- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults; `apiPort` enables the HTTP API; `tmdbRefreshIntervalMinutes` controls background TMDB cache refresh, default 360 minutes, `0` disables; `apiWriteToken` opt-in enables bounded config writes)
 - `tmdb`: optional TMDB API key (`apiKey` or env `PIRATE_CLAW_TMDB_API_KEY`) and optional cache TTL overrides
 
 Example:
@@ -227,6 +227,7 @@ When `runtime.apiPort` is omitted, no HTTP listener starts.
 | `GET /api/movies`     | Movie candidates sorted by title                           |
 | `GET /api/feeds`      | Feed config with poll state and `isDue` status             |
 | `GET /api/config`     | Effective config with Transmission credentials redacted    |
+| `PUT /api/config`     | Bounded runtime config write (token + `If-Match` required) |
 
 ### Example
 
@@ -248,7 +249,15 @@ curl http://localhost:3000/api/health
 }
 ```
 
-All endpoints are read-only. No endpoint mutates daemon state. There is no authentication in this version — it is designed for private NAS networks.
+Write behavior is intentionally bounded:
+
+- writes are disabled unless `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`) is configured
+- `PUT /api/config` requires `Authorization: Bearer <token>`
+- `PUT /api/config` requires `If-Match` with the latest `ETag` from `GET /api/config` (`409` on stale revisions)
+- only approved runtime fields are writable through this path in v1
+- writes are atomic file updates
+
+Dashboard Settings uses a server-side SvelteKit action for writes, so the token stays server-only. After a successful save, restart the daemon process for runtime changes to take effect.
 
 Candidate, show, and movie payloads include TMDB fields when a match exists in the local cache; otherwise they fall back to Phase-10-style local data.
 
