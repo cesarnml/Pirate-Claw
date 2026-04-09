@@ -645,6 +645,29 @@ describe('PUT /api/config', () => {
     expect(await response.json()).toEqual({ error: 'forbidden' });
   });
 
+  it('accepts lowercase bearer auth scheme', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-api-config-'));
+    const configPath = join(directory, 'pirate-claw.config.json');
+    const config = stubConfig();
+    config.runtime.apiWriteToken = 'write-token';
+    await Bun.write(configPath, JSON.stringify(config, null, 2));
+
+    const deps = createDeps();
+    deps.config = structuredClone(config);
+    deps.configPath = configPath;
+    const handler = createApiFetch(deps);
+
+    const response = await handler(
+      new Request('http://localhost/api/config', {
+        method: 'PUT',
+        headers: { Authorization: 'bearer write-token' },
+        body: JSON.stringify({ runtime: { runIntervalMinutes: 15 } }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it('returns 400 when payload validation fails', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-api-config-'));
     const configPath = join(directory, 'pirate-claw.config.json');
@@ -696,11 +719,13 @@ describe('PUT /api/config', () => {
   it('writes runtime updates and returns redacted config with ETag', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-api-config-'));
     const configPath = join(directory, 'pirate-claw.config.json');
-    await Bun.write(configPath, JSON.stringify(stubConfig(), null, 2));
+    const config = stubConfig();
+    config.runtime.apiWriteToken = 'write-token';
+    await Bun.write(configPath, JSON.stringify(config, null, 2));
 
     const deps = createDeps();
+    deps.config = structuredClone(config);
     deps.configPath = configPath;
-    deps.config.runtime.apiWriteToken = 'write-token';
     const handler = createApiFetch(deps);
 
     const response = await handler(
@@ -716,11 +741,29 @@ describe('PUT /api/config', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.runtime.runIntervalMinutes).toBe(15);
-    expect(body.runtime.apiWriteToken).toBeUndefined();
+    expect(body.runtime.apiWriteToken).toBe('[redacted]');
     expect(response.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
 
     const persisted = await Bun.file(configPath).json();
     expect(persisted.runtime.runIntervalMinutes).toBe(15);
+  });
+
+  it('returns 500 when config persistence fails', async () => {
+    const deps = createDeps();
+    deps.config.runtime.apiWriteToken = 'write-token';
+    deps.configPath = '/definitely/missing/pirate-claw.config.json';
+    const handler = createApiFetch(deps);
+
+    const response = await handler(
+      new Request('http://localhost/api/config', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer write-token' },
+        body: JSON.stringify({ runtime: { runIntervalMinutes: 15 } }),
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'internal server error' });
   });
 });
 

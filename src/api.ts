@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { renameSync, writeFileSync } from 'node:fs';
 import type { AppConfig, FeedConfig, RuntimeConfig } from './config';
 import { ConfigError, validateConfig } from './config';
@@ -224,8 +224,14 @@ export function createApiFetch(
         return Response.json({ error: 'forbidden' }, { status: 403 });
       }
 
+      let body: unknown;
       try {
-        const body = await request.json();
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
         const patch = expectRecord(body, 'request body');
         const runtimePatch = requireRecord(patch, 'runtime', 'request body');
 
@@ -259,7 +265,7 @@ export function createApiFetch(
         if (error instanceof ConfigError) {
           return Response.json({ error: error.message }, { status: 400 });
         }
-        return Response.json({ error: 'invalid json body' }, { status: 400 });
+        return json500();
       }
     }
 
@@ -402,7 +408,7 @@ function parseBearerToken(header: string | null): string | null {
   if (!header) {
     return null;
   }
-  const match = /^Bearer\s+(.+)$/.exec(header.trim());
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match?.[1]?.trim() || null;
 }
 
@@ -418,8 +424,11 @@ function writeConfigAtomically(
   path: string,
   config: Record<string, unknown>,
 ): void {
-  const tempPath = `${path}.${process.pid}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
   renameSync(tempPath, path);
 }
 
