@@ -12,7 +12,6 @@
 - Smaller bounded product changes can proceed as standalone PRs without a new phase/epic. Use the orchestrator's standalone `ai-review` path for those rather than the ticketed stacked flow. Follow `.agents/skills/son-of-anton-ethos/SKILL.md` (**Standalone (non-ticketed) PRs**).
 - Final merge or advance of delivered stacked PR slices remains a developer approval step.
 - After developer approval of a completed stacked phase, close it with `bun run closeout-stack --plan <plan-path>` rather than manual merge/cherry-pick steps.
-
 - `pr`: if a delivery ticket is clear from branch/docs/diff, use a human-readable Conventional-Commit-style subject plus the active ticket suffix, for example `[P3.02]`. Otherwise omit the suffix.
 - Any PR creation or PR-body drafting should follow the same `pr` conventions even when the user did not literally type `pr`.
 
@@ -34,3 +33,7 @@ Before calling a delivery ticket complete:
 - check whether `docs/00-overview/roadmap.md` needs an update when a phase or ticket changes delivered scope, delivered status, active phase state, working notes, or deferrals
 - check whether `docs/README.md` needs an update when a new phase plan, delivery doc, or durable doc path was added
 - verify the relevant tests or checks for the completed work
+
+## On Phase or Epic Completion
+
+- Before marking the phase complete: write `notes/public/<plan-path>-retrospective.md` (what went well, pain points, improvements) (e.g. `phase-12-retrospective.md` vs `epic-03-retrospective.md`).

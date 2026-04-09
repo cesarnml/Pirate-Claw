@@ -125,3 +125,7 @@ If blocked, report:
 - send a telegram notification to the user with that information and a link to the relevant repo doc or policy
 
 If not blocked, keep executing instead of summarizing mid-run.
+
+## On Phase or Epic completion
+
+Write the retrospective artifact to `notes/public/<plan-path>-retrospective.md` (what went well, pain points, improvements) (e.g. `phase-12-retrospective.md` vs `epic-03-retrospective.md`).
