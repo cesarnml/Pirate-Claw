@@ -327,6 +327,18 @@ export function createApiFetch(
           );
         }
 
+        const oldShows = tvDisk.shows;
+        if (!Array.isArray(oldShows)) {
+          throw new ConfigError(
+            'Config file "config tv shows" must be an array.',
+          );
+        }
+
+        const mergedShows = mergeTvShowsPreservingDiskEntries(
+          showsStrings,
+          oldShows,
+        );
+
         const merged = {
           ...baseOnDisk,
           runtime: {
@@ -335,7 +347,7 @@ export function createApiFetch(
           },
           tv: {
             defaults: defaultsOnDisk,
-            shows: showsStrings,
+            shows: mergedShows,
           },
         };
 
@@ -531,6 +543,46 @@ function writeConfigAtomically(
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+/**
+ * Build on-disk `tv.shows` from API name strings. When the previous file had a
+ * matching show name, keep the existing entry (string or object) so per-show
+ * fields edited only on disk are not dropped.
+ */
+function mergeTvShowsPreservingDiskEntries(
+  namesInOrder: string[],
+  oldShows: unknown[],
+): unknown[] {
+  const byName = new Map<string, unknown>();
+  for (const entry of oldShows) {
+    if (typeof entry === 'string') {
+      const trimmed = entry.trim();
+      if (trimmed) {
+        byName.set(trimmed, entry);
+      }
+    } else if (isRecord(entry) && typeof entry.name === 'string') {
+      const trimmed = entry.name.trim();
+      if (trimmed) {
+        byName.set(trimmed, entry);
+      }
+    }
+  }
+
+  const next: unknown[] = [];
+  for (const name of namesInOrder) {
+    const prev = byName.get(name);
+    if (prev === undefined) {
+      next.push(name);
+    } else if (typeof prev === 'string') {
+      next.push(name);
+    } else if (isRecord(prev)) {
+      next.push({ ...prev, name });
+    } else {
+      next.push(name);
+    }
+  }
+  return next;
 }
 
 function expectRecord(input: unknown, label: string): Record<string, unknown> {

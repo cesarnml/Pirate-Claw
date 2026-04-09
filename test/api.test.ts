@@ -692,6 +692,92 @@ describe('PUT /api/config', () => {
     }
   });
 
+  it('preserves per-show objects from disk when names match', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'pirate-claw-api-config-'),
+      );
+      const configPath = join(directory, 'pirate-claw.config.json');
+      const doc = {
+        feeds: [
+          {
+            name: 'TV Feed',
+            url: 'https://example.test/tv.rss',
+            mediaType: 'tv',
+          },
+        ],
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x265'] },
+          shows: ['Alpha', { name: 'Beta', matchPattern: 'beta-pattern' }],
+        },
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+          codecPolicy: 'prefer',
+        },
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+        runtime: {
+          runIntervalMinutes: 30,
+          reconcileIntervalMinutes: 1,
+          artifactDir: '.pirate-claw/runtime',
+          artifactRetentionDays: 7,
+          apiWriteToken: 'write-token',
+        },
+      };
+      await Bun.write(configPath, `${JSON.stringify(doc, null, 2)}\n`);
+      const loaded = await loadConfig(configPath);
+      const deps = createDeps();
+      deps.config = loaded;
+      deps.configPath = configPath;
+
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const put = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            runtime: {
+              runIntervalMinutes: 30,
+              reconcileIntervalMinutes: 1,
+              tmdbRefreshIntervalMinutes: 0,
+            },
+            tv: {
+              shows: ['Alpha', 'Beta'],
+            },
+          }),
+        }),
+      );
+
+      expect(put.status).toBe(200);
+      const disk = await Bun.file(configPath).json();
+      expect(disk.tv.shows[0]).toBe('Alpha');
+      expect(disk.tv.shows[1]).toEqual({
+        name: 'Beta',
+        matchPattern: 'beta-pattern',
+      });
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
   it('rejects tv.defaults in the request body', async () => {
     const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
     delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;

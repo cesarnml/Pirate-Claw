@@ -262,8 +262,9 @@
 							Revision: <code>{currentEtag ?? 'missing'}</code>
 						</div>
 						<p class="text-muted-foreground text-xs">
-							TV show list updates apply on the next daemon run cycle without restart. Restart the
-							daemon to apply a new API port or timer intervals.
+							Daemon timers and the API listen port are fixed at process start — restart after
+							changing those fields. TV show titles above apply on the next run cycle without
+							restart.
 						</p>
 						<div>
 							<button

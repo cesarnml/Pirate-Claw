@@ -91,11 +91,9 @@ describe('/config', () => {
 				etag: '"rev-2"'
 			}
 		});
-		expect(
-			screen.getByText(/TV show list updates apply on the next daemon run cycle/i)
-		).toBeInTheDocument();
-		expect(
-			screen.getByText(/TV show list updates apply on the next daemon run cycle without restart/i)
-		).toBeInTheDocument();
+		expect(screen.getByRole('alert')).toHaveTextContent(
+			/TV show list updates apply on the next daemon run cycle/
+		);
+		expect(screen.getByText(/Daemon timers and the API listen port/i)).toBeInTheDocument();
 	});
 });
