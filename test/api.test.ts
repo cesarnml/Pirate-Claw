@@ -660,7 +660,10 @@ describe('PUT /api/config', () => {
     const response = await handler(
       new Request('http://localhost/api/config', {
         method: 'PUT',
-        headers: { Authorization: 'bearer write-token' },
+        headers: {
+          Authorization: 'bearer write-token',
+          'If-Match': '*',
+        },
         body: JSON.stringify({ runtime: { runIntervalMinutes: 15 } }),
       }),
     );
@@ -681,7 +684,7 @@ describe('PUT /api/config', () => {
     const response = await handler(
       new Request('http://localhost/api/config', {
         method: 'PUT',
-        headers: { Authorization: 'Bearer write-token' },
+        headers: { Authorization: 'Bearer write-token', 'If-Match': '*' },
         body: JSON.stringify({ feeds: [] }),
       }),
     );
@@ -705,7 +708,7 @@ describe('PUT /api/config', () => {
     const response = await handler(
       new Request('http://localhost/api/config', {
         method: 'PUT',
-        headers: { Authorization: 'Bearer write-token' },
+        headers: { Authorization: 'Bearer write-token', 'If-Match': '*' },
         body: JSON.stringify({
           runtime: { runIntervalMinutes: 0 },
         }),
@@ -728,10 +731,16 @@ describe('PUT /api/config', () => {
     deps.configPath = configPath;
     const handler = createApiFetch(deps);
 
+    const current = await handler(new Request('http://localhost/api/config'));
+    const currentEtag = current.headers.get('etag')!;
+
     const response = await handler(
       new Request('http://localhost/api/config', {
         method: 'PUT',
-        headers: { Authorization: 'Bearer write-token' },
+        headers: {
+          Authorization: 'Bearer write-token',
+          'If-Match': currentEtag,
+        },
         body: JSON.stringify({
           runtime: { runIntervalMinutes: 15 },
         }),
@@ -757,13 +766,56 @@ describe('PUT /api/config', () => {
     const response = await handler(
       new Request('http://localhost/api/config', {
         method: 'PUT',
-        headers: { Authorization: 'Bearer write-token' },
+        headers: { Authorization: 'Bearer write-token', 'If-Match': '*' },
         body: JSON.stringify({ runtime: { runIntervalMinutes: 15 } }),
       }),
     );
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'internal server error' });
+  });
+
+  it('returns 428 when If-Match header is missing', async () => {
+    const deps = createDeps();
+    deps.config.runtime.apiWriteToken = 'write-token';
+    const handler = createApiFetch(deps);
+
+    const response = await handler(
+      new Request('http://localhost/api/config', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer write-token' },
+        body: JSON.stringify({ runtime: { runIntervalMinutes: 15 } }),
+      }),
+    );
+
+    expect(response.status).toBe(428);
+    expect(await response.json()).toEqual({
+      error: 'if-match header is required',
+    });
+    expect(response.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
+  });
+
+  it('returns 409 when If-Match revision is stale', async () => {
+    const deps = createDeps();
+    deps.config.runtime.apiWriteToken = 'write-token';
+    const handler = createApiFetch(deps);
+
+    const response = await handler(
+      new Request('http://localhost/api/config', {
+        method: 'PUT',
+        headers: {
+          Authorization: 'Bearer write-token',
+          'If-Match': '"deadbeef"',
+        },
+        body: JSON.stringify({ runtime: { runIntervalMinutes: 15 } }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'config revision conflict',
+    });
+    expect(response.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
   });
 });
 

@@ -23,4 +23,6 @@ Write requests enforce revision preconditions and return `409` on stale revision
 
 ## Rationale
 
-To be completed during implementation with behavior/tradeoff notes.
+- Required `If-Match` for config writes and surfaced `428` when missing so clients must participate in optimistic concurrency.
+- Added deterministic `409` conflict responses when provided revisions are stale, with current `ETag` echoed for immediate retry workflows.
+- Conflict checks happen before persistence; stale writes never touch disk, preserving safe/no-partial-write behavior.

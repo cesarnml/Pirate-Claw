@@ -224,6 +224,21 @@ export function createApiFetch(
         return Response.json({ error: 'forbidden' }, { status: 403 });
       }
 
+      const currentEtag = buildConfigEtag(redactConfig(activeConfig));
+      const ifMatch = request.headers.get('if-match');
+      if (!ifMatch) {
+        return Response.json(
+          { error: 'if-match header is required' },
+          { status: 428, headers: { ETag: currentEtag } },
+        );
+      }
+      if (!ifMatchMatches(ifMatch, currentEtag)) {
+        return Response.json(
+          { error: 'config revision conflict' },
+          { status: 409, headers: { ETag: currentEtag } },
+        );
+      }
+
       let body: unknown;
       try {
         body = await request.json();
@@ -410,6 +425,14 @@ function parseBearerToken(header: string | null): string | null {
   }
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match?.[1]?.trim() || null;
+}
+
+function ifMatchMatches(ifMatch: string, currentEtag: string): boolean {
+  const parts = ifMatch
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  return parts.includes('*') || parts.includes(currentEtag);
 }
 
 async function readConfigFileRecord(
