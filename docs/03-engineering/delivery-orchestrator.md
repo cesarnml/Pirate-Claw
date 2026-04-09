@@ -270,6 +270,21 @@ State is written under:
 
 - `.agents/delivery/<plan-key>/state.json`
 
+### State file and primary checkout (multi-worktree)
+
+The orchestrator writes `state.json` **only in the repo directory where you run `deliver`** (the current working directory). If you use a **ticket worktree** for day-to-day delivery and a **separate `main` clone** for `closeout-stack` or other commands, the `main` checkout’s `state.json` does **not** update automatically.
+
+**Recommendation:** After each successful `advance` (ticket moves to `done`), copy the worktree’s `state.json` to the same relative path in your **primary / `main` checkout** so that copy always reflects the latest stack (PR numbers, branch names, completed tickets). That keeps `closeout-stack` and any tooling you run from `main` aligned with reality.
+
+Example (adjust paths to your layout):
+
+```bash
+cp /path/to/ticket-worktree/.agents/delivery/<plan-key>/state.json \
+   /path/to/main-clone/.agents/delivery/<plan-key>/state.json
+```
+
+**Stance:** Treat the **active delivery worktree** as authoritative while you work; treat the **primary `main` copy** as the **mirror** you refresh after each advance. Until the orchestrator gains an explicit “mirror state to path” option, this manual copy is the reliable fix for stale `state.json` on `main` and avoids guessing wrong PRs during closeout.
+
 ## PR Body Maintenance
 
 PR descriptions are maintained as delivery metadata, not one-shot text.

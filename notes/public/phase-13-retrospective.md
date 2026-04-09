@@ -11,7 +11,7 @@
 - `main`’s gitignored `.agents/delivery/phase-13/state.json` was stale relative to the p13.07 worktree; closeout required copying the up-to-date state file before running the tool (then manual recovery after the first failure).
 - Several tickets conflicted on `src/api.ts` / `test/api.test.ts` / `web/src/routes/config/*` during squash; taking the **incoming** branch version (`git checkout --theirs`) was the reliable fix for stacked branches.
 
-## Improvements
+## Improvements (follow-up)
 
-- Consider documenting that closeout reads orchestrator state from the worktree copy of `.agents/delivery/.../state.json` and may need syncing from the latest ticket worktree if `main` was never advanced with that file.
-- Optional: add `notes/public/phase-13-retrospective.md` to a checklist in the closeout skill when recovery is used.
+- **Documented:** `docs/03-engineering/delivery-orchestrator.md` now explains that `state.json` is written only in the cwd used for `deliver`, recommends copying it to the primary `main` checkout after each `advance`, and states the stance (active worktree authoritative; mirror on `main` after advance).
+- **Closeout skill:** `.agents/skills/closeout-stack/SKILL.md` now calls out `state.json` sync before `closeout-stack` and adds a **recovery checklist** that includes the phase retrospective doc when manual recovery is used.

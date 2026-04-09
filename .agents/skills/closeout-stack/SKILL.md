@@ -27,6 +27,10 @@ The command processes each ticket in stack order using forward `git merge --squa
 
 This produces one squash commit per ticket on `main`, preserving per-ticket granularity without the fragility of rebasing child branches after parent squash-merges.
 
+### State file (`state.json`)
+
+Closeout reads `.agents/delivery/<plan-key>/state.json` from **the repo you run `closeout-stack` in**. The orchestrator only updates that file in the **worktree where you ran `deliver`**. If you delivered from a ticket worktree, **copy** that worktree’s `state.json` to the same path in your **`main` checkout** before running `closeout-stack`, or the command may use stale PR numbers or ticket order. See `docs/03-engineering/delivery-orchestrator.md` (State file and primary checkout).
+
 After the command succeeds, delete local worktrees and prune stale remote refs:
 
 ```bash
@@ -52,6 +56,14 @@ If the closeout command fails mid-flight (merge conflict, GitHub API error, etc.
 ```
 
 1. **Clean up.** Close any remaining orphaned PRs and prune stale refs.
+
+### Recovery checklist (manual closeout)
+
+When you finish a manual recovery pass (per steps above), also:
+
+- Confirm `origin/main` contains the expected squash commits for each ticket in order.
+- Sync `state.json` from the active delivery worktree to `main` if you still use both (see above).
+- Add or update `notes/public/<plan>-retrospective.md` for the phase if it is not already written.
 
 ## Key Rules
 
