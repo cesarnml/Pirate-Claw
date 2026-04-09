@@ -36,6 +36,34 @@ function parseOptionalInt(input: unknown): number | undefined {
 	return value;
 }
 
+function validateRuntimeBounds(
+	field: string,
+	value: number | undefined
+): { ok: true } | { ok: false; message: string } {
+	if (value === undefined) return { ok: true };
+	if (!Number.isInteger(value)) {
+		return { ok: false, message: `Field "${field}" has invalid value.` };
+	}
+
+	if (field === 'runIntervalMinutes' || field === 'reconcileIntervalMinutes') {
+		return value > 0 ? { ok: true } : { ok: false, message: `Field "${field}" has invalid value.` };
+	}
+
+	if (field === 'tmdbRefreshIntervalMinutes') {
+		return value >= 0
+			? { ok: true }
+			: { ok: false, message: `Field "${field}" has invalid value.` };
+	}
+
+	if (field === 'apiPort') {
+		return value >= 1 && value <= 65535
+			? { ok: true }
+			: { ok: false, message: `Field "${field}" has invalid value.` };
+	}
+
+	return { ok: true };
+}
+
 export const actions: Actions = {
 	saveRuntime: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
@@ -75,6 +103,18 @@ export const actions: Actions = {
 		].some((value) => Number.isNaN(value));
 		if (invalidRuntimeField) {
 			return fail(400, { message: 'Runtime fields must be whole numbers.' });
+		}
+
+		for (const [field, value] of [
+			['runIntervalMinutes', runIntervalMinutes],
+			['reconcileIntervalMinutes', reconcileIntervalMinutes],
+			['tmdbRefreshIntervalMinutes', tmdbRefreshIntervalMinutes],
+			['apiPort', apiPort]
+		] as const) {
+			const result = validateRuntimeBounds(field, value);
+			if (!result.ok) {
+				return fail(400, { message: result.message });
+			}
 		}
 
 		const payload = {
