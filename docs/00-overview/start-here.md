@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 11** on `main` (product phases 01–11; see [`roadmap.md`](./roadmap.md)). Delivery artifacts and tickets for Phase 11 live under [`docs/02-delivery/phase-11/`](../02-delivery/phase-11/). **Phase 12** (dashboard design system and read-only UI) is delivered as a stacked PR phase; see [`docs/02-delivery/phase-12/implementation-plan.md`](../02-delivery/phase-12/implementation-plan.md). Product definitions for **Phase 13** (bounded config write API and Settings) and **Phase 14** (feeds/rules UI placeholder) live under [`docs/01-product/`](../01-product/). Phases **13–14** are **not yet implemented** in code.
+Pirate Claw is implemented through **Phase 13** on `main` (product phases 01–13; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12 and 13 live under [`docs/02-delivery/`](../02-delivery/). Product definition for **Phase 14** (feeds/rules UI placeholder) lives under [`docs/01-product/`](../01-product/). Phase **14** is **not yet implemented** in code.
 
 Current delivered surface:
 
@@ -28,7 +28,7 @@ Current delivered surface:
 - movie codec policy mode via `movies.codecPolicy` (`prefer` by default, `require` for strict matching)
 - queue-time Transmission `movie` / `tv` labels with warning+retry fallback when labels are unsupported
 - per-media-type Transmission download directories via `transmission.downloadDirs`
-- read-only SvelteKit dashboard in `web/` that consumes the daemon HTTP API (run the daemon with `runtime.apiPort`, then `bun run --cwd web dev` or the production build)
+- SvelteKit dashboard in `web/` that consumes the daemon HTTP API, including bounded runtime Settings writes through server-side actions
 - optional TMDB enrichment: `tmdb` config block and/or `PIRATE_CLAW_TMDB_API_KEY`, SQLite-backed cache, lazy enrichment on API reads, and an optional daemon background refresh cadence via `runtime.tmdbRefreshIntervalMinutes` (default 6 hours; set `0` to disable)
 
 Current product boundary:
@@ -47,7 +47,7 @@ Current product boundary:
 
 Still deferred:
 
-- full feeds and rules authoring through the web UI (see Phase 14 placeholder; bounded runtime Settings planned for Phase 13)
+- full feeds and rules authoring through the web UI (see Phase 14 placeholder)
 - remote feed capture
 - hosted persistence
 - download renaming or organization rules

@@ -27,4 +27,6 @@ Operator-facing and phase-status docs accurately reflect shipped Phase 13 behavi
 
 ## Rationale
 
-To be completed during implementation with behavior/tradeoff notes.
+- `.env.example` already contains `PIRATE_CLAW_API_WRITE_TOKEN`, so ticket closeout focused on clarifying operator behavior and phase status docs rather than duplicating env-surface edits.
+- Updated README and overview docs to reflect shipped Phase 13 semantics: token-gated bounded writes, `If-Match` conflict safety, and restart-required runtime apply behavior.
+- Marked Phase 13 as implemented in roadmap/index docs so new threads do not treat Settings write flow as future work.
