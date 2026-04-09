@@ -20,4 +20,8 @@ Shows list page is visually aligned with Phase 12; navigation to `/shows/[slug]`
 
 ## Rationale
 
-_To be filled during implementation — note any new test file path._
+Added **`+page.server.ts`** loading `/api/shows` (same contract as show detail) so the list is data-backed. The page uses **shadcn** `Card` tiles in a responsive grid, `Badge` for TMDB rating, and the same **destructive `Alert` + title/description** pattern as the dashboard for API errors. Empty state matches other Phase 12 read-only views. Links use `encodeURIComponent(normalizedTitle.toLowerCase())` to stay consistent with `[slug]` resolution.
+
+Tests live at **`web/src/routes/shows/shows.test.ts`** (render with mock show, empty, and error).
+
+Follow-up (AI review): poster **`alt`** uses the display title; TMDB optional fields use strict `!== undefined` checks; `formatRating` only accepts `number`; **`shadcn`** added to root `cspell.json` for rationale copy.
