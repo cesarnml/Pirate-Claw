@@ -298,6 +298,8 @@ Not in scope yet:
 
 ## Development
 
+The repo includes [`.vscode/settings.json`](./.vscode/settings.json) so **VS Code** and **Cursor** use **Prettier** with **format on save** for TypeScript, JavaScript, JSON, Svelte, and Markdown. The Prettier extension uses [`.vscode/prettierignore`](./.vscode/prettierignore) instead of the root [`.prettierignore`](./.prettierignore) so `web/` is not skipped in the editor (root CLI `bun run format` still excludes `web/`). Install the **Prettier** extension for VS Code if needed.
+
 Useful local commands:
 
 - `bun test`

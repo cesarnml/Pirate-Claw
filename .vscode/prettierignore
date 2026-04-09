@@ -1,0 +1,7 @@
+# Editor-only Prettier ignore (used by VS Code / Cursor Prettier extension via settings.json).
+# Same as repo-root .prettierignore but without `web/` so dashboard files can use format on save.
+# Root `bun run format` / `format:check` still use the root `.prettierignore` (which excludes web/).
+node_modules/
+.vscode/
+bun.lock
+.codex/analysis/

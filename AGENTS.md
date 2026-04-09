@@ -19,7 +19,7 @@
 
 Before an AI agent creates a commit:
 
-- if it changed files covered by Prettier, run `bun run format` or `bun run format:check` and fix any failures before committing
+- if it changed files covered by Prettier, run `bun run format` or `bun run format:check` and fix any failures before committing; if it changed `web/`, also run `bun run format:check:web` or `bun run format:web` (root `format` / `format:check` still exclude `web/` via `.prettierignore`); or run `bun run verify` to cover root checks plus `verify:web`
 - if it changed docs, Markdown, config examples, PR text, or other user-facing copy, run `bun run spellcheck` and fix any failures before committing
 
 ## Ticket Completion Checklist

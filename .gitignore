@@ -1,5 +1,4 @@
 node_modules/
-.vscode/settings.json
 .vscode/mcp.json
 .env
 .codex/delivery/
