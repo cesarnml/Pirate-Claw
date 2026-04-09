@@ -44,6 +44,19 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
+		const allowedFields = new Set([
+			'ifMatch',
+			'runIntervalMinutes',
+			'reconcileIntervalMinutes',
+			'tmdbRefreshIntervalMinutes',
+			'apiPort'
+		]);
+		for (const key of formData.keys()) {
+			if (!allowedFields.has(key)) {
+				return fail(400, { message: `Field "${key}" is not allowed.` });
+			}
+		}
+
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
 		if (!ifMatch) {
 			return fail(400, { message: 'Missing config revision. Reload and try again.' });
@@ -100,7 +113,7 @@ export const actions: Actions = {
 
 			return {
 				success: true,
-				message: 'Settings saved.',
+				message: 'Settings saved. Restart the daemon for changes to take effect.',
 				etag: response.headers.get('etag')
 			};
 		} catch (error) {

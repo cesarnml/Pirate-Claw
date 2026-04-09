@@ -224,6 +224,10 @@
 					<div class="text-muted-foreground text-xs">
 						Revision: <code>{currentEtag ?? 'missing'}</code>
 					</div>
+					<p class="text-muted-foreground text-xs">
+						Saving writes config only. Restart the daemon process to apply new runtime intervals and
+						port changes.
+					</p>
 					<div>
 						<button
 							type="submit"

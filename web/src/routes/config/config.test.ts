@@ -80,4 +80,23 @@ describe('/config', () => {
 		});
 		expect(screen.getByRole('alert')).toHaveTextContent('config revision conflict');
 	});
+
+	it('renders restart-required success messaging', () => {
+		render(Page, {
+			data: { config: mockConfig, error: null, etag: '"rev-1"' },
+			form: {
+				success: true,
+				message: 'Settings saved. Restart the daemon for changes to take effect.',
+				etag: '"rev-2"'
+			}
+		});
+		expect(screen.getByRole('status')).toHaveTextContent(
+			'Restart the daemon for changes to take effect'
+		);
+		expect(
+			screen.getByText(
+				/Restart the daemon process to apply new runtime intervals and port changes/i
+			)
+		).toBeInTheDocument();
+	});
 });

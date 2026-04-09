@@ -25,4 +25,6 @@ Settings UX communicates restart requirement clearly, runtime-only guardrails ar
 
 ## Rationale
 
-To be completed during implementation with behavior/tradeoff notes.
+- Save success messaging now explicitly states that daemon restart is required before runtime changes apply, reducing operator ambiguity.
+- Added strict form-field allowlisting in the server action so out-of-scope fields are rejected before proxying to the daemon API.
+- Expanded route tests to cover success/restart messaging and server-side out-of-scope field rejection behavior.
