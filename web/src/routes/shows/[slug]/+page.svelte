@@ -23,6 +23,18 @@
 	function displayTitle(show: NonNullable<PageData['show']>): string {
 		return show.tmdb?.name ?? show.normalizedTitle;
 	}
+
+	/** Only allow https URLs in inline `background: url(...)` to avoid CSS injection from malformed strings. */
+	function safeHttpsBackgroundUrl(raw: string | undefined): string | undefined {
+		if (!raw) return undefined;
+		try {
+			const u = new URL(raw);
+			if (u.protocol !== 'https:') return undefined;
+			return u.href;
+		} catch {
+			return undefined;
+		}
+	}
 </script>
 
 <div class="mb-4">
@@ -41,11 +53,12 @@
 		</CardContent>
 	</Card>
 {:else}
+	{@const backdropUrl = safeHttpsBackgroundUrl(data.show.tmdb?.backdropUrl)}
 	<div
 		class="mb-8 flex flex-col gap-4 rounded-xl border border-border sm:flex-row sm:items-start"
-		class:overflow-hidden={!!data.show.tmdb?.backdropUrl}
-		style={data.show.tmdb?.backdropUrl
-			? `background: linear-gradient(hsl(var(--background) / 0.92), hsl(var(--background) / 0.92)), url(${data.show.tmdb.backdropUrl}) center/cover no-repeat`
+		class:overflow-hidden={!!backdropUrl}
+		style={backdropUrl
+			? `background: linear-gradient(hsl(var(--background) / 0.92), hsl(var(--background) / 0.92)), url(${backdropUrl}) center/cover no-repeat`
 			: undefined}
 	>
 		{#if data.show.tmdb?.posterUrl}
@@ -53,7 +66,8 @@
 				src={data.show.tmdb.posterUrl}
 				alt={`Poster for ${displayTitle(data.show)}`}
 				class="mx-auto h-56 w-40 shrink-0 rounded-md object-cover sm:mx-0"
-				loading="lazy"
+				loading="eager"
+				fetchpriority="high"
 			/>
 		{:else}
 			<div
@@ -68,7 +82,10 @@
 					{displayTitle(data.show)}
 				</h1>
 				{#if data.show.tmdb?.voteAverage !== undefined}
-					<Badge variant="secondary" title="TMDB vote average">
+					<Badge
+						variant="secondary"
+						aria-label="TMDB vote average: {formatRating(data.show.tmdb.voteAverage)}"
+					>
 						★ {formatRating(data.show.tmdb.voteAverage)}
 					</Badge>
 				{/if}
@@ -97,7 +114,9 @@
 						<Table>
 							<TableHeader>
 								<TableRow>
-									<TableHead class="w-28"></TableHead>
+									<TableHead class="w-28">
+										<span class="sr-only">Still image</span>
+									</TableHead>
 									<TableHead>Episode</TableHead>
 									<TableHead>Title</TableHead>
 									<TableHead>Status</TableHead>
