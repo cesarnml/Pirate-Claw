@@ -46,4 +46,8 @@ The feeds endpoint is live with blocking fetch validation, full auth/ETag contra
 
 ## Rationale
 
-_To be filled in after implementation._
+`validateFeed` was promoted from a private function to an exported one in `config.ts` so the API handler can validate individual feed entries without duplicating the validation logic. The existing array validator in `validateConfig` is called separately after the fetch validation step, so no structural change was needed there.
+
+The blocking fetch loop runs sequentially over new URLs. Parallel fetches would be faster but sequential is simpler and the fetch count is bounded by user-supplied feed arrays (typically single-digit). The 10s timeout uses `AbortSignal.timeout` per the implementation note.
+
+Existing-URL detection compares against the on-disk `feeds` array (not the in-memory `activeConfig`) to guard against a race where the in-memory view diverges from disk. This matches the read-from-disk pattern used by P14.01 endpoints.
