@@ -29,8 +29,8 @@ function createState(tickets: TicketState[]): DeliveryState {
     statePath: '.agents/delivery/phase-01/state.json',
     reviewsDirPath: '.agents/delivery/phase-01/reviews',
     handoffsDirPath: '.agents/delivery/phase-01/handoffs',
-    reviewPollIntervalMinutes: 2,
-    reviewPollMaxWaitMinutes: 10,
+    reviewPollIntervalMinutes: 6,
+    reviewPollMaxWaitMinutes: 12,
     tickets,
   };
 }

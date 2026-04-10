@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 import type { PullRequestSummary } from './platform';
@@ -32,6 +32,7 @@ export function buildTicketHandoff(
     TicketState,
     'id' | 'title' | 'ticketFile' | 'branch' | 'baseBranch' | 'worktreePath'
   >,
+  modifiedSectionsNote?: string,
 ): string {
   const ticketIndex = state.tickets.findIndex(
     (candidate) => candidate.id === ticket.id,
@@ -61,7 +62,17 @@ export function buildTicketHandoff(
     '- Re-read the required docs before implementing.',
     '- Start from the current repository state and this handoff artifact, not from prior chat assumptions.',
     '- Carry forward only explicit review notes, review artifacts, and committed branch state.',
+    '- Do not read ahead during the AI review wait window. The wait is free (LLM idle during subprocess sleep). Be sabaai sabaai.',
   ];
+
+  if (modifiedSectionsNote) {
+    lines.push('', '## Modified Sections', '');
+    lines.push(
+      'Read only the file sections listed here — do not re-read full files.',
+    );
+    lines.push('');
+    lines.push(modifiedSectionsNote);
+  }
 
   if (previous) {
     lines.push('', '## Carry Forward From Previous Ticket', '');
@@ -132,13 +143,50 @@ export async function writeTicketHandoff(
   );
   const generatedAt = new Date().toISOString();
 
+  const modifiedSectionsNote = await extractScopeSection(
+    resolve(cwd, ticket.ticketFile),
+  );
+
   await mkdir(dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, buildTicketHandoff(state, ticket), 'utf8');
+  await writeFile(
+    absolutePath,
+    buildTicketHandoff(state, ticket, modifiedSectionsNote),
+    'utf8',
+  );
 
   return {
     relativePath: dependencies.relativeToRepo(cwd, absolutePath),
     generatedAt,
   };
+}
+
+async function extractScopeSection(
+  ticketFilePath: string,
+): Promise<string | undefined> {
+  try {
+    const content = await readFile(ticketFilePath, 'utf8');
+    const lines = content.split('\n');
+    const startIdx = lines.findIndex((line) => /^##\s+Scope/.test(line));
+
+    if (startIdx === -1) {
+      return undefined;
+    }
+
+    const sectionLines: string[] = [];
+
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (/^##\s/.test(line)) {
+        break;
+      }
+      sectionLines.push(line);
+    }
+
+    const body = sectionLines.join('\n').trim();
+    return body.length > 0 ? body : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function startTicket(

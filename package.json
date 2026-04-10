@@ -28,6 +28,7 @@
     "test:web": "bun install --cwd web --frozen-lockfile && bun run --cwd web test",
     "typecheck": "tsc --noEmit",
     "verify": "bun run format:check && bun run typecheck && bun run lint && bun run spellcheck && bun run verify:web",
+    "verify:quiet": "bun run ./scripts/verify-quiet.ts",
     "verify:web": "bun run bootstrap:web && bun run --cwd web format:check && bun run --cwd web lint && bun run --cwd web check"
   },
   "devDependencies": {

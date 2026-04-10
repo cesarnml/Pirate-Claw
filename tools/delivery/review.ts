@@ -780,25 +780,31 @@ export async function pollForAiReview(
       continue;
     }
 
-    if (
-      checkMinute === extendedMaxWaitMinutes &&
-      hasInFlightReviewAgents(result)
-    ) {
+    // At the final wait boundary (extended when extendByOneInterval is true,
+    // or maxWaitMinutes when not extending), surface partial/clean timeout.
+    const isAtFinalBoundary =
+      checkMinute === extendedMaxWaitMinutes ||
+      (!profile.extendByOneInterval && checkMinute === maxWaitMinutes);
+
+    if (isAtFinalBoundary && hasInFlightReviewAgents(result)) {
       const incompleteAgents = listIncompleteReviewAgents(result);
+      const effectiveMax = profile.extendByOneInterval
+        ? extendedMaxWaitMinutes
+        : maxWaitMinutes;
 
       if (hasActionableReviewFindings(result)) {
         return {
           status: 'partial_timeout',
           result,
           incompleteAgents,
-          effectiveMaxWaitMinutes: extendedMaxWaitMinutes,
+          effectiveMaxWaitMinutes: effectiveMax,
         };
       }
 
       return {
         status: 'clean_timeout',
         incompleteAgents,
-        effectiveMaxWaitMinutes: extendedMaxWaitMinutes,
+        effectiveMaxWaitMinutes: effectiveMax,
       };
     }
   }

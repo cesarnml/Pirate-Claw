@@ -21,6 +21,7 @@ import {
   findOpenPullRequest as findPlatformOpenPullRequest,
   findPrimaryWorktreePath as findPlatformPrimaryWorktreePath,
   hasMergedPullRequestForBranch as hasPlatformMergedPullRequestForBranch,
+  isPrDocOnly as isPlatformPrDocOnly,
   listCommitSubjectsBetween as listPlatformCommitSubjectsBetween,
   readCurrentBranch as readPlatformCurrentBranch,
   readHeadSha as readPlatformHeadSha,
@@ -178,6 +179,7 @@ export type TicketState = TicketDefinition & {
   handoffPath?: string;
   handoffGeneratedAt?: string;
   postVerifySelfAuditCompletedAt?: string;
+  docOnly?: boolean;
   prNumber?: number;
   prUrl?: string;
   prOpenedAt?: string;
@@ -550,13 +552,40 @@ export async function runDeliveryOrchestrator(
         return 0;
       }
       case 'poll-review': {
-        const nextState = await pollReview(state, cwd, parsed.positionals[0]);
+        const pollTicketId = parsed.positionals[0];
+        const pollTarget = pollTicketId
+          ? state.tickets.find((t) => t.id === pollTicketId)
+          : state.tickets.find((t) => t.status === 'in_review');
+
+        if (pollTarget?.docOnly) {
+          // Doc-only PRs skip the external review window — record clean immediately.
+          console.log(
+            `doc_only=true for ${pollTarget.id}: skipping AI review window, recording clean`,
+          );
+          const docOnlyState = await recordReview(
+            state,
+            cwd,
+            pollTarget.id,
+            'clean',
+            'doc-only PR; no external AI review required',
+          );
+          await saveState(cwd, docOnlyState);
+          console.log(formatCurrentTicketStatus(docOnlyState, pollTicketId));
+          await emitNotificationWarnings(
+            notifier,
+            cwd,
+            eventsForPollReviewCommand(docOnlyState, pollTicketId),
+          );
+          return 0;
+        }
+
+        const nextState = await pollReview(state, cwd, pollTicketId);
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatCurrentTicketStatus(nextState, pollTicketId));
         await emitNotificationWarnings(
           notifier,
           cwd,
-          eventsForPollReviewCommand(nextState, parsed.positionals[0]),
+          eventsForPollReviewCommand(nextState, pollTicketId),
         );
         return 0;
       }
@@ -614,6 +643,25 @@ export async function runDeliveryOrchestrator(
         const nextState = await advanceToNextTicketImpl(state, cwd, startNext);
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
+
+        const nextInProgress = nextState.tickets.find(
+          (t) =>
+            t.status === 'in_progress' &&
+            state.tickets.find((prev) => prev.id === t.id)?.status !==
+              'in_progress',
+        );
+
+        if (nextInProgress) {
+          console.log('');
+          console.log(
+            `CONTEXT COMPACTION REQUIRED before starting ${nextInProgress.id}.`,
+          );
+          console.log('Call /compact or equivalent now. Then read handoff at:');
+          console.log(
+            `  ${nextInProgress.handoffPath ?? `(handoff not yet written for ${nextInProgress.id})`}`,
+          );
+        }
+
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -929,7 +977,7 @@ export async function openPullRequest(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  return openPullRequestImpl(state, cwd, ticketId, {
+  const nextState = openPullRequestImpl(state, cwd, ticketId, {
     assertReviewerFacingMarkdown,
     buildPullRequestBody,
     buildPullRequestTitle,
@@ -941,6 +989,31 @@ export async function openPullRequest(
     readLatestCommitSubject,
     resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
   });
+
+  // Detect doc-only PRs to skip the external AI review window.
+  // Recompute on every open-pr call so that a PR that gains code changes
+  // after an initial docs-only push has its docOnly flag cleared.
+  const reviewTicket =
+    (ticketId
+      ? nextState.tickets.find((t) => t.id === ticketId)
+      : nextState.tickets.find((t) => t.status === 'in_review')) ?? undefined;
+
+  if (reviewTicket?.prNumber) {
+    const docOnly = isPlatformPrDocOnly(
+      reviewTicket.worktreePath,
+      reviewTicket.prNumber,
+      _config.runtime,
+    );
+
+    return {
+      ...nextState,
+      tickets: nextState.tickets.map((t) =>
+        t.id === reviewTicket.id ? { ...t, docOnly: docOnly || undefined } : t,
+      ),
+    };
+  }
+
+  return nextState;
 }
 
 export async function pollReview(
@@ -1319,6 +1392,54 @@ export function formatStatus(state: DeliveryState): string {
         .join('\n'),
     ),
   ].join('\n');
+}
+
+/**
+ * Prints only the active ticket's state block — not the full stack.
+ * Used by poll-review so accumulated prior-ticket metadata is not added to
+ * session context on every check.
+ */
+export function formatCurrentTicketStatus(
+  state: DeliveryState,
+  ticketId?: string,
+): string {
+  const ticket =
+    (ticketId
+      ? state.tickets.find((t) => t.id === ticketId)
+      : (state.tickets.find((t) => t.status === 'in_review') ??
+        state.tickets.find((t) => t.status === 'reviewed'))) ?? undefined;
+
+  const header = [
+    'Delivery Orchestrator',
+    `plan_key=${state.planKey}`,
+    `plan=${state.planPath}`,
+  ].join('\n');
+
+  if (!ticket) {
+    return header;
+  }
+
+  const ticketLines = [
+    `${ticket.id} | status=${ticket.status} | branch=${ticket.branch} | base=${ticket.baseBranch}`,
+    `title=${ticket.title}`,
+    ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
+    ticket.docOnly ? `doc_only=true` : undefined,
+    ticket.reviewVendors && ticket.reviewVendors.length > 0
+      ? `review_vendors=${ticket.reviewVendors.join(',')}`
+      : undefined,
+    ticket.reviewOutcome ? `review_outcome=${ticket.reviewOutcome}` : undefined,
+    ticket.reviewActionSummary
+      ? `review_action_summary=${ticket.reviewActionSummary}`
+      : undefined,
+    ticket.reviewNote ? `review_note=${ticket.reviewNote}` : undefined,
+    ticket.reviewIncompleteAgents?.length
+      ? `review_incomplete_agents=${ticket.reviewIncompleteAgents.join(',')}`
+      : undefined,
+  ]
+    .filter((value): value is string => value !== undefined)
+    .join('\n');
+
+  return [header, '', ticketLines].join('\n');
 }
 
 function formatRepairSummary(result: RepairStateResult): string {

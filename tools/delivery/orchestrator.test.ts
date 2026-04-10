@@ -109,8 +109,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
     });
   });
 
@@ -124,8 +124,8 @@ describe('delivery orchestrator', () => {
       statePath: options.statePath,
       reviewsDirPath: options.reviewsDirPath,
       handoffsDirPath: options.handoffsDirPath,
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P2.01',
@@ -184,8 +184,8 @@ describe('delivery orchestrator', () => {
         statePath: '.agents/delivery/phase-02/state.json',
         reviewsDirPath: '.agents/delivery/phase-02/reviews',
         handoffsDirPath: '.agents/delivery/phase-02/handoffs',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
         tickets: [
           {
             id: 'P2.01',
@@ -329,8 +329,8 @@ describe('delivery orchestrator', () => {
           statePath: '.agents/delivery/phase-03/state.json',
           reviewsDirPath: '.agents/delivery/phase-03/reviews',
           handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-          reviewPollIntervalMinutes: 2,
-          reviewPollMaxWaitMinutes: 10,
+          reviewPollIntervalMinutes: 6,
+          reviewPollMaxWaitMinutes: 12,
           tickets: [
             {
               id: 'P3.01',
@@ -524,8 +524,8 @@ describe('delivery orchestrator', () => {
         kind: 'standalone_review_started',
         prNumber: 32,
         prUrl: 'https://example.test/pull/32',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
       }),
     ).toContain('Son of Anton PR #32\nAI review started.');
     expect(
@@ -781,8 +781,8 @@ describe('delivery orchestrator', () => {
           statePath: '.agents/delivery/engineering-epic-02/state.json',
           reviewsDirPath: '.agents/delivery/engineering-epic-02/reviews',
           handoffsDirPath: '.agents/delivery/engineering-epic-02/handoffs',
-          reviewPollIntervalMinutes: 2,
-          reviewPollMaxWaitMinutes: 10,
+          reviewPollIntervalMinutes: 6,
+          reviewPollMaxWaitMinutes: 12,
           tickets: [],
         },
         ticket: {
@@ -858,8 +858,8 @@ describe('delivery orchestrator', () => {
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
         tickets: [],
       },
       {
@@ -909,8 +909,8 @@ describe('delivery orchestrator', () => {
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
         tickets: [],
       },
       {
@@ -1088,8 +1088,8 @@ describe('delivery orchestrator', () => {
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
         tickets: [],
       },
       {
@@ -1152,8 +1152,8 @@ describe('delivery orchestrator', () => {
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
         tickets: [
           {
             id: 'P3.01',
@@ -1177,16 +1177,11 @@ describe('delivery orchestrator', () => {
 
     expect(message).toContain('AI Review Window');
     expect(message).toContain(
-      'polling cadence: every 2 minutes up to 10 minutes',
+      'polling cadence: every 6 minutes up to 12 minutes',
     );
-    expect(message).toContain(
-      'checks at: 2, 4, 6, 8, 10 minutes after PR open',
-    );
-    expect(message).toContain('first check at: 2026-04-01T10:02:00.000Z');
-    expect(message).toContain('final check at: 2026-04-01T10:10:00.000Z');
-    expect(message).toContain(
-      'if an AI review agent is still clearly in progress at 10 minutes, the orchestrator performs one final check at 12 minutes',
-    );
+    expect(message).toContain('checks at: 6, 12 minutes after PR open');
+    expect(message).toContain('first check at: 2026-04-01T10:06:00.000Z');
+    expect(message).toContain('final check at: 2026-04-01T10:12:00.000Z');
     expect(message).toContain('the orchestrator records `clean` and continues');
   });
 
@@ -1197,8 +1192,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -1249,7 +1244,7 @@ describe('delivery orchestrator', () => {
               ...state.tickets[0]!,
               status: 'reviewed',
               reviewNote:
-                'No AI review feedback was detected within the 10-minute polling window.',
+                'No AI review feedback was detected within the 12-minute polling window.',
             },
             state.tickets[1]!,
           ],
@@ -1266,7 +1261,7 @@ describe('delivery orchestrator', () => {
             status: 'reviewed',
             reviewOutcome: 'clean',
             reviewNote:
-              'No AI review feedback was detected within the 10-minute polling window.',
+              'No AI review feedback was detected within the 12-minute polling window.',
           },
           state.tickets[1]!,
         ],
@@ -1312,8 +1307,8 @@ describe('delivery orchestrator', () => {
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
         tickets: [
           {
             id: 'P3.01',
@@ -1336,8 +1331,8 @@ describe('delivery orchestrator', () => {
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-        reviewPollIntervalMinutes: 2,
-        reviewPollMaxWaitMinutes: 10,
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
         tickets: [
           {
             id: 'P3.01',
@@ -1570,8 +1565,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -1603,8 +1598,8 @@ describe('delivery orchestrator', () => {
       statePath: 's.json',
       reviewsDirPath: 'r',
       handoffsDirPath: 'h',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'T1',
@@ -1703,8 +1698,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -1763,8 +1758,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -1864,7 +1859,7 @@ describe('delivery orchestrator', () => {
         }),
       });
 
-      expect(sleeps).toEqual([120000, 240000]);
+      expect(sleeps).toEqual([360000, 720000]);
       expect(fetchCount).toBe(2);
       expect(nextState.tickets[0]?.status).toBe('needs_patch');
       expect(nextState.tickets[0]?.reviewArtifactJsonPath).toBe(
@@ -1922,8 +1917,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2021,8 +2016,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2064,7 +2059,7 @@ describe('delivery orchestrator', () => {
       updatePullRequestBody: async () => undefined,
     });
 
-    expect(sleeps).toEqual([120000, 240000, 360000, 480000, 600000, 720000]);
+    expect(sleeps).toEqual([360000, 720000]);
     expect(nextState.tickets[0]).toMatchObject({
       status: 'done',
       reviewOutcome: 'clean',
@@ -2081,8 +2076,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2123,15 +2118,15 @@ describe('delivery orchestrator', () => {
       },
     });
 
-    expect(sleeps).toEqual([120000, 240000, 360000, 480000, 600000]);
+    expect(sleeps).toEqual([360000, 720000]);
     expect(nextState.tickets[0]).toMatchObject({
       status: 'done',
       reviewOutcome: 'clean',
       reviewNote:
-        'No AI review feedback was detected within the 10-minute polling window.',
+        'No AI review feedback was detected within the 12-minute polling window.',
     });
     expect(prBodyUpdates).toEqual([
-      'phase-03:No AI review feedback was detected within the 10-minute polling window.',
+      'phase-03:No AI review feedback was detected within the 12-minute polling window.',
     ]);
   });
 
@@ -2142,8 +2137,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2205,8 +2200,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2245,7 +2240,7 @@ describe('delivery orchestrator', () => {
       status: 'done',
       reviewOutcome: 'patched',
       reviewNote:
-        'No AI review feedback was detected within the 10-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+        'No AI review feedback was detected within the 12-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
     });
   });
 
@@ -2256,8 +2251,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2348,8 +2343,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2412,10 +2407,10 @@ describe('delivery orchestrator', () => {
     expect(standaloneResult.outcome).toBe('patched');
     expect(nextState.tickets[0]?.reviewOutcome).toBe('patched');
     expect(nextState.tickets[0]?.reviewNote).toBe(
-      'No AI review feedback was detected within the 10-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+      'No AI review feedback was detected within the 12-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
     );
     expect(standaloneResult.note).toBe(
-      'No AI review feedback was detected within the 10-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
+      'No AI review feedback was detected within the 12-minute polling window. Earlier review cycles led to prudent follow-up patches, and the latest review pass found no additional prudent follow-up changes.',
     );
   });
 
@@ -2426,8 +2421,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2720,8 +2715,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2780,7 +2775,7 @@ describe('delivery orchestrator', () => {
       }),
     });
 
-    expect(sleeps).toEqual([120000]);
+    expect(sleeps).toEqual([360000]);
   });
 
   it('reconcile-late-review keeps done status when triage resolves to needs_patch', async () => {
@@ -2790,8 +2785,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2883,8 +2878,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2926,8 +2921,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -2995,8 +2990,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -3069,8 +3064,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -3115,8 +3110,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -3162,8 +3157,8 @@ describe('delivery orchestrator', () => {
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
       tickets: [
         {
           id: 'P3.01',
@@ -3278,8 +3273,8 @@ describe('delivery orchestrator', () => {
       kind: 'standalone_review_started',
       prNumber: 33,
       prUrl: 'https://example.test/pull/33',
-      reviewPollIntervalMinutes: 2,
-      reviewPollMaxWaitMinutes: 10,
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
     });
 
     expect(requests).toHaveLength(1);

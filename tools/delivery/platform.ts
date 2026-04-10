@@ -648,6 +648,31 @@ export function fetchOrigin(cwd: string, runtime: Runtime): void {
   runProcess(cwd, ['git', 'fetch', 'origin'], runtime);
 }
 
+/**
+ * Returns true when every file touched by the PR is a Markdown file (.md).
+ * Doc-only PRs skip the external AI review window.
+ */
+export function isPrDocOnly(
+  cwd: string,
+  prNumber: number,
+  runtime: Runtime,
+): boolean {
+  try {
+    const stdout = runProcess(
+      cwd,
+      ['gh', 'pr', 'diff', String(prNumber), '--name-only'],
+      runtime,
+    );
+    const files = stdout
+      .split('\n')
+      .map((f) => f.trim())
+      .filter(Boolean);
+    return files.length > 0 && files.every((f) => f.endsWith('.md'));
+  } catch {
+    return false;
+  }
+}
+
 export function readMergeBase(
   cwd: string,
   branch: string,

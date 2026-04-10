@@ -66,7 +66,7 @@ The orchestrator owns process mechanics:
 - bootstrapping fresh ticket worktrees using lockfile-aware package-manager defaults before implementation starts
 - stacked PR base chaining
 - idempotent PR open/update behavior for already-pushed ticket branches
-- a 2/4/6/8-minute AI-review polling loop after PR open
+- a 6/12-minute AI-review polling loop after PR open (two checkpoints: 6 minutes and 12 minutes)
 - invoking the repo-local `ai-code-review` fetcher and persisting structured JSON plus rendered text artifacts when AI review is detected
 - optional Telegram milestone notifications for long-running delivery runs
 - blocking advancement until review is explicitly recorded or auto-recorded as `clean` after the final polling check
@@ -104,7 +104,9 @@ Other vendors are out of scope unless the repo-local `ai-code-review` skill is d
 
 For `sonarqube`, the repo-local fetcher reads GitHub check-run annotations rather than native PR review threads and intentionally keeps only failed-check annotations in the normalized artifact. Lower-severity warning annotations remain available in SonarQube itself but do not enter the orchestrator triage loop by default.
 
-The absence of `ai-code-review` comments after the final 8-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
+The absence of `ai-code-review` comments after the final 12-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
+
+Doc-only PRs (where the diff touches only `.md` files) skip the review window entirely. External AI agents review code; the developer reads docs. When `open-pr` detects a doc-only diff, it sets a `doc_only` flag in state and `poll-review` auto-records `clean` immediately without waiting.
 
 When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket moves into an intermediate `needs_patch` state with the saved artifacts and triage note. From there the follow-up must conclude as either `patched` or `operator_input_needed`. PR body updates remain best-effort in either case.
 
@@ -136,7 +138,11 @@ The handoff includes:
 
 This does not automatically create a brand-new agent session, but it is the current repo mechanism for reducing reasoning carryover between tickets while preserving stacked branch continuity.
 
-During external waits such as AI-review windows, the worker may read ahead into the next ticket, handoff, and adjacent seams to prepare the next slice. That read-ahead must not turn into write-ahead; implementation for the next ticket still starts only after the current ticket is cleared.
+**No read-ahead during the review window.** The agent does nothing while waiting on external AI review. The wait is free (LLM idle during subprocess sleep). Read-ahead during the window burns context that is dead weight when the agent compacts at the next ticket boundary. Be sabaai sabaai.
+
+**Context compaction at every `advance`.** When `advance` starts the next ticket, it emits a compaction directive before the handoff path. Call `/compact` (or equivalent context-compression primitive) before reading the next handoff. The handoff artifact plus the `modified_sections` field gives the resuming context everything it needs; nothing else from prior ticket history is load-bearing.
+
+**Handoff artifact `modified_sections`.** The handoff now includes a `## Modified Sections` block extracted from the ticket's `## Scope` section. Read only the file sections listed there — do not re-read full files. This keeps per-ticket context bounded as implementation files grow across the phase.
 
 That policy applies only to ticket-linked delivery PRs. Standalone manual `ai-review` runs for non-ticket PRs do not have a next-ticket boundary, so there is no analogous look-ahead rule there.
 
@@ -155,7 +161,7 @@ That inference is intentionally conservative. It reconstructs enough state to re
 
 ## Post-verify self-audit (ticket stacks)
 
-After **build mode** (implementation and automated verification, for example `bun run verify` and any scoped tests the ticket implies), the agent switches to **self-audit mode**: a deliberate pass over the diff and ticket acceptance before publishing the branch for external AI code review. Stay in the same implementation session—this is a mode switch, not a handoff.
+After **build mode** (implementation and automated verification, for example `bun run verify:quiet` and any scoped tests the ticket implies), the agent switches to **self-audit mode**: a deliberate pass over the diff and ticket acceptance before publishing the branch for external AI code review. Stay in the same implementation session—this is a mode switch, not a handoff.
 
 The `post-verify-self-audit` command **records** that self-audit mode completed (ticket status and timestamp in local delivery state). It does **not** run checks or read the diff; the agent performs verification in build mode and the diff review in self-audit mode, then invokes this command.
 
@@ -224,7 +230,7 @@ bun run deliver ai-review
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
-After implementation and verification in build mode, complete **self-audit mode** (see above), then record it with `post-verify-self-audit` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator should surface the ai-review polling cadence and check timestamps. `poll-review` checks at 2, 4, 6, and 8 minutes after PR open, waits for all detected review agents to become triage-ready, performs one final bounded check when review is still clearly in flight, writes `json` and `txt` artifacts, runs the triager hook, and otherwise auto-records `clean` at the final applicable check.
+After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window and auto-record `clean`. At the 6-minute check, the orchestrator advances immediately if all configured external review agents have posted findings. Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts, runs the triager hook, and otherwise auto-records `clean` at the final check. After `advance`, call `/compact` before reading the next handoff.
 
 If a parent ticket was squash-merged onto `main`, run:
 

@@ -6,9 +6,9 @@ export type ReviewPollingProfile = {
 };
 
 export const DEFAULT_REVIEW_POLLING_PROFILE: ReviewPollingProfile = {
-  intervalMinutes: 2,
-  maxWaitMinutes: 10,
-  extendByOneInterval: true,
+  intervalMinutes: 6,
+  maxWaitMinutes: 12,
+  extendByOneInterval: false,
 };
 
 /** Single short poll for late reconcile on already-done tickets (immediate first check via negative sleep). */
@@ -32,6 +32,6 @@ export function resolveDeliveryReviewPollingProfile(state: {
   return {
     intervalMinutes: state.reviewPollIntervalMinutes,
     maxWaitMinutes: state.reviewPollMaxWaitMinutes,
-    extendByOneInterval: true,
+    extendByOneInterval: false,
   };
 }

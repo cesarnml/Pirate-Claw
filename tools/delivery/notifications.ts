@@ -1,5 +1,4 @@
 import { buildReviewPollCheckMinutes } from './review';
-import { computeExtendedReviewPollMaxWaitMinutes } from './review-polling-profile';
 import type {
   DeliveryState,
   DeliveryNotificationEvent,
@@ -351,7 +350,6 @@ export function formatReviewWindowMessage(
     `- checks at: ${checks.join(', ')} minutes after PR open`,
     `- first check at: ${firstCheckAt}`,
     `- final check at: ${finalCheckAt}`,
-    `- if an AI review agent is still clearly in progress at ${state.reviewPollMaxWaitMinutes} minutes, the orchestrator performs one final check at ${computeExtendedReviewPollMaxWaitMinutes(state.reviewPollIntervalMinutes, state.reviewPollMaxWaitMinutes)} minutes`,
     '- if no actionable `ai-code-review` findings are captured by the final applicable check, the orchestrator records `clean` and continues',
   ].join('\n');
 }
