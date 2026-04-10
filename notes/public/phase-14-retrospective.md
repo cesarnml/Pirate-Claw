@@ -98,3 +98,23 @@ Fix: `poll-review` output should emit only the current ticket's state and the po
 One advisor call in this phase cost ~10 minutes of wall time and substantial context overhead to catch a single-line oversight (roadmap first bullet still saying "01–11" instead of "01–14") that a careful self-read would have caught. For document updates and scoped edits where the change surface is fully visible, advisor adds latency without proportional signal. Reserve it for genuine architectural ambiguity — cases where the implementation approach is in question, not cases where the question is "did I miss a sentence."
 
 The advisor tool's value is front-loaded: it prevents wrong approaches from crystallizing. Its value after implementation is much lower unless the change surface is large enough that self-review misses structural gaps. A rule of thumb: if you can state exactly what each changed line does, you don't need advisor at the end.
+
+**Pain point 4 (structural): ticket boundaries are contractual, not mechanical — the context window isn't actually cleared between tickets (~35–40% of total spend, accumulated)**
+
+This is the biggest one, and it's architectural. The handoff artifact system was designed to make context resets safe: each handoff captures exactly what the next ticket needs (branch, base, carry-forward review notes, stop conditions). The "Context Reset Contract" in every handoff even says explicitly: "Start from the current repository state and this handoff artifact, not from prior chat assumptions." But in practice the session keeps running continuously across ticket boundaries — the context window accumulates every verify output, every file read, every poll-review dump from all prior tickets. By P14.05, the session was carrying the full tool-call history of P14.01 through P14.04 plus half of P14.05.
+
+The handoff artifact makes a hard reset safe. We should use it that way.
+
+**Stance: compact at every `advance` boundary.** The orchestrator's `advance` command should emit an explicit directive to compact conversation history before the next ticket begins. The handoff artifact plus `modified_sections` field (from Pain point 2's fix) gives the resuming context everything it needs: which branch, which files changed in adjacent tickets, what the review carried forward. Nothing else from prior tickets is load-bearing.
+
+Concretely, two implementation paths:
+
+1. **New Claude Code session per ticket.** The orchestrator emits a `bun run deliver ... start <next-ticket>` command that the developer runs in a fresh session. Each session starts cold, reads the handoff, implements one ticket, stops. Zero accumulated carry-forward. This is the cleanest model and the one son-of-anton was originally designed for — "hand off to the orchestrator" was always meant to be a fresh context, not a continuous one.
+
+2. **Explicit `/compact` call at `advance`.** If running in a single session, the agent calls `/compact` (or the equivalent context-compression primitive) immediately after `advance` records the new ticket as `in_progress`, before reading the handoff or any files. The compacted session retains a summary of what happened but drops all raw tool output. Then it reads the handoff fresh.
+
+Option 1 is strictly better for token efficiency. Option 2 is a reasonable fallback for the "keep going in one session" workflow the user prefers.
+
+At Phase 14's burn rate (~14% per ticket at steady state), option 1 would fit the entire six-ticket phase with ~84% headroom per ticket instead of per phase. Option 2 with aggressive compaction might get to ~4–5 tickets per session. Either is a significant improvement over the current "one phase per session" ceiling.
+
+The handoff system was built for this. We should use it as the mechanical reset point, not just the contractual one.
