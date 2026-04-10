@@ -28,4 +28,8 @@ Operator-facing and phase-status docs accurately reflect shipped Phase 14 behavi
 
 ## Rationale
 
-_To be filled in after implementation._
+`README.md`, `start-here.md`, and `roadmap.md` are the operator-facing and orientation documents that new AI threads and human readers consult first. Updating them to reflect Phase 14 delivery closes the doc loop: the repo state and the written record agree that Phases 01–14 are on `main`. Leaving them pointing at Phases 01–13 would cause future planning passes to start from stale premises.
+
+The Phase 14 annotation was removed from the three write endpoints in the README API table (`PUT /api/config/feeds`, `PUT /api/config/movies`, `PUT /api/config/tv/defaults`) because they are now shipped, not planned. Planned-only endpoints in the table retain their phase annotation as forward pointers.
+
+All P14.01–P14.05 rationale sections were already non-empty by the time this ticket was opened — each ticket filled its own rationale inline during implementation.

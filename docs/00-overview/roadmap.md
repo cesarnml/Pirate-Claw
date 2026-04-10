@@ -398,7 +398,7 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-14-feed-setup-and-target-management.md`](../01-product/phase-14-feed-setup-and-target-management.md)
+- implemented on `main` via `P14.01`–`P14.06` stacked delivery; see [`docs/02-delivery/phase-14/implementation-plan.md`](../02-delivery/phase-14/implementation-plan.md) and [`docs/01-product/phase-14-feed-setup-and-target-management.md`](../01-product/phase-14-feed-setup-and-target-management.md)
 
 ## Phase 15: Rich Visual State and Activity Views
 
@@ -467,8 +467,8 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 
 ## Current Planning Posture
 
-- product phases `01`–`11` and engineering epics `01`–`04` are complete on `main`
-- product phases `12`–`18` are defined in `docs/01-product/`; **Phase 12** is delivered; **Phase 13** is delivered via `P13.01`–`P13.07`; **Phases 14–18** are product-definition only until tickets are approved
+- product phases `01`–`14` and engineering epics `01`–`04` are complete on `main`
+- product phases `12`–`18` are defined in `docs/01-product/`; **Phase 12** is delivered; **Phase 13** is delivered via `P13.01`–`P13.07`; **Phase 14** is delivered via `P14.01`–`P14.06`; **Phases 15–18** are product-definition only until tickets are approved
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 
@@ -486,4 +486,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-09.
+Last verified against `README.md` and active delivery plans: 2026-04-10 (Phase 14 delivered).
