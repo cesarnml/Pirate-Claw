@@ -118,3 +118,20 @@ Option 1 is strictly better for token efficiency. Option 2 is a reasonable fallb
 At Phase 14's burn rate (~14% per ticket at steady state), option 1 would fit the entire six-ticket phase with ~84% headroom per ticket instead of per phase. Option 2 with aggressive compaction might get to ~4–5 tickets per session. Either is a significant improvement over the current "one phase per session" ceiling.
 
 The handoff system was built for this. We should use it as the mechanical reset point, not just the contractual one.
+
+**On poll-review intervals: the wait is free, but read-ahead is not**
+
+Short answer: extending from 2-minute to 3/6/9/12-minute intervals does not save tokens from the waiting itself. `poll-review` runs as a blocking bash subprocess — the bun script sleeps between GitHub API checks internally. The LLM is completely idle during those sleeps; no inference runs, no context accumulates. Token cost of the wait: zero, regardless of interval length.
+
+Token cost of poll-review comes from two places only: the tool call to launch it, and processing the output when it returns. That output is the pain point flagged in Pain point 3 (full orchestrator state dump). Interval length doesn't change that output size.
+
+However there is one indirect cost: the workflow instructions said "read ahead to the next ticket during the review window." Read-ahead is not free — it consumes tokens proportional to what gets read. If the session does three file reads while waiting on a 10-minute window, those reads burn context that will be dead weight if the ticket-boundary reset (Pain point 4) is adopted. With hard session resets between tickets, read-ahead becomes pointless — the next session will read what it needs cold from the handoff.
+
+**Stance: extend to 3/6/9/12 and drop the "12-minute optional" complexity.** The rationale is review quality, not token savings:
+
+- 90% of actionable CodeRabbit and SonarCloud reviews complete within 12 minutes. The current 2-minute cadence does 5 checks in 10 minutes, most of which return "no review yet" — output that gets captured and adds noise.
+- A single check at 3 minutes, a second at 6, a third at 9, final at 12 gives four clean signal points instead of five noisy ones. The "in-flight optional 12-minute window" is already implicit in the final check.
+- Fewer checks means less subprocess output to process, slightly cleaner context. Minor, but directionally right.
+- If we adopt fresh-session-per-ticket (Pain point 4), the review window becomes a natural "start next session when this completes" gate — wall time is irrelevant since the developer isn't blocking on it manually.
+
+The current 2-minute cadence was designed for impatience. At 3/6/9/12 the developer gets the same gate with better signal-to-noise and one fewer config knob to explain.
