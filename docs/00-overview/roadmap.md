@@ -379,7 +379,7 @@ Committed scope:
 
 Explicit deferrals:
 
-- feeds and rules authoring in the UI (Phase 14 placeholder)
+- feeds and rules authoring in the UI (Phase 14)
 - TLS, SSO, or full API auth beyond bearer-on-write
 - hot reload without daemon restart
 
@@ -387,56 +387,69 @@ Working notes:
 
 - `docs/01-product/phase-13-daemon-config-write-api-and-settings.md`
 
-## Phase 14: Feed Setup & Target Management MVP
+## Phase 14: Feed Setup and Target Management MVP
 
-- Add/remove RSS feeds (TV/movie) via web UI
-- Add/remove TV show targets and movie years via web UI
-- Set global codec/resolution for TV, and codec/resolution/year for movies
-- Minimal validation (feed fetch, allowed codecs/resolutions)
-- Manual .env write token required for config writes
-- No advanced options, no per-target rules, no suggestions
-- UI is read-only until write token is set
+Goal:
 
-See [`docs/01-product/phase-14-feed-setup-and-target-mvp.md`](../01-product/phase-14-feed-setup-and-target-mvp.md)
+- add/remove RSS feeds (TV/movie) via web UI
+- add/remove TV show targets and manage global TV codec/resolution defaults
+- manage movie years, resolutions, codecs, and codecPolicy via web UI
+- dedicated write endpoints per config section; UI read-only until write token is set
 
-## Phase 15: Rich Visual State & Activity Views
+Current status:
 
-- Overview dashboard: active downloads, completed items, system status
-- TV Shows/Movies views: progress, per-show/season/episode breakdown, per-movie status
-- Filter/search for ingested and unmatched candidates
-- Manual refresh per view (no real-time updates)
-- Download directory paths surfaced (no validation)
+- product definition only; see [`docs/01-product/phase-14-feed-setup-and-target-management.md`](../01-product/phase-14-feed-setup-and-target-management.md)
 
-See [`docs/01-product/phase-15-rich-visual-state-and-activity.md`](../01-product/phase-15-rich-visual-state-and-activity.md)
+## Phase 15: Rich Visual State and Activity Views
+
+Goal:
+
+- live download progress (Transmission RPC) surfaced alongside pirate-claw lifecycle state
+- TV Shows and Movies views with TMDB enrichment, per-item status, and drill-down
+- unmatched candidates (skipped_no_match) surfaced with title and feed context
+- client-side filter/search across all views; server-side filtering deferred
+
+Current status:
+
+- product definition only; see [`docs/01-product/phase-15-rich-visual-state-and-activity-views.md`](../01-product/phase-15-rich-visual-state-and-activity-views.md)
 
 ## Phase 16: Config Editing, Hot Reload, and Daemon Controls
 
-- Form-based config editing for all supported fields (no raw editor)
-- Hot reload on config changes; toast on failure
-- Daemon restart button on config page
-- Banner for read-only mode if write token missing
-- eTag or similar for basic write collision avoidance (optional)
+Goal:
 
-See [`docs/01-product/phase-16-config-editing-hot-reload-daemon.md`](../01-product/phase-16-config-editing-hot-reload-daemon.md)
+- unified Config page integrating all Phase 13/14 write endpoints into one coherent surface
+- inline validation, success/failure toasts, post-save daemon restart offer
+- disabled controls with tooltip for read-only mode (no write token); no banners
+- hot reload scoped to API layer (already works); interval changes still require restart
 
-## Phase 17: Onboarding & Empty State Experience
+Current status:
 
-- Multi-step onboarding form for first-time/empty config
-- Feed type selection (TV/movie) determines setup flow
-- Guidance and validation for each step
-- No sample data or suggestions
+- product definition only; see [`docs/01-product/phase-16-config-editing-hot-reload-and-daemon-controls.md`](../01-product/phase-16-config-editing-hot-reload-and-daemon-controls.md)
 
-See [`docs/01-product/phase-17-onboarding-and-empty-state.md`](../01-product/phase-17-onboarding-and-empty-state.md)
+## Phase 17: Onboarding and Empty State
 
-## Phase 18: Security, Permissions, and Extensibility Baseline
+Goal:
 
-- Write access protected by PIRATE_CLAW_API_WRITE_TOKEN
-- Single-admin model, no user accounts
-- Config/db schema versioning and compatibility check on startup
-- Document breaking change policy (major version = new schema)
-- No audit logs, plugin, or extension support in v1
+- first-time setup wizard: add 1 feed + 1 TV show or movie year target, then hand off to main UI
+- bootstrap via starter config template (daemon must be running before wizard begins)
+- per-section empty states across all dashboard views
 
-See [`docs/01-product/phase-18-security-permissions-extensibility.md`](../01-product/phase-18-security-permissions-extensibility.md)
+Current status:
+
+- product definition only; see [`docs/01-product/phase-17-onboarding-and-empty-state.md`](../01-product/phase-17-onboarding-and-empty-state.md)
+
+## Phase 18: v1.0.0 Release and Schema Versioning
+
+Goal:
+
+- `package.json` bumped to `1.0.0`; tagged release with CHANGELOG covering Phases 13–18
+- config file stamped with `schemaVersion: 1` on next write; absent = v1 (silent)
+- SQLite DB stamped with `PRAGMA user_version = 1` on first startup
+- `VERSIONING.md` documents breaking change policy: major version = config/db schema pair
+
+Current status:
+
+- product definition only; see [`docs/01-product/phase-18-v1-release-and-schema-versioning.md`](../01-product/phase-18-v1-release-and-schema-versioning.md)
 
 ## Future Deferrals
 
@@ -444,17 +457,18 @@ These items are still explicitly deferred or not yet assigned a numbered phase:
 
 - **Release calendar** — deferred as a feature inside the TMDB/dashboard surface, not its own phase
 - **Rating-based intake gating** — deferred until TMDB integration is stable and display-only has been validated
-- **Show/movie search-to-add from the UI** — deferred to Phase 14–style config expansion once feed and rule editing is in scope
+- **Show/movie search-to-add from the UI** — deferred; add-by-name from Config page (Phase 14/16) covers the initial need
 
 The following items are **mapped** to numbered phases (no longer “unbounded” deferrals):
 
-- **Config editor via web UI (bounded)** — Phase 13 (runtime subset); Phase 14 placeholder for feeds/rules
+- **Config editor via web UI** — Phase 13 (runtime subset); Phase 14 (feeds, movies, TV defaults); Phase 16 (unified UX)
 - **Visual polish / design system iteration** — Phase 12
+- **v1.0.0 release** — Phase 18
 
 ## Current Planning Posture
 
 - product phases `01`–`11` and engineering epics `01`–`04` are complete on `main`
-- product phases `12`–`14` are defined in `docs/01-product/`; **Phase 12** is delivered via [`docs/02-delivery/phase-12/implementation-plan.md`](../02-delivery/phase-12/implementation-plan.md); **Phase 13** is not implemented until an approved ticket decomposition exists
+- product phases `12`–`18` are defined in `docs/01-product/`; **Phase 12** is delivered; **Phase 13** is delivered via `P13.01`–`P13.07`; **Phases 14–18** are product-definition only until tickets are approved
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 

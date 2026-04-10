@@ -14,3 +14,4 @@ pirate-claw.db
 .env
 notes/private/
 .cursor/
+.claude/settings.local.json
