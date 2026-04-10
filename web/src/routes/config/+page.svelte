@@ -4,10 +4,17 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { ActionData, PageData } from './$types';
 
+	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
+	const ALL_CODECS = ['x264', 'x265'];
+	const WRITE_DISABLED_TOOLTIP = 'Configure PIRATE_CLAW_API_WRITE_TOKEN to enable editing';
+
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
-	const currentEtag = $derived(form?.etag ?? data.etag ?? null);
+	const currentEtag = $derived(form?.tvDefaultsEtag ?? form?.etag ?? data.etag ?? null);
+	const canWrite = $derived(data.canWrite);
 
 	let showRows = $state<string[]>([]);
+	let tvResolutions = $state<string[]>([]);
+	let tvCodecs = $state<string[]>([]);
 
 	$effect(() => {
 		const c = data.config;
@@ -28,6 +35,22 @@
 	function updateShowName(index: number, value: string) {
 		showRows = showRows.map((row, j) => (j === index ? value : row));
 	}
+
+	function toggleResolution(res: string) {
+		if (tvResolutions.includes(res)) {
+			tvResolutions = tvResolutions.filter((r) => r !== res);
+		} else {
+			tvResolutions = [...tvResolutions, res];
+		}
+	}
+
+	function toggleCodec(codec: string) {
+		if (tvCodecs.includes(codec)) {
+			tvCodecs = tvCodecs.filter((c) => c !== codec);
+		} else {
+			tvCodecs = [...tvCodecs, codec];
+		}
+	}
 </script>
 
 <h1 class="text-3xl font-bold tracking-tight">Config</h1>
@@ -45,12 +68,91 @@
 	{@const config = data.config}
 
 	<div class="mt-8 space-y-6 pr-1">
-		{#if form?.message}
+		{#if form?.tvDefaultsMessage}
+			<Alert variant={form?.tvDefaultsSuccess ? 'default' : 'destructive'}>
+				<AlertTitle>{form?.tvDefaultsSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
+				<AlertDescription>{form.tvDefaultsMessage}</AlertDescription>
+			</Alert>
+		{:else if form?.message}
 			<Alert variant={form?.success ? 'default' : 'destructive'}>
 				<AlertTitle>{form?.success ? 'Save complete' : 'Save failed'}</AlertTitle>
 				<AlertDescription>{form.message}</AlertDescription>
 			</Alert>
 		{/if}
+
+		<form method="POST" action="?/saveTvDefaults" use:enhance class="space-y-6">
+			<input type="hidden" name="tvDefaultsIfMatch" value={currentEtag ?? ''} />
+			{#each tvResolutions as res}
+				<input type="hidden" name="tvResolution" value={res} />
+			{/each}
+			{#each tvCodecs as codec}
+				<input type="hidden" name="tvCodec" value={codec} />
+			{/each}
+			<Card>
+				<CardHeader class="pb-3">
+					<h2 class="text-lg font-semibold tracking-tight">TV defaults</h2>
+				</CardHeader>
+				<CardContent class="space-y-4 pt-0">
+					<p class="text-muted-foreground text-sm">
+						Global resolution and codec defaults inherited by all TV shows.
+					</p>
+					<div class="space-y-2">
+						<p class="text-muted-foreground text-sm font-medium">Resolutions</p>
+						<div
+							class="flex flex-wrap gap-2"
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							{#each ALL_RESOLUTIONS as res}
+								<button
+									type="button"
+									class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {tvResolutions.includes(
+										res
+									)
+										? 'bg-primary text-primary-foreground border-primary'
+										: 'border-border text-muted-foreground hover:bg-muted'}"
+									disabled={!canWrite}
+									onclick={() => toggleResolution(res)}
+								>
+									{res}
+								</button>
+							{/each}
+						</div>
+					</div>
+					<div class="space-y-2">
+						<p class="text-muted-foreground text-sm font-medium">Codecs</p>
+						<div
+							class="flex flex-wrap gap-2"
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							{#each ALL_CODECS as codec}
+								<button
+									type="button"
+									class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {tvCodecs.includes(
+										codec
+									)
+										? 'bg-primary text-primary-foreground border-primary'
+										: 'border-border text-muted-foreground hover:bg-muted'}"
+									disabled={!canWrite}
+									onclick={() => toggleCodec(codec)}
+								>
+									{codec}
+								</button>
+							{/each}
+						</div>
+					</div>
+					<div>
+						<button
+							type="submit"
+							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+							disabled={!canWrite || !currentEtag}
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							Save TV defaults
+						</button>
+					</div>
+				</CardContent>
+			</Card>
+		</form>
 
 		<form method="POST" action="?/saveSettings" use:enhance class="space-y-6">
 			<input type="hidden" name="ifMatch" value={currentEtag ?? ''} />

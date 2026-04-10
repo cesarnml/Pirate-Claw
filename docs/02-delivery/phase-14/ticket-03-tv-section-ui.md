@@ -33,4 +33,12 @@ The TV config section in the dashboard includes working resolutions and codecs d
 
 ## Rationale
 
-_To be filled in after implementation._
+`canWrite` is derived server-side from `!!env.PIRATE_CLAW_API_WRITE_TOKEN` in the load function and passed to the page as `data.canWrite`. This is the single source of truth for write availability — the same env var the action checks before forwarding to the API. Client-side components just read `data.canWrite`; they never re-derive write availability from the config payload.
+
+TV defaults are in a separate `<form action="?/saveTvDefaults">` outside the existing `saveSettings` form. Nested HTML forms are invalid, so the TV defaults card could not live inside the existing form without restructuring. The `saveTvDefaults` form is placed visually before `saveSettings` in the layout. The `saveSettings` form is left exactly as Phase 13 committed it.
+
+`tvDefaultsEtag` is returned by the `saveTvDefaults` action and folded into `currentEtag` alongside the existing `form?.etag`. This ensures that after a TV defaults save, the next `saveSettings` submission uses the updated revision, avoiding a 409 conflict on the combined save.
+
+Multi-select state (`tvResolutions`, `tvCodecs`) is tracked in Svelte `$state` arrays. Hidden inputs carry the selected values into the form body; toggle buttons flip array membership. The fixed option sets (`ALL_RESOLUTIONS`, `ALL_CODECS`) match the allowed values enforced by `validateCompactTvDefaults` in `src/config.ts` — no duplication of validation logic is needed on the client since the server rejects any invalid value with a 400.
+
+Disabled state uses the HTML `disabled` attribute on buttons and the `title` attribute on the container divs for tooltip text — no tooltip component dependency added.

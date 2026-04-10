@@ -5,6 +5,7 @@ import type { AppConfig } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
+	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 	try {
 		const response = await apiRequest('/api/config');
 		if (!response.ok) {
@@ -15,6 +16,7 @@ export const load: PageServerLoad = async () => {
 		return {
 			config,
 			etag: response.headers.get('etag'),
+			canWrite,
 			error: null
 		};
 	} catch (err) {
@@ -22,6 +24,7 @@ export const load: PageServerLoad = async () => {
 		return {
 			config: null as AppConfig | null,
 			etag: null as string | null,
+			canWrite,
 			error: 'Could not reach the API.'
 		};
 	}
@@ -170,6 +173,59 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[config] save failed:', error);
 			return fail(500, { message: 'Could not save settings.' });
+		}
+	},
+
+	saveTvDefaults: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { tvDefaultsMessage: 'Config writes are disabled.' });
+		}
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('tvDefaultsIfMatch') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, { tvDefaultsMessage: 'Missing config revision. Reload and try again.' });
+		}
+
+		const resolutions = formData.getAll('tvResolution').map(String);
+		const codecs = formData.getAll('tvCodec').map(String);
+
+		const payload = { resolutions, codecs };
+
+		try {
+			const response = await apiRequest('/api/config/tv/defaults', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify(payload)
+			});
+
+			if (!response.ok) {
+				let tvDefaultsMessage = `Save failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) tvDefaultsMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, {
+					tvDefaultsMessage,
+					tvDefaultsEtag: response.headers.get('etag')
+				});
+			}
+
+			return {
+				tvDefaultsSuccess: true,
+				tvDefaultsMessage: 'TV defaults saved.',
+				tvDefaultsEtag: response.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[config] saveTvDefaults failed:', error);
+			return fail(500, { tvDefaultsMessage: 'Could not save TV defaults.' });
 		}
 	}
 };

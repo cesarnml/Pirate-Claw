@@ -41,7 +41,10 @@ const mockConfig: AppConfig = {
 
 describe('/config', () => {
 	it('renders config sections with mock data', () => {
-		render(Page, { data: { config: mockConfig, error: null, etag: '"rev-1"' }, form: undefined });
+		render(Page, {
+			data: { config: mockConfig, error: null, etag: '"rev-1"', canWrite: true },
+			form: undefined
+		});
 		expect(screen.getByRole('heading', { name: 'Feeds' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'TV shows' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Movies' })).toBeInTheDocument();
@@ -54,7 +57,7 @@ describe('/config', () => {
 
 	it('renders error state when API is unreachable', () => {
 		render(Page, {
-			data: { config: null, error: 'Could not reach the API.', etag: null },
+			data: { config: null, error: 'Could not reach the API.', etag: null, canWrite: false },
 			form: undefined
 		});
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
@@ -65,7 +68,8 @@ describe('/config', () => {
 			data: {
 				config: { ...mockConfig, feeds: [], tv: [] },
 				error: null,
-				etag: '"rev-1"'
+				etag: '"rev-1"',
+				canWrite: true
 			},
 			form: undefined
 		});
@@ -75,7 +79,7 @@ describe('/config', () => {
 
 	it('renders save error message from action data', () => {
 		render(Page, {
-			data: { config: mockConfig, error: null, etag: '"rev-1"' },
+			data: { config: mockConfig, error: null, etag: '"rev-1"', canWrite: true },
 			form: { message: 'config revision conflict' }
 		});
 		expect(screen.getByRole('alert')).toHaveTextContent('config revision conflict');
@@ -83,7 +87,7 @@ describe('/config', () => {
 
 	it('renders success messaging for combined save', () => {
 		render(Page, {
-			data: { config: mockConfig, error: null, etag: '"rev-1"' },
+			data: { config: mockConfig, error: null, etag: '"rev-1"', canWrite: true },
 			form: {
 				success: true,
 				message:
