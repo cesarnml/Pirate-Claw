@@ -60,7 +60,6 @@ This avoids a sequencing problem where ticket worktrees are missing the plan doc
    - implement
    - verify
    - update the ticket rationale when behavior or implementation choices changed
-   - switch from build mode to self-audit mode; **call `advisor` here** — Opus reviews the diff independently and catches scope creep and risky seams that continuation bias misses; then `post-verify-self-audit` (records delivery state)
    - open or refresh the PR
    - run the orchestrator's AI-review polling flow (see [AI Review Polling](#ai-review-polling) below)
    - patch prudent review findings when required
