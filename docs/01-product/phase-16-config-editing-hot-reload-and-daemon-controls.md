@@ -19,11 +19,13 @@ Phase 16 should leave Pirate Claw in a state where:
 ### Daemon and API
 
 **`POST /api/daemon/restart`**
+
 - calls `process.kill(process.pid, 'SIGTERM')` and trusts the NAS supervisor (Synology Task Scheduler or systemd) to restart the process
 - only offered as a follow-on action immediately after a successful config save in the SvelteKit Settings flow — not a standalone endpoint callable from the UI at any time
 - documented requirement: the daemon must be run under a supervisor that auto-restarts on exit; the runbook (`docs/01-product/phase-06-synology-runbook.md`) is updated with this requirement
 
 **Hot reload scope (API-layer only)**
+
 - config changes from any of the Phase 13/14 write endpoints already take effect immediately for API reads via the `configHolder.current` pattern — this is already implemented
 - polling intervals (`runIntervalMinutes`, `reconcileIntervalMinutes`) are read once at daemon startup and held in `setInterval` timers; changing them requires a daemon restart
 - the UI makes this explicit: after saving runtime interval fields, the success toast reads "Saved — restart the daemon for interval changes to take effect"
@@ -32,6 +34,7 @@ Phase 16 should leave Pirate Claw in a state where:
 ### Web (`web/`)
 
 **Config page — unified layout**
+
 - single `/config` route with four collapsible section cards matching the Phase 14 API surface:
   - **Transmission** (read-only display): host, port, Transmission version from `GET /api/transmission/session`, connection status dot (green/red), username shown as `[configured]` or `[not set]`, password always `[redacted]`, "Edit credentials in .env" note, "Test Connection" button → `POST /api/transmission/ping`
   - **RSS Feeds**: list with name + URL + type badge + remove button; inline "Add Feed" form with name, URL, type select; URL fetch validation is blocking (server-side, 10s timeout, HTTP 2xx required) — spinner shown during validation
@@ -39,16 +42,19 @@ Phase 16 should leave Pirate Claw in a state where:
   - **Movie Policy**: years (number input + add, year pills with remove); resolutions multi-select chips; codecs multi-select chips; codecPolicy segmented control (Prefer / Require)
 
 **Read-only state**
+
 - when `apiWriteToken` is absent, all form controls are `disabled` with a tooltip: "Configure PIRATE_CLAW_API_WRITE_TOKEN to enable editing"
 - no site-wide banner — operator is technically capable and just needs the hint on the control itself
 
 **Save feedback**
+
 - successful save: green toast "Saved" — for interval/port changes, toast appends "Restart the daemon for this change to take effect"
 - immediately after save: inline "Restart Daemon" button appears within the toast or below the saved section; clicking it calls `POST /api/daemon/restart` and shows a "Restarting…" state; button disappears after 10 seconds if not clicked
 - failed save: inline field-level error from the API `error` response; red toast "Save failed — see errors above"
 - ETag conflict (409): toast "Config changed elsewhere — reload and try again" with a Reload button
 
 **Inline validation**
+
 - client-side: required fields, URL format (must be http/https), year range (1900–2100), non-empty strings
 - server-side validation errors from the API are mapped back to the field that caused them where possible
 

@@ -21,6 +21,7 @@ Phase 14 should leave Pirate Claw in a state where:
 Three new dedicated write endpoints, each gated by the same bearer token and ETag/If-Match contract established in Phase 13:
 
 **`PUT /api/config/feeds`**
+
 - replaces the `feeds` array in the config file atomically
 - validates each feed entry using the existing `validateFeed` rules in `src/config.ts`
 - performs a blocking HTTP fetch of each new feed URL before accepting the write:
@@ -30,17 +31,20 @@ Three new dedicated write endpoints, each gated by the same bearer token and ETa
 - rejects the write if any new URL fails the fetch
 
 **`PUT /api/config/tv/defaults`**
+
 - replaces `tv.defaults` (resolutions and codecs) in the config file atomically
 - validates using the existing `validateCompactTvDefaults` rules in `src/config.ts`
 - per-show overrides already on disk are preserved (same `mergeTvShowsPreservingDiskEntries` pattern)
 - does not touch `tv.shows`
 
 **`PUT /api/config/movies`**
+
 - replaces the `movies` policy (years, resolutions, codecs, codecPolicy) in the config file atomically
 - validates using the existing `validateMoviePolicy` rules in `src/config.ts`
 - `codecPolicy` is required in the request body (`'prefer' | 'require'`)
 
 All three endpoints:
+
 - require `Authorization: Bearer <token>`; 401 if missing, 403 if wrong
 - require `If-Match` with the current ETag from `GET /api/config`; 428 if missing, 409 on conflict
 - return the updated redacted config with a fresh ETag on success

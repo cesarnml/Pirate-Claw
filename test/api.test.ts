@@ -879,6 +879,479 @@ describe('PUT /api/config', () => {
   });
 });
 
+describe('PUT /api/config/tv/defaults', () => {
+  async function makeHandler() {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-tv-def-'));
+    const configPath = join(directory, 'pirate-claw.config.json');
+    await writeCompactTvConfigFile(configPath);
+    const loaded = await loadConfig(configPath);
+    const holder = { current: loaded };
+    const deps = createDeps();
+    deps.config = loaded;
+    deps.configHolder = holder;
+    deps.configPath = configPath;
+    const handler = createApiFetch(deps);
+    const get = await handler(new Request('http://localhost/api/config'));
+    const etag = get.headers.get('etag')!;
+    return { handler, holder, configPath, etag, prevWrite };
+  }
+
+  it('returns 403 when writes are disabled', async () => {
+    // Use deps with no apiWriteToken (stubConfig default)
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const res = await handler(
+      new Request('http://localhost/api/config/tv/defaults', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-match': '"any"' },
+        body: JSON.stringify({ resolutions: ['1080p'], codecs: ['x265'] }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toContain('disabled');
+  });
+
+  it('returns 401 when bearer token is missing', async () => {
+    const { handler, holder, etag, prevWrite } = await makeHandler();
+    holder.current = {
+      ...holder.current,
+      runtime: { ...holder.current.runtime, apiWriteToken: 'write-token' },
+    };
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/tv/defaults', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'if-match': etag },
+          body: JSON.stringify({ resolutions: ['1080p'], codecs: ['x265'] }),
+        }),
+      );
+      expect(res.status).toBe(401);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 403 when bearer token is wrong', async () => {
+    const { handler, holder, etag, prevWrite } = await makeHandler();
+    holder.current = {
+      ...holder.current,
+      runtime: { ...holder.current.runtime, apiWriteToken: 'write-token' },
+    };
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/tv/defaults', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer wrong-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({ resolutions: ['1080p'], codecs: ['x265'] }),
+        }),
+      );
+      expect(res.status).toBe(403);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 428 when If-Match header is missing', async () => {
+    const { handler, holder, prevWrite } = await makeHandler();
+    holder.current = {
+      ...holder.current,
+      runtime: { ...holder.current.runtime, apiWriteToken: 'write-token' },
+    };
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/tv/defaults', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({ resolutions: ['1080p'], codecs: ['x265'] }),
+        }),
+      );
+      expect(res.status).toBe(428);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 409 on stale ETag', async () => {
+    const { handler, holder, prevWrite } = await makeHandler();
+    holder.current = {
+      ...holder.current,
+      runtime: { ...holder.current.runtime, apiWriteToken: 'write-token' },
+    };
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/tv/defaults', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': '"stale-etag"',
+          },
+          body: JSON.stringify({ resolutions: ['1080p'], codecs: ['x265'] }),
+        }),
+      );
+      expect(res.status).toBe(409);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 400 on validation failure (unknown resolution)', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-tv-def-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      const holder = {
+        current: {
+          ...loaded,
+          runtime: { ...loaded.runtime, apiWriteToken: 'write-token' },
+        },
+      };
+      const deps = createDeps();
+      deps.config = holder.current;
+      deps.configHolder = holder;
+      deps.configPath = configPath;
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const res = await handler(
+        new Request('http://localhost/api/config/tv/defaults', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({ resolutions: ['8k'], codecs: ['x265'] }),
+        }),
+      );
+      expect(res.status).toBe(400);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('happy path: updates tv defaults and returns fresh ETag', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-tv-def-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      const holder = {
+        current: {
+          ...loaded,
+          runtime: { ...loaded.runtime, apiWriteToken: 'write-token' },
+        },
+      };
+      const deps = createDeps();
+      deps.config = holder.current;
+      deps.configHolder = holder;
+      deps.configPath = configPath;
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const res = await handler(
+        new Request('http://localhost/api/config/tv/defaults', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({ resolutions: ['720p'], codecs: ['x264'] }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const newEtag = res.headers.get('etag');
+      expect(newEtag).not.toBe(etag);
+
+      // configHolder updated
+      expect(holder.current.tv[0].resolutions).toEqual(['720p']);
+      expect(holder.current.tv[0].codecs).toEqual(['x264']);
+
+      // disk updated
+      const disk = await Bun.file(configPath).json();
+      expect(disk.tv.defaults).toEqual({
+        resolutions: ['720p'],
+        codecs: ['x264'],
+      });
+      // shows preserved
+      expect(disk.tv.shows).toEqual(['Example Show']);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+});
+
+describe('PUT /api/config/movies', () => {
+  async function makeMovieHandler() {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-movies-'));
+    const configPath = join(directory, 'pirate-claw.config.json');
+    await writeCompactTvConfigFile(configPath);
+    const loaded = await loadConfig(configPath);
+    const holder = {
+      current: {
+        ...loaded,
+        runtime: { ...loaded.runtime, apiWriteToken: 'write-token' },
+      },
+    };
+    const deps = createDeps();
+    deps.config = holder.current;
+    deps.configHolder = holder;
+    deps.configPath = configPath;
+    const handler = createApiFetch(deps);
+    const get = await handler(new Request('http://localhost/api/config'));
+    const etag = get.headers.get('etag')!;
+    return { handler, holder, configPath, etag, prevWrite };
+  }
+
+  it('returns 403 when writes are disabled', async () => {
+    // Use deps with no apiWriteToken (stubConfig default)
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const res = await handler(
+      new Request('http://localhost/api/config/movies', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-match': '"any"' },
+        body: JSON.stringify({
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+          codecPolicy: 'prefer',
+        }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toContain('disabled');
+  });
+
+  it('returns 401 when bearer token is missing', async () => {
+    const { handler, etag, prevWrite } = await makeMovieHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/movies', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'if-match': etag },
+          body: JSON.stringify({
+            years: [2024],
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+            codecPolicy: 'prefer',
+          }),
+        }),
+      );
+      expect(res.status).toBe(401);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 403 when bearer token is wrong', async () => {
+    const { handler, etag, prevWrite } = await makeMovieHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/movies', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer wrong',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            years: [2024],
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+            codecPolicy: 'prefer',
+          }),
+        }),
+      );
+      expect(res.status).toBe(403);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 428 when If-Match is missing', async () => {
+    const { handler, prevWrite } = await makeMovieHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/movies', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({
+            years: [2024],
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+            codecPolicy: 'prefer',
+          }),
+        }),
+      );
+      expect(res.status).toBe(428);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 409 on stale ETag', async () => {
+    const { handler, prevWrite } = await makeMovieHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/movies', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': '"stale"',
+          },
+          body: JSON.stringify({
+            years: [2024],
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+            codecPolicy: 'prefer',
+          }),
+        }),
+      );
+      expect(res.status).toBe(409);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 400 when codecPolicy is absent', async () => {
+    const { handler, etag, prevWrite } = await makeMovieHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/movies', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            years: [2024],
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+          }),
+        }),
+      );
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error?: string };
+      expect(body.error).toContain('codecPolicy');
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('returns 400 on validation failure (invalid codecPolicy value)', async () => {
+    const { handler, etag, prevWrite } = await makeMovieHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/movies', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            years: [2024],
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+            codecPolicy: 'optional',
+          }),
+        }),
+      );
+      expect(res.status).toBe(400);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+
+  it('happy path: updates movies section and returns fresh ETag', async () => {
+    const { handler, holder, configPath, etag, prevWrite } =
+      await makeMovieHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/movies', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            years: [2023, 2024],
+            resolutions: ['720p', '1080p'],
+            codecs: ['x264', 'x265'],
+            codecPolicy: 'require',
+          }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const newEtag = res.headers.get('etag');
+      expect(newEtag).not.toBe(etag);
+
+      expect(holder.current.movies.years).toEqual([2023, 2024]);
+      expect(holder.current.movies.codecPolicy).toBe('require');
+
+      const disk = await Bun.file(configPath).json();
+      expect(disk.movies.codecPolicy).toBe('require');
+      expect(disk.movies.years).toEqual([2023, 2024]);
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+});
+
 describe('buildShowBreakdowns', () => {
   it('sorts shows by title and seasons/episodes by number', () => {
     const candidates = [

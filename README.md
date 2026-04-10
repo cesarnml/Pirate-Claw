@@ -218,24 +218,24 @@ When `runtime.apiPort` is omitted, no HTTP listener starts.
 
 ### Endpoints
 
-| Endpoint                       | Description                                                        |
-| ------------------------------ | ------------------------------------------------------------------ |
-| `GET /api/health`              | Uptime, start time, and last run/reconcile cycle snapshots         |
-| `GET /api/status`              | Recent run summaries from the local database                       |
-| `GET /api/candidates`          | All tracked candidate state records                                |
-| `GET /api/shows`               | TV candidates grouped by show → season → episode                   |
-| `GET /api/movies`              | Movie candidates sorted by title                                   |
-| `GET /api/feeds`               | Feed config with poll state and `isDue` status                     |
-| `GET /api/config`              | Effective config with credentials redacted; returns `ETag`         |
-| `PUT /api/config`              | Bounded runtime + tv.shows write (token + `If-Match` required)     |
-| `PUT /api/config/feeds`        | Replace feeds array (Phase 14; token + `If-Match` required)        |
-| `PUT /api/config/movies`       | Replace movie policy (Phase 14; token + `If-Match` required)       |
-| `PUT /api/config/tv/defaults`  | Replace TV global defaults (Phase 14; token + `If-Match` required) |
-| `GET /api/transmission/session`| Transmission version + session DL/UL stats (Phase 15)             |
-| `GET /api/transmission/torrents`| Active torrent list with progress + speed + ETA (Phase 15)       |
-| `GET /api/outcomes`            | Feed item outcomes; `?status=skipped_no_match` (Phase 15)          |
-| `POST /api/transmission/ping`  | Test Transmission connectivity (Phase 16)                          |
-| `POST /api/daemon/restart`     | SIGTERM self after config save; requires supervisor (Phase 16)     |
+| Endpoint                         | Description                                                        |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `GET /api/health`                | Uptime, start time, and last run/reconcile cycle snapshots         |
+| `GET /api/status`                | Recent run summaries from the local database                       |
+| `GET /api/candidates`            | All tracked candidate state records                                |
+| `GET /api/shows`                 | TV candidates grouped by show → season → episode                   |
+| `GET /api/movies`                | Movie candidates sorted by title                                   |
+| `GET /api/feeds`                 | Feed config with poll state and `isDue` status                     |
+| `GET /api/config`                | Effective config with credentials redacted; returns `ETag`         |
+| `PUT /api/config`                | Bounded runtime + tv.shows write (token + `If-Match` required)     |
+| `PUT /api/config/feeds`          | Replace feeds array (Phase 14; token + `If-Match` required)        |
+| `PUT /api/config/movies`         | Replace movie policy (Phase 14; token + `If-Match` required)       |
+| `PUT /api/config/tv/defaults`    | Replace TV global defaults (Phase 14; token + `If-Match` required) |
+| `GET /api/transmission/session`  | Transmission version + session DL/UL stats (Phase 15)              |
+| `GET /api/transmission/torrents` | Active torrent list with progress + speed + ETA (Phase 15)         |
+| `GET /api/outcomes`              | Feed item outcomes; `?status=skipped_no_match` (Phase 15)          |
+| `POST /api/transmission/ping`    | Test Transmission connectivity (Phase 16)                          |
+| `POST /api/daemon/restart`       | SIGTERM self after config save; requires supervisor (Phase 16)     |
 
 ### Example
 

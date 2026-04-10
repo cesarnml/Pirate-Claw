@@ -25,6 +25,7 @@ The daemon requires a valid `pirate-claw.config.json` to start — it cannot run
 ### Daemon and API
 
 No new endpoints. The wizard uses the existing write endpoints from Phase 14:
+
 - `PUT /api/config/feeds` to add the first feed
 - `PUT /api/config/tv/defaults` and the existing `PUT /api/config` (tv.shows) to add a TV target
 - `PUT /api/config/movies` to add a movie year target
@@ -45,14 +46,14 @@ No new endpoints. The wizard uses the existing write endpoints from Phase 14:
 
 **Per-section empty states** (shown in the main UI when a section has no data)
 
-| Section | Empty condition | Empty state message | CTA |
-|---------|-----------------|--------------------|----|
-| TV Shows | no TV candidates in DB | "No TV shows tracked yet" | "Add a show" → Config page TV section |
-| Movies | no movie candidates in DB | "No movies tracked yet" | "Add a movie year" → Config page Movie section |
-| Feeds (Config card) | no feeds configured | "No feeds configured" | "Add your first feed" → inline add form |
-| Unmatched Candidates | no skipped_no_match records | "No unmatched items — your policy is catching everything" | — |
-| Active Downloads (Overview) | no active torrents | "Nothing downloading right now" | — |
-| Archive Commit (Overview) | no completed items | "No completed downloads yet" | — |
+| Section                     | Empty condition             | Empty state message                                       | CTA                                            |
+| --------------------------- | --------------------------- | --------------------------------------------------------- | ---------------------------------------------- |
+| TV Shows                    | no TV candidates in DB      | "No TV shows tracked yet"                                 | "Add a show" → Config page TV section          |
+| Movies                      | no movie candidates in DB   | "No movies tracked yet"                                   | "Add a movie year" → Config page Movie section |
+| Feeds (Config card)         | no feeds configured         | "No feeds configured"                                     | "Add your first feed" → inline add form        |
+| Unmatched Candidates        | no skipped_no_match records | "No unmatched items — your policy is catching everything" | —                                              |
+| Active Downloads (Overview) | no active torrents          | "Nothing downloading right now"                           | —                                              |
+| Archive Commit (Overview)   | no completed items          | "No completed downloads yet"                              | —                                              |
 
 Empty states are informational only — no illustrations, no decorative UI. A short sentence and a link/button is sufficient.
 

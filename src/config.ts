@@ -15,7 +15,7 @@ export type TvRule = {
   codecs: string[];
 };
 
-type CompactTvDefaults = {
+export type CompactTvDefaults = {
   resolutions: string[];
   codecs: string[];
 };
@@ -198,7 +198,7 @@ function validateTvRule(input: unknown, path: string, index: number): TvRule {
   };
 }
 
-function validateCompactTvDefaults(
+export function validateCompactTvDefaults(
   input: unknown,
   path: string,
 ): CompactTvDefaults {
@@ -302,7 +302,7 @@ function validateCompactTvShowEntry(
   };
 }
 
-function validateMoviePolicy(
+export function validateMoviePolicy(
   input: Record<string, unknown>,
   path: string,
 ): MoviePolicy {

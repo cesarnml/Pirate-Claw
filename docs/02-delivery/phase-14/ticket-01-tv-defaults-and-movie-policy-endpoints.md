@@ -42,4 +42,10 @@ Both endpoints are live with full bearer + ETag auth, validated writes, and atom
 
 ## Rationale
 
-_To be filled in after implementation._
+Extracted a `checkWriteAuth` + `checkEtag` helper pair rather than copy-pasting the auth/ETag precondition block from the existing `PUT /api/config` handler. Three consumers today, three more coming in P14.02–P14.05; the duplication cost was immediate.
+
+The `codecPolicy` presence check is added at the endpoint level before calling `validateMoviePolicy`, because the validator silently defaults to `'prefer'` when `codecPolicy` is absent (correct for config-file loading, but the grill-me decision required it at the API). No change to the validator itself to avoid breaking file-load behavior.
+
+`CompactTvDefaults`, `validateCompactTvDefaults`, and `validateMoviePolicy` were exported from `config.ts`; previously module-private. This is the minimal surface needed for the API layer.
+
+Fixture snapshots are generated via `redactConfig` over representative `AppConfig` objects, giving UI tickets a concrete shape to anchor TypeScript types against without requiring a live daemon.

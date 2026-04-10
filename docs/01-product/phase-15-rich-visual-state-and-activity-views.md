@@ -19,24 +19,30 @@ Phase 15 should leave Pirate Claw in a state where:
 ### Daemon and API
 
 **`GET /api/transmission/torrents`**
+
 - proxies Transmission RPC `torrent-get` for all torrents
 - returns a pirate-claw-shaped response — no raw Transmission fields leaked:
+
   ```
   { torrents: [{ hash, name, status, percentDone, rateDownload, eta }] }
   ```
+
   - `status`: `'downloading' | 'seeding' | 'stopped' | 'error'`
   - `percentDone`: 0–1
   - `rateDownload`: bytes/second
   - `eta`: seconds (-1 when unknown)
+
 - joined to pirate-claw candidates via `transmissionTorrentId` (already stored in `candidate_state`)
 - deployment assumption: Transmission is always reachable on a NAS; no offline fallback handling in v1
 
 **`GET /api/transmission/session`**
+
 - proxies Transmission RPC `session-get` + `session-stats`
 - returns: `{ version, downloadSpeed, uploadSpeed, activeTorrentCount }`
 - used by the Overview dashboard header strip
 
 **`GET /api/outcomes`**
+
 - returns `feed_item_outcomes` records with `status = skipped_no_match`
 - scoped to the last 30 days to avoid unbounded result sets
 - response shape: `{ outcomes: [{ title, feedName, runId, status, recordedAt }] }`
@@ -46,6 +52,7 @@ Phase 15 should leave Pirate Claw in a state where:
 ### Web (`web/`)
 
 **Overview / Dashboard**
+
 - header strip: daemon uptime, last run/reconcile cycle timestamps (from `GET /api/health`), Transmission version + session DL/UL speed + active torrent count (from `GET /api/transmission/session`)
 - Active Downloads section: in-progress torrents from `GET /api/transmission/torrents`, joined to pirate-claw candidate for title normalization; each row shows TMDB poster thumbnail (fallback: colored initial box), title, progress bar, rateDownload, eta; max 5 visible with "View all" link
 - Event Log: last 10 pirate-claw candidate events from `GET /api/candidates`, status chips color-coded: queued=blue, completed=green, failed=red, skipped_no_match=gray, skipped_duplicate=slate
@@ -53,12 +60,14 @@ Phase 15 should leave Pirate Claw in a state where:
 - Archive Commit grid: 6 most recently completed items with TMDB poster and completedAt date; graceful placeholder when TMDB unconfigured
 
 **TV Shows view**
+
 - show grid cards: TMDB poster (placeholder when unconfigured), show title, network badge (from TMDB `networks`), episode count, completion % (pirate-claw tracked episodes ÷ TMDB `totalEpisodes`; omitted when TMDB unavailable)
 - click-to-expand inline drill-down: season accordion from pirate-claw + TMDB data; episode rows with TMDB episode name (fallback: "Episode N"), resolution, codec, status chip, progress bar + rateDownload for active episodes only
 - TMDB still image thumbnail per episode when available
 - sort by title or progress; client-side only
 
 **Movies view**
+
 - grid cards: TMDB poster, title, year, resolution badge, codec badge, genre (from TMDB), status overlay chip, progress bar + speed when actively downloading
 - filter tabs: All / Downloading / Completed / Failed / Missing; client-side
 - genre filter dropdown: populated from TMDB data, hidden when TMDB unconfigured
@@ -66,6 +75,7 @@ Phase 15 should leave Pirate Claw in a state where:
 - explicit deferral note in UI for server-side filtering
 
 **Unmatched Candidates view** (tab within Candidates or standalone route)
+
 - table: title | feed | recorded at | run id
 - sourced from `GET /api/outcomes`
 - search bar filters by title client-side
