@@ -227,5 +227,73 @@ export const actions: Actions = {
 			console.error('[config] saveTvDefaults failed:', error);
 			return fail(500, { tvDefaultsMessage: 'Could not save TV defaults.' });
 		}
+	},
+
+	saveMovies: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { moviesMessage: 'Config writes are disabled.' });
+		}
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('moviesIfMatch') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, { moviesMessage: 'Missing config revision. Reload and try again.' });
+		}
+
+		const rawYears = formData.getAll('movieYear').map(String);
+		const years: number[] = [];
+		for (const y of rawYears) {
+			const n = Number(y);
+			if (!Number.isInteger(n) || n < 1900 || n > 2100) {
+				return fail(400, { moviesMessage: 'Years must be whole numbers between 1900 and 2100.' });
+			}
+			years.push(n);
+		}
+
+		const resolutions = formData.getAll('movieResolution').map(String);
+		const codecs = formData.getAll('movieCodec').map(String);
+		const codecPolicy = String(formData.get('movieCodecPolicy') ?? '').trim();
+
+		if (codecPolicy !== 'prefer' && codecPolicy !== 'require') {
+			return fail(400, { moviesMessage: 'Codec policy must be "prefer" or "require".' });
+		}
+
+		const payload = { years, resolutions, codecs, codecPolicy };
+
+		try {
+			const response = await apiRequest('/api/config/movies', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify(payload)
+			});
+
+			if (!response.ok) {
+				let moviesMessage = `Save failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) moviesMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, {
+					moviesMessage,
+					moviesEtag: response.headers.get('etag')
+				});
+			}
+
+			return {
+				moviesSuccess: true,
+				moviesMessage: 'Movies policy saved.',
+				moviesEtag: response.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[config] saveMovies failed:', error);
+			return fail(500, { moviesMessage: 'Could not save movies policy.' });
+		}
 	}
 };

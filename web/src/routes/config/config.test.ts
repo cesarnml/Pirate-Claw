@@ -95,7 +95,8 @@ describe('/config', () => {
 				etag: '"rev-2"'
 			}
 		});
-		expect(screen.getByRole('alert')).toHaveTextContent(
+		// success variant renders with role="status" (not "alert")
+		expect(screen.getByRole('status')).toHaveTextContent(
 			/TV show list updates apply on the next daemon run cycle/
 		);
 		expect(screen.getByText(/Daemon timers and the API listen port/i)).toBeInTheDocument();

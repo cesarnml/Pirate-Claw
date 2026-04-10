@@ -9,17 +9,28 @@
 	const WRITE_DISABLED_TOOLTIP = 'Configure PIRATE_CLAW_API_WRITE_TOKEN to enable editing';
 
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
-	const currentEtag = $derived(form?.tvDefaultsEtag ?? form?.etag ?? data.etag ?? null);
+	const currentEtag = $derived(
+		form?.moviesEtag ?? form?.tvDefaultsEtag ?? form?.etag ?? data.etag ?? null
+	);
 	const canWrite = $derived(data.canWrite);
 
 	let showRows = $state<string[]>([]);
 	let tvResolutions = $state<string[]>([]);
 	let tvCodecs = $state<string[]>([]);
+	let movieYears = $state<number[]>([]);
+	let movieResolutions = $state<string[]>([]);
+	let movieCodecs = $state<string[]>([]);
+	let movieCodecPolicy = $state<'prefer' | 'require'>('prefer');
+	let movieYearInput = $state('');
 
 	$effect(() => {
 		const c = data.config;
 		if (c) {
 			showRows = c.tv.map((r) => r.name);
+			movieYears = [...c.movies.years];
+			movieResolutions = [...c.movies.resolutions];
+			movieCodecs = [...c.movies.codecs];
+			movieCodecPolicy = c.movies.codecPolicy;
 		}
 	});
 
@@ -51,6 +62,34 @@
 			tvCodecs = [...tvCodecs, codec];
 		}
 	}
+
+	function addMovieYear() {
+		const n = Number(movieYearInput.trim());
+		if (Number.isInteger(n) && n >= 1900 && n <= 2100 && !movieYears.includes(n)) {
+			movieYears = [...movieYears, n].sort((a, b) => a - b);
+			movieYearInput = '';
+		}
+	}
+
+	function removeMovieYear(year: number) {
+		movieYears = movieYears.filter((y) => y !== year);
+	}
+
+	function toggleMovieResolution(res: string) {
+		if (movieResolutions.includes(res)) {
+			movieResolutions = movieResolutions.filter((r) => r !== res);
+		} else {
+			movieResolutions = [...movieResolutions, res];
+		}
+	}
+
+	function toggleMovieCodec(codec: string) {
+		if (movieCodecs.includes(codec)) {
+			movieCodecs = movieCodecs.filter((c) => c !== codec);
+		} else {
+			movieCodecs = [...movieCodecs, codec];
+		}
+	}
 </script>
 
 <h1 class="text-3xl font-bold tracking-tight">Config</h1>
@@ -72,6 +111,11 @@
 			<Alert variant={form?.tvDefaultsSuccess ? 'default' : 'destructive'}>
 				<AlertTitle>{form?.tvDefaultsSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
 				<AlertDescription>{form.tvDefaultsMessage}</AlertDescription>
+			</Alert>
+		{:else if form?.moviesMessage}
+			<Alert variant={form?.moviesSuccess ? 'default' : 'destructive'}>
+				<AlertTitle>{form?.moviesSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
+				<AlertDescription>{form.moviesMessage}</AlertDescription>
 			</Alert>
 		{:else if form?.message}
 			<Alert variant={form?.success ? 'default' : 'destructive'}>
@@ -154,6 +198,149 @@
 			</Card>
 		</form>
 
+		<form method="POST" action="?/saveMovies" use:enhance class="space-y-6">
+			<input type="hidden" name="moviesIfMatch" value={currentEtag ?? ''} />
+			{#each movieYears as year}
+				<input type="hidden" name="movieYear" value={year} />
+			{/each}
+			{#each movieResolutions as res}
+				<input type="hidden" name="movieResolution" value={res} />
+			{/each}
+			{#each movieCodecs as codec}
+				<input type="hidden" name="movieCodec" value={codec} />
+			{/each}
+			<input type="hidden" name="movieCodecPolicy" value={movieCodecPolicy} />
+			<Card>
+				<CardHeader class="pb-3">
+					<h2 class="text-lg font-semibold tracking-tight">Movies</h2>
+				</CardHeader>
+				<CardContent class="space-y-4 pt-0">
+					<div class="space-y-2">
+						<p class="text-muted-foreground text-sm font-medium">Years</p>
+						<div class="flex flex-wrap gap-2">
+							{#each movieYears as year}
+								<span
+									class="border-border bg-card/50 inline-flex h-8 items-center gap-1 rounded-full border px-3 text-sm"
+								>
+									{year}
+									<button
+										type="button"
+										class="text-muted-foreground hover:text-foreground ml-1"
+										disabled={!canWrite}
+										aria-label="Remove year {year}"
+										onclick={() => removeMovieYear(year)}>×</button
+									>
+								</span>
+							{/each}
+						</div>
+						<div class="flex gap-2" title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}>
+							<input
+								type="number"
+								min="1900"
+								max="2100"
+								step="1"
+								placeholder="e.g. 2025"
+								bind:value={movieYearInput}
+								disabled={!canWrite}
+								class="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring h-9 w-32 rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										addMovieYear();
+									}
+								}}
+							/>
+							<button
+								type="button"
+								class="border-border bg-card hover:bg-muted/50 inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium disabled:opacity-50"
+								disabled={!canWrite}
+								onclick={addMovieYear}
+							>
+								Add year
+							</button>
+						</div>
+					</div>
+					<div class="space-y-2">
+						<p class="text-muted-foreground text-sm font-medium">Resolutions</p>
+						<div
+							class="flex flex-wrap gap-2"
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							{#each ALL_RESOLUTIONS as res}
+								<button
+									type="button"
+									class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {movieResolutions.includes(
+										res
+									)
+										? 'bg-primary text-primary-foreground border-primary'
+										: 'border-border text-muted-foreground hover:bg-muted'}"
+									disabled={!canWrite}
+									onclick={() => toggleMovieResolution(res)}
+								>
+									{res}
+								</button>
+							{/each}
+						</div>
+					</div>
+					<div class="space-y-2">
+						<p class="text-muted-foreground text-sm font-medium">Codecs</p>
+						<div
+							class="flex flex-wrap gap-2"
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							{#each ALL_CODECS as codec}
+								<button
+									type="button"
+									class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {movieCodecs.includes(
+										codec
+									)
+										? 'bg-primary text-primary-foreground border-primary'
+										: 'border-border text-muted-foreground hover:bg-muted'}"
+									disabled={!canWrite}
+									onclick={() => toggleMovieCodec(codec)}
+								>
+									{codec}
+								</button>
+							{/each}
+						</div>
+					</div>
+					<div class="space-y-2">
+						<p class="text-muted-foreground text-sm font-medium">Codec policy</p>
+						<div
+							class="flex gap-0 overflow-hidden rounded-md border"
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							{#each ['prefer', 'require'] as policy}
+								<button
+									type="button"
+									class="flex-1 px-4 py-2 text-sm font-medium transition-colors {movieCodecPolicy ===
+									policy
+										? 'bg-primary text-primary-foreground'
+										: 'text-muted-foreground hover:bg-muted'}"
+									disabled={!canWrite}
+									onclick={() => {
+										movieCodecPolicy = policy as 'prefer' | 'require';
+									}}
+								>
+									{policy.charAt(0).toUpperCase() + policy.slice(1)}
+								</button>
+							{/each}
+						</div>
+					</div>
+					<div>
+						<button
+							type="submit"
+							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+							disabled={!canWrite || !currentEtag}
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							Save movies policy
+						</button>
+					</div>
+				</CardContent>
+			</Card>
+		</form>
+
 		<form method="POST" action="?/saveSettings" use:enhance class="space-y-6">
 			<input type="hidden" name="ifMatch" value={currentEtag ?? ''} />
 
@@ -223,32 +410,6 @@
 							Add show
 						</button>
 					</div>
-				</CardContent>
-			</Card>
-
-			<Card>
-				<CardHeader class="pb-3">
-					<h2 class="text-lg font-semibold tracking-tight">Movies</h2>
-				</CardHeader>
-				<CardContent class="pt-0">
-					<dl class="grid gap-2 text-sm">
-						<div class="flex flex-wrap gap-2">
-							<dt class="text-muted-foreground">Years:</dt>
-							<dd class="text-foreground">{config.movies.years.join(', ')}</dd>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<dt class="text-muted-foreground">Resolutions:</dt>
-							<dd class="text-foreground">{config.movies.resolutions.join(', ')}</dd>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<dt class="text-muted-foreground">Codecs:</dt>
-							<dd class="text-foreground">{config.movies.codecs.join(', ')}</dd>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<dt class="text-muted-foreground">Codec policy:</dt>
-							<dd class="text-foreground">{config.movies.codecPolicy}</dd>
-						</div>
-					</dl>
 				</CardContent>
 			</Card>
 

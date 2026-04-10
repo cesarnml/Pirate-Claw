@@ -36,4 +36,12 @@ The Movies section is present and functional in the dashboard config page. All f
 
 ## Rationale
 
-_To be filled in after implementation._
+`saveMovies` follows the same shape as `saveTvDefaults`: server-side write token check, ETag extraction, payload forwarding to the daemon API, and distinct return keys (`moviesMessage`, `moviesEtag`, `moviesSuccess`) so the alert block can distinguish which action's result is being shown. `moviesEtag` is folded into `currentEtag` with the highest priority so that the ETag stays current across any sequence of partial saves.
+
+The display-only Movies card that was previously inside the `saveSettings` form was removed and replaced by the new editable `saveMovies` form. The two forms are siblings in the outer `space-y-6` container, which keeps HTML valid (no nested forms) while preserving the visual section grouping.
+
+Years management uses Svelte `$state` array + hidden inputs: toggle buttons only flip chip membership, and an add-year text input + "Add year" button append validated integers. The server independently validates each year (1900–2100) before forwarding the payload. Invalid year input is rejected at the server with a 400.
+
+The codecPolicy segmented control tracks state as `'prefer' | 'require'` with a single hidden input. It initializes from `config.movies.codecPolicy` via the same `$effect` that initializes `movieYears`, `movieResolutions`, and `movieCodecs` from the loaded config.
+
+Two pre-existing web test regressions were fixed as part of this ticket: the `page.server.test.ts` was calling a stale action name (`saveRuntime` vs `saveSettings`), and the `config.test.ts` success alert test used `getByRole('alert')` when the shadcn-svelte Alert's 'default' variant actually renders with `role="status"`, not `role="alert"`.

@@ -21,7 +21,7 @@ describe('config page server actions', () => {
 		body.set('runIntervalMinutes', '15');
 		body.set('feeds', '[]');
 
-		const result = await actions.saveRuntime({
+		const result = await actions.saveSettings({
 			request: new Request('http://localhost/config', {
 				method: 'POST',
 				headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -40,9 +40,10 @@ describe('config page server actions', () => {
 
 		const body = new URLSearchParams();
 		body.set('ifMatch', '"rev-1"');
+		body.set('showName', 'Test Show');
 		body.set('runIntervalMinutes', '0');
 
-		const result = await actions.saveRuntime({
+		const result = await actions.saveSettings({
 			request: new Request('http://localhost/config', {
 				method: 'POST',
 				headers: { 'content-type': 'application/x-www-form-urlencoded' },
