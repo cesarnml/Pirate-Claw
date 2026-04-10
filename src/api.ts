@@ -1,7 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { renameSync, writeFileSync } from 'node:fs';
-import type { AppConfig, FeedConfig, RuntimeConfig } from './config';
-import { ConfigError, validateConfig } from './config';
+import type {
+  AppConfig,
+  CompactTvDefaults,
+  FeedConfig,
+  RuntimeConfig,
+} from './config';
+import {
+  ConfigError,
+  validateCompactTvDefaults,
+  validateConfig,
+  validateMoviePolicy,
+} from './config';
 import type { MovieBreakdown } from './movie-api-types';
 export type { MovieBreakdown, TmdbMoviePublic } from './movie-api-types';
 import type { ShowBreakdown, ShowEpisode, ShowSeason } from './tv-api-types';
@@ -370,6 +380,122 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/config/tv/defaults' && request.method === 'PUT') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const etagError = checkEtag(request, activeConfig);
+      if (etagError) return etagError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
+        const defaults: CompactTvDefaults = validateCompactTvDefaults(
+          body,
+          'request body',
+        );
+
+        const baseOnDisk = await readConfigFileRecord(configPath);
+        const tvDisk = baseOnDisk.tv;
+        if (!isRecord(tvDisk)) {
+          throw new ConfigError(
+            'Config file "config tv" must be an object with "defaults" and "shows".',
+          );
+        }
+
+        const merged = {
+          ...baseOnDisk,
+          tv: {
+            ...tvDisk,
+            defaults: {
+              resolutions: defaults.resolutions,
+              codecs: defaults.codecs,
+            },
+          },
+        };
+
+        const validated = validateConfig(merged, 'config');
+        writeConfigAtomically(configPath, merged);
+        activeConfig = validated;
+        if (configHolder) {
+          configHolder.current = validated;
+        }
+
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch (error) {
+        if (error instanceof ConfigError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
+        return json500();
+      }
+    }
+
+    if (path === '/api/config/movies' && request.method === 'PUT') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const etagError = checkEtag(request, activeConfig);
+      if (etagError) return etagError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
+        if (!isRecord(body)) {
+          throw new ConfigError(
+            'Config file "request body" must be an object.',
+          );
+        }
+        if (!('codecPolicy' in body)) {
+          throw new ConfigError(
+            'Config file "request body movies" codecPolicy is required.',
+          );
+        }
+
+        const movies = validateMoviePolicy(body, 'request body');
+
+        const baseOnDisk = await readConfigFileRecord(configPath);
+        const merged = {
+          ...baseOnDisk,
+          movies: {
+            years: movies.years,
+            resolutions: movies.resolutions,
+            codecs: movies.codecs,
+            codecPolicy: movies.codecPolicy,
+          },
+        };
+
+        const validated = validateConfig(merged, 'config');
+        writeConfigAtomically(configPath, merged);
+        activeConfig = validated;
+        if (configHolder) {
+          configHolder.current = validated;
+        }
+
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch (error) {
+        if (error instanceof ConfigError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
+        return json500();
+      }
+    }
+
     return Response.json({ error: 'not found' }, { status: 404 });
   };
 }
@@ -497,6 +623,50 @@ export function redactConfig(config: AppConfig): AppConfig {
   }
 
   return next;
+}
+
+/**
+ * Checks bearer token auth for write endpoints. Returns an error Response if
+ * the request is unauthorized or writes are disabled; null on success.
+ */
+function checkWriteAuth(request: Request, config: AppConfig): Response | null {
+  const writeToken = config.runtime.apiWriteToken;
+  if (!writeToken) {
+    return Response.json(
+      { error: 'config writes are disabled' },
+      { status: 403 },
+    );
+  }
+  const bearer = parseBearerToken(request.headers.get('authorization'));
+  if (!bearer) {
+    return Response.json({ error: 'missing bearer token' }, { status: 401 });
+  }
+  if (bearer !== writeToken) {
+    return Response.json({ error: 'forbidden' }, { status: 403 });
+  }
+  return null;
+}
+
+/**
+ * Checks If-Match header for optimistic concurrency. Returns an error Response
+ * if the header is missing or stale; null on success.
+ */
+function checkEtag(request: Request, config: AppConfig): Response | null {
+  const currentEtag = buildConfigEtag(redactConfig(config));
+  const ifMatch = request.headers.get('if-match');
+  if (!ifMatch) {
+    return Response.json(
+      { error: 'if-match header is required' },
+      { status: 428, headers: { ETag: currentEtag } },
+    );
+  }
+  if (!ifMatchMatches(ifMatch, currentEtag)) {
+    return Response.json(
+      { error: 'config revision conflict' },
+      { status: 409, headers: { ETag: currentEtag } },
+    );
+  }
+  return null;
 }
 
 function buildConfigEtag(config: AppConfig): string {

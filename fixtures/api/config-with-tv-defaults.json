@@ -1,0 +1,46 @@
+{
+  "feeds": [
+    {
+      "name": "TV Feed",
+      "url": "https://example.com/tv.rss",
+      "mediaType": "tv"
+    },
+    {
+      "name": "Movie Feed",
+      "url": "https://example.com/movies.rss",
+      "mediaType": "movie"
+    }
+  ],
+  "tv": [
+    {
+      "name": "Show Alpha",
+      "resolutions": ["1080p"],
+      "codecs": ["x265"]
+    },
+    {
+      "name": "Show Beta",
+      "resolutions": ["1080p"],
+      "codecs": ["x265"],
+      "matchPattern": "beta"
+    }
+  ],
+  "movies": {
+    "years": [2024],
+    "resolutions": ["1080p"],
+    "codecs": ["x265"],
+    "codecPolicy": "prefer"
+  },
+  "transmission": {
+    "url": "http://localhost:9091/transmission/rpc",
+    "username": "[redacted]",
+    "password": "[redacted]"
+  },
+  "runtime": {
+    "runIntervalMinutes": 30,
+    "reconcileIntervalMinutes": 1,
+    "artifactDir": ".pirate-claw/runtime",
+    "artifactRetentionDays": 7,
+    "apiPort": 4321,
+    "apiWriteToken": "[redacted]"
+  }
+}

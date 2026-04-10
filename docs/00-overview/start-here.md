@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 13** on `main` (product phases 01–13; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12 and 13 live under [`docs/02-delivery/`](../02-delivery/). Product definition for **Phase 14** (feeds/rules UI placeholder) lives under [`docs/01-product/`](../01-product/). Phase **14** is **not yet implemented** in code.
+Pirate Claw is implemented through **Phase 13** on `main` (product phases 01–13; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12 and 13 live under [`docs/02-delivery/`](../02-delivery/). Product definitions for **Phases 14–18** live under [`docs/01-product/`](../01-product/). Phases **14–18** are **not yet implemented** in code.
 
 Current delivered surface:
 
@@ -45,16 +45,20 @@ Current product boundary:
 - read-only daemon HTTP API (`/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, `/api/movies`, `/api/feeds`, `/api/config`) when `runtime.apiPort` is configured
 - TMDB metadata is display-only and does not gate RSS intake
 
-Still deferred:
+Still deferred (Phases 14–18):
 
-- full feeds and rules authoring through the web UI (see Phase 14 placeholder)
+- feed and TV/movie target management via web UI (Phase 14)
+- live Transmission download progress and unmatched candidate views (Phase 15)
+- unified config editing, hot reload, and daemon controls from the browser (Phase 16)
+- onboarding wizard and per-section empty states (Phase 17)
+- v1.0.0 release and config/DB schema versioning (Phase 18)
 - remote feed capture
 - hosted persistence
 - download renaming or organization rules
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and CLI commands: 2026-04-09.
+Last verified against `README.md` and CLI commands: 2026-04-10.
 
 Current planning focus:
 

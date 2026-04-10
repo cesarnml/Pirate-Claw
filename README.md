@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–11** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment). The documented engineering epics through Epic 04 are also on `main`. For future stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks. Further product-surface or delivery-tooling expansion beyond the current roadmap still requires a new planning pass and new approved phase/epic docs when the work is not a small bounded change.
+Phases **01–13** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment and Phase 13 config write API). The documented engineering epics through Epic 04 are also on `main`. Phases 14–18 are defined and planned; implementation begins after ticket decomposition and developer sign-off per phase. For future stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks.
 
 It currently supports:
 
@@ -218,16 +218,24 @@ When `runtime.apiPort` is omitted, no HTTP listener starts.
 
 ### Endpoints
 
-| Endpoint              | Description                                                |
-| --------------------- | ---------------------------------------------------------- |
-| `GET /api/health`     | Uptime, start time, and last run/reconcile cycle snapshots |
-| `GET /api/status`     | Recent run summaries from the local database               |
-| `GET /api/candidates` | All tracked candidate state records                        |
-| `GET /api/shows`      | TV candidates grouped by show → season → episode           |
-| `GET /api/movies`     | Movie candidates sorted by title                           |
-| `GET /api/feeds`      | Feed config with poll state and `isDue` status             |
-| `GET /api/config`     | Effective config with Transmission credentials redacted    |
-| `PUT /api/config`     | Bounded runtime config write (token + `If-Match` required) |
+| Endpoint                         | Description                                                        |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `GET /api/health`                | Uptime, start time, and last run/reconcile cycle snapshots         |
+| `GET /api/status`                | Recent run summaries from the local database                       |
+| `GET /api/candidates`            | All tracked candidate state records                                |
+| `GET /api/shows`                 | TV candidates grouped by show → season → episode                   |
+| `GET /api/movies`                | Movie candidates sorted by title                                   |
+| `GET /api/feeds`                 | Feed config with poll state and `isDue` status                     |
+| `GET /api/config`                | Effective config with credentials redacted; returns `ETag`         |
+| `PUT /api/config`                | Bounded runtime + tv.shows write (token + `If-Match` required)     |
+| `PUT /api/config/feeds`          | Replace feeds array (Phase 14; token + `If-Match` required)        |
+| `PUT /api/config/movies`         | Replace movie policy (Phase 14; token + `If-Match` required)       |
+| `PUT /api/config/tv/defaults`    | Replace TV global defaults (Phase 14; token + `If-Match` required) |
+| `GET /api/transmission/session`  | Transmission version + session DL/UL stats (Phase 15)              |
+| `GET /api/transmission/torrents` | Active torrent list with progress + speed + ETA (Phase 15)         |
+| `GET /api/outcomes`              | Feed item outcomes; `?status=skipped_no_match` (Phase 15)          |
+| `POST /api/transmission/ping`    | Test Transmission connectivity (Phase 16)                          |
+| `POST /api/daemon/restart`       | SIGTERM self after config save; requires supervisor (Phase 16)     |
 
 ### Example
 
@@ -294,15 +302,18 @@ The Node adapter defaults to **port `3000`** and host **`0.0.0.0`** if you omit 
 
 ## Current Scope
 
-Pirate Claw is intentionally still a local operator tool.
+Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 18 targets eliminating the need to SSH into the NAS for day-to-day operation — config editing, feed management, and activity monitoring all move to the browser dashboard.
 
-Not in scope yet:
+**Implemented (Phases 01–13):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, bounded config writes from the UI.
 
-- remote feed capture
-- hosted persistence
-- automatic post-completion file handling
-- download renaming or organization rules
-- Synology archiving
+**Planned (Phases 14–18):** Full config editing via dashboard (feeds, TV targets, movie policy), live Transmission download progress, TV/movie library views, onboarding wizard, v1.0.0 release.
+
+Not in scope through v1:
+
+- remote feed capture or hosted persistence
+- automatic post-completion file handling or download renaming
+- Synology archiving or media server integration
+- multi-user access or authentication beyond the single write token
 - broader ingestion redesign
 
 ## Development

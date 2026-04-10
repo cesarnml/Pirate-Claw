@@ -50,7 +50,8 @@
     "tmdb",
     "TMDB",
     "unvalidated",
-    "HEALTHCHECK"
+    "HEALTHCHECK",
+    "unconfigured"
   ],
   "ignoreWords": [],
   "import": []
