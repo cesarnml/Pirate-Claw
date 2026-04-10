@@ -40,4 +40,12 @@ The Feeds section is present in the dashboard config page. Adding a feed trigger
 
 ## Rationale
 
-_To be filled in after implementation._
+`saveFeeds` receives the full current feeds array as hidden inputs (`feedName[]`, `feedUrl[]`, `feedMediaType[]`) plus optional `newFeedName`, `newFeedUrl`, `newFeedMediaType` for an add-in-progress entry. The server zips these into a `{ name, url, mediaType }[]` array and sends it as the raw JSON body to `PUT /api/config/feeds` (which expects an array, not a wrapped object). If `newFeedUrl` is empty the new-feed fields are silently ignored — this allows save-removes-only without requiring a new feed entry.
+
+`use:enhance` with a custom callback tracks `feedsSubmitting` state for the in-flight spinner. The button changes to "Saving…" while the action is running; on completion (success or error) the state resets. On success, `newFeedName`, `newFeedUrl`, and `newFeedMediaType` are cleared before `update()` re-runs the load. `update()` invalidates all page data, so `data.config.feeds` refreshes and the `$effect` reinitializes `feedsList` from the server-confirmed state.
+
+`feedsEtag` from the action result is folded into `currentEtag` at the highest priority, keeping the ETag current for subsequent saves on other sections.
+
+400 responses from the feeds endpoint always indicate either invalid feed format or a URL fetch failure. Both are surfaced as `feedsUrlError` (shown under the URL input) rather than a generic alert. Other non-2xx status codes use `feedsMessage` and appear in the general alert area. The 404/409/403 handling follows the same pattern as other sections.
+
+Remove buttons update `feedsList` state locally (no immediate save). The updated list is included in the next submit, which persists the removal atomically.

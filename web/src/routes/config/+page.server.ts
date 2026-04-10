@@ -295,5 +295,76 @@ export const actions: Actions = {
 			console.error('[config] saveMovies failed:', error);
 			return fail(500, { moviesMessage: 'Could not save movies policy.' });
 		}
+	},
+
+	saveFeeds: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { feedsMessage: 'Config writes are disabled.' });
+		}
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('feedsIfMatch') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, { feedsMessage: 'Missing config revision. Reload and try again.' });
+		}
+
+		const feedNames = formData.getAll('feedName').map(String);
+		const feedUrls = formData.getAll('feedUrl').map(String);
+		const feedMediaTypes = formData.getAll('feedMediaType').map(String);
+
+		const feeds: { name: string; url: string; mediaType: string }[] = feedNames.map((name, i) => ({
+			name,
+			url: feedUrls[i] ?? '',
+			mediaType: feedMediaTypes[i] ?? 'tv'
+		}));
+
+		const newName = String(formData.get('newFeedName') ?? '').trim();
+		const newUrl = String(formData.get('newFeedUrl') ?? '').trim();
+		const newMediaType = String(formData.get('newFeedMediaType') ?? 'tv').trim();
+		if (newUrl) {
+			feeds.push({ name: newName, url: newUrl, mediaType: newMediaType });
+		}
+
+		try {
+			const response = await apiRequest('/api/config/feeds', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify(feeds)
+			});
+
+			if (!response.ok) {
+				let errorText = `Save failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) errorText = body.error;
+				} catch {
+					// keep fallback
+				}
+				if (response.status === 400) {
+					return fail(400, {
+						feedsUrlError: errorText,
+						feedsEtag: response.headers.get('etag')
+					});
+				}
+				return fail(response.status, {
+					feedsMessage: errorText,
+					feedsEtag: response.headers.get('etag')
+				});
+			}
+
+			return {
+				feedsSuccess: true,
+				feedsMessage: 'Feeds saved.',
+				feedsEtag: response.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[config] saveFeeds failed:', error);
+			return fail(500, { feedsMessage: 'Could not save feeds.' });
+		}
 	}
 };

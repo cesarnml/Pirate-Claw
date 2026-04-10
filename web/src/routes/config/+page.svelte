@@ -3,6 +3,7 @@
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { ActionData, PageData } from './$types';
+	import type { FeedConfig } from '$lib/types';
 
 	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
 	const ALL_CODECS = ['x264', 'x265'];
@@ -10,7 +11,7 @@
 
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 	const currentEtag = $derived(
-		form?.moviesEtag ?? form?.tvDefaultsEtag ?? form?.etag ?? data.etag ?? null
+		form?.feedsEtag ?? form?.moviesEtag ?? form?.tvDefaultsEtag ?? form?.etag ?? data.etag ?? null
 	);
 	const canWrite = $derived(data.canWrite);
 
@@ -22,6 +23,11 @@
 	let movieCodecs = $state<string[]>([]);
 	let movieCodecPolicy = $state<'prefer' | 'require'>('prefer');
 	let movieYearInput = $state('');
+	let feedsList = $state<FeedConfig[]>([]);
+	let newFeedName = $state('');
+	let newFeedUrl = $state('');
+	let newFeedMediaType = $state<'tv' | 'movie'>('tv');
+	let feedsSubmitting = $state(false);
 
 	$effect(() => {
 		const c = data.config;
@@ -31,6 +37,7 @@
 			movieResolutions = [...c.movies.resolutions];
 			movieCodecs = [...c.movies.codecs];
 			movieCodecPolicy = c.movies.codecPolicy;
+			feedsList = [...c.feeds];
 		}
 	});
 
@@ -90,6 +97,10 @@
 			movieCodecs = [...movieCodecs, codec];
 		}
 	}
+
+	function removeFeed(index: number) {
+		feedsList = feedsList.filter((_, i) => i !== index);
+	}
 </script>
 
 <h1 class="text-3xl font-bold tracking-tight">Config</h1>
@@ -107,7 +118,12 @@
 	{@const config = data.config}
 
 	<div class="mt-8 space-y-6 pr-1">
-		{#if form?.tvDefaultsMessage}
+		{#if form?.feedsMessage}
+			<Alert variant={form?.feedsSuccess ? 'default' : 'destructive'}>
+				<AlertTitle>{form?.feedsSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
+				<AlertDescription>{form.feedsMessage}</AlertDescription>
+			</Alert>
+		{:else if form?.tvDefaultsMessage}
 			<Alert variant={form?.tvDefaultsSuccess ? 'default' : 'destructive'}>
 				<AlertTitle>{form?.tvDefaultsSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
 				<AlertDescription>{form.tvDefaultsMessage}</AlertDescription>
@@ -123,6 +139,126 @@
 				<AlertDescription>{form.message}</AlertDescription>
 			</Alert>
 		{/if}
+
+		<form
+			method="POST"
+			action="?/saveFeeds"
+			use:enhance={() => {
+				feedsSubmitting = true;
+				return async ({ result, update }) => {
+					feedsSubmitting = false;
+					if (result.type === 'success') {
+						newFeedName = '';
+						newFeedUrl = '';
+						newFeedMediaType = 'tv';
+					}
+					await update();
+				};
+			}}
+			class="space-y-6"
+		>
+			<input type="hidden" name="feedsIfMatch" value={currentEtag ?? ''} />
+			{#each feedsList as feed}
+				<input type="hidden" name="feedName" value={feed.name} />
+				<input type="hidden" name="feedUrl" value={feed.url} />
+				<input type="hidden" name="feedMediaType" value={feed.mediaType} />
+			{/each}
+			<Card>
+				<CardHeader class="pb-3">
+					<h2 class="text-lg font-semibold tracking-tight">Feeds</h2>
+				</CardHeader>
+				<CardContent class="space-y-4 pt-0">
+					{#if feedsList.length === 0}
+						<p class="text-muted-foreground text-sm">No feeds configured.</p>
+					{:else}
+						<ul class="list-none space-y-2">
+							{#each feedsList as feed, i}
+								<li
+									class="border-border bg-card/50 flex items-start justify-between gap-3 rounded-md border p-3 text-sm"
+								>
+									<div class="min-w-0 flex-1">
+										<div class="text-foreground font-medium">{feed.name}</div>
+										<div class="text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
+											<span
+												class="border-border rounded-full border px-2 py-0.5 text-xs font-medium"
+												>{feed.mediaType}</span
+											>
+											<span class="break-all">{feed.url}</span>
+											{#if feed.pollIntervalMinutes !== undefined}
+												<span>Poll: {feed.pollIntervalMinutes}m</span>
+											{/if}
+										</div>
+									</div>
+									<button
+										type="button"
+										class="text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-40"
+										disabled={!canWrite}
+										aria-label="Remove feed {feed.name}"
+										onclick={() => removeFeed(i)}
+									>
+										×
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<div
+						class="border-border space-y-3 rounded-md border p-3"
+						title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+					>
+						<p class="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+							Add feed
+						</p>
+						<div class="grid gap-2">
+							<input
+								name="newFeedName"
+								type="text"
+								placeholder="Feed name"
+								bind:value={newFeedName}
+								disabled={!canWrite}
+								class="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+							/>
+							<div class="space-y-1">
+								<input
+									name="newFeedUrl"
+									type="url"
+									placeholder="https://example.com/feed.rss"
+									bind:value={newFeedUrl}
+									disabled={!canWrite}
+									class="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+								/>
+								{#if form?.feedsUrlError}
+									<p class="text-destructive text-xs">{form.feedsUrlError}</p>
+								{/if}
+							</div>
+							<select
+								name="newFeedMediaType"
+								bind:value={newFeedMediaType}
+								disabled={!canWrite}
+								class="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+							>
+								<option value="tv">TV</option>
+								<option value="movie">Movie</option>
+							</select>
+						</div>
+					</div>
+					<div>
+						<button
+							type="submit"
+							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+							disabled={!canWrite || !currentEtag || feedsSubmitting}
+							title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+						>
+							{#if feedsSubmitting}
+								Saving…
+							{:else}
+								Save feeds
+							{/if}
+						</button>
+					</div>
+				</CardContent>
+			</Card>
+		</form>
 
 		<form method="POST" action="?/saveTvDefaults" use:enhance class="space-y-6">
 			<input type="hidden" name="tvDefaultsIfMatch" value={currentEtag ?? ''} />
@@ -343,32 +479,6 @@
 
 		<form method="POST" action="?/saveSettings" use:enhance class="space-y-6">
 			<input type="hidden" name="ifMatch" value={currentEtag ?? ''} />
-
-			<Card>
-				<CardHeader class="pb-3">
-					<h2 class="text-lg font-semibold tracking-tight">Feeds</h2>
-				</CardHeader>
-				<CardContent class="pt-0">
-					{#if config.feeds.length === 0}
-						<p class="text-muted-foreground text-sm">No feeds configured.</p>
-					{:else}
-						<ul class="list-none space-y-3">
-							{#each config.feeds as feed}
-								<li class="border-border bg-card/50 rounded-md border p-3 text-sm">
-									<div class="text-foreground font-medium">{feed.name}</div>
-									<div class="text-muted-foreground mt-1">
-										<span class="mr-3">Type: {feed.mediaType}</span>
-										{#if feed.pollIntervalMinutes !== undefined}
-											<span class="mr-3">Poll: {feed.pollIntervalMinutes}m</span>
-										{/if}
-										<span class="break-all">URL: {feed.url}</span>
-									</div>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</CardContent>
-			</Card>
 
 			<Card>
 				<CardHeader class="pb-3">
