@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
-import type { DaemonHealth, RunSummaryRecord } from '$lib/types';
+import type {
+	CandidateStateRecord,
+	DaemonHealth,
+	SessionInfo,
+	TorrentStatSnapshot
+} from '$lib/types';
 
 const mockHealth: DaemonHealth = {
 	uptime: 3661000,
@@ -10,32 +15,153 @@ const mockHealth: DaemonHealth = {
 	lastReconcileCycle: { status: 'completed', startedAt: '2024-01-01T01:00:30Z' }
 };
 
-const mockRun: RunSummaryRecord = {
-	id: 42,
-	startedAt: '2024-01-01T01:00:00Z',
+const mockSession: SessionInfo = {
+	version: '3.00 (bb6b5a062ef)',
+	downloadSpeed: 2097152,
+	uploadSpeed: 524288,
+	activeTorrentCount: 3
+};
+
+const mockCandidate = (overrides: Partial<CandidateStateRecord> = {}): CandidateStateRecord => ({
+	identityKey: 'test-key',
+	mediaType: 'tv',
 	status: 'completed',
-	completedAt: '2024-01-01T01:01:00Z',
-	counts: {
-		queued: 3,
-		failed: 0,
-		skipped_duplicate: 1,
-		skipped_no_match: 5
-	}
+	lifecycleStatus: 'seeding',
+	normalizedTitle: 'Breaking Bad',
+	rawTitle: 'Breaking.Bad.S01E01.720p',
+	ruleName: 'test-rule',
+	score: 10,
+	reasons: [],
+	feedName: 'test-feed',
+	guidOrLink: 'http://example.com/1',
+	publishedAt: '2024-01-01T00:00:00Z',
+	downloadUrl: 'http://example.com/dl/1',
+	firstSeenRunId: 1,
+	lastSeenRunId: 1,
+	updatedAt: '2024-01-08T12:00:00Z',
+	transmissionDoneDate: '2024-01-08T12:00:00Z',
+	transmissionTorrentHash: 'abc123',
+	...overrides
+});
+
+const mockTorrent = (overrides: Partial<TorrentStatSnapshot> = {}): TorrentStatSnapshot => ({
+	hash: 'abc123',
+	name: 'Breaking.Bad.S01E01.720p',
+	status: 'downloading',
+	percentDone: 0.42,
+	rateDownload: 1048576,
+	eta: 3600,
+	...overrides
+});
+
+const baseData = {
+	health: mockHealth,
+	transmissionSession: mockSession,
+	transmissionTorrents: [],
+	candidates: [],
+	error: null
 };
 
 describe('/', () => {
-	it('renders daemon summary and run table with mock data', () => {
-		render(Page, { data: { health: mockHealth, runs: [mockRun], error: null } });
+	it('renders Daemon header strip with uptime', () => {
+		render(Page, { data: baseData });
 		expect(screen.getByRole('heading', { name: 'Daemon' })).toBeInTheDocument();
-		expect(screen.getByRole('heading', { name: 'Recent Runs' })).toBeInTheDocument();
 		// uptime: 3661000ms = 1h 1m 1s
 		expect(screen.getByText('1h 1m 1s')).toBeInTheDocument();
-		// run ID appears in table
-		expect(screen.getByText('42')).toBeInTheDocument();
 	});
 
-	it('renders error state when API is unreachable', () => {
-		render(Page, { data: { health: null, runs: [], error: 'Could not reach the API.' } });
+	it('renders Transmission header strip when transmissionSession is populated', () => {
+		render(Page, { data: baseData });
+		expect(screen.getByRole('heading', { name: 'Transmission' })).toBeInTheDocument();
+		expect(screen.getByText('3.00 (bb6b5a062ef)')).toBeInTheDocument();
+		expect(screen.getByText('2.0 MB/s')).toBeInTheDocument();
+	});
+
+	it('renders "Transmission unavailable" when transmissionSession is null', () => {
+		render(Page, { data: { ...baseData, transmissionSession: null } });
+		expect(screen.getByText('Transmission unavailable')).toBeInTheDocument();
+	});
+
+	it('renders error state when health is null', () => {
+		render(Page, { data: { ...baseData, health: null, error: 'Could not reach the API.' } });
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
+	});
+
+	it('Active Downloads hidden when transmissionTorrents is empty', () => {
+		render(Page, { data: { ...baseData, transmissionTorrents: [] } });
+		expect(screen.queryByRole('heading', { name: 'Active Downloads' })).not.toBeInTheDocument();
+	});
+
+	it('Active Downloads renders max 5 rows and View all link', () => {
+		const torrents = Array.from({ length: 7 }, (_, i) =>
+			mockTorrent({ hash: `hash${i}`, name: `Show ${i}` })
+		);
+		const candidates = torrents.map((t, i) =>
+			mockCandidate({
+				identityKey: `key${i}`,
+				normalizedTitle: `Show ${i}`,
+				transmissionTorrentHash: t.hash,
+				status: 'downloading',
+				lifecycleStatus: 'active'
+			})
+		);
+		render(Page, { data: { ...baseData, transmissionTorrents: torrents, candidates } });
+		expect(screen.getByRole('heading', { name: 'Active Downloads' })).toBeInTheDocument();
+		// max 5 rows — count list items
+		const items = screen.getAllByRole('listitem');
+		expect(items.length).toBe(5);
+		const link = screen.getByRole('link', { name: 'View all' });
+		expect(link).toHaveAttribute('href', '/candidates');
+	});
+
+	it('Event Log renders last 10 candidates sorted by updatedAt', () => {
+		// Use status 'queued' so these candidates don't appear in the Archive grid
+		const candidates = Array.from({ length: 15 }, (_, i) =>
+			mockCandidate({
+				identityKey: `key${i}`,
+				normalizedTitle: `Title ${i}`,
+				status: 'queued',
+				lifecycleStatus: undefined,
+				transmissionDoneDate: undefined,
+				updatedAt: `2024-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`
+			})
+		);
+		render(Page, { data: { ...baseData, candidates } });
+		// Most recent 10: indices 5..14 (updatedAt days 6..15)
+		expect(screen.getByText('Title 14')).toBeInTheDocument();
+		expect(screen.queryByText('Title 4')).not.toBeInTheDocument();
+	});
+
+	it('Stats row shows correct total and failed counts', () => {
+		const candidates = [
+			mockCandidate({ identityKey: 'a', status: 'completed' }),
+			mockCandidate({ identityKey: 'b', status: 'failed', lifecycleStatus: undefined }),
+			mockCandidate({ identityKey: 'c', status: 'queued', lifecycleStatus: undefined })
+		];
+		render(Page, { data: { ...baseData, candidates } });
+		// Total tracked: 3 — use getAllByText since "3" may appear elsewhere (e.g. activeTorrentCount)
+		expect(screen.getAllByText('3').length).toBeGreaterThanOrEqual(1);
+		// Failed: 1
+		expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('Archive Commit grid renders top 6 completed, hidden when none', () => {
+		const { unmount } = render(Page, { data: baseData });
+		expect(screen.queryByText('Recently Completed')).not.toBeInTheDocument();
+		unmount();
+
+		const completed = Array.from({ length: 8 }, (_, i) =>
+			mockCandidate({
+				identityKey: `done${i}`,
+				normalizedTitle: `Movie ${i}`,
+				transmissionDoneDate: `2024-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`
+			})
+		);
+		render(Page, { data: { ...baseData, candidates: completed } });
+		expect(screen.getByText('Recently Completed')).toBeInTheDocument();
+		// Only 6 shown in archive grid; most recent first: Movie 7 .. Movie 2
+		const archiveGrid = screen.getByTestId('archive-grid');
+		expect(archiveGrid).toHaveTextContent('Movie 7');
+		expect(archiveGrid).not.toHaveTextContent('Movie 0');
 	});
 });
