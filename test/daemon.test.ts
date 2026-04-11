@@ -326,6 +326,33 @@ describe('daemon', () => {
     expect(options.apiPort).toBe(8080);
   });
 
+  it('wraps EADDRINUSE with an actionable error mentioning runtime.apiPort', async () => {
+    const first = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: () => new Response('ok'),
+    });
+    const port = first.port;
+    const controller = new AbortController();
+    try {
+      await expect(
+        runDaemonLoop({
+          runCycle: async () => {},
+          reconcileCycle: async () => {},
+          options: {
+            runIntervalMs: 600_000,
+            reconcileIntervalMs: 600_000,
+            apiPort: port,
+          },
+          signal: controller.signal,
+          fetch: () => new Response(),
+        }),
+      ).rejects.toThrow(/runtime\.apiPort/);
+    } finally {
+      first.stop();
+    }
+  });
+
   it('starts an HTTP server when apiPort and fetch are provided', async () => {
     const log: string[] = [];
     const controller = new AbortController();

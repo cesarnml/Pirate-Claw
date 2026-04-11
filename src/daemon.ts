@@ -44,11 +44,22 @@ export async function runDaemonLoop(input: {
   }
 
   if (options.apiPort != null && input.fetch) {
-    server = Bun.serve({
-      port: options.apiPort,
-      hostname: '127.0.0.1',
-      fetch: input.fetch,
-    });
+    try {
+      server = Bun.serve({
+        port: options.apiPort,
+        hostname: '127.0.0.1',
+        fetch: input.fetch,
+      });
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e?.code === 'EADDRINUSE') {
+        throw new Error(
+          `Cannot bind HTTP API on 127.0.0.1:${options.apiPort}: address already in use (EADDRINUSE). Stop the other process or set a different runtime.apiPort in pirate-claw.config.json. To list listeners: lsof -iTCP:${options.apiPort} -sTCP:LISTEN`,
+          { cause: err },
+        );
+      }
+      throw err;
+    }
     log(`api listening on port ${server.port}`);
   }
 

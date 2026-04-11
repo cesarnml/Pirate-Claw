@@ -870,7 +870,7 @@ Example: enabling the daemon HTTP API. Add `"apiPort"` to the `runtime` block in
   "reconcileIntervalMinutes": 1,
   "artifactDir": "/data/runtime",
   "artifactRetentionDays": 7,
-  "apiPort": 3000
+  "apiPort": 5555
 }
 ```
 
@@ -886,7 +886,7 @@ Verify the API is listening by checking logs:
 docker logs pirate-claw --tail 5
 ```
 
-Expected: a line reading `api listening on port 3000`. Since pirate-claw runs on host networking, the endpoints are immediately reachable from any browser on the LAN at `http://<NAS-LAN-IP>:3000/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, and `/api/movies`. No port mapping or container recreation is required.
+Expected: a line reading `api listening on port 5555`. Since pirate-claw runs on host networking, the endpoints are immediately reachable from any browser on the LAN at `http://<NAS-LAN-IP>:5555/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, and `/api/movies`. No port mapping or container recreation is required.
 
 Phase 15 added three additional read endpoints:
 
@@ -1222,8 +1222,8 @@ jq '.tv.shows|length' /volume1/pirate-claw/config/pirate-claw.config.json
 ### Post-deploy verification cues
 
 - `docker ps` shows `pirate-claw`, `pirate-claw-web`, and `transmission` all `Up`.
-- `docker logs pirate-claw --tail 20` shows `api listening on port 3000` and `daemon started`.
+- `docker logs pirate-claw --tail 20` shows `api listening on port 5555` and `daemon started`.
 - `docker logs pirate-claw-web --tail 20` shows `Listening on http://0.0.0.0:3001`.
-- `curl http://localhost:3000/api/config` returns config including Phase 11 fields (`runtime.tmdbRefreshIntervalMinutes`, `tmdb` block when configured).
+- `curl http://localhost:5555/api/config` returns config including Phase 11 fields (`runtime.tmdbRefreshIntervalMinutes`, `tmdb` block when configured).
 - `curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/` returns `200`.
 - `docker inspect pirate-claw` mount list includes `/config/.env` and does not include `/app/.env`.

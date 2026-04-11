@@ -363,10 +363,10 @@ describe('validateConfig', () => {
   it('accepts a valid runtime.apiPort integer', () => {
     const config = validateConfig({
       ...createMinimalConfig(),
-      runtime: { apiPort: 3000 },
+      runtime: { apiPort: 5555 },
     });
 
-    expect(config.runtime.apiPort).toBe(3000);
+    expect(config.runtime.apiPort).toBe(5555);
   });
 
   it('accepts runtime.tmdbRefreshIntervalMinutes zero to disable background refresh', () => {
@@ -478,7 +478,7 @@ describe('validateConfig', () => {
     expect(() =>
       validateConfig({
         ...createMinimalConfig(),
-        runtime: { apiPort: 3000.5 },
+        runtime: { apiPort: 5555.5 },
       }),
     ).toThrow(/apiPort.*must be a positive integer/);
   });
@@ -496,7 +496,7 @@ describe('validateConfig', () => {
     expect(() =>
       validateConfig({
         ...createMinimalConfig(),
-        runtime: { apiPort: '3000' },
+        runtime: { apiPort: '5555' },
       }),
     ).toThrow(/apiPort.*must be a positive integer/);
   });

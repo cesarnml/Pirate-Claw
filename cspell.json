@@ -20,6 +20,7 @@
     "HEALTHCHECK",
     "hostnames",
     "infohash",
+    "Ironman",
     "Jellyfin",
     "mktemp",
     "NEWGROUP",

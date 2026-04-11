@@ -15,7 +15,7 @@ Bootstrap the `web/` SvelteKit application with the full toolchain, a working na
 - Implement `src/routes/+layout.svelte` with top-level nav: Home (`/`), Candidates (`/candidates`), Shows (links to `/candidates` for now — show detail is P10.03), Config (`/config`)
 - Scaffold stub `+page.svelte` for each route (`/`, `/candidates`, `/config`, `/shows/[slug]`) — just a heading so nav links resolve without 404
 - Add `web/Dockerfile`: multi-stage build (`bun install --frozen-lockfile`, `bun run build`) → runtime stage (`node build/`)
-- Add `web/.env.example` documenting `PIRATE_CLAW_API_URL=http://localhost:3000`
+- Add `web/.env.example` documenting `PIRATE_CLAW_API_URL=http://localhost:5555`
 - One smoke test: nav renders all four links
 
 ## Out Of Scope

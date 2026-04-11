@@ -43,7 +43,7 @@
     "reconcileIntervalMinutes": 1,
     "artifactDir": ".pirate-claw/runtime",
     "artifactRetentionDays": 7,
-    "apiPort": 3000,
+    "apiPort": 5555,
     "tmdbRefreshIntervalMinutes": 360
   },
   "tmdb": {

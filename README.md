@@ -131,7 +131,7 @@ Example:
     "reconcileIntervalMinutes": 1,
     "artifactDir": ".pirate-claw/runtime",
     "artifactRetentionDays": 7,
-    "apiPort": 3000
+    "apiPort": 5555
   }
 }
 ```
@@ -209,7 +209,7 @@ When `runtime.apiPort` is set in the config, the daemon starts a read-only HTTP 
 ```json
 {
   "runtime": {
-    "apiPort": 3000
+    "apiPort": 5555
   }
 }
 ```
@@ -240,7 +240,7 @@ When `runtime.apiPort` is omitted, no HTTP listener starts.
 ### Example
 
 ```bash
-curl http://localhost:3000/api/health
+curl http://localhost:5555/api/health
 ```
 
 ```json
@@ -275,8 +275,8 @@ The dashboard is a **SvelteKit** app under [`web/`](./web/). The UI is built wit
 
 ### Prerequisites
 
-1. **Daemon HTTP API enabled** — set `runtime.apiPort` in your config (for example `3000`) and run the daemon (`pirate-claw daemon` or `./bin/pirate-claw daemon --config …`). See [Daemon HTTP API](#daemon-http-api) above.
-2. **API base URL for the web app** — copy [`web/.env.example`](./web/.env.example) to `web/.env` and set `PIRATE_CLAW_API_URL` to the daemon’s base URL (no trailing slash), e.g. `http://localhost:3000`. The SvelteKit server reads this at runtime; if it is missing, API-backed routes error until you set it.
+1. **Daemon HTTP API enabled** — set `runtime.apiPort` in your config (for example `5555`) and run the daemon (`pirate-claw daemon` or `./bin/pirate-claw daemon --config …`). See [Daemon HTTP API](#daemon-http-api) above.
+2. **API base URL for the web app** — copy [`web/.env.example`](./web/.env.example) to `web/.env` and set `PIRATE_CLAW_API_URL` to the daemon’s base URL (no trailing slash), e.g. `http://localhost:5555`. The SvelteKit server reads this at runtime; if it is missing, API-backed routes error until you set it.
 
 ### Development (local UI server)
 
@@ -295,10 +295,10 @@ To serve a built app instead of `dev`:
 
 ```bash
 bun run --cwd web build
-cd web && PIRATE_CLAW_API_URL=http://localhost:3000 PORT=5174 node build/index.js
+cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.js
 ```
 
-The Node adapter defaults to **port `3000`** and host **`0.0.0.0`** if you omit `PORT` and `HOST`. If your daemon already uses `3000` for its API, set **`PORT`** to another value for the dashboard (for example `5174` as above). The process prints `Listening on http://…` on startup. Keep `PIRATE_CLAW_API_URL` pointed at the daemon; the dashboard URL and the daemon API URL are different ports.
+The Node adapter defaults to **port `3000`** and host **`0.0.0.0`** if you omit `PORT` and `HOST`. If that port is already in use, set **`PORT`** to another value for the dashboard (for example `5174` as above). The process prints `Listening on http://…` on startup. Keep `PIRATE_CLAW_API_URL` pointed at the daemon; the dashboard URL and the daemon API URL are different ports.
 
 ## Current Scope
 
