@@ -669,6 +669,8 @@ export function buildShowBreakdowns(
       status: c.status,
       lifecycleStatus: c.lifecycleStatus,
       queuedAt: c.queuedAt,
+      transmissionPercentDone: c.transmissionPercentDone,
+      transmissionTorrentHash: c.transmissionTorrentHash,
     });
   }
 

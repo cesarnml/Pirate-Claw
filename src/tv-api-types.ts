@@ -24,6 +24,8 @@ export type ShowEpisode = {
   status: string;
   lifecycleStatus?: string;
   queuedAt?: string;
+  transmissionPercentDone?: number;
+  transmissionTorrentHash?: string;
   tmdb?: TmdbTvEpisodeMeta;
 };
 

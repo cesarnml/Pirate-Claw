@@ -11,9 +11,12 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
+	import type { CandidateStatus, ShowEpisode, TorrentStatSnapshot } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const torrents = $derived(data.torrents ?? []);
 
 	function formatRating(v: number | undefined): string {
 		if (v === undefined) return '—';
@@ -24,7 +27,6 @@
 		return show.tmdb?.name ?? show.normalizedTitle;
 	}
 
-	/** Only allow https URLs in inline `background: url(...)` to avoid CSS injection from malformed strings. */
 	function safeHttpsBackgroundUrl(raw: string | undefined): string | undefined {
 		if (!raw) return undefined;
 		try {
@@ -33,6 +35,51 @@
 			return u.href;
 		} catch {
 			return undefined;
+		}
+	}
+
+	function formatSpeed(bytesPerSec: number): string {
+		if (bytesPerSec >= 1_048_576) return `${(bytesPerSec / 1_048_576).toFixed(1)} MB/s`;
+		return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+	}
+
+	function formatEta(eta: number): string {
+		if (eta < 0) return '—';
+		if (eta < 60) return '<1m';
+		const hours = Math.floor(eta / 3600);
+		const minutes = Math.floor((eta % 3600) / 60);
+		if (hours > 0) return `${hours}h ${minutes}m`;
+		return `${minutes}m`;
+	}
+
+	function liveTorrent(ep: ShowEpisode): TorrentStatSnapshot | undefined {
+		if (!ep.transmissionTorrentHash) return undefined;
+		return torrents.find((t) => t.hash === ep.transmissionTorrentHash);
+	}
+
+	function isActive(ep: ShowEpisode): boolean {
+		return (
+			ep.lifecycleStatus === 'active' ||
+			ep.status === 'downloading' ||
+			(ep.status === 'queued' && (ep.transmissionPercentDone ?? 0) > 0)
+		);
+	}
+
+	function statusChipClass(status: CandidateStatus | string): string {
+		switch (status) {
+			case 'queued':
+				return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+			case 'completed':
+				return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+			case 'failed':
+				return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+			case 'downloading':
+				return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200';
+			case 'duplicate':
+			case 'skipped':
+				return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+			default:
+				return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
 		}
 	}
 </script>
@@ -119,11 +166,16 @@
 									<TableHead>Episode</TableHead>
 									<TableHead>Title</TableHead>
 									<TableHead>Status</TableHead>
-									<TableHead>Queued At</TableHead>
+									<TableHead>Progress</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{#each season.episodes as ep (ep.identityKey)}
+									{@const live = liveTorrent(ep)}
+									{@const active = isActive(ep)}
+									{@const pct = live
+										? live.percentDone * 100
+										: (ep.transmissionPercentDone ?? 0) * 100}
 									<TableRow>
 										<TableCell class="align-top">
 											{#if ep.tmdb?.stillUrl}
@@ -152,16 +204,43 @@
 											{/if}
 										</TableCell>
 										<TableCell class="align-top">
-											{ep.status}
+											<span
+												class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {statusChipClass(
+													ep.status
+												)}"
+											>
+												{ep.status}
+											</span>
 											{#if ep.lifecycleStatus}
 												<span class="text-muted-foreground ml-1 text-xs"
 													>({ep.lifecycleStatus})</span
 												>
 											{/if}
 										</TableCell>
-										<TableCell class="text-muted-foreground align-top"
-											>{ep.queuedAt ?? '—'}</TableCell
-										>
+										<TableCell class="align-top">
+											{#if active || (ep.transmissionPercentDone ?? 0) > 0}
+												<div class="min-w-[6rem]">
+													<div class="flex items-center gap-2">
+														<div class="bg-muted h-1.5 flex-1 rounded-full">
+															<div
+																class="h-1.5 rounded-full {active ? 'bg-cyan-500' : 'bg-primary'}"
+																style="width: {pct.toFixed(0)}%"
+															></div>
+														</div>
+														<span class="text-muted-foreground shrink-0 text-xs"
+															>{pct.toFixed(0)}%</span
+														>
+													</div>
+													{#if live && active}
+														<p class="text-muted-foreground mt-0.5 text-xs">
+															{formatSpeed(live.rateDownload)} · {formatEta(live.eta)}
+														</p>
+													{/if}
+												</div>
+											{:else}
+												<span class="text-muted-foreground text-xs">—</span>
+											{/if}
+										</TableCell>
 									</TableRow>
 								{/each}
 							</TableBody>

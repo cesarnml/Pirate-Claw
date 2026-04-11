@@ -1,16 +1,25 @@
 import { apiFetch } from '$lib/server/api';
-import type { ShowBreakdown } from '$lib/types';
+import type { ShowBreakdown, TorrentStatSnapshot } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
-	try {
-		const data = await apiFetch<{ shows: ShowBreakdown[] }>('/api/shows');
-		return { shows: data.shows, error: null };
-	} catch (err) {
-		console.error('[shows list] failed to load /api/shows:', err);
-		return {
-			shows: [] as ShowBreakdown[],
-			error: 'Could not reach the API.'
-		};
+	const [showsResult, torrentsResult] = await Promise.allSettled([
+		apiFetch<{ shows: ShowBreakdown[] }>('/api/shows'),
+		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents')
+	]);
+
+	if (showsResult.status === 'rejected') {
+		console.error('[shows list] failed to load /api/shows:', showsResult.reason);
+		return { shows: [] as ShowBreakdown[], torrents: null, error: 'Could not reach the API.' };
 	}
+
+	if (torrentsResult.status === 'rejected') {
+		console.error('[shows list] failed to load /api/transmission/torrents:', torrentsResult.reason);
+	}
+
+	return {
+		shows: showsResult.value.shows,
+		torrents: torrentsResult.status === 'fulfilled' ? torrentsResult.value.torrents : null,
+		error: null
+	};
 };

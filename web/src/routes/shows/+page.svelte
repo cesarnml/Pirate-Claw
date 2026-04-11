@@ -2,11 +2,15 @@
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import type { ShowBreakdown } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	function showHref(show: (typeof data.shows)[number]): string {
+	type SortKey = 'title' | 'progress';
+	let sortKey = $state<SortKey>('title');
+
+	function showHref(show: ShowBreakdown): string {
 		return `/shows/${encodeURIComponent(show.normalizedTitle.toLowerCase())}`;
 	}
 
@@ -14,9 +18,38 @@
 		return v.toFixed(1);
 	}
 
-	function displayTitle(show: (typeof data.shows)[number]): string {
+	function displayTitle(show: ShowBreakdown): string {
 		return show.tmdb?.name ?? show.normalizedTitle;
 	}
+
+	function episodeCount(show: ShowBreakdown): number {
+		return show.seasons.reduce((sum, s) => sum + s.episodes.length, 0);
+	}
+
+	function completionPct(show: ShowBreakdown): number | null {
+		const eps = show.seasons.flatMap((s) => s.episodes);
+		if (eps.length === 0) return null;
+		const done = eps.filter((e) => e.status === 'completed').length;
+		return Math.round((done / eps.length) * 100);
+	}
+
+	/** Max transmissionPercentDone across all episodes (for progress sort) */
+	function maxProgress(show: ShowBreakdown): number {
+		let max = 0;
+		for (const s of show.seasons) {
+			for (const e of s.episodes) {
+				if ((e.transmissionPercentDone ?? 0) > max) max = e.transmissionPercentDone ?? 0;
+			}
+		}
+		return max;
+	}
+
+	const sortedShows = $derived(
+		[...data.shows].sort((a, b) => {
+			if (sortKey === 'progress') return maxProgress(b) - maxProgress(a);
+			return displayTitle(a).localeCompare(displayTitle(b));
+		})
+	);
 </script>
 
 <h1 class="text-3xl font-bold tracking-tight">Shows</h1>
@@ -36,8 +69,31 @@
 		</CardContent>
 	</Card>
 {:else}
-	<ul class="mt-8 grid list-none gap-4 sm:grid-cols-2 lg:grid-cols-3">
-		{#each data.shows as show (show.normalizedTitle)}
+	<div class="mt-6 flex items-center gap-2">
+		<span class="text-muted-foreground text-sm">Sort:</span>
+		<button
+			class="text-sm font-medium underline-offset-2 {sortKey === 'title'
+				? 'text-foreground underline'
+				: 'text-muted-foreground hover:text-foreground'}"
+			onclick={() => (sortKey = 'title')}
+		>
+			Title (A–Z)
+		</button>
+		<span class="text-muted-foreground text-xs">·</span>
+		<button
+			class="text-sm font-medium underline-offset-2 {sortKey === 'progress'
+				? 'text-foreground underline'
+				: 'text-muted-foreground hover:text-foreground'}"
+			onclick={() => (sortKey = 'progress')}
+		>
+			Progress
+		</button>
+	</div>
+
+	<ul class="mt-6 grid list-none gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		{#each sortedShows as show (show.normalizedTitle)}
+			{@const pct = completionPct(show)}
+			{@const count = episodeCount(show)}
 			<li>
 				<a
 					href={showHref(show)}
@@ -77,6 +133,14 @@
 										</span>
 									{/if}
 								</div>
+								{#if count > 0}
+									<p class="text-muted-foreground mt-2 text-xs">
+										{count} episode{count === 1 ? '' : 's'}
+										{#if pct !== null}
+											· {pct}% complete
+										{/if}
+									</p>
+								{/if}
 							</div>
 						</CardContent>
 					</Card>

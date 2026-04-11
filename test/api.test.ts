@@ -1402,6 +1402,22 @@ describe('buildShowBreakdowns', () => {
     expect(shows[0].seasons[0].episodes).toHaveLength(1);
     expect(shows[0].seasons[0].episodes[0].identityKey).toBe('k1');
   });
+
+  it('passes through transmissionPercentDone and transmissionTorrentHash', () => {
+    const candidates = [
+      {
+        ...tvCandidate({ identityKey: 'k1', season: 1, episode: 1 }),
+        transmissionPercentDone: 0.42,
+        transmissionTorrentHash: 'abc123',
+      },
+    ];
+
+    const shows = buildShowBreakdowns(candidates as never);
+    const ep = shows[0].seasons[0].episodes[0];
+
+    expect(ep.transmissionPercentDone).toBe(0.42);
+    expect(ep.transmissionTorrentHash).toBe('abc123');
+  });
 });
 
 describe('buildMovieBreakdowns', () => {
