@@ -2,7 +2,9 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–14** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment, Phase 13 config write API, and Phase 14 feed and target management via the dashboard). The documented engineering epics through Epic 04 are also on `main`. Phases 15–18 are defined and planned; implementation begins after ticket decomposition and developer sign-off per phase. For future stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks.
+Phases **01–15** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment, Phase 13 config write API, Phase 14 feed and target management via the dashboard, and **Phase 15** live Transmission-backed activity on the dashboard: proxy endpoints for session/torrent stats, skipped-no-match outcomes, home overview with active downloads and archive grid, richer TV/movie views with join-by-hash speed and ETA, and an unmatched candidates page). **Phases 16–18** are defined in `docs/01-product/`; implementation follows ticket decomposition and developer sign-off per phase. For stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks.
+
+Engineering epic notes **EE01–EE06** (delivery orchestrator, PR hygiene, and workflow tooling) live under [`docs/03-engineering/`](./docs/03-engineering/).
 
 It currently supports:
 
@@ -18,7 +20,7 @@ It currently supports:
 - env-backed Transmission credentials via process env or `.env`
 - daemon HTTP API with read endpoints and bounded opt-in runtime config writes when `runtime.apiPort` is configured
 - optional TMDB-backed posters, ratings, and metadata on API and dashboard when a `tmdb` API key is configured (see `pirate-claw.config.example.json`)
-- browser dashboard (SvelteKit app in `web/`) with read views, bounded runtime Settings save flow, and full feed and target management: add/remove RSS feeds, edit TV defaults (resolutions/codecs), manage movie policy (years, resolutions, codecs, codecPolicy), and manage TV show targets — all from the Config page (Phases 13–14)
+- browser dashboard (SvelteKit app in `web/`) with read views, bounded runtime Settings save flow, full feed and target management from the Config page (Phases 13–14), and Phase 15 visibility: home overview with Transmission session strip and active downloads, TV/movie library views with live transfer stats where a torrent hash is known, skipped-no-match outcomes, and `/candidates/unmatched` for policy-skipped items (refresh via page reload; no WebSocket push)
 
 ## Commands
 
@@ -304,9 +306,9 @@ The Node adapter defaults to **port `3000`** and host **`0.0.0.0`** if you omit 
 
 Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 18 targets eliminating the need to SSH into the NAS for day-to-day operation — config editing, feed management, and activity monitoring all move to the browser dashboard.
 
-**Implemented (Phases 01–14):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, bounded config writes from the UI, and full feed and target management from the Config page (add/remove feeds, TV defaults, movie policy, TV show targets).
+**Implemented (Phases 01–15):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, bounded config writes from the UI, full feed and target management from the Config page, and the Phase 15 visibility layer (Transmission session/torrent proxies, outcomes for skipped-no-match, dashboard overview, enriched TV/movie browsing with live stats, unmatched candidates view).
 
-**Planned (Phases 15–18):** Live Transmission download progress, TV/movie library views with TMDB enrichment, unified config editing with hot reload and daemon controls, onboarding wizard, v1.0.0 release.
+**Planned (Phases 16–18):** Unified config editing with hot reload and daemon controls, onboarding wizard and empty states, v1.0.0 release and schema versioning.
 
 Not in scope through v1:
 
