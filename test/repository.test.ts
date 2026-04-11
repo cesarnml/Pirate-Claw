@@ -568,6 +568,101 @@ describe('SQLite repository', () => {
       'tmdb_tv_season_cache',
     ]);
   });
+
+  describe('listSkippedNoMatchOutcomes', () => {
+    it('returns only skipped_no_match outcomes', async () => {
+      const repository = createTestRepository(await createDatabasePath());
+      const run = repository.startRun('2026-04-01T00:00:00.000Z');
+      const feedItem = repository.recordFeedItem(run.id, {
+        feedName: 'main-tv',
+        guidOrLink: 'https://example.test/item1',
+        rawTitle: 'Some.Show.S01E01.720p',
+        publishedAt: '2026-04-01T00:00:00.000Z',
+        downloadUrl: 'https://example.test/item1.torrent',
+      });
+
+      repository.recordFeedItemOutcome({
+        runId: run.id,
+        feedItemId: feedItem.id,
+        status: 'skipped_no_match',
+        createdAt: '2026-04-01T00:01:00.000Z',
+      });
+      repository.recordFeedItemOutcome({
+        runId: run.id,
+        status: 'queued',
+        createdAt: '2026-04-01T00:02:00.000Z',
+      });
+      repository.recordFeedItemOutcome({
+        runId: run.id,
+        status: 'failed',
+        createdAt: '2026-04-01T00:03:00.000Z',
+      });
+
+      const results = repository.listSkippedNoMatchOutcomes(30);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe('skipped_no_match');
+      expect(results[0].runId).toBe(run.id);
+      expect(results[0].title).toBe('Some.Show.S01E01.720p');
+      expect(results[0].feedName).toBe('main-tv');
+      expect(results[0].recordedAt).toBe('2026-04-01T00:01:00.000Z');
+    });
+
+    it('returns null title and feedName when feed_item_id is null', async () => {
+      const repository = createTestRepository(await createDatabasePath());
+      const run = repository.startRun('2026-04-01T00:00:00.000Z');
+
+      repository.recordFeedItemOutcome({
+        runId: run.id,
+        feedItemId: undefined,
+        status: 'skipped_no_match',
+        createdAt: '2026-04-01T00:01:00.000Z',
+      });
+
+      const results = repository.listSkippedNoMatchOutcomes(30);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].title).toBeNull();
+      expect(results[0].feedName).toBeNull();
+    });
+
+    it('excludes outcomes older than the specified day window', async () => {
+      const repository = createTestRepository(await createDatabasePath());
+      const run = repository.startRun('2026-04-01T00:00:00.000Z');
+
+      // Recent outcome (within window)
+      repository.recordFeedItemOutcome({
+        runId: run.id,
+        status: 'skipped_no_match',
+        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+
+      // Old outcome (outside window)
+      repository.recordFeedItemOutcome({
+        runId: run.id,
+        status: 'skipped_no_match',
+        createdAt: new Date(
+          Date.now() - 35 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      });
+
+      const results = repository.listSkippedNoMatchOutcomes(30);
+
+      expect(results).toHaveLength(1);
+    });
+
+    it('returns empty array when no matching outcomes', async () => {
+      const repository = createTestRepository(await createDatabasePath());
+      const run = repository.startRun('2026-04-01T00:00:00.000Z');
+      repository.recordFeedItemOutcome({
+        runId: run.id,
+        status: 'queued',
+        createdAt: '2026-04-01T00:01:00.000Z',
+      });
+
+      expect(repository.listSkippedNoMatchOutcomes(30)).toEqual([]);
+    });
+  });
 });
 
 function createTestRepository(path: string) {

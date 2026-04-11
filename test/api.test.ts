@@ -38,6 +38,7 @@ function stubRepository(overrides: Partial<Repository> = {}): Repository {
     listCandidateStates: () => [],
     listReconcilableCandidates: () => [],
     listRetryableCandidates: () => [],
+    listSkippedNoMatchOutcomes: () => [],
     ...overrides,
   } as Repository;
 }
@@ -1744,6 +1745,80 @@ describe('buildFeedStatuses', () => {
     const statuses = buildFeedStatuses(feeds, pollState, runtime);
 
     expect(statuses[0].isDue).toBe(false);
+  });
+});
+
+describe('GET /api/outcomes', () => {
+  it('returns 400 when status param is missing', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/outcomes'),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'unsupported status filter',
+    });
+  });
+
+  it('returns 400 when status param is not skipped_no_match', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/outcomes?status=queued'),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'unsupported status filter',
+    });
+  });
+
+  it('returns outcomes from repository on valid request', async () => {
+    const mockOutcomes = [
+      {
+        id: 1,
+        runId: 42,
+        status: 'skipped_no_match' as const,
+        recordedAt: '2026-04-10T12:00:00.000Z',
+        title: 'Some.Show.S01E01.720p',
+        feedName: 'main-tv',
+      },
+      {
+        id: 2,
+        runId: 42,
+        status: 'skipped_no_match' as const,
+        recordedAt: '2026-04-10T12:00:05.000Z',
+        title: null,
+        feedName: null,
+      },
+    ];
+
+    const deps = createDeps({
+      listSkippedNoMatchOutcomes: () => mockOutcomes,
+    });
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/outcomes?status=skipped_no_match'),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ outcomes: mockOutcomes });
+  });
+
+  it('returns empty outcomes array when repository returns none', async () => {
+    const deps = createDeps({
+      listSkippedNoMatchOutcomes: () => [],
+    });
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/outcomes?status=skipped_no_match'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcomes: [] });
   });
 });
 

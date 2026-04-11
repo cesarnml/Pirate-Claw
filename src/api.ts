@@ -585,6 +585,19 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/outcomes' && request.method === 'GET') {
+      const statusParam = new URL(request.url).searchParams.get('status');
+      if (statusParam !== 'skipped_no_match') {
+        return Response.json(
+          { error: 'unsupported status filter' },
+          { status: 400 },
+        );
+      }
+      return safeJson(() => ({
+        outcomes: repository.listSkippedNoMatchOutcomes(30),
+      }));
+    }
+
     return Response.json({ error: 'not found' }, { status: 404 });
   };
 }
