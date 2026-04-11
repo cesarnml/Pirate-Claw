@@ -48,6 +48,7 @@
 
 	function formatEta(eta: number): string {
 		if (eta < 0) return '—';
+		if (eta < 60) return '<1m';
 		const hours = Math.floor(eta / 3600);
 		const minutes = Math.floor((eta % 3600) / 60);
 		if (hours > 0) return `${hours}h ${minutes}m`;
@@ -76,8 +77,8 @@
 		return title.charAt(0).toUpperCase();
 	}
 
-	const candidates = $derived(data.candidates);
-	const torrents = $derived(data.transmissionTorrents);
+	const candidates = $derived(data.candidates ?? []);
+	const torrents = $derived(data.transmissionTorrents ?? []);
 
 	const activeDownloads = $derived(
 		torrents

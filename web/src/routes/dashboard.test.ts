@@ -139,10 +139,8 @@ describe('/', () => {
 			mockCandidate({ identityKey: 'c', status: 'queued', lifecycleStatus: undefined })
 		];
 		render(Page, { data: { ...baseData, candidates } });
-		// Total tracked: 3 — use getAllByText since "3" may appear elsewhere (e.g. activeTorrentCount)
-		expect(screen.getAllByText('3').length).toBeGreaterThanOrEqual(1);
-		// Failed: 1
-		expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
+		expect(screen.getByText('Total tracked').parentElement).toHaveTextContent('3');
+		expect(screen.getByText('Failed').parentElement).toHaveTextContent('1');
 	});
 
 	it('Archive Commit grid renders top 6 completed, hidden when none', () => {
@@ -162,6 +160,8 @@ describe('/', () => {
 		// Only 6 shown in archive grid; most recent first: Movie 7 .. Movie 2
 		const archiveGrid = screen.getByTestId('archive-grid');
 		expect(archiveGrid).toHaveTextContent('Movie 7');
+		expect(archiveGrid).toHaveTextContent('Movie 2');
+		expect(archiveGrid).not.toHaveTextContent('Movie 1');
 		expect(archiveGrid).not.toHaveTextContent('Movie 0');
 	});
 });
