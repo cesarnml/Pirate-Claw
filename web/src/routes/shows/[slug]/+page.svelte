@@ -172,7 +172,9 @@
 							<TableBody>
 								{#each season.episodes as ep (ep.identityKey)}
 									{@const live = liveTorrent(ep)}
-									{@const active = isActive(ep)}
+									{@const active = live ? live.status === 'downloading' : isActive(ep)}
+									{@const hasProgress =
+										live !== undefined || active || (ep.transmissionPercentDone ?? 0) > 0}
 									{@const pct = live
 										? live.percentDone * 100
 										: (ep.transmissionPercentDone ?? 0) * 100}
@@ -218,7 +220,7 @@
 											{/if}
 										</TableCell>
 										<TableCell class="align-top">
-											{#if active || (ep.transmissionPercentDone ?? 0) > 0}
+											{#if hasProgress}
 												<div class="min-w-[6rem]">
 													<div class="flex items-center gap-2">
 														<div class="bg-muted h-1.5 flex-1 rounded-full">
@@ -231,7 +233,7 @@
 															>{pct.toFixed(0)}%</span
 														>
 													</div>
-													{#if live && active}
+													{#if live && live.status === 'downloading'}
 														<p class="text-muted-foreground mt-0.5 text-xs">
 															{formatSpeed(live.rateDownload)} · {formatEta(live.eta)}
 														</p>

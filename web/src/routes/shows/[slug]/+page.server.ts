@@ -11,6 +11,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	]);
 
 	if (showsResult.status === 'rejected') {
+		console.error('[shows detail] failed to load /api/shows:', showsResult.reason);
 		return {
 			show: null as ShowBreakdown | null,
 			torrents: null,
