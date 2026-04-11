@@ -113,6 +113,15 @@ export type RecordFeedItemOutcomeInput = {
   createdAt?: string;
 };
 
+export type SkippedOutcomeRecord = {
+  id: number;
+  runId: number;
+  status: 'skipped_no_match';
+  recordedAt: string;
+  title: string | null;
+  feedName: string | null;
+};
+
 export type RecordCandidateReconciliationInput = {
   identityKey: string;
   lifecycleStatus: CandidateLifecycleStatus;
@@ -146,6 +155,7 @@ export type Repository = {
   listCandidateStates(limit?: number): CandidateStateRecord[];
   listReconcilableCandidates(limit?: number): CandidateStateRecord[];
   listRetryableCandidates(limit?: number): CandidateStateRecord[];
+  listSkippedNoMatchOutcomes(days: number): SkippedOutcomeRecord[];
 };
 
 export const DEFAULT_DATABASE_PATH = 'pirate-claw.db';
@@ -597,6 +607,21 @@ export function createRepository(database: Database): Repository {
     ORDER BY identity_key ASC
     LIMIT ?1`,
   );
+  const listSkippedNoMatchOutcomesStatement = database.prepare(
+    `SELECT
+      fo.id,
+      fo.run_id AS runId,
+      fo.status,
+      fo.created_at AS recordedAt,
+      fi.raw_title AS title,
+      fi.feed_name AS feedName
+    FROM feed_item_outcomes fo
+    LEFT JOIN feed_items fi ON fo.feed_item_id = fi.id
+    WHERE fo.status = 'skipped_no_match'
+      AND fo.created_at >= datetime('now', '-' || ?1 || ' days')
+    ORDER BY fo.created_at DESC`,
+  );
+
   const listRetryableCandidatesStatement = database.query(
     `SELECT
       identity_key AS identityKey,
@@ -829,6 +854,27 @@ export function createRepository(database: Database): Repository {
       return (
         listRetryableCandidatesStatement.all(limit) as CandidateStateRow[]
       ).map(mapCandidateStateRow);
+    },
+
+    listSkippedNoMatchOutcomes(days: number): SkippedOutcomeRecord[] {
+      type Row = {
+        id: number;
+        runId: number;
+        status: 'skipped_no_match';
+        recordedAt: string;
+        title: string | null;
+        feedName: string | null;
+      };
+      return (listSkippedNoMatchOutcomesStatement.all(days) as Row[]).map(
+        (row) => ({
+          id: Number(row.id),
+          runId: Number(row.runId),
+          status: row.status,
+          recordedAt: row.recordedAt,
+          title: row.title,
+          feedName: row.feedName,
+        }),
+      );
     },
   };
 }

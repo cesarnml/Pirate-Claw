@@ -1,0 +1,28 @@
+{
+  "outcomes": [
+    {
+      "id": 1,
+      "runId": 42,
+      "status": "skipped_no_match",
+      "recordedAt": "2026-04-10T12:00:00.000Z",
+      "title": "Stranger.Things.S05E01.4K.WEB.x265-GROUP",
+      "feedName": "main-tv"
+    },
+    {
+      "id": 2,
+      "runId": 42,
+      "status": "skipped_no_match",
+      "recordedAt": "2026-04-10T12:00:05.000Z",
+      "title": "The.Brutalist.2025.2160p.WEB-DL.DDP5.1.Atmos.x265",
+      "feedName": "main-movies"
+    },
+    {
+      "id": 3,
+      "runId": 43,
+      "status": "skipped_no_match",
+      "recordedAt": "2026-04-11T06:00:00.000Z",
+      "title": null,
+      "feedName": null
+    }
+  ]
+}
