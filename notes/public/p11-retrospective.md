@@ -8,14 +8,14 @@ _Phase 11: TMDB Metadata Enrichment — P11.01–P11.06_
 
 Six stacked PRs across the TMDB enrichment stack. All six slices reached `done`; the PR stack (PRs #94–#99) was open pending developer closeout review at the time of writing.
 
-| PR | Branch → base | Title |
-| --- | --- | --- |
+| PR                                                     | Branch → base              | Title                                                  |
+| ------------------------------------------------------ | -------------------------- | ------------------------------------------------------ |
 | [#94](https://github.com/cesarnml/pirate_claw/pull/94) | `agents/p11-01-…` → `main` | Foundation: TMDB config, client, SQLite cache [P11.01] |
-| [#95](https://github.com/cesarnml/pirate_claw/pull/95) | `p11-02` → `p11-01` | Movies vertical slice [P11.02] |
-| [#96](https://github.com/cesarnml/pirate_claw/pull/96) | `p11-03` → `p11-02` | TV lazy enrich, `/api/shows`, show UI [P11.03] |
-| [#97](https://github.com/cesarnml/pirate_claw/pull/97) | `p11-04` → `p11-03` | `GET /api/candidates` TMDB cache attach [P11.04] |
-| [#98](https://github.com/cesarnml/pirate_claw/pull/98) | `p11-05` → `p11-04` | Background TMDB refresh scheduler [P11.05] |
-| [#99](https://github.com/cesarnml/pirate_claw/pull/99) | `p11-06` → `p11-05` | Docs, roadmap, README exit alignment [P11.06] |
+| [#95](https://github.com/cesarnml/pirate_claw/pull/95) | `p11-02` → `p11-01`        | Movies vertical slice [P11.02]                         |
+| [#96](https://github.com/cesarnml/pirate_claw/pull/96) | `p11-03` → `p11-02`        | TV lazy enrich, `/api/shows`, show UI [P11.03]         |
+| [#97](https://github.com/cesarnml/pirate_claw/pull/97) | `p11-04` → `p11-03`        | `GET /api/candidates` TMDB cache attach [P11.04]       |
+| [#98](https://github.com/cesarnml/pirate_claw/pull/98) | `p11-05` → `p11-04`        | Background TMDB refresh scheduler [P11.05]             |
+| [#99](https://github.com/cesarnml/pirate_claw/pull/99) | `p11-06` → `p11-05`        | Docs, roadmap, README exit alignment [P11.06]          |
 
 Merge strategy: `bun run closeout-stack --plan docs/02-delivery/phase-11/implementation-plan.md` after developer approval.
 

@@ -47,6 +47,7 @@ Commit the delivery plan and all ticket docs to the default branch before creati
 Be sabai-sabai during the review window. Token usage is minimal while sleeping; the developer reviews earlier stacked PRs during this time.
 
 When results land:
+
 - **Inline review threads** are the signal for CodeRabbit and Greptile. Their summary PR comments are orchestration noise.
 - **Qodo** posts a single actionable PR comment with all findings — treat it as actionable when present.
 - **SonarQube** posts a Quality Gate summary PR comment; check-run annotations are secondary signal.
@@ -69,6 +70,7 @@ If none of those are true, continue.
 ## Anti-Pattern
 
 Do not use these as stopping points for approved stacked delivery:
+
 - returning control after one ticket with "I finished the current ticket"
 - treating an open PR as completion
 - treating a running or clean review as completion

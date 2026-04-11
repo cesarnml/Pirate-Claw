@@ -16,6 +16,7 @@ Before committing: run `bun run format` for touched files (for `web/` also `bun 
 ## Ticket Completion Checklist
 
 Before closing a delivery ticket:
+
 - Add/update `## Rationale` in the ticket doc when behavior or trade-offs changed; append later findings there — not in PR bodies or chat.
 - Check `README.md` when user-visible behavior, commands, or project status changed.
 - Check `docs/00-overview/start-here.md` when delivered scope, commands, status, or deferrals changed.

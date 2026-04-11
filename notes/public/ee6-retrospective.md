@@ -26,6 +26,7 @@ Single PR on branch `engineering/ee06-compaction-gate-and-findings-surfacing` co
 **Bold title extraction works for CodeRabbit.** The `/\*\*([^*]+)\*\*/` regex reliably pulls the first bold phrase from CodeRabbit comment bodies, which is consistently the finding title. In practice on P15.06 review artifacts, every finding had a clean bold title in the first 40 characters of the body. The 120-char truncation fallback is there but wasn't needed.
 
 **AI review caught four real bugs.** Four distinct findings across two commits, all genuine:
+
 - Selector in `formatCurrentTicketStatus` missed `needs_patch` and `operator_input_needed` statuses — the findings block would never render after a `poll-review` triage that moved the ticket to those states, which is exactly the states where you need findings.
 - `kind === 'finding'` filter excluded SonarQube comments normalized as `kind: 'unknown'` — SonarQube findings would silently disappear from the condensed block.
 - `cli.ts` `getUsage()` still listed `advance [--no-start-next]` after the flag was removed.

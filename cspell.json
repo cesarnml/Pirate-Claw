@@ -1,6 +1,8 @@
 {
   "version": "0.2",
-  "ignorePaths": ["web/"],
+  "ignorePaths": [
+    "web/"
+  ],
   "dictionaryDefinitions": [],
   "dictionaries": [],
   "words": [
@@ -13,6 +15,7 @@
     "cesarnml",
     "coderabbit",
     "coderabbitai",
+    "emptively",
     "ENOSYS",
     "eztv",
     "Geminilake",
@@ -37,9 +40,9 @@
     "retarget",
     "retryability",
     "sabaai",
-    "Shawshank",
     "SARIF",
     "shadcn",
+    "Shawshank",
     "sonarcloud",
     "sonarqube",
     "sonarqubecloud",

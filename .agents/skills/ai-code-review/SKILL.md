@@ -14,6 +14,7 @@ The orchestrator owns polling cadence, state transitions, artifact persistence, 
 This skill owns: fetching review data with `gh`, detection logic, normalizing comments into structured artifacts, and triage judgment.
 
 Contract:
+
 - fetcher outputs: `detected`, `agents`, `artifact_text`, `reviewed_head_sha`, `vendors`, `comments`
 - triager outputs: `outcome` (`clean|needs_patch|patched`), `note`, `action_summary`, `non_action_summary`, `vendors`
 
