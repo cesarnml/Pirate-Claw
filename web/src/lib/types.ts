@@ -153,6 +153,22 @@ export type AppConfig = {
 	runtime: RuntimeConfig;
 };
 
+export type TorrentStatSnapshot = {
+	hash: string;
+	name: string;
+	status: 'downloading' | 'seeding' | 'stopped' | 'error';
+	percentDone: number;
+	rateDownload: number;
+	eta: number;
+};
+
+export type SessionInfo = {
+	version: string;
+	downloadSpeed: number;
+	uploadSpeed: number;
+	activeTorrentCount: number;
+};
+
 export type FeedItemOutcomeStatus = 'queued' | 'failed' | 'skipped_duplicate' | 'skipped_no_match';
 
 export type RunStatus = 'running' | 'completed' | 'failed';
