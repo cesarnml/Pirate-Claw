@@ -50,7 +50,9 @@
 	</Card>
 {:else}
 	<div class="mt-6">
+		<label for="unmatched-search" class="sr-only">Search unmatched candidates by title</label>
 		<input
+			id="unmatched-search"
 			type="search"
 			placeholder="Search by title…"
 			bind:value={search}

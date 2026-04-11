@@ -65,7 +65,9 @@ describe('/candidates/unmatched', () => {
 		const input = screen.getByPlaceholderText('Search by title…');
 		await fireEvent.input(input, { target: { value: 'xyznonexistent' } });
 		// Table still present but no data rows
-		expect(screen.getByRole('table')).toBeInTheDocument();
+		const table = screen.getByRole('table');
+		expect(table).toBeInTheDocument();
+		expect(table.querySelectorAll('tbody tr')).toHaveLength(0);
 		expect(
 			screen.queryByText('No unmatched candidates in the last 30 days.')
 		).not.toBeInTheDocument();
