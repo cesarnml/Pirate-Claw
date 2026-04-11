@@ -2,25 +2,23 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–15** of the current product roadmap are implemented on `main` (including Phase 11 TMDB metadata enrichment, Phase 13 config write API, Phase 14 feed and target management via the dashboard, and **Phase 15** live Transmission-backed activity on the dashboard: proxy endpoints for session/torrent stats, skipped-no-match outcomes, home overview with active downloads and archive grid, richer TV/movie views with join-by-hash speed and ETA, and an unmatched candidates page). **Phases 16–18** are defined in `docs/01-product/`; implementation follows ticket decomposition and developer sign-off per phase. For stacked delivery phases, merge reviewed slices with `bun run closeout-stack --plan <plan-path>` rather than ad hoc cherry-picks.
-
-Engineering epic notes **EE01–EE06** (delivery orchestrator, PR hygiene, and workflow tooling) live under [`docs/03-engineering/`](./docs/03-engineering/).
+Phases **01–15** are implemented on `main`. **Phases 16–18** are defined in `docs/01-product/` and start after ticket decomposition and developer sign-off.
 
 It currently supports:
 
 - RSS feeds for TV and movies
 - title normalization into media metadata
 - TV matching with per-title rules
-- compact TV config through `tv.defaults + tv.shows` with per-show overrides
+- compact TV config via `tv.defaults + tv.shows` with per-show overrides
 - movie matching with global year, resolution, and codec preferences
 - local dedupe and run history in SQLite
 - queueing through Transmission RPC
 - status inspection and retry of failed submissions
-- effective config inspection through `pirate-claw config show`
+- effective config inspection via `pirate-claw config show`
 - env-backed Transmission credentials via process env or `.env`
-- daemon HTTP API with read endpoints and bounded opt-in runtime config writes when `runtime.apiPort` is configured
-- optional TMDB-backed posters, ratings, and metadata on API and dashboard when a `tmdb` API key is configured (see `pirate-claw.config.example.json`)
-- browser dashboard (SvelteKit app in `web/`) with read views, bounded runtime Settings save flow, full feed and target management from the Config page (Phases 13–14), and Phase 15 visibility: home overview with Transmission session strip and active downloads, TV/movie library views with live transfer stats where a torrent hash is known, skipped-no-match outcomes, and `/candidates/unmatched` for policy-skipped items (refresh via page reload; no WebSocket push)
+- daemon HTTP API with read endpoints and bounded config writes when `runtime.apiPort` is set
+- optional TMDB-backed posters, ratings, and metadata when a `tmdb` API key is configured
+- browser dashboard (`web/`) with read views, Settings writes, full feed and target management, live Transmission stats, skipped-no-match outcomes, and an unmatched candidates page
 
 ## Commands
 
@@ -33,59 +31,28 @@ It currently supports:
 
 ## Quick Start
 
-1. Install dependencies with `bun install`.
-2. Copy [`pirate-claw.config.example.json`](./pirate-claw.config.example.json) to `./pirate-claw.config.json`.
-3. Edit your feeds, TV/movie matching rules, and Transmission credentials.
-4. Make sure the Transmission app is running and local RPC access is enabled.
+1. Install dependencies: `bun install`
+2. Copy [`pirate-claw.config.example.json`](./pirate-claw.config.example.json) to `pirate-claw.config.json`
+3. Edit your feeds, TV/movie rules, and Transmission credentials
+4. Start Transmission and enable local RPC access
 5. Run:
 
 ```bash
 ./bin/pirate-claw run --config ./pirate-claw.config.json
 ```
 
-Inspect the current state with:
-
-```bash
-./bin/pirate-claw status
-```
-
-When a torrent has been reconciled from Transmission, `status` shows the latest known lifecycle and brief downloader detail alongside the stored candidate state.
-If a tracked torrent later disappears from Transmission before completion, `status` surfaces it as `missing_from_transmission`; once a torrent has been observed completed, that completed state stays sticky locally.
-
-Retry failed submissions with:
-
-```bash
-./bin/pirate-claw retry-failed --config ./pirate-claw.config.json
-```
-
-Reconcile tracked torrents from Transmission with:
-
-```bash
-./bin/pirate-claw reconcile --config ./pirate-claw.config.json
-```
-
-Inspect the fully normalized effective config with:
-
-```bash
-./bin/pirate-claw config show --config ./pirate-claw.config.json
-```
+Check state with `pirate-claw status`. Retry failed submissions with `pirate-claw retry-failed`. Reconcile tracked torrents from Transmission with `pirate-claw reconcile`.
 
 ## Configuration
 
-Pirate Claw reads a local config file at `pirate-claw.config.json` by default.
+Config file: `pirate-claw.config.json` (see [`pirate-claw.config.example.json`](./pirate-claw.config.example.json)).
 
-The repo includes a checked-in example at [`pirate-claw.config.example.json`](./pirate-claw.config.example.json). Your real local config stays untracked.
-
-High-level config shape:
-
-- `feeds`: RSS sources to inspect (optional `pollIntervalMinutes` per feed)
-- `tv`: either the legacy per-show rule array or a compact `defaults + shows` object
-- `movies`: global movie intake policy
-- `transmission`: local Transmission RPC settings (optional `downloadDirs` for per-media-type download directories)
-- `runtime`: daemon scheduling and artifact settings (optional, all fields have defaults; `apiPort` enables the HTTP API; `tmdbRefreshIntervalMinutes` controls background TMDB cache refresh, default 360 minutes, `0` disables; `apiWriteToken` opt-in enables bounded config writes)
-- `tmdb`: optional TMDB API key (`apiKey` or env `PIRATE_CLAW_TMDB_API_KEY`) and optional cache TTL overrides
-
-Example:
+- `feeds` — RSS sources; optional `pollIntervalMinutes` per feed
+- `tv` — compact `defaults + shows` object or legacy per-show array
+- `movies` — global year, resolution, codec, and `codecPolicy` (`"prefer"` or `"require"`)
+- `transmission` — RPC URL, credentials, optional `downloadDirs` per media type
+- `runtime` — daemon scheduling and artifacts; `apiPort` enables HTTP API; `apiWriteToken` enables config writes; `tmdbRefreshIntervalMinutes` controls background TMDB refresh (default 360, `0` disables)
+- `tmdb` — optional `apiKey` (or env `PIRATE_CLAW_TMDB_API_KEY`) and cache TTL overrides
 
 ```json
 {
@@ -138,63 +105,23 @@ Example:
 }
 ```
 
-The compact TV form reduces repetition when most tracked shows share one quality policy:
-
-- `tv.defaults` defines the shared `resolutions` and `codecs`
-- `tv.shows` may contain plain show names that inherit those defaults
-- `tv.shows` may also contain objects with local `matchPattern`, `resolutions`, or `codecs` overrides
-- the older `tv: [{ ... }]` array shape still works unchanged
-
 ## Transmission Setup
 
-Pirate Claw expects a reachable local Transmission RPC endpoint.
+1. Open Transmission and enable remote access
+2. Confirm the RPC port matches your config (default `9091`)
+3. Set credentials inline in `transmission.username`/`password`, or via env `PIRATE_CLAW_TRANSMISSION_USERNAME`/`PIRATE_CLAW_TRANSMISSION_PASSWORD` (loaded from process env or a `.env` next to your config)
+4. If Transmission restricts allowed hosts, keep `127.0.0.1` or `localhost` allowed
 
-Before running:
-
-1. Open the Transmission app.
-2. Enable remote access in Transmission settings.
-3. Confirm the listening port matches your config. The default example uses `9091`.
-4. If authentication is enabled, either put the username/password inline in `pirate-claw.config.json` or set `PIRATE_CLAW_TRANSMISSION_USERNAME` / `PIRATE_CLAW_TRANSMISSION_PASSWORD` in a local `.env`.
-5. If Transmission restricts allowed addresses, keep `127.0.0.1` or `localhost` allowed.
-
-Transmission credential precedence is:
-
-- inline `transmission.username` / `transmission.password` win when present
-- otherwise Pirate Claw reads `PIRATE_CLAW_TRANSMISSION_USERNAME` / `PIRATE_CLAW_TRANSMISSION_PASSWORD`
-- Pirate Claw loads those env vars from the process environment and from a `.env` file next to your config file
-
-At queue time, Pirate Claw attempts to send Transmission labels based on media type:
-
-- `movie` for movie feeds
-- `tv` for TV feeds
-
-If the configured Transmission instance rejects label arguments, Pirate Claw logs a warning and retries the same submission without labels.
-
-## Real-World Feed Notes
-
-The current build is tuned to work against:
-
-- `https://myrss.org/eztv`
-- `https://atlas.rssly.org/feed`
-
-Current behavior:
-
-- queueable torrent URLs come from RSS `enclosure.url` when present
-- `<link>` remains a fallback when no enclosure URL exists
-- movie items default to `movies.codecPolicy: "prefer"`, so they can still match when year and resolution fit policy even if codec is missing
-- explicit preferred codecs still outrank otherwise equivalent unknown-codec movie releases
-
-`movies.codecPolicy` accepts `"prefer"` or `"require"`.
-Use `"require"` to reject movie releases that do not expose an allowed codec in the title.
+Pirate Claw sends `movie`/`tv` labels at queue time. If Transmission rejects labels it retries without them.
 
 ## Local Runtime Files
 
-Pirate Claw keeps local operator state out of git:
+These stay untracked:
 
 - `pirate-claw.config.json`
 - `pirate-claw.db`
-- `.pirate-claw/runtime/poll-state.json` -- persisted feed poll timestamps used by the daemon to resume due-feed scheduling across restarts
-- `.pirate-claw/runtime/cycles/` -- JSON and Markdown artifacts for daemon cycle results (completed, failed, or skipped for run/reconcile), pruned to 7 days by default
+- `.pirate-claw/runtime/poll-state.json` — feed poll timestamps
+- `.pirate-claw/runtime/cycles/` — JSON/Markdown cycle artifacts, pruned to 7 days
 
 Run the daemon for continuous scheduled operation:
 
@@ -202,145 +129,98 @@ Run the daemon for continuous scheduled operation:
 ./bin/pirate-claw daemon --config ./pirate-claw.config.json
 ```
 
-The daemon runs in the foreground, executing run cycles every 30 minutes and reconcile cycles every 1 minute. Stop with `Ctrl+C`.
+The daemon runs in the foreground (run cycles every 30 min, reconcile every 1 min). Stop with `Ctrl+C`.
 
 ## Daemon HTTP API
 
-When `runtime.apiPort` is set in the config, the daemon starts a read-only HTTP JSON API alongside the normal scheduling loop:
+Set `runtime.apiPort` to start an HTTP JSON API alongside the daemon:
 
 ```json
-{
-  "runtime": {
-    "apiPort": 5555
-  }
-}
+{ "runtime": { "apiPort": 5555 } }
 ```
-
-When `runtime.apiPort` is omitted, no HTTP listener starts.
 
 ### Endpoints
 
-| Endpoint                         | Description                                                        |
-| -------------------------------- | ------------------------------------------------------------------ |
-| `GET /api/health`                | Uptime, start time, and last run/reconcile cycle snapshots         |
-| `GET /api/status`                | Recent run summaries from the local database                       |
-| `GET /api/candidates`            | All tracked candidate state records                                |
-| `GET /api/shows`                 | TV candidates grouped by show → season → episode                   |
-| `GET /api/movies`                | Movie candidates sorted by title                                   |
-| `GET /api/feeds`                 | Feed config with poll state and `isDue` status                     |
-| `GET /api/config`                | Effective config with credentials redacted; returns `ETag`         |
-| `PUT /api/config`                | Bounded runtime + tv.shows write (token + `If-Match` required)     |
-| `PUT /api/config/feeds`          | Replace feeds array (Phase 14; token + `If-Match` required)        |
-| `PUT /api/config/movies`         | Replace movie policy (Phase 14; token + `If-Match` required)       |
-| `PUT /api/config/tv/defaults`    | Replace TV global defaults (Phase 14; token + `If-Match` required) |
-| `GET /api/transmission/session`  | Transmission version + session DL/UL stats (Phase 15)              |
-| `GET /api/transmission/torrents` | Active torrent list with progress + speed + ETA (Phase 15)         |
-| `GET /api/outcomes`              | Feed item outcomes; `?status=skipped_no_match` (Phase 15)          |
-| `POST /api/transmission/ping`    | Test Transmission connectivity (Phase 16)                          |
-| `POST /api/daemon/restart`       | SIGTERM self after config save; requires supervisor (Phase 16)     |
+| Endpoint                         | Description                                                    |
+| -------------------------------- | -------------------------------------------------------------- |
+| `GET /api/health`                | Uptime, start time, last run/reconcile snapshots               |
+| `GET /api/status`                | Recent run summaries                                           |
+| `GET /api/candidates`            | All tracked candidate state records                            |
+| `GET /api/shows`                 | TV candidates grouped by show → season → episode               |
+| `GET /api/movies`                | Movie candidates sorted by title                               |
+| `GET /api/feeds`                 | Feed config with poll state and `isDue`                        |
+| `GET /api/config`                | Effective config (credentials redacted); returns `ETag`        |
+| `PUT /api/config`                | Bounded runtime + tv.shows write (token + `If-Match` required) |
+| `PUT /api/config/feeds`          | Replace feeds array (token + `If-Match` required)              |
+| `PUT /api/config/movies`         | Replace movie policy (token + `If-Match` required)             |
+| `PUT /api/config/tv/defaults`    | Replace TV defaults (token + `If-Match` required)              |
+| `GET /api/transmission/session`  | Transmission session stats                                     |
+| `GET /api/transmission/torrents` | Pirate Claw-managed torrents with progress, speed, ETA         |
+| `GET /api/outcomes`              | Feed item outcomes (`?status=skipped_no_match`)                |
 
-### Example
+Write rules: `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`) must be set; all writes require `Authorization: Bearer <token>` and `If-Match` from the latest `GET /api/config` ETag. Writes are atomic file updates.
 
-```bash
-curl http://localhost:5555/api/health
-```
+## SvelteKit Dashboard (`web/`)
 
-```json
-{
-  "uptime": 3600000,
-  "startedAt": "2026-04-08T12:00:00.000Z",
-  "lastRunCycle": {
-    "status": "completed",
-    "startedAt": "...",
-    "completedAt": "...",
-    "durationMs": 1234
-  },
-  "lastReconcileCycle": null
-}
-```
+The dashboard is a SvelteKit app backed by shadcn-svelte and Tailwind CSS 4. All data loads server-side from the daemon API; the browser never talks to Transmission or SQLite directly. No login — use on trusted networks only.
 
-Write behavior is intentionally bounded:
+### Setup
 
-- writes are disabled unless `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`) is configured
-- `PUT /api/config` requires `Authorization: Bearer <token>`
-- `PUT /api/config` requires `If-Match` with the latest `ETag` from `GET /api/config` (`409` on stale revisions)
-- only approved runtime fields are writable through this path in v1
-- writes are atomic file updates
+1. Set `runtime.apiPort` and run the daemon
+2. Copy `web/.env.example` to `web/.env` and set `PIRATE_CLAW_API_URL=http://localhost:5555`
 
-Dashboard Settings uses a server-side SvelteKit action for writes, so the token stays server-only. After a successful save, restart the daemon process for runtime changes to take effect.
-
-Candidate, show, and movie payloads include TMDB fields when a match exists in the local cache; otherwise they fall back to Phase-10-style local data.
-
-## SvelteKit dashboard server (`web/`)
-
-The dashboard is a **SvelteKit** app under [`web/`](./web/). The UI is built with **shadcn-svelte** on **Tailwind CSS 4** (see [`web/components.json`](./web/components.json) and [`web/src/app.css`](./web/src/app.css)). Pages load data through **server-side** requests to the daemon JSON API (the browser never talks to Transmission or SQLite directly). There is no login in this version—use it only on networks you trust, same as the daemon API.
-
-### Prerequisites
-
-1. **Daemon HTTP API enabled** — set `runtime.apiPort` in your config (for example `5555`) and run the daemon (`pirate-claw daemon` or `./bin/pirate-claw daemon --config …`). See [Daemon HTTP API](#daemon-http-api) above.
-2. **API base URL for the web app** — copy [`web/.env.example`](./web/.env.example) to `web/.env` and set `PIRATE_CLAW_API_URL` to the daemon’s base URL (no trailing slash), e.g. `http://localhost:5555`. The SvelteKit server reads this at runtime; if it is missing, API-backed routes error until you set it.
-
-### Development (local UI server)
-
-From the repo root (after `bun install` at the root for the CLI):
+### Dev server
 
 ```bash
 bun install --cwd web
 bun run --cwd web dev
 ```
 
-This starts the Vite-powered SvelteKit dev server (by default **http://localhost:5173**; the terminal shows the exact URL). Open it in a browser to browse candidates, shows, movies, and effective config. When a TMDB API key is configured, posters and ratings show where cached.
+Opens at **http://localhost:5173** by default.
 
-### Production-style run (optional)
-
-To serve a built app instead of `dev`:
+### Production build
 
 ```bash
 bun run --cwd web build
 cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.js
 ```
 
-The Node adapter defaults to **port `3000`** and host **`0.0.0.0`** if you omit `PORT` and `HOST`. If that port is already in use, set **`PORT`** to another value for the dashboard (for example `5174` as above). The process prints `Listening on http://…` on startup. Keep `PIRATE_CLAW_API_URL` pointed at the daemon; the dashboard URL and the daemon API URL are different ports.
-
 ## Current Scope
 
-Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 18 targets eliminating the need to SSH into the NAS for day-to-day operation — config editing, feed management, and activity monitoring all move to the browser dashboard.
+Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 18 targets eliminating the need to SSH in for day-to-day operation.
 
-**Implemented (Phases 01–15):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, bounded config writes from the UI, full feed and target management from the Config page, and the Phase 15 visibility layer (Transmission session/torrent proxies, outcomes for skipped-no-match, dashboard overview, enriched TV/movie browsing with live stats, unmatched candidates view).
+**Implemented (Phases 01–15):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, bounded config writes from the UI, full feed and target management, and live Transmission activity views.
 
-**Planned (Phases 16–18):** Unified config editing with hot reload and daemon controls, onboarding wizard and empty states, v1.0.0 release and schema versioning.
+**Planned (Phases 16–18):** Unified config editing with hot reload and daemon controls, onboarding wizard, v1.0.0 release and schema versioning.
 
 Not in scope through v1:
 
 - remote feed capture or hosted persistence
-- automatic post-completion file handling or download renaming
+- post-completion file handling or download renaming
 - Synology archiving or media server integration
-- multi-user access or authentication beyond the single write token
+- multi-user access or auth beyond the single write token
 - broader ingestion redesign
 
 ## Development
 
-Useful local commands:
+```
+bun test
+bun run test:coverage
+bun run verify          # root + web/ format, lint, svelte-check
+bun run ci
+```
 
-- `bun test`
-- `bun run test:coverage`
-- `bun run verify` (repo root checks plus `web/` format, ESLint, and `svelte-check`; use `bun run verify:web` or `bun run lint:web` to scope to the dashboard only)
-- `bun run ci`
-- `bun run deliver restack` to restack the current delivery ticket after its parent PR was squash-merged to `main`
-- `bun run closeout-stack --plan <plan-path>` to squash-merge a completed stacked delivery phase onto `main` in ticket order using forward `git merge --squash` (no rebase)
-- `bun run deliver --plan <plan-path> poll-review` to run the orchestrator's 2/4/6/8-minute `ai-code-review` polling loop for the active PR and persist reviewed-SHA provenance plus vendor-attributed review artifacts
-- `bun run deliver --plan <plan-path> reconcile-late-review <ticket-id>` to re-run fetch + triage + artifact persistence + PR body refresh for a **done** ticket when late review feedback appears (see `docs/03-engineering/delivery-orchestrator.md`)
-- `bun run deliver --plan <plan-path> record-review <ticket-id> patched ...` to record patched follow-up and make a best-effort attempt to resolve mapped native GitHub inline review threads
-- `bun run deliver ai-review` to run the same converged post-PR external AI-review lifecycle for a standalone non-ticket PR
+Delivery commands (for contributors working the stacked PR workflow):
 
-The delivery orchestrator applies reviewer-facing guards when opening or editing PR bodies: it rejects escaped-newline sequences, bans auto-generated sections like `Summary by ...` / `Validation` / `Verification`, and rejects basic malformed markdown (mismatched fenced code blocks, bad headings). Literal `\\n` inside inline code spans is allowed.
+```
+bun run deliver --plan <plan-path> start
+bun run deliver --plan <plan-path> poll-review
+bun run deliver ai-review
+bun run closeout-stack --plan <plan-path>
+```
 
-The review hooks and triage logic live in [`./.agents/skills/ai-code-review/SKILL.md`](./.agents/skills/ai-code-review/SKILL.md). Ticket-linked delivery PRs and standalone `ai-review` runs share the same post-PR lifecycle core: polling, outcome accumulation, reviewer-facing metadata refresh, and final persistence. Supported external review agents are CodeRabbit, Qodo, Greptile, and SonarQube. SonarQube uses GitHub check annotations rather than native PR review comments; the fetcher keeps only failed-check annotations so triage stays focused on meaningful static-analysis findings rather than the full warning stream. Repo-level SonarQube scope lives in [`./.sonarcloud.properties`](./.sonarcloud.properties).
-
-If you are working on the repo rather than just using the CLI, start with [`docs/00-overview/start-here.md`](./docs/00-overview/start-here.md).
+See [`docs/00-overview/start-here.md`](./docs/00-overview/start-here.md) and [`docs/03-engineering/delivery-orchestrator.md`](./docs/03-engineering/delivery-orchestrator.md) for the full delivery workflow.
 
 ## License
 
 Licensed under the MIT License. See [LICENSE](./LICENSE).
-
-This project is intended to be free as in freedom, with required attribution in derivative works.
