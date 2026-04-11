@@ -10,7 +10,7 @@ _Phase 15: Rich Visual State and Activity Views — P15.01–P15.07_
 | ------------------------------------------- | -------------------------------------------------------- | -------------- |
 | P15.01 GET /api/outcomes Endpoint           | [#125](https://github.com/cesarnml/pirate_claw/pull/125) | clean          |
 | P15.02 Transmission Proxy Endpoints         | [#126](https://github.com/cesarnml/pirate_claw/pull/126) | clean          |
-| P15.03 Dashboard Overview Enhancement      | [#127](https://github.com/cesarnml/pirate_claw/pull/127) | patched        |
+| P15.03 Dashboard Overview Enhancement       | [#127](https://github.com/cesarnml/pirate_claw/pull/127) | patched        |
 | P15.04 TV Shows View — Progress and Sort    | [#128](https://github.com/cesarnml/pirate_claw/pull/128) | patched        |
 | P15.05 Movies View — Filter, Sort, Progress | [#129](https://github.com/cesarnml/pirate_claw/pull/129) | patched        |
 | P15.06 Unmatched Candidates View            | [#130](https://github.com/cesarnml/pirate_claw/pull/130) | clean          |
