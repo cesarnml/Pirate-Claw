@@ -110,6 +110,15 @@ export type MovieBreakdown = {
 	tmdb?: TmdbMoviePublic;
 };
 
+export type SkippedOutcomeRecord = {
+	id: number;
+	runId: number;
+	status: 'skipped_no_match';
+	recordedAt: string;
+	title: string | null;
+	feedName: string | null;
+};
+
 export type FeedConfig = {
 	name: string;
 	url: string;

@@ -11,6 +11,7 @@
 
 	const nav = [
 		{ href: '/candidates', label: 'Candidates' },
+		{ href: '/candidates/unmatched', label: 'Unmatched' },
 		{ href: '/shows', label: 'Shows' },
 		{ href: '/movies', label: 'Movies' },
 		{ href: '/config', label: 'Config' }
