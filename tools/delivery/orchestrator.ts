@@ -639,26 +639,30 @@ export async function runDeliveryOrchestrator(
         return 0;
       }
       case 'advance': {
-        const startNext = !parsed.flags.has('no-start-next');
-        const nextState = await advanceToNextTicketImpl(state, cwd, startNext);
+        const nextState = await advanceToNextTicketImpl(state, cwd);
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
 
-        const nextInProgress = nextState.tickets.find(
+        const nextPending = nextState.tickets.find(
           (t) =>
-            t.status === 'in_progress' &&
-            state.tickets.find((prev) => prev.id === t.id)?.status !==
-              'in_progress',
+            t.status === 'pending' &&
+            state.tickets.find((prev) => prev.id === t.id)?.status ===
+              'pending',
+        );
+        const justDone = nextState.tickets.find(
+          (t) =>
+            t.status === 'done' &&
+            state.tickets.find((prev) => prev.id === t.id)?.status !== 'done',
         );
 
-        if (nextInProgress) {
+        if (justDone && nextPending) {
           console.log('');
+          console.log('compaction_required=true');
           console.log(
-            `CONTEXT COMPACTION REQUIRED before starting ${nextInProgress.id}.`,
+            `CONTEXT COMPACTION REQUIRED before starting ${nextPending.id}.`,
           );
-          console.log('Call /compact or equivalent now. Then read handoff at:');
           console.log(
-            `  ${nextInProgress.handoffPath ?? `(handoff not yet written for ${nextInProgress.id})`}`,
+            `Call /compact or equivalent now. Then run: ${generateRunDeliverInvocation(_config.packageManager)} --plan ${state.planPath} start`,
           );
         }
 
@@ -1110,10 +1114,8 @@ export async function recordReview(
 async function advanceToNextTicketImpl(
   state: DeliveryState,
   cwd: string,
-  startNext: boolean,
 ): Promise<DeliveryState> {
-  return advanceToNextTicket(state, cwd, startNext, {
-    startTicket,
+  return advanceToNextTicket(state, cwd, {
     updatePullRequestBody,
   });
 }
@@ -1407,6 +1409,8 @@ export function formatCurrentTicketStatus(
     (ticketId
       ? state.tickets.find((t) => t.id === ticketId)
       : (state.tickets.find((t) => t.status === 'in_review') ??
+        state.tickets.find((t) => t.status === 'needs_patch') ??
+        state.tickets.find((t) => t.status === 'operator_input_needed') ??
         state.tickets.find((t) => t.status === 'reviewed'))) ?? undefined;
 
   const header = [
@@ -1418,6 +1422,29 @@ export function formatCurrentTicketStatus(
   if (!ticket) {
     return header;
   }
+
+  const actionableFindings = (ticket.reviewComments ?? []).filter(
+    (c) => c.kind !== 'summary' && !c.isOutdated && !c.isResolved,
+  );
+
+  const findingsBlock =
+    actionableFindings.length > 0
+      ? [
+          `findings (${actionableFindings.length}):`,
+          ...actionableFindings.map((c) => {
+            const boldMatch = c.body.match(/\*\*([^*]+)\*\*/);
+            const title = boldMatch
+              ? boldMatch[1]!.trim()
+              : c.body.slice(0, 120).replace(/\n/g, ' ').trim();
+            const location = c.path
+              ? c.line != null
+                ? `${c.path}:${c.line}`
+                : c.path
+              : '(no file)';
+            return `  [${c.vendor}] ${location} — ${title}`;
+          }),
+        ].join('\n')
+      : undefined;
 
   const ticketLines = [
     `${ticket.id} | status=${ticket.status} | branch=${ticket.branch} | base=${ticket.baseBranch}`,
@@ -1431,6 +1458,7 @@ export function formatCurrentTicketStatus(
     ticket.reviewActionSummary
       ? `review_action_summary=${ticket.reviewActionSummary}`
       : undefined,
+    findingsBlock,
     ticket.reviewNote ? `review_note=${ticket.reviewNote}` : undefined,
     ticket.reviewIncompleteAgents?.length
       ? `review_incomplete_agents=${ticket.reviewIncompleteAgents.join(',')}`

@@ -454,13 +454,7 @@ export function openPullRequest(
 export async function advanceToNextTicket(
   state: DeliveryState,
   cwd: string,
-  startNext: boolean,
   dependencies: {
-    startTicket: (
-      state: DeliveryState,
-      cwd: string,
-      ticketId?: string,
-    ) => Promise<DeliveryState>;
     updatePullRequestBody: (state: DeliveryState, ticket: TicketState) => void;
   },
 ): Promise<DeliveryState> {
@@ -478,25 +472,12 @@ export async function advanceToNextTicket(
 
   dependencies.updatePullRequestBody(state, current);
 
-  let nextState: DeliveryState = {
+  return {
     ...state,
     tickets: state.tickets.map((ticket) =>
       ticket.id === current.id ? { ...ticket, status: 'done' } : ticket,
     ),
   };
-
-  if (!startNext) {
-    return nextState;
-  }
-
-  const nextTicket = findNextPendingTicket(nextState);
-
-  if (!nextTicket) {
-    return nextState;
-  }
-
-  nextState = await dependencies.startTicket(nextState, cwd, nextTicket.id);
-  return nextState;
 }
 
 export function restackTicket(

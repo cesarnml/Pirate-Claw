@@ -24,7 +24,7 @@ export function getUsage(runDeliverInvocation: string): string {
     '  poll-review [ticket-id]',
     '  reconcile-late-review <ticket-id>',
     '  record-review <ticket-id> <clean|patched|operator_input_needed> [note]',
-    '  advance [--no-start-next]',
+    '  advance',
     '  restack [ticket-id]',
   ].join('\n');
 }

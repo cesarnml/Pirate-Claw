@@ -54,8 +54,10 @@ import {
   summarizeStateDifferences,
   syncStateWithPlan,
   runProcessResult,
+  formatCurrentTicketStatus,
   type DeliveryState,
 } from './orchestrator';
+import { advanceToNextTicket } from './ticket-flow';
 import { normalizeDeliveryStateFromPersisted } from './state';
 import { resolveNativeReviewThreads } from './review';
 
@@ -3683,5 +3685,240 @@ describe('delivery orchestrator', () => {
       },
     });
     expect(calls).toEqual(['resolve']);
+  });
+
+  describe('advanceToNextTicket (EE6: no auto-start)', () => {
+    const baseTicket = {
+      branch: 'agents/p1-01-foo',
+      baseBranch: 'main',
+      slug: 'foo',
+      ticketFile: 'docs/02-delivery/phase-01/ticket-01-foo.md',
+      worktreePath: '/tmp/p1_01',
+    };
+
+    const reviewedState: DeliveryState = {
+      planKey: 'phase-1',
+      planPath: 'docs/02-delivery/phase-01/implementation-plan.md',
+      statePath: '.agents/delivery/phase-1/state.json',
+      reviewsDirPath: '.agents/delivery/phase-1/reviews',
+      handoffsDirPath: '.agents/delivery/phase-1/handoffs',
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
+      tickets: [
+        {
+          ...baseTicket,
+          id: 'P1.01',
+          title: 'Ticket One',
+          status: 'reviewed',
+          reviewOutcome: 'clean',
+        },
+        {
+          id: 'P1.02',
+          title: 'Ticket Two',
+          slug: 'bar',
+          ticketFile: 'docs/02-delivery/phase-01/ticket-02-bar.md',
+          branch: 'agents/p1-02-bar',
+          baseBranch: 'agents/p1-01-foo',
+          worktreePath: '/tmp/p1_02',
+          status: 'pending',
+        },
+      ],
+    };
+
+    it('marks the reviewed ticket done without starting the next ticket', async () => {
+      const nextState = await advanceToNextTicket(reviewedState, '/tmp', {
+        updatePullRequestBody: () => {},
+      });
+
+      const done = nextState.tickets.find((t) => t.id === 'P1.01');
+      const pending = nextState.tickets.find((t) => t.id === 'P1.02');
+
+      expect(done?.status).toBe('done');
+      expect(pending?.status).toBe('pending');
+    });
+
+    it('throws when no reviewed ticket is ready', async () => {
+      const noReviewedState: DeliveryState = {
+        ...reviewedState,
+        tickets: reviewedState.tickets.map((t) =>
+          t.id === 'P1.01' ? { ...t, status: 'in_progress' as const } : t,
+        ),
+      };
+
+      await expect(
+        advanceToNextTicket(noReviewedState, '/tmp', {
+          updatePullRequestBody: () => {},
+        }),
+      ).rejects.toThrow('No reviewed ticket is ready to advance.');
+    });
+  });
+
+  describe('formatCurrentTicketStatus (EE6: findings block)', () => {
+    const baseState: DeliveryState = {
+      planKey: 'phase-15',
+      planPath: 'docs/02-delivery/phase-15/implementation-plan.md',
+      statePath: '.agents/delivery/phase-15/state.json',
+      reviewsDirPath: '.agents/delivery/phase-15/reviews',
+      handoffsDirPath: '.agents/delivery/phase-15/handoffs',
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
+      tickets: [
+        {
+          id: 'P15.06',
+          title: 'Unmatched Candidates View',
+          slug: 'unmatched-candidates-view',
+          ticketFile:
+            'docs/02-delivery/phase-15/ticket-06-unmatched-candidates-view.md',
+          branch: 'agents/p15-06-unmatched-candidates-view',
+          baseBranch: 'agents/p15-05-movies-view',
+          worktreePath: '/tmp/p15_06',
+          status: 'in_review',
+          prUrl: 'https://github.com/example/repo/pull/130',
+          reviewActionSummary: 'Flagged 2 finding comment(s) for follow-up.',
+          reviewComments: [
+            {
+              authorLogin: 'coderabbitai[bot]',
+              authorType: 'Bot',
+              vendor: 'coderabbit',
+              kind: 'finding',
+              channel: 'inline_review',
+              body: '⚠️ Potential issue | 🟡 Minor\n\n**Add an explicit label for the search field.**\n\nThe search control currently relies on placeholder text.',
+              path: 'web/src/routes/candidates/unmatched/+page.svelte',
+              line: 58,
+              isOutdated: false,
+              isResolved: false,
+            },
+            {
+              authorLogin: 'coderabbitai[bot]',
+              authorType: 'Bot',
+              vendor: 'coderabbit',
+              kind: 'finding',
+              channel: 'inline_review',
+              body: '**Tighten the "no match" assertion to verify zero data rows.**\n\nCurrent checks can pass even if rows still render.',
+              path: 'web/src/routes/candidates/unmatched/unmatched.test.ts',
+              line: 63,
+              isOutdated: false,
+              isResolved: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    it('emits a findings block for actionable finding comments', () => {
+      const output = formatCurrentTicketStatus(baseState, 'P15.06');
+
+      expect(output).toContain('findings (2):');
+      expect(output).toContain(
+        '[coderabbit] web/src/routes/candidates/unmatched/+page.svelte:58 — Add an explicit label for the search field.',
+      );
+      expect(output).toContain(
+        '[coderabbit] web/src/routes/candidates/unmatched/unmatched.test.ts:63 — Tighten the "no match" assertion to verify zero data rows.',
+      );
+    });
+
+    it('suppresses findings marked outdated or resolved', () => {
+      const stateWithStale: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((t) => ({
+          ...t,
+          reviewComments: (t.reviewComments ?? []).map((c, i) =>
+            i === 0 ? { ...c, isOutdated: true } : { ...c, isResolved: true },
+          ),
+        })),
+      };
+
+      const output = formatCurrentTicketStatus(stateWithStale, 'P15.06');
+
+      expect(output).not.toContain('findings (');
+      expect(output).not.toContain('[coderabbit]');
+    });
+
+    it('omits the findings block when reviewComments is empty', () => {
+      const stateNoComments: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((t) => ({ ...t, reviewComments: [] })),
+      };
+
+      const output = formatCurrentTicketStatus(stateNoComments, 'P15.06');
+
+      expect(output).not.toContain('findings (');
+    });
+
+    it('falls back to truncated body when no bold title is present', () => {
+      const stateNoBold: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((t) => ({
+          ...t,
+          reviewComments: [
+            {
+              authorLogin: 'sonarqubecloud',
+              authorType: 'Bot',
+              vendor: 'sonarqube',
+              kind: 'finding' as const,
+              channel: 'issue_comment' as const,
+              body: 'This function has cognitive complexity of 19 which is higher than the allowed 15.',
+              path: 'tools/delivery/orchestrator.ts',
+              line: 100,
+              isOutdated: false,
+              isResolved: false,
+            },
+          ],
+        })),
+      };
+
+      const output = formatCurrentTicketStatus(stateNoBold, 'P15.06');
+
+      expect(output).toContain('findings (1):');
+      expect(output).toContain(
+        '[sonarqube] tools/delivery/orchestrator.ts:100 — This function has cognitive complexity',
+      );
+    });
+
+    it('includes kind:unknown comments (e.g. SonarQube annotations) as actionable', () => {
+      const stateUnknown: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((t) => ({
+          ...t,
+          reviewComments: [
+            {
+              authorLogin: 'sonarqubecloud',
+              authorType: 'Bot',
+              vendor: 'sonarqube',
+              kind: 'unknown' as const,
+              channel: 'issue_comment' as const,
+              body: '**Cognitive complexity too high.**\n\nThis function has cognitive complexity of 19.',
+              path: 'tools/delivery/orchestrator.ts',
+              line: 100,
+              isOutdated: false,
+              isResolved: false,
+            },
+          ],
+        })),
+      };
+
+      const output = formatCurrentTicketStatus(stateUnknown, 'P15.06');
+
+      expect(output).toContain('findings (1):');
+      expect(output).toContain(
+        '[sonarqube] tools/delivery/orchestrator.ts:100 — Cognitive complexity too high.',
+      );
+    });
+
+    it('renders findings block when ticket status is needs_patch', () => {
+      const stateNeedsPatch: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((t) => ({
+          ...t,
+          status: 'needs_patch' as const,
+        })),
+      };
+
+      // no ticketId — selector must find needs_patch ticket
+      const output = formatCurrentTicketStatus(stateNeedsPatch);
+
+      expect(output).toContain('findings (2):');
+      expect(output).toContain('[coderabbit]');
+    });
   });
 });

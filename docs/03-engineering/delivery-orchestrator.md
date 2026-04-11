@@ -140,7 +140,7 @@ This does not automatically create a brand-new agent session, but it is the curr
 
 **No read-ahead during the review window.** The agent does nothing while waiting on external AI review. The wait is free (LLM idle during subprocess sleep). Read-ahead during the window burns context that is dead weight when the agent compacts at the next ticket boundary. Be sabaai sabaai.
 
-**Context compaction at every `advance`.** When `advance` starts the next ticket, it emits a compaction directive before the handoff path. Call `/compact` (or equivalent context-compression primitive) before reading the next handoff. The handoff artifact plus the `modified_sections` field gives the resuming context everything it needs; nothing else from prior ticket history is load-bearing.
+**Context compaction at every ticket boundary.** `advance` marks the current ticket done and emits `compaction_required=true` plus a directive to call `/compact`. It does **not** start the next ticket. After compacting, call `start` (zero-arg) to initialize the next ticket's worktree, branch, and handoff — then read the handoff path from the `start` output. The handoff artifact plus the `modified_sections` field gives the resuming context everything it needs; nothing else from prior ticket history is load-bearing.
 
 **Handoff artifact `modified_sections`.** The handoff now includes a `## Modified Sections` block extracted from the ticket's `## Scope` section. Read only the file sections listed there — do not re-read full files. This keeps per-ticket context bounded as implementation files grow across the phase.
 
@@ -194,7 +194,7 @@ Available commands:
 - `poll-review [ticket-id]`
 - `reconcile-late-review <ticket-id>`
 - `record-review <ticket-id> <clean|patched|operator_input_needed> [note]`
-- `advance [--no-start-next]`
+- `advance`
 - `restack [ticket-id]`
 
 Separate post-delivery closeout command:
@@ -211,6 +211,8 @@ bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-rev
 # if the triager hook leaves the ticket in needs_patch, follow up and then record the final outcome
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md record-review P2.02 patched "patched the two actionable correctness issues"
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
+# /compact  ← compact conversation context here before starting the next ticket
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
 ```
 
 After the developer has reviewed the full stacked PR chain and is ready to merge it, use:
@@ -230,7 +232,7 @@ bun run deliver ai-review
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
-After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window and auto-record `clean`. At the 6-minute check, the orchestrator advances immediately if all configured external review agents have posted findings. Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts, runs the triager hook, and otherwise auto-records `clean` at the final check. After `advance`, call `/compact` before reading the next handoff.
+After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window and auto-record `clean`. At the 6-minute check, the orchestrator advances immediately if all detected external review agents have finished their run (including agents that report clean). Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts and runs the triager hook. When findings are detected, `poll-review` output includes a condensed findings block — `[vendor] path:line — title` per actionable finding — so the implementing agent can triage and patch without reading the full `.txt` artifact. `poll-review` otherwise auto-records `clean` at the final check. After `advance`, call `/compact`, then call `start` to initialize the next ticket.
 
 If a parent ticket was squash-merged onto `main`, run:
 
@@ -303,6 +305,7 @@ PR descriptions are maintained as delivery metadata, not one-shot text.
 - `poll-review` auto-records `clean` when no `ai-code-review` feedback is detected by the final check and refreshes the PR body immediately
 - PR-body AI-review notes now distinguish current-head review from stale-history review when the reviewed SHA no longer matches the branch head
 - ticket-linked and standalone PR refreshes now share the same reviewer-facing external-review section builder, metadata-refresh adapter, and command-layer persistence helpers while preserving their intentionally different outer PR-body shapes
-- `advance` refreshes the PR body from that recorded review state, then marks the ticket done and optionally starts the next one
+- `advance` refreshes the PR body from that recorded review state, marks the ticket done, emits `compaction_required=true`, and stops — it does not start the next ticket
+- `start` (zero-arg) finds the next pending ticket, creates its worktree and branch, writes its handoff, and prints the handoff path; explicit `start <ticket-id>` form is unchanged
 
 This matters because the repo squash-merges PRs onto `main`, so the PR body needs to mention prudent ai-cr follow-up work before the stack moves on.
