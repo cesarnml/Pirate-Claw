@@ -265,6 +265,12 @@ export function syncStateWithPlan(
           ),
         selfAuditOutcome:
           previous?.selfAuditOutcome ?? inferredTicket?.selfAuditOutcome,
+        codexPreflightOutcome:
+          previous?.codexPreflightOutcome ??
+          inferredTicket?.codexPreflightOutcome,
+        codexPreflightCompletedAt:
+          previous?.codexPreflightCompletedAt ??
+          inferredTicket?.codexPreflightCompletedAt,
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
@@ -443,6 +449,8 @@ function inferStateFromRepo(
       handoffPath: undefined,
       handoffGeneratedAt: undefined,
       selfAuditOutcome: undefined,
+      codexPreflightOutcome: undefined,
+      codexPreflightCompletedAt: undefined,
       prNumber: pr?.number,
       prUrl: pr?.url,
       prOpenedAt: undefined,
@@ -531,16 +539,18 @@ function statusRank(status: TicketStatus): number {
       return 1;
     case 'post_verify_self_audit_complete':
       return 2;
-    case 'in_review':
+    case 'codex_preflight_complete':
       return 3;
-    case 'needs_patch':
+    case 'in_review':
       return 4;
-    case 'operator_input_needed':
+    case 'needs_patch':
       return 5;
-    case 'reviewed':
+    case 'operator_input_needed':
       return 6;
-    case 'done':
+    case 'reviewed':
       return 7;
+    case 'done':
+      return 8;
   }
 }
 

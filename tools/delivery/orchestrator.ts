@@ -100,6 +100,7 @@ import {
   findNextPendingTicket,
   findTicketByBranch,
   openPullRequest as openPullRequestImpl,
+  recordCodexPreflight as recordCodexPreflightImpl,
   recordPostVerifySelfAudit as recordPostVerifySelfAuditImpl,
   restackTicket as restackTicketImpl,
   startTicket as startTicketImpl,
@@ -153,6 +154,7 @@ export type TicketStatus =
   | 'pending'
   | 'in_progress'
   | 'post_verify_self_audit_complete'
+  | 'codex_preflight_complete'
   | 'in_review'
   | 'needs_patch'
   | 'operator_input_needed'
@@ -164,6 +166,8 @@ export type ReviewResult =
   | ReviewOutcome
   | 'needs_patch'
   | 'operator_input_needed';
+
+export type CodexPreflightOutcome = 'clean' | 'patched' | 'skipped';
 
 export type TicketDefinition = {
   id: string;
@@ -181,6 +185,8 @@ export type TicketState = TicketDefinition & {
   handoffGeneratedAt?: string;
   postVerifySelfAuditCompletedAt?: string;
   selfAuditOutcome?: ReviewOutcome;
+  codexPreflightOutcome?: CodexPreflightOutcome;
+  codexPreflightCompletedAt?: string;
   docOnly?: boolean;
   prNumber?: number;
   prUrl?: string;
@@ -261,7 +267,11 @@ export function initOrchestratorConfig(
   _config = {
     ..._config,
     ...config,
-    reviewPolicy: config.reviewPolicy ?? _config.reviewPolicy,
+    reviewPolicy: config.reviewPolicy ?? {
+      selfAudit: 'required',
+      codexPreflight: 'disabled',
+      externalReview: 'required',
+    },
   };
 }
 
@@ -566,6 +576,26 @@ export async function runDeliveryOrchestrator(
           auditTicketId,
           auditOutcome,
         );
+        await saveState(cwd, nextState);
+        console.log(formatStatus(nextState));
+        return 0;
+      }
+      case 'codex-preflight': {
+        const preflightPositional = parsed.positionals[0];
+        const preflightOutcome =
+          preflightPositional === 'clean' || preflightPositional === 'patched'
+            ? preflightPositional
+            : undefined;
+        const nextState = recordCodexPreflight(state, preflightOutcome);
+        const justRecordedPreflight = nextState.tickets.find(
+          (t) =>
+            t.status === 'codex_preflight_complete' &&
+            state.tickets.find((prev) => prev.id === t.id)?.status ===
+              'post_verify_self_audit_complete',
+        );
+        if (justRecordedPreflight?.codexPreflightOutcome === 'skipped') {
+          console.log('Doc-only ticket — Codex preflight auto-skipped.');
+        }
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
         return 0;
@@ -1010,6 +1040,13 @@ export async function recordInternalReview(
   return recordPostVerifySelfAuditImpl(state, ticketId);
 }
 
+export function recordCodexPreflight(
+  state: DeliveryState,
+  outcome?: 'clean' | 'patched',
+): DeliveryState {
+  return recordCodexPreflightImpl(state, outcome);
+}
+
 export async function openPullRequest(
   state: DeliveryState,
   cwd: string,
@@ -1019,6 +1056,7 @@ export async function openPullRequest(
     assertReviewerFacingMarkdown,
     buildPullRequestBody,
     buildPullRequestTitle,
+    codexPreflightPolicy: _config.reviewPolicy.codexPreflight,
     createPullRequest,
     editPullRequest,
     ensureBranchPushed,
@@ -1449,6 +1487,9 @@ export function formatStatus(state: DeliveryState): string {
         ticket.handoffPath ? `handoff=${ticket.handoffPath}` : undefined,
         ticket.postVerifySelfAuditCompletedAt
           ? `post_verify_self_audit=completed at ${ticket.postVerifySelfAuditCompletedAt}${ticket.selfAuditOutcome ? ` (${ticket.selfAuditOutcome})` : ''}`
+          : undefined,
+        ticket.codexPreflightCompletedAt
+          ? `codex_preflight=completed at ${ticket.codexPreflightCompletedAt} (${ticket.codexPreflightOutcome ?? 'unknown'})`
           : undefined,
         ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
         ticket.reviewArtifactJsonPath

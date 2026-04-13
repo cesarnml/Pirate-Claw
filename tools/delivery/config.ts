@@ -168,12 +168,17 @@ function parseReviewPolicy(raw: unknown): ReviewPolicy {
 
   const obj = raw as Record<string, unknown>;
   const result: ReviewPolicy = {};
+  const KNOWN_KEYS = ['selfAudit', 'codexPreflight', 'externalReview'] as const;
 
-  for (const key of [
-    'selfAudit',
-    'codexPreflight',
-    'externalReview',
-  ] as const) {
+  for (const unknownKey of Object.keys(obj)) {
+    if (!KNOWN_KEYS.includes(unknownKey as (typeof KNOWN_KEYS)[number])) {
+      throw new Error(
+        `Unknown reviewPolicy key "${unknownKey}" in orchestrator.config.json. Expected keys: ${KNOWN_KEYS.join(', ')}`,
+      );
+    }
+  }
+
+  for (const key of KNOWN_KEYS) {
     const value = obj[key];
 
     if (value === undefined) {

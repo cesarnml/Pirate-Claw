@@ -32,7 +32,9 @@ import {
   inferPackageManager,
   initOrchestratorConfig,
   VALID_REVIEW_POLICY_STAGE_VALUES,
+  recordCodexPreflight,
   loadOrchestratorConfig,
+  type CodexPreflightOutcome,
   mergeStandaloneAiReviewSection,
   notifyBestEffort,
   openPullRequest,
@@ -4449,5 +4451,233 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
       'skip_doc_only',
       'disabled',
     ]);
+  });
+});
+
+describe('EE8.02 — codex preflight command, status, and gate', () => {
+  const basePostAuditState: DeliveryState = {
+    planKey: 'phase-03',
+    planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+    statePath: '.agents/delivery/phase-03/state.json',
+    reviewsDirPath: '.agents/delivery/phase-03/reviews',
+    handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+    reviewPollIntervalMinutes: 6,
+    reviewPollMaxWaitMinutes: 12,
+    tickets: [
+      {
+        id: 'P3.01',
+        title: 'Persist Transmission Identity For Queued Torrents',
+        slug: 'persist-transmission-identity-for-queued-torrents',
+        ticketFile:
+          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+        status: 'post_verify_self_audit_complete',
+        branch:
+          'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+        baseBranch: 'main',
+        worktreePath: '/tmp/p3_01',
+        postVerifySelfAuditCompletedAt: '2026-04-14T00:00:00.000Z',
+      },
+    ],
+  };
+
+  it('records codexPreflightOutcome: clean and transitions to codex_preflight_complete', () => {
+    const nextState = recordCodexPreflight(basePostAuditState, 'clean');
+    expect(nextState.tickets[0]?.codexPreflightOutcome).toBe('clean');
+    expect(nextState.tickets[0]?.status).toBe('codex_preflight_complete');
+    expect(nextState.tickets[0]?.codexPreflightCompletedAt).toBeTruthy();
+  });
+
+  it('records codexPreflightOutcome: patched and transitions to codex_preflight_complete', () => {
+    const nextState = recordCodexPreflight(basePostAuditState, 'patched');
+    expect(nextState.tickets[0]?.codexPreflightOutcome).toBe('patched');
+    expect(nextState.tickets[0]?.status).toBe('codex_preflight_complete');
+  });
+
+  it('records codexPreflightOutcome: skipped for doc-only tickets', () => {
+    const docOnlyState: DeliveryState = {
+      ...basePostAuditState,
+      tickets: basePostAuditState.tickets.map((t) => ({
+        ...t,
+        docOnly: true,
+      })),
+    };
+    const nextState = recordCodexPreflight(docOnlyState);
+    expect(nextState.tickets[0]?.codexPreflightOutcome).toBe('skipped');
+    expect(nextState.tickets[0]?.status).toBe('codex_preflight_complete');
+  });
+
+  it('rejects codex-preflight when ticket is not at post_verify_self_audit_complete', () => {
+    const inProgressState: DeliveryState = {
+      ...basePostAuditState,
+      tickets: basePostAuditState.tickets.map((t) => ({
+        ...t,
+        status: 'in_progress' as const,
+      })),
+    };
+    expect(() => recordCodexPreflight(inProgressState, 'clean')).toThrow(
+      /No ticket at post_verify_self_audit_complete status/,
+    );
+  });
+
+  it('rejects codex-preflight on a code ticket with no outcome arg', () => {
+    expect(() => recordCodexPreflight(basePostAuditState)).toThrow(
+      /requires a Codex preflight outcome/,
+    );
+  });
+
+  it('statusRank orders: post_verify_self_audit_complete < codex_preflight_complete < in_review', () => {
+    // Verify via syncStateWithPlan status selection: higher rank wins
+    const options = createOptions({
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+    });
+    const existing: DeliveryState = {
+      ...options,
+      planKey: options.planKey,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'codex_preflight_complete',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+        },
+      ],
+    };
+    // inferred state has lower rank (post_verify_self_audit_complete) — existing wins
+    const inferred: DeliveryState = {
+      ...existing,
+      tickets: existing.tickets.map((t) => ({
+        ...t,
+        status: 'post_verify_self_audit_complete' as const,
+      })),
+    };
+    const synced = syncStateWithPlan(
+      existing,
+      existing.tickets,
+      '/tmp',
+      options,
+      inferred,
+    );
+    expect(synced.tickets[0]?.status).toBe('codex_preflight_complete');
+  });
+
+  it('open-pr rejects code ticket at post_verify_self_audit_complete when policy is required', async () => {
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'bun',
+      packageManager: 'bun',
+      ticketBoundaryMode: 'cook',
+      reviewPolicy: {
+        selfAudit: 'required',
+        codexPreflight: 'required',
+        externalReview: 'required',
+      },
+    });
+    try {
+      await expect(
+        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
+      ).rejects.toThrow(/requires Codex preflight before opening a PR/);
+    } finally {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'cook',
+        reviewPolicy: {
+          selfAudit: 'required',
+          codexPreflight: 'disabled',
+          externalReview: 'required',
+        },
+      });
+    }
+  });
+
+  it('open-pr error message includes codex-plugin-cc and config escape hatch', async () => {
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'bun',
+      packageManager: 'bun',
+      ticketBoundaryMode: 'cook',
+      reviewPolicy: {
+        selfAudit: 'required',
+        codexPreflight: 'required',
+        externalReview: 'required',
+      },
+    });
+    try {
+      await expect(
+        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
+      ).rejects.toThrow(/codex-plugin-cc/);
+      await expect(
+        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
+      ).rejects.toThrow(/codexPreflight.*disabled.*orchestrator\.config\.json/);
+    } finally {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'cook',
+        reviewPolicy: {
+          selfAudit: 'required',
+          codexPreflight: 'disabled',
+          externalReview: 'required',
+        },
+      });
+    }
+  });
+
+  it('formats codex_preflight outcome in formatStatus', () => {
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'bun',
+      packageManager: 'bun',
+      ticketBoundaryMode: 'cook',
+    });
+    const state: DeliveryState = {
+      ...basePostAuditState,
+      tickets: basePostAuditState.tickets.map((t) => ({
+        ...t,
+        status: 'codex_preflight_complete' as const,
+        codexPreflightOutcome: 'clean' as CodexPreflightOutcome,
+        codexPreflightCompletedAt: '2026-04-14T10:00:00.000Z',
+      })),
+    };
+    const output = formatStatus(state);
+    expect(output).toContain(
+      'codex_preflight=completed at 2026-04-14T10:00:00.000Z (clean)',
+    );
+  });
+
+  it('formats skipped codex_preflight outcome in formatStatus', () => {
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'bun',
+      packageManager: 'bun',
+      ticketBoundaryMode: 'cook',
+    });
+    const state: DeliveryState = {
+      ...basePostAuditState,
+      tickets: basePostAuditState.tickets.map((t) => ({
+        ...t,
+        status: 'codex_preflight_complete' as const,
+        codexPreflightOutcome: 'skipped' as CodexPreflightOutcome,
+        codexPreflightCompletedAt: '2026-04-14T10:00:00.000Z',
+      })),
+    };
+    const output = formatStatus(state);
+    expect(output).toContain(
+      'codex_preflight=completed at 2026-04-14T10:00:00.000Z (skipped)',
+    );
   });
 });

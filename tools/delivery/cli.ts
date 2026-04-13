@@ -26,6 +26,7 @@ export function getUsage(runDeliverInvocation: string): string {
     '  start [ticket-id]',
     '  post-verify-self-audit [clean|patched]',
     '    (alias: internal-review — deprecated)',
+    '  codex-preflight [clean|patched]',
     '  open-pr [ticket-id]',
     '  poll-review [ticket-id]',
     '  reconcile-late-review <ticket-id>',

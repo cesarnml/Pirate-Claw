@@ -4,7 +4,13 @@ import { dirname, resolve } from 'node:path';
 
 import type { PullRequestSummary } from './platform';
 import type { ReviewActionCommit } from './pr-metadata';
-import type { DeliveryState, ReviewOutcome, TicketState } from './orchestrator';
+import type {
+  CodexPreflightOutcome,
+  DeliveryState,
+  ReviewOutcome,
+  ReviewPolicyStageValue,
+  TicketState,
+} from './orchestrator';
 
 export function findNextPendingTicket(
   state: DeliveryState,
@@ -320,6 +326,51 @@ export function recordPostVerifySelfAudit(
 /** @deprecated Use `recordPostVerifySelfAudit`. */
 export const recordInternalReview = recordPostVerifySelfAudit;
 
+export function recordCodexPreflight(
+  state: DeliveryState,
+  outcome?: 'clean' | 'patched',
+  now: () => string = () => new Date().toISOString(),
+): DeliveryState {
+  const target = state.tickets.find(
+    (ticket) => ticket.status === 'post_verify_self_audit_complete',
+  );
+
+  if (!target) {
+    throw new Error(
+      'No ticket at post_verify_self_audit_complete status found to record Codex preflight.',
+    );
+  }
+
+  const isDocOnly = !!target.docOnly;
+  let resolvedOutcome: CodexPreflightOutcome;
+
+  if (isDocOnly) {
+    resolvedOutcome = 'skipped';
+  } else if (outcome === 'clean' || outcome === 'patched') {
+    resolvedOutcome = outcome;
+  } else {
+    throw new Error(
+      `Ticket ${target.id} requires a Codex preflight outcome. Pass \`clean\` or \`patched\`.`,
+    );
+  }
+
+  const completedAt = now();
+
+  return {
+    ...state,
+    tickets: state.tickets.map((ticket) =>
+      ticket.id === target.id
+        ? {
+            ...ticket,
+            status: 'codex_preflight_complete',
+            codexPreflightOutcome: resolvedOutcome,
+            codexPreflightCompletedAt: completedAt,
+          }
+        : ticket,
+    ),
+  };
+}
+
 export function openPullRequest(
   state: DeliveryState,
   cwd: string,
@@ -339,6 +390,7 @@ export function openPullRequest(
       ticket: Pick<TicketState, 'id' | 'title'>,
       commitSubject?: string,
     ) => string;
+    codexPreflightPolicy?: ReviewPolicyStageValue;
     createPullRequest: (
       cwd: string,
       options: {
@@ -373,14 +425,16 @@ export function openPullRequest(
     (ticketId
       ? state.tickets.find((ticket) => ticket.id === ticketId)
       : (state.tickets.find(
+          (ticket) => ticket.status === 'codex_preflight_complete',
+        ) ??
+        state.tickets.find(
           (ticket) => ticket.status === 'post_verify_self_audit_complete',
-        ) ?? state.tickets.find((ticket) => ticket.status === 'in_review'))) ??
+        ) ??
+        state.tickets.find((ticket) => ticket.status === 'in_review'))) ??
     undefined;
 
   if (!target) {
-    throw new Error(
-      'No ticket in post-verify self-audit complete state found to open as a PR.',
-    );
+    throw new Error('No ticket in a PR-openable state found to open as a PR.');
   }
 
   if (target.status === 'in_progress') {
@@ -390,7 +444,17 @@ export function openPullRequest(
   }
 
   if (
+    target.status === 'post_verify_self_audit_complete' &&
+    dependencies.codexPreflightPolicy === 'required'
+  ) {
+    throw new Error(
+      `Ticket ${target.id} requires Codex preflight before opening a PR. Run \`bun run deliver codex-preflight [clean|patched]\` after completing the Codex review step. If codex-plugin-cc is unavailable, set codexPreflight to "disabled" in orchestrator.config.json to bypass.`,
+    );
+  }
+
+  if (
     target.status !== 'post_verify_self_audit_complete' &&
+    target.status !== 'codex_preflight_complete' &&
     target.status !== 'in_review'
   ) {
     throw new Error(
