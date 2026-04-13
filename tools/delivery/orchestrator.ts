@@ -649,11 +649,17 @@ export async function runDeliveryOrchestrator(
         return 0;
       }
       case 'advance': {
-        const nextState = await advanceToNextTicketImpl(state, cwd);
+        const advancedState = await advanceToNextTicketImpl(state, cwd);
+        const nextState = await applyAdvanceBoundaryMode(
+          state,
+          advancedState,
+          cwd,
+        );
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
         const boundaryGuidance = formatAdvanceBoundaryGuidance(
           state,
+          advancedState,
           nextState,
         );
 
@@ -1116,6 +1122,48 @@ async function advanceToNextTicketImpl(
   });
 }
 
+export function resolveEffectiveAdvanceBoundaryMode(
+  mode: TicketBoundaryMode,
+): 'cook' | 'gated' {
+  return mode === 'glide' ? 'gated' : mode;
+}
+
+export async function applyAdvanceBoundaryMode(
+  state: DeliveryState,
+  advancedState: DeliveryState,
+  cwd: string,
+  dependencies: {
+    startTicket: (
+      state: DeliveryState,
+      cwd: string,
+      ticketId?: string,
+    ) => Promise<DeliveryState>;
+  } = {
+    startTicket,
+  },
+): Promise<DeliveryState> {
+  const nextPending = advancedState.tickets.find(
+    (ticket) =>
+      ticket.status === 'pending' &&
+      state.tickets.find((previous) => previous.id === ticket.id)?.status ===
+        'pending',
+  );
+
+  if (!nextPending) {
+    return advancedState;
+  }
+
+  const effectiveMode = resolveEffectiveAdvanceBoundaryMode(
+    _config.ticketBoundaryMode,
+  );
+
+  if (effectiveMode !== 'cook') {
+    return advancedState;
+  }
+
+  return dependencies.startTicket(advancedState, cwd, nextPending.id);
+}
+
 async function restackTicket(
   state: DeliveryState,
   cwd: string,
@@ -1395,14 +1443,15 @@ export function formatStatus(state: DeliveryState): string {
 
 export function formatAdvanceBoundaryGuidance(
   state: DeliveryState,
+  advancedState: DeliveryState,
   nextState: DeliveryState,
 ): string | undefined {
-  const nextPending = nextState.tickets.find(
+  const nextPending = advancedState.tickets.find(
     (t) =>
       t.status === 'pending' &&
       state.tickets.find((prev) => prev.id === t.id)?.status === 'pending',
   );
-  const justDone = nextState.tickets.find(
+  const justDone = advancedState.tickets.find(
     (t) =>
       t.status === 'done' &&
       state.tickets.find((prev) => prev.id === t.id)?.status !== 'done',
@@ -1412,19 +1461,43 @@ export function formatAdvanceBoundaryGuidance(
     return undefined;
   }
 
-  if (_config.ticketBoundaryMode !== 'gated') {
-    return undefined;
-  }
-
+  const effectiveMode = resolveEffectiveAdvanceBoundaryMode(
+    _config.ticketBoundaryMode,
+  );
   const invocation = `${generateRunDeliverInvocation(_config.packageManager)} --plan ${state.planPath} start`;
   const resumePrompt = `Immediately execute \`${invocation}\`, read the generated handoff artifact as the source of truth for context, and implement ${nextPending.id}.`;
 
+  if (effectiveMode === 'cook') {
+    const startedTicket = nextState.tickets.find(
+      (ticket) => ticket.id === nextPending.id,
+    );
+
+    return [
+      'continuation_mode=cook',
+      `COOK CONTINUATION started ${nextPending.id}.`,
+      startedTicket?.handoffPath
+        ? `next_handoff=${startedTicket.handoffPath}`
+        : undefined,
+      'Read the generated handoff artifact and continue implementation in the started ticket worktree.',
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join('\n');
+  }
+
   return [
     'context_reset_required=true',
-    `GATED BOUNDARY before starting ${nextPending.id}.`,
+    _config.ticketBoundaryMode === 'glide' ? 'glide_fallback=gated' : undefined,
+    _config.ticketBoundaryMode === 'glide'
+      ? `GLIDE FALLBACK before starting ${nextPending.id}.`
+      : `GATED BOUNDARY before starting ${nextPending.id}.`,
+    _config.ticketBoundaryMode === 'glide'
+      ? 'Host/runtime self-reset is not supported here, so Son-of-Anton is using gated boundary behavior instead.'
+      : undefined,
     'Reset context now. Prefer /clear for minimum token use; use /compact only if you intentionally want compressed carry-forward context.',
     `resume_prompt=${resumePrompt}`,
-  ].join('\n');
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join('\n');
 }
 
 /**
