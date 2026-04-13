@@ -12,7 +12,13 @@
 
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 	const currentEtag = $derived(
-		form?.feedsEtag ?? form?.moviesEtag ?? form?.tvDefaultsEtag ?? form?.etag ?? data.etag ?? null
+		form?.feedsEtag ??
+			form?.moviesEtag ??
+			form?.tvDefaultsEtag ??
+			form?.showsEtag ??
+			form?.runtimeEtag ??
+			data.etag ??
+			null
 	);
 	const canWrite = $derived(data.canWrite);
 
@@ -617,12 +623,11 @@
 
 		<form
 			method="POST"
-			action="?/saveSettings"
+			action="?/saveShows"
 			use:enhance={() => {
 				return async ({ result, update }) => {
 					if (result.type === 'success') {
-						toast('Saved — restart the daemon for this change to take effect', 'success');
-						offerRestart();
+						toast('TV shows saved.', 'success');
 					} else if (result.type === 'failure') {
 						if (result.status === 409) {
 							toast('Config changed elsewhere — reload and try again', 'error');
@@ -677,8 +682,43 @@
 							Add show
 						</button>
 					</div>
+					{#if form?.showsMessage}
+						<p class="text-destructive text-xs">{form.showsMessage}</p>
+					{/if}
+					<div>
+						<button
+							type="submit"
+							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+							disabled={!currentEtag}
+						>
+							Save shows
+						</button>
+					</div>
 				</CardContent>
 			</Card>
+		</form>
+
+		<form
+			method="POST"
+			action="?/saveRuntime"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					if (result.type === 'success') {
+						toast('Saved — restart the daemon for this change to take effect', 'success');
+						offerRestart();
+					} else if (result.type === 'failure') {
+						if (result.status === 409) {
+							toast('Config changed elsewhere — reload and try again', 'error');
+						} else {
+							toast('Save failed — see errors above', 'error');
+						}
+					}
+					await update();
+				};
+			}}
+			class="space-y-6"
+		>
+			<input type="hidden" name="runtimeIfMatch" value={currentEtag ?? ''} />
 
 			<Card>
 				<CardHeader class="pb-3">
@@ -751,16 +791,18 @@
 						</div>
 						<p class="text-muted-foreground text-xs">
 							Daemon timers and the API listen port are fixed at process start — restart after
-							changing those fields. TV show titles above apply on the next run cycle without
-							restart.
+							changing those fields.
 						</p>
+						{#if form?.runtimeMessage}
+							<p class="text-destructive text-xs">{form.runtimeMessage}</p>
+						{/if}
 						<div class="flex flex-wrap items-center gap-3">
 							<button
 								type="submit"
 								class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium"
 								disabled={!currentEtag}
 							>
-								Save settings
+								Save runtime
 							</button>
 						</div>
 					</div>

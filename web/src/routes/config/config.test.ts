@@ -66,7 +66,8 @@ describe('/config', () => {
 		expect(screen.getByRole('heading', { name: 'Runtime' })).toBeInTheDocument();
 		expect(screen.getByText('TestFeed')).toBeInTheDocument();
 		expect(screen.getByDisplayValue('hd-tv')).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Save shows' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeInTheDocument();
 	});
 
 	it('renders error state when API is unreachable', () => {

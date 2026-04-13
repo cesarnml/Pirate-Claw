@@ -71,36 +71,67 @@ function validateRuntimeBounds(
 }
 
 export const actions: Actions = {
-	saveSettings: async ({ request }) => {
+	saveShows: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
-			return fail(500, { message: 'Server write token is not configured.' });
+			return fail(500, { showsMessage: 'Server write token is not configured.' });
 		}
 
 		const formData = await request.formData();
-		const allowedFields = new Set([
-			'ifMatch',
-			'showName',
-			'runIntervalMinutes',
-			'reconcileIntervalMinutes',
-			'tmdbRefreshIntervalMinutes',
-			'apiPort'
-		]);
-		for (const key of formData.keys()) {
-			if (!allowedFields.has(key)) {
-				return fail(400, { message: `Field "${key}" is not allowed.` });
-			}
-		}
-
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
 		if (!ifMatch) {
-			return fail(400, { message: 'Missing config revision. Reload and try again.' });
+			return fail(400, { showsMessage: 'Missing config revision. Reload and try again.' });
 		}
 
 		const rawShowNames = formData.getAll('showName').map((v) => String(v).trim());
 		const showNames = rawShowNames.filter((n) => n.length > 0);
 		if (showNames.length < 1) {
-			return fail(400, { message: 'At least one TV show name is required.' });
+			return fail(400, { showsMessage: 'At least one TV show name is required.' });
+		}
+
+		try {
+			const response = await apiRequest('/api/config', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify({ tv: { shows: showNames } })
+			});
+
+			if (!response.ok) {
+				let showsMessage = `Save failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) showsMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, { showsMessage, showsEtag: response.headers.get('etag') });
+			}
+
+			return {
+				showsSuccess: true,
+				message: 'TV shows saved.',
+				showsEtag: response.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[config] saveShows failed:', error);
+			return fail(500, { showsMessage: 'Could not save TV shows.' });
+		}
+	},
+
+	saveRuntime: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(500, { runtimeMessage: 'Server write token is not configured.' });
+		}
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('runtimeIfMatch') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, { runtimeMessage: 'Missing config revision. Reload and try again.' });
 		}
 
 		const runIntervalMinutes = parseOptionalInt(formData.get('runIntervalMinutes'));
@@ -115,7 +146,7 @@ export const actions: Actions = {
 			apiPort
 		].some((value) => Number.isNaN(value));
 		if (invalidRuntimeField) {
-			return fail(400, { message: 'Runtime fields must be whole numbers.' });
+			return fail(400, { runtimeMessage: 'Runtime fields must be whole numbers.' });
 		}
 
 		for (const [field, value] of [
@@ -126,7 +157,7 @@ export const actions: Actions = {
 		] as const) {
 			const result = validateRuntimeBounds(field, value);
 			if (!result.ok) {
-				return fail(400, { message: result.message });
+				return fail(400, { runtimeMessage: result.message });
 			}
 		}
 
@@ -136,9 +167,6 @@ export const actions: Actions = {
 				reconcileIntervalMinutes,
 				tmdbRefreshIntervalMinutes: tmdbRefreshIntervalMinutes ?? 0,
 				...(apiPort === undefined ? {} : { apiPort })
-			},
-			tv: {
-				shows: showNames
 			}
 		};
 
@@ -154,28 +182,24 @@ export const actions: Actions = {
 			});
 
 			if (!response.ok) {
-				let message = `Save failed (${response.status}).`;
+				let runtimeMessage = `Save failed (${response.status}).`;
 				try {
 					const body = (await response.json()) as { error?: string };
-					if (body.error) message = body.error;
+					if (body.error) runtimeMessage = body.error;
 				} catch {
 					// keep fallback message
 				}
-				return fail(response.status, {
-					message,
-					etag: response.headers.get('etag')
-				});
+				return fail(response.status, { runtimeMessage, runtimeEtag: response.headers.get('etag') });
 			}
 
 			return {
-				success: true,
-				message:
-					'Settings saved. TV show list updates apply on the next daemon run cycle. Restart the daemon to apply a new API port or timer intervals.',
-				etag: response.headers.get('etag')
+				runtimeSuccess: true,
+				message: 'Runtime settings saved.',
+				runtimeEtag: response.headers.get('etag')
 			};
 		} catch (error) {
-			console.error('[config] save failed:', error);
-			return fail(500, { message: 'Could not save settings.' });
+			console.error('[config] saveRuntime failed:', error);
+			return fail(500, { runtimeMessage: 'Could not save runtime settings.' });
 		}
 	},
 

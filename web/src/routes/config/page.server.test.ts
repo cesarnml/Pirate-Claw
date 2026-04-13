@@ -136,8 +136,8 @@ describe('config page server actions', () => {
 		});
 	});
 
-	describe('saveSettings', () => {
-		it('rejects out-of-scope fields before API call', async () => {
+	describe('saveShows', () => {
+		it('returns fail(400) when no show names provided', async () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
@@ -145,10 +145,8 @@ describe('config page server actions', () => {
 
 			const body = new URLSearchParams();
 			body.set('ifMatch', '"rev-1"');
-			body.set('runIntervalMinutes', '15');
-			body.set('feeds', '[]');
 
-			const result = await actions.saveSettings({
+			const result = await actions.saveShows({
 				request: new Request('http://localhost/config', {
 					method: 'POST',
 					headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -157,22 +155,22 @@ describe('config page server actions', () => {
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
-			expect((result as { data?: { message?: string } }).data?.message).toContain('not allowed');
+			expect((result as { data?: { showsMessage?: string } }).data?.showsMessage).toContain(
+				'At least one TV show name is required'
+			);
 			expect(apiRequestMock).not.toHaveBeenCalled();
 		});
 
-		it('rejects out-of-range runtime values', async () => {
+		it('returns fail(400) when ifMatch is missing', async () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
 			const { actions } = await import('./+page.server');
 
 			const body = new URLSearchParams();
-			body.set('ifMatch', '"rev-1"');
 			body.set('showName', 'Test Show');
-			body.set('runIntervalMinutes', '0');
 
-			const result = await actions.saveSettings({
+			const result = await actions.saveShows({
 				request: new Request('http://localhost/config', {
 					method: 'POST',
 					headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -181,10 +179,124 @@ describe('config page server actions', () => {
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
-			expect((result as { data?: { message?: string } }).data?.message).toContain(
+			expect((result as { data?: { showsMessage?: string } }).data?.showsMessage).toContain(
+				'Missing config revision'
+			);
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('returns showsSuccess: true on happy path', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-2"' } })
+			);
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('showName', 'Breaking Bad');
+
+			const result = await actions.saveShows({
+				request: new Request('http://localhost/config', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { showsSuccess?: boolean }).showsSuccess).toBe(true);
+			expect((result as { showsEtag?: string }).showsEtag).toBe('"rev-2"');
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/config',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({ tv: { shows: ['Breaking Bad'] } })
+				})
+			);
+		});
+	});
+
+	describe('saveRuntime', () => {
+		it('returns fail(400) when runtimeIfMatch is missing', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+
+			const body = new URLSearchParams();
+			body.set('runIntervalMinutes', '15');
+
+			const result = await actions.saveRuntime({
+				request: new Request('http://localhost/config', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect((result as { data?: { runtimeMessage?: string } }).data?.runtimeMessage).toContain(
+				'Missing config revision'
+			);
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('returns fail(400) on out-of-range runIntervalMinutes', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+
+			const body = new URLSearchParams();
+			body.set('runtimeIfMatch', '"rev-1"');
+			body.set('runIntervalMinutes', '0');
+
+			const result = await actions.saveRuntime({
+				request: new Request('http://localhost/config', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect((result as { data?: { runtimeMessage?: string } }).data?.runtimeMessage).toContain(
 				'runIntervalMinutes'
 			);
 			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('returns runtimeSuccess: true on happy path with ETag update', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-2"' } })
+			);
+
+			const body = new URLSearchParams();
+			body.set('runtimeIfMatch', '"rev-1"');
+			body.set('runIntervalMinutes', '30');
+			body.set('reconcileIntervalMinutes', '60');
+			body.set('tmdbRefreshIntervalMinutes', '0');
+
+			const result = await actions.saveRuntime({
+				request: new Request('http://localhost/config', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { runtimeSuccess?: boolean }).runtimeSuccess).toBe(true);
+			expect((result as { runtimeEtag?: string }).runtimeEtag).toBe('"rev-2"');
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/config',
+				expect.objectContaining({ method: 'PUT' })
+			);
 		});
 	});
 
