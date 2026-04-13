@@ -11,7 +11,7 @@ Execution ethos for approved multi-ticket phase/epic work and standalone (non-ti
 
 1. **Entrypoint.** Use `bun run deliver`. Read `docs/03-engineering/delivery-orchestrator.md` for command surface — not ad hoc substitutes.
 2. **When to use.** Smaller bounded changes ship as standalone PRs without a new phase/epic. Use `bun run deliver ai-review [--pr <number>]` — not the ticketed stacked flow (`--plan …`, `poll-review`, `advance`, etc.).
-3. **Before external review.** Complete implement → verify (`bun run verify` + scoped tests) in build mode, then self-audit mode (re-read diff, second-pass risky areas). For ticket stacks run `post-verify-self-audit` CLI. If the active ticket workflow includes Codex preflight, complete that gate before `open-pr`. Standalone PRs have no self-audit CLI equivalent, but the same mode switch applies.
+3. **Before external review.** Complete implement → verify (`bun run verify` + scoped tests) in build mode, then self-audit mode (re-read diff, second-pass risky areas). For ticket stacks run `post-verify-self-audit [clean|patched]` CLI (defaults to `clean` when arg omitted). If `reviewPolicy.codexPreflight` is `"required"`, run the `codex:rescue` skill, apply prudent findings, then record with `codex-preflight [clean|patched]` before `open-pr`. Standalone PRs have no self-audit CLI equivalent, but the same mode switch applies.
 4. **Running `ai-review`.** Uses real wall-clock polling. Surface that before starting; do not hide the time cost.
 5. **Commits.** Follow AGENTS Pre-Commit (Prettier for touched files; spellcheck when docs or user-facing copy changed).
 6. **Product-scope gates** apply to new phase/epic work — not to standalone PRs already allowed outside a new phase.
@@ -37,7 +37,7 @@ Commit the delivery plan and all ticket docs to the default branch before creati
 1. Re-read required repo docs and handoff artifacts at each ticket boundary.
 2. Use the supported orchestrator path, not ad hoc manual substitutes.
 3. Move one ticket at a time in order.
-4. For each ticket: implement → verify → update ticket rationale → open/refresh PR → run AI-review polling → patch prudent findings → advance.
+4. For each ticket: implement → verify → update ticket rationale → self-audit (`post-verify-self-audit [clean|patched]`) → (if `codexPreflight: "required"`) Codex preflight (`codex-preflight [clean|patched]`) → open/refresh PR → run AI-review polling → patch prudent findings → record-review → advance.
 5. During the external review wait, do nothing.
 6. Do not write ahead across ticket boundaries.
 7. After `advance`, follow the active boundary mode and keep going without asking for permission unless a real blocker exists.
@@ -75,7 +75,27 @@ Record `clean` only when no actionable feedback found. Record `patched` when act
 
 ### Docs-Only PRs
 
-Skip the external review window. Record `clean` immediately and advance.
+Skip the external review window. Record `clean` immediately and advance. Codex preflight is also auto-skipped for doc-only tickets — the orchestrator records `skipped` without requiring an outcome arg.
+
+## Codex Preflight
+
+**Role split:**
+
+- **Claude** executes and patches (build mode and self-audit).
+- **Codex** reviews internally via the `codex:rescue` skill — a second AI opinion before the PR is published.
+- **External AI vendors** (CodeRabbit, Qodo, Greptile, SonarQube) review post-publication via `poll-review`.
+
+**When `codexPreflight` is `"required"`** in `orchestrator.config.json`:
+
+1. Run the `codex:rescue` skill.
+2. Apply prudent findings.
+3. Record the outcome: `bun run deliver --plan <plan> codex-preflight [clean|patched]`
+
+The CLI is a state recorder only — never invoke Codex from within the CLI.
+
+**When `codexPreflight` is `"disabled"`** (the default): skip the step entirely. `open-pr` does not require `codex_preflight_complete` status.
+
+If `codex-plugin-cc` is unavailable, set `codexPreflight: "disabled"` in `orchestrator.config.json` to bypass the gate.
 
 ## Stop Conditions
 

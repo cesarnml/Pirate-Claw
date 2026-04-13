@@ -586,7 +586,33 @@ export async function runDeliveryOrchestrator(
           preflightPositional === 'clean' || preflightPositional === 'patched'
             ? preflightPositional
             : undefined;
-        const nextState = recordCodexPreflight(state, preflightOutcome);
+        const preflightTarget = state.tickets.find(
+          (t) => t.status === 'post_verify_self_audit_complete',
+        );
+        let isDocOnly = !!preflightTarget?.docOnly;
+        if (preflightTarget && !isDocOnly) {
+          const diffResult = runPlatformProcessResult(
+            preflightTarget.worktreePath,
+            [
+              'git',
+              'diff',
+              `origin/${preflightTarget.baseBranch}...HEAD`,
+              '--name-only',
+            ],
+            _config.runtime,
+          );
+          if (diffResult.exitCode === 0) {
+            const changedFiles = diffResult.stdout.split('\n').filter(Boolean);
+            isDocOnly =
+              changedFiles.length > 0 &&
+              changedFiles.every((f) => f.endsWith('.md'));
+          }
+        }
+        const nextState = recordCodexPreflight(
+          state,
+          preflightOutcome,
+          isDocOnly,
+        );
         const justRecordedPreflight = nextState.tickets.find(
           (t) =>
             t.status === 'codex_preflight_complete' &&
@@ -1043,8 +1069,9 @@ export async function recordInternalReview(
 export function recordCodexPreflight(
   state: DeliveryState,
   outcome?: 'clean' | 'patched',
+  isDocOnly?: boolean,
 ): DeliveryState {
-  return recordCodexPreflightImpl(state, outcome);
+  return recordCodexPreflightImpl(state, outcome, isDocOnly);
 }
 
 export async function openPullRequest(
