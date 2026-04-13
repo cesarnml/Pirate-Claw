@@ -55,6 +55,7 @@ import {
   syncStateWithPlan,
   runProcessResult,
   formatCurrentTicketStatus,
+  formatAdvanceBoundaryGuidance,
   formatStatus,
   type DeliveryState,
 } from './orchestrator';
@@ -3911,6 +3912,94 @@ describe('delivery orchestrator', () => {
           updatePullRequestBody: () => {},
         }),
       ).rejects.toThrow('No reviewed ticket is ready to advance.');
+    });
+  });
+
+  describe('formatAdvanceBoundaryGuidance (EE7 gated output)', () => {
+    const baseState: DeliveryState = {
+      planKey: 'engineering-epic-07',
+      planPath: 'docs/02-delivery/engineering-epic-07/implementation-plan.md',
+      statePath: '.agents/delivery/engineering-epic-07/state.json',
+      reviewsDirPath: '.agents/delivery/engineering-epic-07/reviews',
+      handoffsDirPath: '.agents/delivery/engineering-epic-07/handoffs',
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
+      tickets: [
+        {
+          id: 'EE7.01',
+          title: 'Boundary policy plumbing and visibility',
+          slug: 'boundary-policy-plumbing-and-visibility',
+          ticketFile:
+            'docs/02-delivery/engineering-epic-07/ticket-01-boundary-policy-plumbing-and-visibility.md',
+          status: 'reviewed',
+          branch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',
+          baseBranch: 'main',
+          worktreePath: '/tmp/ee7_01',
+          reviewOutcome: 'patched',
+        },
+        {
+          id: 'EE7.02',
+          title: 'Gated boundary semantics and resume prompt',
+          slug: 'gated-boundary-semantics-and-resume-prompt',
+          ticketFile:
+            'docs/02-delivery/engineering-epic-07/ticket-02-gated-boundary-semantics-and-resume-prompt.md',
+          status: 'pending',
+          branch: 'agents/ee7-02-gated-boundary-semantics-and-resume-prompt',
+          baseBranch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',
+          worktreePath: '/tmp/ee7_02',
+        },
+      ],
+    };
+
+    it('emits gated reset guidance and the canonical resume prompt', () => {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'gated',
+      });
+
+      const nextState: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((ticket) =>
+          ticket.id === 'EE7.01'
+            ? { ...ticket, status: 'done' as const }
+            : ticket,
+        ),
+      };
+
+      const output = formatAdvanceBoundaryGuidance(baseState, nextState);
+
+      expect(output).toContain('context_reset_required=true');
+      expect(output).toContain('GATED BOUNDARY before starting EE7.02.');
+      expect(output).toContain('Prefer /clear for minimum token use');
+      expect(output).toContain(
+        'resume_prompt=Immediately execute `bun run deliver --plan docs/02-delivery/engineering-epic-07/implementation-plan.md start`, read the generated handoff artifact as the source of truth for context, and implement EE7.02.',
+      );
+    });
+
+    it('emits no boundary guidance outside gated mode', () => {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'cook',
+      });
+
+      const nextState: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((ticket) =>
+          ticket.id === 'EE7.01'
+            ? { ...ticket, status: 'done' as const }
+            : ticket,
+        ),
+      };
+
+      expect(formatAdvanceBoundaryGuidance(baseState, nextState)).toBe(
+        undefined,
+      );
     });
   });
 

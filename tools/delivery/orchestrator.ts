@@ -652,28 +652,14 @@ export async function runDeliveryOrchestrator(
         const nextState = await advanceToNextTicketImpl(state, cwd);
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
-
-        const nextPending = nextState.tickets.find(
-          (t) =>
-            t.status === 'pending' &&
-            state.tickets.find((prev) => prev.id === t.id)?.status ===
-              'pending',
-        );
-        const justDone = nextState.tickets.find(
-          (t) =>
-            t.status === 'done' &&
-            state.tickets.find((prev) => prev.id === t.id)?.status !== 'done',
+        const boundaryGuidance = formatAdvanceBoundaryGuidance(
+          state,
+          nextState,
         );
 
-        if (justDone && nextPending) {
+        if (boundaryGuidance) {
           console.log('');
-          console.log('compaction_required=true');
-          console.log(
-            `CONTEXT COMPACTION REQUIRED before starting ${nextPending.id}.`,
-          );
-          console.log(
-            `Call /compact or equivalent now. Then run: ${generateRunDeliverInvocation(_config.packageManager)} --plan ${state.planPath} start`,
-          );
+          console.log(boundaryGuidance);
         }
 
         await emitNotificationWarnings(
@@ -1404,6 +1390,40 @@ export function formatStatus(state: DeliveryState): string {
         .filter((value): value is string => value !== undefined)
         .join('\n'),
     ),
+  ].join('\n');
+}
+
+export function formatAdvanceBoundaryGuidance(
+  state: DeliveryState,
+  nextState: DeliveryState,
+): string | undefined {
+  const nextPending = nextState.tickets.find(
+    (t) =>
+      t.status === 'pending' &&
+      state.tickets.find((prev) => prev.id === t.id)?.status === 'pending',
+  );
+  const justDone = nextState.tickets.find(
+    (t) =>
+      t.status === 'done' &&
+      state.tickets.find((prev) => prev.id === t.id)?.status !== 'done',
+  );
+
+  if (!justDone || !nextPending) {
+    return undefined;
+  }
+
+  if (_config.ticketBoundaryMode !== 'gated') {
+    return undefined;
+  }
+
+  const invocation = `${generateRunDeliverInvocation(_config.packageManager)} --plan ${state.planPath} start`;
+  const resumePrompt = `Immediately execute \`${invocation}\`, read the generated handoff artifact as the source of truth for context, and implement ${nextPending.id}.`;
+
+  return [
+    'context_reset_required=true',
+    `GATED BOUNDARY before starting ${nextPending.id}.`,
+    'Reset context now. Prefer /clear for minimum token use; use /compact only if you intentionally want compressed carry-forward context.',
+    `resume_prompt=${resumePrompt}`,
   ].join('\n');
 }
 

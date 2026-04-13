@@ -55,7 +55,11 @@ state; the operator should not have to compose it manually.
 
 ## Rationale
 
-To be filled during implementation if behavior or trade-offs shift.
+The gated reset text now lives in `formatAdvanceBoundaryGuidance(state,
+nextState)` and is only emitted when the effective mode is `gated`. That keeps
+EE7.02 focused on the operator/agent output contract while preserving EE6's
+existing `advanceToNextTicket` behavior and `start`-owned handoff creation for
+the next slice.
 
 ## Notes
 
