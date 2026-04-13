@@ -52,7 +52,11 @@ Behavioral constraint for this ticket:
 
 ## Rationale
 
-To be filled during implementation if behavior or trade-offs shift.
+Boundary mode is resolved at run start from repo config plus an optional CLI
+override, then surfaced through the existing `_config` path instead of being
+persisted into delivery state. That keeps EE7.01 plumbing-only: status and
+current-ticket output can report the effective mode for the active run without
+changing stored ticket state or boundary semantics yet.
 
 ## Notes
 

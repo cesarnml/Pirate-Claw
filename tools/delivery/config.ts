@@ -7,6 +7,7 @@ export type OrchestratorConfig = {
   planRoot?: string;
   runtime?: 'bun' | 'node';
   packageManager?: 'bun' | 'npm' | 'pnpm' | 'yarn';
+  ticketBoundaryMode?: 'cook' | 'gated' | 'glide';
 };
 
 export type ResolvedOrchestratorConfig = {
@@ -14,10 +15,12 @@ export type ResolvedOrchestratorConfig = {
   planRoot: string;
   runtime: 'bun' | 'node';
   packageManager: 'bun' | 'npm' | 'pnpm' | 'yarn';
+  ticketBoundaryMode: 'cook' | 'gated' | 'glide';
 };
 
 const VALID_RUNTIMES = ['bun', 'node'] as const;
 const VALID_PACKAGE_MANAGERS = ['bun', 'npm', 'pnpm', 'yarn'] as const;
+const VALID_TICKET_BOUNDARY_MODES = ['cook', 'gated', 'glide'] as const;
 
 export async function loadOrchestratorConfig(
   cwd: string,
@@ -53,6 +56,17 @@ export async function loadOrchestratorConfig(
     );
   }
 
+  if (
+    raw.ticketBoundaryMode !== undefined &&
+    !VALID_TICKET_BOUNDARY_MODES.includes(
+      raw.ticketBoundaryMode as (typeof VALID_TICKET_BOUNDARY_MODES)[number],
+    )
+  ) {
+    throw new Error(
+      `Invalid ticketBoundaryMode "${String(raw.ticketBoundaryMode)}" in orchestrator.config.json. Expected: ${VALID_TICKET_BOUNDARY_MODES.join(', ')}`,
+    );
+  }
+
   const defaultBranch = optionalNonBlankString(
     raw.defaultBranch,
     'defaultBranch',
@@ -69,6 +83,8 @@ export async function loadOrchestratorConfig(
     planRoot,
     runtime: raw.runtime as OrchestratorConfig['runtime'],
     packageManager: raw.packageManager as OrchestratorConfig['packageManager'],
+    ticketBoundaryMode:
+      raw.ticketBoundaryMode as OrchestratorConfig['ticketBoundaryMode'],
   };
 }
 
@@ -91,6 +107,7 @@ export function resolveOrchestratorConfig(
     planRoot: raw.planRoot?.trim() || 'docs',
     runtime: raw.runtime ?? 'bun',
     packageManager: raw.packageManager ?? inferPackageManager(cwd),
+    ticketBoundaryMode: raw.ticketBoundaryMode ?? 'cook',
   };
 }
 

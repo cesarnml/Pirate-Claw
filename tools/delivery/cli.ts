@@ -6,6 +6,7 @@ export type ParsedCliArgs = {
   flags: Set<string>;
   planPath?: string;
   prNumber?: number;
+  boundaryMode?: 'cook' | 'gated' | 'glide';
 };
 
 export function getUsage(runDeliverInvocation: string): string {
@@ -26,12 +27,16 @@ export function getUsage(runDeliverInvocation: string): string {
     '  record-review <ticket-id> <clean|patched|operator_input_needed> [note]',
     '  advance',
     '  restack [ticket-id]',
+    '',
+    'Options:',
+    '  --boundary-mode <cook|gated|glide>',
   ].join('\n');
 }
 
 export function parseCliArgs(argv: string[], usage: string): ParsedCliArgs {
   let planPath: string | undefined;
   let prNumber: number | undefined;
+  let boundaryMode: ParsedCliArgs['boundaryMode'];
   const flags = new Set<string>();
   const positionals: string[] = [];
 
@@ -52,6 +57,18 @@ export function parseCliArgs(argv: string[], usage: string): ParsedCliArgs {
       }
 
       prNumber = Number(rawNumber);
+      index += 1;
+      continue;
+    }
+
+    if (value === '--boundary-mode') {
+      const rawMode = argv[index + 1];
+
+      if (rawMode !== 'cook' && rawMode !== 'gated' && rawMode !== 'glide') {
+        throw new Error('Pass --boundary-mode <cook|gated|glide>.');
+      }
+
+      boundaryMode = rawMode;
       index += 1;
       continue;
     }
@@ -82,6 +99,7 @@ export function parseCliArgs(argv: string[], usage: string): ParsedCliArgs {
     flags,
     planPath,
     prNumber,
+    boundaryMode,
   };
 }
 
