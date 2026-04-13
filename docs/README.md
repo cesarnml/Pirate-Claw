@@ -38,9 +38,9 @@ Phase-level product definitions.
 - `phase-11-tmdb-metadata-enrichment.md`: TMDB ratings, posters, and metadata enrichment
 - `phase-12-dashboard-design-system-and-read-ui.md`: shadcn-svelte dashboard redesign (read-only; delivered via stacked PRs)
 - `phase-13-daemon-config-write-api-and-settings.md`: bounded config write API and Settings (implemented)
-- `phase-14-feed-setup-and-target-management.md`: feed and target management via web UI — feeds, TV defaults, movie policy (product definition)
-- `phase-15-rich-visual-state-and-activity-views.md`: live Transmission progress, TV/movie enriched views, unmatched candidates (product definition)
-- `phase-16-config-editing-hot-reload-and-daemon-controls.md`: unified Config page, inline validation, post-save daemon restart (product definition)
+- `phase-14-feed-setup-and-target-management.md`: feed and target management via web UI — feeds, TV defaults, movie policy (implemented)
+- `phase-15-rich-visual-state-and-activity-views.md`: live Transmission progress, TV/movie enriched views, unmatched candidates (implemented)
+- `phase-16-config-editing-hot-reload-and-daemon-controls.md`: unified Config page, inline validation, post-save daemon restart (implemented)
 - `phase-17-onboarding-and-empty-state.md`: first-time setup wizard and per-section empty states (product definition)
 - `phase-18-v1-release-and-schema-versioning.md`: v1.0.0 release, config schemaVersion, SQLite PRAGMA user_version (product definition)
 
@@ -69,6 +69,8 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-12/implementation-plan.md`: dashboard design system and read-only UI redesign (tickets P12.01–P12.08)
 - `phase-13/implementation-plan.md`: bounded config write API and Settings delivery plan (tickets P13.01–P13.07; delivered on `main`)
 - `phase-14/implementation-plan.md`: feed setup and target management delivery plan (tickets P14.01–P14.06)
+- `phase-15/implementation-plan.md`: rich visual state and activity views delivery plan (tickets P15.01–P15.07; delivered on `main`)
+- `phase-16/implementation-plan.md`: config editing, hot reload, and daemon controls delivery plan (tickets P16.01–P16.09; delivered on `main`)
 
 ### `03-engineering`
 
