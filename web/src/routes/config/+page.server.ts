@@ -6,28 +6,31 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
-	try {
-		const response = await apiRequest('/api/config');
-		if (!response.ok) {
-			throw new Error(`config load failed: ${response.status}`);
-		}
 
-		const config = (await response.json()) as AppConfig;
-		return {
-			config,
-			etag: response.headers.get('etag'),
-			canWrite,
-			error: null
-		};
-	} catch (err) {
-		console.error('[config] failed to load config:', err);
-		return {
-			config: null as AppConfig | null,
-			etag: null as string | null,
-			canWrite,
-			error: 'Could not reach the API.'
-		};
+	const [configResult, sessionResult] = await Promise.allSettled([
+		apiRequest('/api/config'),
+		apiRequest('/api/transmission/session')
+	]);
+
+	let config: AppConfig | null = null;
+	let etag: string | null = null;
+	let error: string | null = null;
+	let transmissionSession: { version: string } | null = null;
+
+	if (configResult.status === 'fulfilled' && configResult.value.ok) {
+		config = (await configResult.value.json()) as AppConfig;
+		etag = configResult.value.headers.get('etag');
+	} else {
+		console.error('[config] failed to load config');
+		error = 'Could not reach the API.';
 	}
+
+	if (sessionResult.status === 'fulfilled' && sessionResult.value.ok) {
+		const sessionData = (await sessionResult.value.json()) as { version: string };
+		transmissionSession = { version: sessionData.version };
+	}
+
+	return { config, etag, canWrite, error, transmissionSession };
 };
 
 function parseOptionalInt(input: unknown): number | undefined {
@@ -329,6 +332,37 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[config] restartDaemon failed:', error);
 			return fail(502, { restartError: 'Could not reach the API to restart.' });
+		}
+	},
+
+	testConnection: async () => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { pingError: 'write token not configured; cannot test connection' });
+		}
+
+		try {
+			const response = await apiRequest('/api/transmission/ping', {
+				method: 'POST',
+				headers: { authorization: `Bearer ${writeToken}` }
+			});
+
+			if (!response.ok) {
+				let pingError = `Ping failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) pingError = body.error;
+				} catch {
+					// keep fallback
+				}
+				return fail(502, { pingError });
+			}
+
+			const data = (await response.json()) as { version: string };
+			return { pingOk: true, version: data.version };
+		} catch (error) {
+			console.error('[config] testConnection failed:', error);
+			return fail(502, { pingError: 'Could not reach the API.' });
 		}
 	},
 

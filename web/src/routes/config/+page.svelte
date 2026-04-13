@@ -29,6 +29,7 @@
 	let newFeedUrl = $state('');
 	let newFeedMediaType = $state<'tv' | 'movie'>('tv');
 	let feedsSubmitting = $state(false);
+	let testingConnection = $state(false);
 
 	let showRestartOffer = $state(false);
 	let restarting = $state(false);
@@ -513,6 +514,101 @@
 			</Card>
 		</form>
 
+		<Card>
+			<CardHeader class="pb-3">
+				<div class="flex items-center gap-2">
+					<span
+						class="inline-block h-2 w-2 rounded-full {data.transmissionSession
+							? 'bg-green-500'
+							: 'bg-red-500'}"
+						aria-label={data.transmissionSession ? 'connected' : 'disconnected'}
+					></span>
+					<h2 class="text-lg font-semibold tracking-tight">Transmission</h2>
+				</div>
+				{#if data.transmissionSession}
+					<p class="text-muted-foreground text-xs">
+						Transmission {data.transmissionSession.version}
+					</p>
+				{/if}
+			</CardHeader>
+			<CardContent class="space-y-4 pt-0">
+				<dl class="grid gap-2 text-sm">
+					<div class="flex flex-wrap gap-2">
+						<dt class="text-muted-foreground">URL:</dt>
+						<dd class="text-foreground">{config.transmission.url}</dd>
+					</div>
+					<div class="flex flex-wrap gap-2">
+						<dt class="text-muted-foreground">Username:</dt>
+						<dd class="text-foreground">
+							{config.transmission.username ? '[configured]' : '[not set]'}
+						</dd>
+					</div>
+					<div class="flex flex-wrap gap-2">
+						<dt class="text-muted-foreground">Password:</dt>
+						<dd class="text-foreground">
+							{config.transmission.password ? '[redacted]' : '[not set]'}
+						</dd>
+					</div>
+					{#if config.transmission.downloadDir}
+						<div class="flex flex-wrap gap-2">
+							<dt class="text-muted-foreground">Download dir:</dt>
+							<dd class="text-foreground">{config.transmission.downloadDir}</dd>
+						</div>
+					{/if}
+					{#if config.transmission.downloadDirs}
+						{#if config.transmission.downloadDirs.tv}
+							<div class="flex flex-wrap gap-2">
+								<dt class="text-muted-foreground">TV dir:</dt>
+								<dd class="text-foreground">{config.transmission.downloadDirs.tv}</dd>
+							</div>
+						{/if}
+						{#if config.transmission.downloadDirs.movie}
+							<div class="flex flex-wrap gap-2">
+								<dt class="text-muted-foreground">Movie dir:</dt>
+								<dd class="text-foreground">{config.transmission.downloadDirs.movie}</dd>
+							</div>
+						{/if}
+					{/if}
+				</dl>
+				<p class="text-muted-foreground text-xs">
+					Edit credentials in <code class="font-mono">.env</code>
+				</p>
+				<form
+					method="POST"
+					action="?/testConnection"
+					use:enhance={() => {
+						testingConnection = true;
+						return async ({ result, update }) => {
+							testingConnection = false;
+							if (result.type === 'success') {
+								const version = (result.data as { version?: string })?.version ?? '';
+								toast(`Transmission reachable — version ${version}`, 'success');
+							} else if (result.type === 'failure') {
+								const pingError = (result.data as { pingError?: string })?.pingError;
+								toast(
+									pingError ?? 'Transmission unreachable — check .env credentials and host',
+									'error'
+								);
+							}
+							await update({ reset: false });
+						};
+					}}
+				>
+					<button
+						type="submit"
+						class="border-border bg-card hover:bg-muted/50 inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium disabled:opacity-50"
+						disabled={testingConnection}
+					>
+						{#if testingConnection}
+							Checking…
+						{:else}
+							Test Connection
+						{/if}
+					</button>
+				</form>
+			</CardContent>
+		</Card>
+
 		<form
 			method="POST"
 			action="?/saveSettings"
@@ -575,48 +671,6 @@
 							Add show
 						</button>
 					</div>
-				</CardContent>
-			</Card>
-
-			<Card>
-				<CardHeader class="pb-3">
-					<h2 class="text-lg font-semibold tracking-tight">Transmission</h2>
-				</CardHeader>
-				<CardContent class="pt-0">
-					<dl class="grid gap-2 text-sm">
-						<div class="flex flex-wrap gap-2">
-							<dt class="text-muted-foreground">URL:</dt>
-							<dd class="text-foreground">{config.transmission.url}</dd>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<dt class="text-muted-foreground">Username:</dt>
-							<dd class="text-foreground">{config.transmission.username}</dd>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<dt class="text-muted-foreground">Password:</dt>
-							<dd class="text-foreground">••••••••</dd>
-						</div>
-						{#if config.transmission.downloadDir}
-							<div class="flex flex-wrap gap-2">
-								<dt class="text-muted-foreground">Download dir:</dt>
-								<dd class="text-foreground">{config.transmission.downloadDir}</dd>
-							</div>
-						{/if}
-						{#if config.transmission.downloadDirs}
-							{#if config.transmission.downloadDirs.tv}
-								<div class="flex flex-wrap gap-2">
-									<dt class="text-muted-foreground">TV dir:</dt>
-									<dd class="text-foreground">{config.transmission.downloadDirs.tv}</dd>
-								</div>
-							{/if}
-							{#if config.transmission.downloadDirs.movie}
-								<div class="flex flex-wrap gap-2">
-									<dt class="text-muted-foreground">Movie dir:</dt>
-									<dd class="text-foreground">{config.transmission.downloadDirs.movie}</dd>
-								</div>
-							{/if}
-						{/if}
-					</dl>
 				</CardContent>
 			</Card>
 
