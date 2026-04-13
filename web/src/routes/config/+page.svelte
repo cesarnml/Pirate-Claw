@@ -53,6 +53,8 @@
 		const c = data.config;
 		if (c) {
 			showRows = c.tv.map((r) => r.name);
+			tvResolutions = [...(c.tvDefaults?.resolutions ?? [])];
+			tvCodecs = [...(c.tvDefaults?.codecs ?? [])];
 			movieYears = [...c.movies.years];
 			movieResolutions = [...c.movies.resolutions];
 			movieCodecs = [...c.movies.codecs];

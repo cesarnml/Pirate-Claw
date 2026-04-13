@@ -98,6 +98,29 @@ describe('/config', () => {
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeInTheDocument();
 	});
 
+	it('renders TV defaults chips pre-populated from config.tvDefaults', () => {
+		render(Page, {
+			data: {
+				config: {
+					...mockConfig,
+					tvDefaults: { resolutions: ['1080p', '720p'], codecs: ['x265'] }
+				},
+				error: null,
+				etag: '"rev-1"',
+				canWrite: true,
+				transmissionSession: null
+			},
+			form: undefined
+		});
+		const resolutionButtons = screen
+			.getAllByRole('button', { name: /2160p|1080p|720p|480p/ })
+			.filter((b) => !b.closest('form[action*="saveMovies"]'));
+		const selected = resolutionButtons.filter((b) => b.className.includes('bg-primary'));
+		expect(selected.map((b) => b.textContent?.trim())).toEqual(
+			expect.arrayContaining(['1080p', '720p'])
+		);
+	});
+
 	it('does not render restart offer by default', () => {
 		render(Page, {
 			data: {
