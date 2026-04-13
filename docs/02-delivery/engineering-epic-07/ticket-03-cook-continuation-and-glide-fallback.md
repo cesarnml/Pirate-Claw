@@ -55,7 +55,18 @@ Repo default requirement:
 
 ## Rationale
 
-To be filled during implementation if behavior or trade-offs shift.
+`cook` continuation now composes the existing advance and start paths instead of
+reimplementing ticket-start mechanics inside `advance`. That keeps handoff
+generation, worktree bootstrap, branch setup, and local environment copying
+aligned with the existing `start` contract.
+
+`glide` remains selectable but resolves explicitly to `gated` in repo-local
+code. That preserves the third operator-facing mode without pretending the
+orchestrator can perform host-runtime context resets it does not control.
+
+The repo now carries an explicit root `orchestrator.config.json` with
+`ticketBoundaryMode: "cook"` so Son-of-Anton's continuation bias is a visible
+default instead of an implicit assumption.
 
 ## Notes
 

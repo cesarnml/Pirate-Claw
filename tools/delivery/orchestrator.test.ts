@@ -56,7 +56,9 @@ import {
   runProcessResult,
   formatCurrentTicketStatus,
   formatAdvanceBoundaryGuidance,
+  applyAdvanceBoundaryMode,
   formatStatus,
+  resolveEffectiveAdvanceBoundaryMode,
   type DeliveryState,
 } from './orchestrator';
 import { getUsage, parseCliArgs } from './cli';
@@ -3865,7 +3867,120 @@ describe('delivery orchestrator', () => {
     });
   });
 
-  describe('formatAdvanceBoundaryGuidance (EE7 gated output)', () => {
+  describe('applyAdvanceBoundaryMode (EE7 cook continuation)', () => {
+    const baseState: DeliveryState = {
+      planKey: 'engineering-epic-07',
+      planPath: 'docs/02-delivery/engineering-epic-07/implementation-plan.md',
+      statePath: '.agents/delivery/engineering-epic-07/state.json',
+      reviewsDirPath: '.agents/delivery/engineering-epic-07/reviews',
+      handoffsDirPath: '.agents/delivery/engineering-epic-07/handoffs',
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
+      tickets: [
+        {
+          id: 'EE7.01',
+          title: 'Boundary policy plumbing and visibility',
+          slug: 'boundary-policy-plumbing-and-visibility',
+          ticketFile:
+            'docs/02-delivery/engineering-epic-07/ticket-01-boundary-policy-plumbing-and-visibility.md',
+          status: 'reviewed',
+          branch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',
+          baseBranch: 'main',
+          worktreePath: '/tmp/ee7_01',
+          reviewOutcome: 'patched',
+        },
+        {
+          id: 'EE7.02',
+          title: 'Cook continuation and glide fallback',
+          slug: 'cook-continuation-and-glide-fallback',
+          ticketFile:
+            'docs/02-delivery/engineering-epic-07/ticket-03-cook-continuation-and-glide-fallback.md',
+          status: 'pending',
+          branch: 'agents/ee7-03-cook-continuation-and-glide-fallback',
+          baseBranch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',
+          worktreePath: '/tmp/ee7_03',
+        },
+      ],
+    };
+
+    it('auto-starts the next ticket in cook mode', async () => {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'cook',
+      });
+
+      const advancedState: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((ticket) =>
+          ticket.id === 'EE7.01'
+            ? { ...ticket, status: 'done' as const }
+            : ticket,
+        ),
+      };
+
+      const nextState = await applyAdvanceBoundaryMode(
+        baseState,
+        advancedState,
+        '/tmp',
+        {
+          startTicket: async () => ({
+            ...advancedState,
+            tickets: advancedState.tickets.map((ticket) =>
+              ticket.id === 'EE7.02'
+                ? {
+                    ...ticket,
+                    status: 'in_progress' as const,
+                    handoffPath:
+                      '.agents/delivery/engineering-epic-07/handoffs/ee7-03-handoff.md',
+                  }
+                : ticket,
+            ),
+          }),
+        },
+      );
+
+      expect(
+        nextState.tickets.find((ticket) => ticket.id === 'EE7.02')?.status,
+      ).toBe('in_progress');
+    });
+
+    it('does not auto-start the next ticket for glide fallback', async () => {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'glide',
+      });
+
+      const advancedState: DeliveryState = {
+        ...baseState,
+        tickets: baseState.tickets.map((ticket) =>
+          ticket.id === 'EE7.01'
+            ? { ...ticket, status: 'done' as const }
+            : ticket,
+        ),
+      };
+
+      const nextState = await applyAdvanceBoundaryMode(
+        baseState,
+        advancedState,
+        '/tmp',
+        {
+          startTicket: async () => {
+            throw new Error('should not start');
+          },
+        },
+      );
+
+      expect(nextState).toEqual(advancedState);
+    });
+  });
+
+  describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
     const baseState: DeliveryState = {
       planKey: 'engineering-epic-07',
       planPath: 'docs/02-delivery/engineering-epic-07/implementation-plan.md',
@@ -3901,6 +4016,15 @@ describe('delivery orchestrator', () => {
       ],
     };
 
+    const advancedState: DeliveryState = {
+      ...baseState,
+      tickets: baseState.tickets.map((ticket) =>
+        ticket.id === 'EE7.01'
+          ? { ...ticket, status: 'done' as const }
+          : ticket,
+      ),
+    };
+
     it('emits gated reset guidance and the canonical resume prompt', () => {
       initOrchestratorConfig({
         defaultBranch: 'main',
@@ -3910,16 +4034,11 @@ describe('delivery orchestrator', () => {
         ticketBoundaryMode: 'gated',
       });
 
-      const nextState: DeliveryState = {
-        ...baseState,
-        tickets: baseState.tickets.map((ticket) =>
-          ticket.id === 'EE7.01'
-            ? { ...ticket, status: 'done' as const }
-            : ticket,
-        ),
-      };
-
-      const output = formatAdvanceBoundaryGuidance(baseState, nextState);
+      const output = formatAdvanceBoundaryGuidance(
+        baseState,
+        advancedState,
+        advancedState,
+      );
 
       expect(output).toContain('context_reset_required=true');
       expect(output).toContain('GATED BOUNDARY before starting EE7.02.');
@@ -3929,7 +4048,7 @@ describe('delivery orchestrator', () => {
       );
     });
 
-    it('emits no boundary guidance outside gated mode', () => {
+    it('emits cook continuation guidance with the next handoff path', () => {
       initOrchestratorConfig({
         defaultBranch: 'main',
         planRoot: 'docs',
@@ -3939,16 +4058,52 @@ describe('delivery orchestrator', () => {
       });
 
       const nextState: DeliveryState = {
-        ...baseState,
-        tickets: baseState.tickets.map((ticket) =>
-          ticket.id === 'EE7.01'
-            ? { ...ticket, status: 'done' as const }
+        ...advancedState,
+        tickets: advancedState.tickets.map((ticket) =>
+          ticket.id === 'EE7.02'
+            ? {
+                ...ticket,
+                status: 'in_progress' as const,
+                handoffPath:
+                  '.agents/delivery/engineering-epic-07/handoffs/ee7-02-handoff.md',
+              }
             : ticket,
         ),
       };
 
-      expect(formatAdvanceBoundaryGuidance(baseState, nextState)).toBe(
-        undefined,
+      const output = formatAdvanceBoundaryGuidance(
+        baseState,
+        advancedState,
+        nextState,
+      );
+
+      expect(output).toContain('continuation_mode=cook');
+      expect(output).toContain('COOK CONTINUATION started EE7.02.');
+      expect(output).toContain(
+        'next_handoff=.agents/delivery/engineering-epic-07/handoffs/ee7-02-handoff.md',
+      );
+    });
+
+    it('emits explicit glide fallback guidance', () => {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'glide',
+      });
+
+      const output = formatAdvanceBoundaryGuidance(
+        baseState,
+        advancedState,
+        advancedState,
+      );
+
+      expect(output).toContain('context_reset_required=true');
+      expect(output).toContain('glide_fallback=gated');
+      expect(output).toContain('GLIDE FALLBACK before starting EE7.02.');
+      expect(output).toContain(
+        'Host/runtime self-reset is not supported here, so Son-of-Anton is using gated boundary behavior instead.',
       );
     });
   });
@@ -4121,4 +4276,9 @@ describe('delivery orchestrator', () => {
       expect(output).toContain('[coderabbit]');
     });
   });
+});
+it('resolves glide to gated as the effective advance boundary mode', () => {
+  expect(resolveEffectiveAdvanceBoundaryMode('cook')).toBe('cook');
+  expect(resolveEffectiveAdvanceBoundaryMode('gated')).toBe('gated');
+  expect(resolveEffectiveAdvanceBoundaryMode('glide')).toBe('gated');
 });
