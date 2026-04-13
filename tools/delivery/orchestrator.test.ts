@@ -475,6 +475,12 @@ describe('delivery orchestrator', () => {
         title: 'Reconcile Torrent Lifecycle From Transmission',
       }),
     ).toBe('feat: reconcile torrent lifecycle from transmission [P3.02]');
+    expect(
+      buildPullRequestTitle(
+        { id: 'P16.03', title: 'Transmission Card' },
+        'P16.03 Transmission Card',
+      ),
+    ).toBe('feat: transmission card [P16.03]');
   });
 
   it('resolves the notifier from Telegram env vars', () => {

@@ -976,12 +976,21 @@ export function buildPullRequestTitle(
   commitSubject?: string,
 ): string {
   const fallbackSubject = `feat: ${ticket.title.toLowerCase()}`;
-  const baseSubject = (commitSubject?.trim() || fallbackSubject).replace(
+  const normalizedSubject = (commitSubject?.trim() || '').replace(
     /\s+\[[A-Z0-9.]+\]$/,
     '',
   );
+  const baseSubject = isConventionalCommitSubject(normalizedSubject)
+    ? normalizedSubject
+    : fallbackSubject;
 
   return `${baseSubject} [${ticket.id}]`;
+}
+
+function isConventionalCommitSubject(subject: string): boolean {
+  return /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?:\s+\S/.test(
+    subject,
+  );
 }
 
 export function updatePullRequestBody(
