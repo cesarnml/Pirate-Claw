@@ -263,6 +263,8 @@ export function syncStateWithPlan(
           pickPostVerifySelfAuditCompletedAt(
             inferredTicket as PersistedTicketFields | undefined,
           ),
+        selfAuditOutcome:
+          previous?.selfAuditOutcome ?? inferredTicket?.selfAuditOutcome,
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
@@ -440,6 +442,7 @@ function inferStateFromRepo(
       worktreePath: dependencies.deriveWorktreePath(cwd, definition.id),
       handoffPath: undefined,
       handoffGeneratedAt: undefined,
+      selfAuditOutcome: undefined,
       prNumber: pr?.number,
       prUrl: pr?.url,
       prOpenedAt: undefined,

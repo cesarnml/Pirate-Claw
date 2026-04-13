@@ -6,12 +6,34 @@ export const VALID_TICKET_BOUNDARY_MODES = ['cook', 'gated', 'glide'] as const;
 
 export type TicketBoundaryMode = (typeof VALID_TICKET_BOUNDARY_MODES)[number];
 
+export const VALID_REVIEW_POLICY_STAGE_VALUES = [
+  'required',
+  'skip_doc_only',
+  'disabled',
+] as const;
+
+export type ReviewPolicyStageValue =
+  (typeof VALID_REVIEW_POLICY_STAGE_VALUES)[number];
+
+export type ReviewPolicy = {
+  selfAudit?: ReviewPolicyStageValue;
+  codexPreflight?: ReviewPolicyStageValue;
+  externalReview?: ReviewPolicyStageValue;
+};
+
+export type ResolvedReviewPolicy = {
+  selfAudit: ReviewPolicyStageValue;
+  codexPreflight: ReviewPolicyStageValue;
+  externalReview: ReviewPolicyStageValue;
+};
+
 export type OrchestratorConfig = {
   defaultBranch?: string;
   planRoot?: string;
   runtime?: 'bun' | 'node';
   packageManager?: 'bun' | 'npm' | 'pnpm' | 'yarn';
   ticketBoundaryMode?: TicketBoundaryMode;
+  reviewPolicy?: ReviewPolicy;
 };
 
 export type ResolvedOrchestratorConfig = {
@@ -20,6 +42,7 @@ export type ResolvedOrchestratorConfig = {
   runtime: 'bun' | 'node';
   packageManager: 'bun' | 'npm' | 'pnpm' | 'yarn';
   ticketBoundaryMode: TicketBoundaryMode;
+  reviewPolicy: ResolvedReviewPolicy;
 };
 
 const VALID_RUNTIMES = ['bun', 'node'] as const;
@@ -81,6 +104,10 @@ export async function loadOrchestratorConfig(
     'orchestrator.config.json',
   );
 
+  const reviewPolicy = raw.reviewPolicy !== undefined
+    ? parseReviewPolicy(raw.reviewPolicy)
+    : undefined;
+
   return {
     defaultBranch,
     planRoot,
@@ -88,6 +115,7 @@ export async function loadOrchestratorConfig(
     packageManager: raw.packageManager as OrchestratorConfig['packageManager'],
     ticketBoundaryMode:
       raw.ticketBoundaryMode as OrchestratorConfig['ticketBoundaryMode'],
+    reviewPolicy,
   };
 }
 
@@ -111,6 +139,11 @@ export function resolveOrchestratorConfig(
     runtime: raw.runtime ?? 'bun',
     packageManager: raw.packageManager ?? inferPackageManager(cwd),
     ticketBoundaryMode: raw.ticketBoundaryMode ?? 'cook',
+    reviewPolicy: {
+      selfAudit: raw.reviewPolicy?.selfAudit ?? 'required',
+      codexPreflight: raw.reviewPolicy?.codexPreflight ?? 'disabled',
+      externalReview: raw.reviewPolicy?.externalReview ?? 'required',
+    },
   };
 }
 
@@ -123,6 +156,39 @@ function requireConfigObject(
   }
 
   return raw as Record<string, unknown>;
+}
+
+function parseReviewPolicy(raw: unknown): ReviewPolicy {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(
+      'Invalid reviewPolicy in orchestrator.config.json. Expected an object.',
+    );
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const result: ReviewPolicy = {};
+
+  for (const key of ['selfAudit', 'codexPreflight', 'externalReview'] as const) {
+    const value = obj[key];
+
+    if (value === undefined) {
+      continue;
+    }
+
+    if (
+      !VALID_REVIEW_POLICY_STAGE_VALUES.includes(
+        value as ReviewPolicyStageValue,
+      )
+    ) {
+      throw new Error(
+        `Invalid reviewPolicy.${key} "${String(value)}" in orchestrator.config.json. Expected: ${VALID_REVIEW_POLICY_STAGE_VALUES.join(', ')}`,
+      );
+    }
+
+    result[key] = value as ReviewPolicyStageValue;
+  }
+
+  return result;
 }
 
 function optionalNonBlankString(

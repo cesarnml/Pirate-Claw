@@ -24,7 +24,7 @@ export function getUsage(runDeliverInvocation: string): string {
     '  status',
     '  repair-state',
     '  start [ticket-id]',
-    '  post-verify-self-audit [ticket-id]',
+    '  post-verify-self-audit [clean|patched]',
     '    (alias: internal-review — deprecated)',
     '  open-pr [ticket-id]',
     '  poll-review [ticket-id]',

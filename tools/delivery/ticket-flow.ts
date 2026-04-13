@@ -4,7 +4,11 @@ import { dirname, resolve } from 'node:path';
 
 import type { PullRequestSummary } from './platform';
 import type { ReviewActionCommit } from './pr-metadata';
-import type { DeliveryState, TicketState } from './orchestrator';
+import type {
+  DeliveryState,
+  ReviewOutcome,
+  TicketState,
+} from './orchestrator';
 
 export function findNextPendingTicket(
   state: DeliveryState,
@@ -274,6 +278,7 @@ export async function startTicket(
 export function recordPostVerifySelfAudit(
   state: DeliveryState,
   ticketId?: string,
+  outcome?: ReviewOutcome,
   now: () => string = () => new Date().toISOString(),
 ): DeliveryState {
   const target =
@@ -299,6 +304,7 @@ export function recordPostVerifySelfAudit(
   }
 
   const completedAt = now();
+  const resolvedOutcome: ReviewOutcome = outcome ?? 'clean';
 
   return {
     ...state,
@@ -308,6 +314,7 @@ export function recordPostVerifySelfAudit(
             ...ticket,
             status: 'post_verify_self_audit_complete',
             postVerifySelfAuditCompletedAt: completedAt,
+            selfAuditOutcome: resolvedOutcome,
           }
         : ticket,
     ),
