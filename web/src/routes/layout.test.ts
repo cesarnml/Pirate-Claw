@@ -1,6 +1,10 @@
 import { render } from '@testing-library/svelte';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import Layout from './+layout.svelte';
+
+vi.mock('$lib/components/ui/sonner', () => ({
+	Toaster: vi.fn()
+}));
 
 describe('+layout.svelte', () => {
 	it('renders nav links for home and all main routes including Movies', () => {

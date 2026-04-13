@@ -1,7 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { AppConfig } from '$lib/types';
+
+vi.mock('svelte-sonner', () => ({
+	toast: {
+		success: vi.fn(),
+		error: vi.fn()
+	},
+	Toaster: vi.fn()
+}));
 
 const mockConfig: AppConfig = {
 	feeds: [
@@ -77,28 +85,11 @@ describe('/config', () => {
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeInTheDocument();
 	});
 
-	it('renders save error message from action data', () => {
+	it('does not render restart offer by default', () => {
 		render(Page, {
 			data: { config: mockConfig, error: null, etag: '"rev-1"', canWrite: true },
-			form: { message: 'config revision conflict' }
+			form: undefined
 		});
-		expect(screen.getByRole('alert')).toHaveTextContent('config revision conflict');
-	});
-
-	it('renders success messaging for combined save', () => {
-		render(Page, {
-			data: { config: mockConfig, error: null, etag: '"rev-1"', canWrite: true },
-			form: {
-				success: true,
-				message:
-					'Settings saved. TV show list updates apply on the next daemon run cycle. Restart the daemon to apply a new API port or timer intervals.',
-				etag: '"rev-2"'
-			}
-		});
-		// success variant renders with role="status" (not "alert")
-		expect(screen.getByRole('status')).toHaveTextContent(
-			/TV show list updates apply on the next daemon run cycle/
-		);
-		expect(screen.getByText(/Daemon timers and the API listen port/i)).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /restart daemon/i })).not.toBeInTheDocument();
 	});
 });

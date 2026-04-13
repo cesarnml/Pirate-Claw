@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import { toast } from '$lib/toast';
 	import type { ActionData, PageData } from './$types';
 	import type { FeedConfig } from '$lib/types';
 
@@ -28,6 +29,18 @@
 	let newFeedUrl = $state('');
 	let newFeedMediaType = $state<'tv' | 'movie'>('tv');
 	let feedsSubmitting = $state(false);
+
+	let showRestartOffer = $state(false);
+	let restarting = $state(false);
+	let restartOfferId: ReturnType<typeof setTimeout> | null = null;
+
+	function offerRestart() {
+		showRestartOffer = true;
+		if (restartOfferId) clearTimeout(restartOfferId);
+		restartOfferId = setTimeout(() => {
+			showRestartOffer = false;
+		}, 10000);
+	}
 
 	$effect(() => {
 		const c = data.config;
@@ -118,28 +131,6 @@
 	{@const config = data.config}
 
 	<div class="mt-8 space-y-6 pr-1">
-		{#if form?.feedsMessage}
-			<Alert variant={form?.feedsSuccess ? 'default' : 'destructive'}>
-				<AlertTitle>{form?.feedsSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
-				<AlertDescription>{form.feedsMessage}</AlertDescription>
-			</Alert>
-		{:else if form?.tvDefaultsMessage}
-			<Alert variant={form?.tvDefaultsSuccess ? 'default' : 'destructive'}>
-				<AlertTitle>{form?.tvDefaultsSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
-				<AlertDescription>{form.tvDefaultsMessage}</AlertDescription>
-			</Alert>
-		{:else if form?.moviesMessage}
-			<Alert variant={form?.moviesSuccess ? 'default' : 'destructive'}>
-				<AlertTitle>{form?.moviesSuccess ? 'Save complete' : 'Save failed'}</AlertTitle>
-				<AlertDescription>{form.moviesMessage}</AlertDescription>
-			</Alert>
-		{:else if form?.message}
-			<Alert variant={form?.success ? 'default' : 'destructive'}>
-				<AlertTitle>{form?.success ? 'Save complete' : 'Save failed'}</AlertTitle>
-				<AlertDescription>{form.message}</AlertDescription>
-			</Alert>
-		{/if}
-
 		<form
 			method="POST"
 			action="?/saveFeeds"
@@ -151,6 +142,13 @@
 						newFeedName = '';
 						newFeedUrl = '';
 						newFeedMediaType = 'tv';
+						toast('Saved', 'success');
+					} else if (result.type === 'failure') {
+						if (result.data?.status === 409 || result.status === 409) {
+							toast('Config changed elsewhere — reload and try again', 'error');
+						} else {
+							toast('Save failed — see errors above', 'error');
+						}
 					}
 					await update();
 				};
@@ -256,7 +254,25 @@
 			</Card>
 		</form>
 
-		<form method="POST" action="?/saveTvDefaults" use:enhance class="space-y-6">
+		<form
+			method="POST"
+			action="?/saveTvDefaults"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					if (result.type === 'success') {
+						toast('Saved', 'success');
+					} else if (result.type === 'failure') {
+						if (result.status === 409) {
+							toast('Config changed elsewhere — reload and try again', 'error');
+						} else {
+							toast('Save failed — see errors above', 'error');
+						}
+					}
+					await update();
+				};
+			}}
+			class="space-y-6"
+		>
 			<input type="hidden" name="tvDefaultsIfMatch" value={currentEtag ?? ''} />
 			{#each tvResolutions as res}
 				<input type="hidden" name="tvResolution" value={res} />
@@ -330,7 +346,25 @@
 			</Card>
 		</form>
 
-		<form method="POST" action="?/saveMovies" use:enhance class="space-y-6">
+		<form
+			method="POST"
+			action="?/saveMovies"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					if (result.type === 'success') {
+						toast('Saved', 'success');
+					} else if (result.type === 'failure') {
+						if (result.status === 409) {
+							toast('Config changed elsewhere — reload and try again', 'error');
+						} else {
+							toast('Save failed — see errors above', 'error');
+						}
+					}
+					await update();
+				};
+			}}
+			class="space-y-6"
+		>
 			<input type="hidden" name="moviesIfMatch" value={currentEtag ?? ''} />
 			{#each movieYears as year}
 				<input type="hidden" name="movieYear" value={year} />
@@ -473,7 +507,26 @@
 			</Card>
 		</form>
 
-		<form method="POST" action="?/saveSettings" use:enhance class="space-y-6">
+		<form
+			method="POST"
+			action="?/saveSettings"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					if (result.type === 'success') {
+						toast('Saved — restart the daemon for this change to take effect', 'success');
+						offerRestart();
+					} else if (result.type === 'failure') {
+						if (result.status === 409) {
+							toast('Config changed elsewhere — reload and try again', 'error');
+						} else {
+							toast('Save failed — see errors above', 'error');
+						}
+					}
+					await update();
+				};
+			}}
+			class="space-y-6"
+		>
 			<input type="hidden" name="ifMatch" value={currentEtag ?? ''} />
 
 			<Card>
@@ -635,7 +688,7 @@
 							changing those fields. TV show titles above apply on the next run cycle without
 							restart.
 						</p>
-						<div>
+						<div class="flex flex-wrap items-center gap-3">
 							<button
 								type="submit"
 								class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium"
@@ -648,5 +701,42 @@
 				</CardContent>
 			</Card>
 		</form>
+
+		{#if showRestartOffer}
+			<form
+				method="POST"
+				action="?/restartDaemon"
+				use:enhance={() => {
+					restarting = true;
+					return async ({ result, update }) => {
+						showRestartOffer = false;
+						restarting = false;
+						if (result.type === 'success') {
+							toast('Restarting… the page may become temporarily unavailable', 'success');
+						} else {
+							toast('Restart failed — try again or restart manually', 'error');
+						}
+						await update({ reset: false });
+					};
+				}}
+			>
+				<div class="border-border bg-card/50 flex items-center gap-3 rounded-md border p-3 text-sm">
+					<p class="text-muted-foreground flex-1">
+						Restart the daemon for your changes to take effect.
+					</p>
+					<button
+						type="submit"
+						class="border-border hover:bg-muted inline-flex h-8 items-center rounded-md border px-3 text-sm font-medium disabled:opacity-50"
+						disabled={restarting}
+					>
+						{#if restarting}
+							Restarting…
+						{:else}
+							Restart Daemon
+						{/if}
+					</button>
+				</div>
+			</form>
+		{/if}
 	</div>
 {/if}

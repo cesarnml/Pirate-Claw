@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { Button } from '$lib/components/ui/button';
+	import { Toaster } from '$lib/components/ui/sonner';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -56,3 +57,4 @@
 		{@render children()}
 	</main>
 </div>
+<Toaster richColors closeButton />

@@ -297,6 +297,41 @@ export const actions: Actions = {
 		}
 	},
 
+	restartDaemon: async () => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (writeToken === undefined || writeToken === null) {
+			return fail(401, { restartError: 'Write token not configured.' });
+		}
+		if (!writeToken) {
+			return fail(403, { restartError: 'Config writes are disabled.' });
+		}
+
+		try {
+			const response = await apiRequest('/api/daemon/restart', {
+				method: 'POST',
+				headers: {
+					authorization: `Bearer ${writeToken}`
+				}
+			});
+
+			if (!response.ok) {
+				let restartError = `Restart failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) restartError = body.error;
+				} catch {
+					// keep fallback
+				}
+				return fail(502, { restartError });
+			}
+
+			return { restarted: true };
+		} catch (error) {
+			console.error('[config] restartDaemon failed:', error);
+			return fail(502, { restartError: 'Could not reach the API to restart.' });
+		}
+	},
+
 	saveFeeds: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
