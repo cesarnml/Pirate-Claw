@@ -92,4 +92,4 @@ Pause for review if:
 
 ## Delivery status
 
-Planning/decomposition only. Implementation has not started.
+Delivered on `main` via `P16.01`-`P16.09`.

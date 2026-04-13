@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–15** are implemented on `main`. **Phases 16–18** are defined in `docs/01-product/` and start after ticket decomposition and developer sign-off.
+Phases **01–16** are implemented on `main`. **Phases 17–18** are defined in `docs/01-product/` and start after ticket decomposition and developer sign-off.
 
 It currently supports:
 
@@ -18,7 +18,7 @@ It currently supports:
 - env-backed Transmission credentials via process env or `.env`
 - daemon HTTP API with read endpoints and bounded config writes when `runtime.apiPort` is set
 - optional TMDB-backed posters, ratings, and metadata when a `tmdb` API key is configured
-- browser dashboard (`web/`) with read views, Settings writes, full feed and target management, live Transmission stats, skipped-no-match outcomes, and an unmatched candidates page
+- browser dashboard (`web/`) with unified config editing, in-context daemon controls, full feed and target management, live Transmission stats, skipped-no-match outcomes, and an unmatched candidates page
 
 ## Commands
 
@@ -189,9 +189,9 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 18 targets eliminating the need to SSH in for day-to-day operation.
 
-**Implemented (Phases 01–15):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, bounded config writes from the UI, full feed and target management, and live Transmission activity views.
+**Implemented (Phases 01–16):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, and live Transmission activity views.
 
-**Planned (Phases 16–18):** Unified config editing with hot reload and daemon controls, onboarding wizard, v1.0.0 release and schema versioning.
+**Planned (Phases 17–18):** Onboarding wizard, v1.0.0 release, and schema versioning.
 
 Not in scope through v1:
 

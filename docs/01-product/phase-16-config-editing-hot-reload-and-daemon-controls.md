@@ -1,6 +1,6 @@
 # Phase 16: Config Editing, Hot Reload, and Daemon Controls
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-16/` implementation plan until tickets are approved.
+**Delivery status:** Delivered — see `docs/02-delivery/phase-16/`.
 
 ## TL;DR
 

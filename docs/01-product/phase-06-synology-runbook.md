@@ -34,6 +34,6 @@ These are intentionally outside Phase 06:
 
 The immediate value is repeatable operator setup with low ambiguity. Tooling automation can follow once the runbook path is proven stable.
 
-## Supervisor Restart Requirement
+## Daemon Supervisor Requirement
 
-The daemon must run under a process supervisor (Synology Task Scheduler, systemd, or equivalent) configured to **auto-restart on exit**. This is required for `POST /api/daemon/restart` to work correctly: the endpoint calls `SIGTERM` on itself, which triggers a graceful shutdown; the supervisor then restarts the process. Without auto-restart, a restart request leaves the daemon permanently stopped.
+Pirate Claw must run under a process supervisor configured to auto-restart the process on exit. On Synology, use Task Scheduler with "Run at boot" and restart-on-failure enabled. On Linux, use a `systemd` unit with `Restart=on-failure`. The `POST /api/daemon/restart` endpoint triggers a graceful `SIGTERM` shutdown and relies on the supervisor to bring the process back up. Without auto-restart, a restart request leaves the daemon permanently stopped.
