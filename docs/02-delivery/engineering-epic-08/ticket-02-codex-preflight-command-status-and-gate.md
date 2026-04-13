@@ -23,6 +23,7 @@ type CodexPreflightOutcome = 'clean' | 'patched' | 'skipped';
 This is a distinct type. It must not extend or modify `ReviewOutcome`.
 
 `TicketState` gains:
+
 - `codexPreflightOutcome?: CodexPreflightOutcome`
 - `codexPreflightCompletedAt?: string`
 
