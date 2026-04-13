@@ -137,16 +137,16 @@ export async function repairState(
 }> {
   const { absoluteStatePath, inferred, ticketDefinitions } =
     await loadPlanContext(cwd, options, dependencies);
-  const repairedState = syncStateWithPlan(
-    undefined,
-    ticketDefinitions,
-    options,
-    inferred,
-    dependencies,
-  );
   const hadExistingState = existsSync(absoluteStatePath);
 
   if (!hadExistingState) {
+    const repairedState = syncStateWithPlan(
+      undefined,
+      ticketDefinitions,
+      options,
+      inferred,
+      dependencies,
+    );
     await saveState(cwd, repairedState);
 
     return {
@@ -160,6 +160,13 @@ export async function repairState(
 
   const existing = normalizeDeliveryStateFromPersisted(
     JSON.parse(await readFile(absoluteStatePath, 'utf8')),
+  );
+  const repairedState = syncStateWithPlan(
+    existing,
+    ticketDefinitions,
+    options,
+    inferred,
+    dependencies,
   );
   const changes = summarizeStateDifferences(existing, repairedState);
   let backupPath: string | undefined;

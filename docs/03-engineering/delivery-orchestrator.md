@@ -46,7 +46,13 @@ All fields are optional. When the file is absent, the orchestrator infers sensib
 - `reviewPolicy.codexPreflight`: `"disabled"` — Codex preflight is off by default; set to `"required"` after a successful trial run
 - `reviewPolicy.externalReview`: `"required"`
 
-Valid `reviewPolicy` stage values are `"required"`, `"skip_doc_only"`, and `"disabled"`. Invalid values and unknown keys are rejected at config load with a clear error.
+Valid `reviewPolicy` stage values are:
+
+- `"required"` — the stage must complete before the workflow can proceed.
+- `"skip_doc_only"` — the stage is required for code PRs but automatically skipped for doc-only PRs (PRs whose changed files are all `.md`).
+- `"disabled"` — the stage is never run, regardless of PR content.
+
+Invalid values and unknown keys are rejected at config load with a clear error.
 
 Supported `ticketBoundaryMode` values are:
 

@@ -37,7 +37,7 @@ Commit the delivery plan and all ticket docs to the default branch before creati
 1. Re-read required repo docs and handoff artifacts at each ticket boundary.
 2. Use the supported orchestrator path, not ad hoc manual substitutes.
 3. Move one ticket at a time in order.
-4. For each ticket: implement → verify → update ticket rationale → self-audit (`post-verify-self-audit [clean|patched]`) → (if `codexPreflight: "required"`) Codex preflight (`codex-preflight [clean|patched]`) → open/refresh PR → run AI-review polling → patch prudent findings → advance.
+4. For each ticket: implement → verify → update ticket rationale → self-audit (`post-verify-self-audit [clean|patched]`) → (if `codexPreflight: "required"`) Codex preflight (`codex-preflight [clean|patched]`) → open/refresh PR → run AI-review polling → patch prudent findings → record-review → advance.
 5. During the external review wait, do nothing.
 6. Do not write ahead across ticket boundaries.
 7. After `advance`, follow the active boundary mode and keep going without asking for permission unless a real blocker exists.
