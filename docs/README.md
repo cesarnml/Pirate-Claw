@@ -52,6 +52,8 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `engineering-epic-02/implementation-plan.md`: runnable ticket stack for post-PR review-flow convergence in the delivery orchestrator
 - `engineering-epic-03/implementation-plan.md`: runnable ticket stack for delivery orchestrator modularity and concern separation
 - `engineering-epic-04/implementation-plan.md`: runnable ticket stack for reviewer-facing PR body and thread hygiene polish in delivery tooling
+- `engineering-epic-08/implementation-plan.md`: runnable ticket stack for codex preflight review gate in the delivery orchestrator
+- `engineering-epic-09/implementation-plan.md`: runnable ticket stack for review-policy enforcement and doc-only consolidation in the delivery orchestrator
 - `engineering-epic-07/implementation-plan.md`: runnable ticket stack for configurable ticket-boundary modes in Son-of-Anton delivery
 - `phase-01/implementation-plan.md`: ordered delivery plan for phase 01
 - `phase-01/ticket-*.md`: one file per ticket
@@ -81,6 +83,11 @@ Cross-cutting engineering rules that apply beyond a single phase.
 - `epic-02-delivery-orchestrator-pr-flow-convergence.md`: reviewer-sized convergence plan for shared post-PR external AI-review lifecycle architecture
 - `epic-03-delivery-orchestrator-modularity-and-concern-separation.md`: concern-first modularization plan for the delivery orchestrator
 - `epic-04-reviewer-facing-pr-body-and-thread-hygiene.md`: reviewer-facing PR metadata and thread resolution hygiene decisions
+- `epic-05-orchestrator-context-minimization.md`: context compaction and reviewer-signal preservation for orchestrated delivery
+- `epic-06-compaction-gate-and-findings-surfacing.md`: compaction gate and findings surfacing rules for orchestrated delivery
+- `epic-07-configurable-ticket-boundary-modes-for-son-of-anton.md`: ticket-boundary modes for Son-of-Anton delivery
+- `epic-08-codex-preflight-review-gate.md`: Codex preflight stage, gate, and review policy introduction
+- `epic-09-review-policy-enforcement-and-doc-only-consolidation.md`: policy enforcement semantics, doc-only consolidation, and default posture
 - `sqlite-schema.md`: current local SQLite tables, identities, and persistence invariants
 - `son-of-anton.md`: the dev-facing doctrine for this repo's AI-assisted delivery workflow
 - `tdd-workflow.md`: red-green-refactor workflow for this repo

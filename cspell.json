@@ -1,6 +1,8 @@
 {
   "version": "0.2",
-  "ignorePaths": ["web/"],
+  "ignorePaths": [
+    "web/"
+  ],
   "dictionaryDefinitions": [],
   "dictionaries": [],
   "words": [
@@ -28,6 +30,7 @@
     "overengineering",
     "parsererror",
     "PGID",
+    "precedented",
     "println",
     "PUID",
     "qodo",
@@ -48,6 +51,7 @@
     "sonarqubecloud",
     "Sonarr",
     "statx",
+    "syncstatewithplan",
     "syscall",
     "tmdb",
     "TMDB",
