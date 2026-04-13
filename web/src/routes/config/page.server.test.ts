@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const apiRequestMock = vi.fn();
 vi.mock('$lib/server/api', () => ({
@@ -6,13 +6,17 @@ vi.mock('$lib/server/api', () => ({
 }));
 
 describe('config page server actions', () => {
+	beforeEach(() => {
+		apiRequestMock.mockReset();
+		vi.resetModules();
+	});
+
 	describe('saveSettings', () => {
 		it('rejects out-of-scope fields before API call', async () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
 			const { actions } = await import('./+page.server');
-			apiRequestMock.mockReset();
 
 			const body = new URLSearchParams();
 			body.set('ifMatch', '"rev-1"');
@@ -37,7 +41,6 @@ describe('config page server actions', () => {
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
 			const { actions } = await import('./+page.server');
-			apiRequestMock.mockReset();
 
 			const body = new URLSearchParams();
 			body.set('ifMatch', '"rev-1"');
@@ -65,9 +68,7 @@ describe('config page server actions', () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: {}
 			}));
-			vi.resetModules();
 			const { actions } = await import('./+page.server');
-			apiRequestMock.mockReset();
 
 			const result = await actions.restartDaemon({
 				request: new Request('http://localhost/config', { method: 'POST' })
@@ -81,9 +82,7 @@ describe('config page server actions', () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: '' }
 			}));
-			vi.resetModules();
 			const { actions } = await import('./+page.server');
-			apiRequestMock.mockReset();
 
 			const result = await actions.restartDaemon({
 				request: new Request('http://localhost/config', { method: 'POST' })
@@ -97,9 +96,7 @@ describe('config page server actions', () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
-			vi.resetModules();
 			const { actions } = await import('./+page.server');
-			apiRequestMock.mockReset();
 			apiRequestMock.mockResolvedValue(new Response(null, { status: 202 }));
 
 			const result = await actions.restartDaemon({

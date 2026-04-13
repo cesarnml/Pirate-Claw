@@ -32,7 +32,7 @@
 
 	let showRestartOffer = $state(false);
 	let restarting = $state(false);
-	let restartOfferId: ReturnType<typeof setTimeout> | null = null;
+	let restartOfferId = $state<ReturnType<typeof setTimeout> | null>(null);
 
 	function offerRestart() {
 		showRestartOffer = true;
@@ -41,6 +41,12 @@
 			showRestartOffer = false;
 		}, 10000);
 	}
+
+	$effect(() => {
+		return () => {
+			if (restartOfferId) clearTimeout(restartOfferId);
+		};
+	});
 
 	$effect(() => {
 		const c = data.config;

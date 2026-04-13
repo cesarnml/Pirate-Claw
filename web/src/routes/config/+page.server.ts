@@ -322,7 +322,7 @@ export const actions: Actions = {
 				} catch {
 					// keep fallback
 				}
-				return fail(502, { restartError });
+				return fail(response.status, { restartError });
 			}
 
 			return { restarted: true };
