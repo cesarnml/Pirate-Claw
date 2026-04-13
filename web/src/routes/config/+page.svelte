@@ -366,7 +366,11 @@
 						if (result.status === 409) {
 							toast('Config changed elsewhere — reload and try again', 'error');
 						} else {
-							toast('Save failed — see errors above', 'error');
+							const detail =
+								result.data && 'moviesMessage' in result.data
+									? String(result.data.moviesMessage)
+									: undefined;
+							toast('Save failed — see errors above', 'error', detail);
 						}
 					}
 					await update();
