@@ -31,6 +31,7 @@ import {
   generateRunDeliverInvocation,
   inferPackageManager,
   initOrchestratorConfig,
+  VALID_REVIEW_POLICY_STAGE_VALUES,
   loadOrchestratorConfig,
   mergeStandaloneAiReviewSection,
   notifyBestEffort,
@@ -3556,6 +3557,11 @@ describe('delivery orchestrator', () => {
           runtime: 'bun',
           packageManager: 'npm',
           ticketBoundaryMode: 'cook',
+          reviewPolicy: {
+            selfAudit: 'required',
+            codexPreflight: 'disabled',
+            externalReview: 'required',
+          },
         });
       } finally {
         await rm(tempDir, { recursive: true });
@@ -4288,4 +4294,160 @@ it('resolves glide to gated as the effective advance boundary mode', () => {
   expect(resolveEffectiveAdvanceBoundaryMode('cook')).toBe('cook');
   expect(resolveEffectiveAdvanceBoundaryMode('gated')).toBe('gated');
   expect(resolveEffectiveAdvanceBoundaryMode('glide')).toBe('gated');
+});
+
+describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
+  const baseInProgressState: DeliveryState = {
+    planKey: 'phase-03',
+    planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+    statePath: '.agents/delivery/phase-03/state.json',
+    reviewsDirPath: '.agents/delivery/phase-03/reviews',
+    handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+    reviewPollIntervalMinutes: 6,
+    reviewPollMaxWaitMinutes: 12,
+    tickets: [
+      {
+        id: 'P3.01',
+        title: 'Persist Transmission Identity For Queued Torrents',
+        slug: 'persist-transmission-identity-for-queued-torrents',
+        ticketFile:
+          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+        status: 'in_progress',
+        branch:
+          'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+        baseBranch: 'main',
+        worktreePath: '/tmp/p3_01',
+      },
+    ],
+  };
+
+  it('records selfAuditOutcome: clean when outcome arg is "clean"', async () => {
+    const nextState = await recordPostVerifySelfAudit(
+      baseInProgressState,
+      undefined,
+      'clean',
+    );
+    expect(nextState.tickets[0]?.selfAuditOutcome).toBe('clean');
+    expect(nextState.tickets[0]?.status).toBe(
+      'post_verify_self_audit_complete',
+    );
+  });
+
+  it('records selfAuditOutcome: patched when outcome arg is "patched"', async () => {
+    const nextState = await recordPostVerifySelfAudit(
+      baseInProgressState,
+      undefined,
+      'patched',
+    );
+    expect(nextState.tickets[0]?.selfAuditOutcome).toBe('patched');
+    expect(nextState.tickets[0]?.status).toBe(
+      'post_verify_self_audit_complete',
+    );
+  });
+
+  it('defaults selfAuditOutcome to clean when no outcome arg is passed', async () => {
+    const nextState = await recordPostVerifySelfAudit(baseInProgressState);
+    expect(nextState.tickets[0]?.selfAuditOutcome).toBe('clean');
+    expect(nextState.tickets[0]?.status).toBe(
+      'post_verify_self_audit_complete',
+    );
+  });
+
+  it('renders selfAuditOutcome in formatStatus alongside timestamp', async () => {
+    const state = await recordPostVerifySelfAudit(
+      baseInProgressState,
+      undefined,
+      'patched',
+    );
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'bun',
+      packageManager: 'bun',
+      ticketBoundaryMode: 'cook',
+    });
+    const output = formatStatus(state);
+    expect(output).toMatch(
+      /post_verify_self_audit=completed at .+ \(patched\)/,
+    );
+  });
+
+  it('renders effective reviewPolicy in formatStatus', () => {
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'bun',
+      packageManager: 'bun',
+      ticketBoundaryMode: 'cook',
+      reviewPolicy: {
+        selfAudit: 'required',
+        codexPreflight: 'disabled',
+        externalReview: 'required',
+      },
+    });
+    const output = formatStatus(baseInProgressState);
+    expect(output).toContain(
+      'review_policy=selfAudit:required codexPreflight:disabled externalReview:required',
+    );
+  });
+
+  it('parses reviewPolicy config with all valid stage values', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'ee8-cfg-'));
+    try {
+      await writeFile(
+        join(tempDir, 'orchestrator.config.json'),
+        JSON.stringify({
+          reviewPolicy: {
+            selfAudit: 'required',
+            codexPreflight: 'disabled',
+            externalReview: 'skip_doc_only',
+          },
+        }),
+      );
+      const config = await loadOrchestratorConfig(tempDir);
+      expect(config.reviewPolicy).toEqual({
+        selfAudit: 'required',
+        codexPreflight: 'disabled',
+        externalReview: 'skip_doc_only',
+      });
+    } finally {
+      await rm(tempDir, { recursive: true });
+    }
+  });
+
+  it('rejects invalid reviewPolicy stage value at config load', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'ee8-cfg-'));
+    try {
+      await writeFile(
+        join(tempDir, 'orchestrator.config.json'),
+        JSON.stringify({
+          reviewPolicy: {
+            codexPreflight: 'always',
+          },
+        }),
+      );
+      await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+        /Invalid reviewPolicy\.codexPreflight "always"/,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true });
+    }
+  });
+
+  it('resolves missing reviewPolicy key to per-stage defaults', () => {
+    const resolved = resolveOrchestratorConfig({}, '/tmp');
+    expect(resolved.reviewPolicy).toEqual({
+      selfAudit: 'required',
+      codexPreflight: 'disabled',
+      externalReview: 'required',
+    });
+  });
+
+  it('exposes VALID_REVIEW_POLICY_STAGE_VALUES', () => {
+    expect(VALID_REVIEW_POLICY_STAGE_VALUES).toEqual([
+      'required',
+      'skip_doc_only',
+      'disabled',
+    ]);
+  });
 });

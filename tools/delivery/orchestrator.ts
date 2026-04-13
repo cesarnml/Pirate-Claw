@@ -180,6 +180,7 @@ export type TicketState = TicketDefinition & {
   handoffPath?: string;
   handoffGeneratedAt?: string;
   postVerifySelfAuditCompletedAt?: string;
+  selfAuditOutcome?: ReviewOutcome;
   docOnly?: boolean;
   prNumber?: number;
   prUrl?: string;
@@ -233,18 +234,35 @@ type BranchMatch = {
 
 export type { OrchestratorConfig, ResolvedOrchestratorConfig } from './config';
 
+export type {
+  ResolvedReviewPolicy,
+  ReviewPolicy,
+  ReviewPolicyStageValue,
+} from './config';
+
 let _config: ResolvedOrchestratorConfig = {
   defaultBranch: 'main',
   planRoot: 'docs',
   runtime: 'bun',
   packageManager: 'npm',
   ticketBoundaryMode: 'cook',
+  reviewPolicy: {
+    selfAudit: 'required',
+    codexPreflight: 'disabled',
+    externalReview: 'required',
+  },
 };
 
 export function initOrchestratorConfig(
-  config: ResolvedOrchestratorConfig,
+  config: Omit<ResolvedOrchestratorConfig, 'reviewPolicy'> & {
+    reviewPolicy?: ResolvedOrchestratorConfig['reviewPolicy'];
+  },
 ): void {
-  _config = config;
+  _config = {
+    ..._config,
+    ...config,
+    reviewPolicy: config.reviewPolicy ?? _config.reviewPolicy,
+  };
 }
 
 export function getOrchestratorConfig(): ResolvedOrchestratorConfig {
@@ -264,7 +282,10 @@ export function resolveOrchestratorConfig(
   return resolveOrchestratorConfigImpl(raw, cwd);
 }
 
-export { inferPackageManager } from './config';
+export {
+  inferPackageManager,
+  VALID_REVIEW_POLICY_STAGE_VALUES,
+} from './config';
 
 export function generateRunDeliverInvocation(
   packageManager: ResolvedOrchestratorConfig['packageManager'],
@@ -531,9 +552,19 @@ export async function runDeliveryOrchestrator(
             'Note: `internal-review` is deprecated; use `post-verify-self-audit`.',
           );
         }
+        const positional0 = parsed.positionals[0];
+        const auditOutcome: ReviewOutcome | undefined =
+          positional0 === 'clean' || positional0 === 'patched'
+            ? positional0
+            : undefined;
+        const auditTicketId =
+          positional0 !== 'clean' && positional0 !== 'patched'
+            ? positional0
+            : undefined;
         const nextState = await recordPostVerifySelfAudit(
           state,
-          parsed.positionals[0],
+          auditTicketId,
+          auditOutcome,
         );
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
@@ -966,8 +997,9 @@ export async function copyLocalEnvIfPresent(
 export async function recordPostVerifySelfAudit(
   state: DeliveryState,
   ticketId?: string,
+  outcome?: ReviewOutcome,
 ): Promise<DeliveryState> {
-  return recordPostVerifySelfAuditImpl(state, ticketId);
+  return recordPostVerifySelfAuditImpl(state, ticketId, outcome);
 }
 
 /** @deprecated Use `recordPostVerifySelfAudit`. */
@@ -1407,6 +1439,7 @@ export function formatStatus(state: DeliveryState): string {
     `review_poll_interval_minutes=${state.reviewPollIntervalMinutes}`,
     `review_poll_max_wait_minutes=${state.reviewPollMaxWaitMinutes}`,
     `boundary_mode=${_config.ticketBoundaryMode}`,
+    `review_policy=selfAudit:${_config.reviewPolicy.selfAudit} codexPreflight:${_config.reviewPolicy.codexPreflight} externalReview:${_config.reviewPolicy.externalReview}`,
     '',
     ...state.tickets.map((ticket) =>
       [
@@ -1415,7 +1448,7 @@ export function formatStatus(state: DeliveryState): string {
         `worktree=${ticket.worktreePath}`,
         ticket.handoffPath ? `handoff=${ticket.handoffPath}` : undefined,
         ticket.postVerifySelfAuditCompletedAt
-          ? `post_verify_self_audit_completed_at=${ticket.postVerifySelfAuditCompletedAt}`
+          ? `post_verify_self_audit=completed at ${ticket.postVerifySelfAuditCompletedAt}${ticket.selfAuditOutcome ? ` (${ticket.selfAuditOutcome})` : ''}`
           : undefined,
         ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
         ticket.reviewArtifactJsonPath
