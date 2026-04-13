@@ -54,6 +54,7 @@ import {
   resolveReviewFetcher,
   resolveReviewTriager,
   runStandaloneAiReview,
+  shouldAutoRecordCleanForPollReview,
   summarizeStateDifferences,
   syncStateFromExisting,
   syncStateFromScratch,
@@ -3561,9 +3562,9 @@ describe('delivery orchestrator', () => {
           packageManager: 'npm',
           ticketBoundaryMode: 'cook',
           reviewPolicy: {
-            selfAudit: 'required',
-            codexPreflight: 'disabled',
-            externalReview: 'required',
+            selfAudit: 'skip_doc_only',
+            codexPreflight: 'skip_doc_only',
+            externalReview: 'skip_doc_only',
           },
         });
       } finally {
@@ -4355,6 +4356,31 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
     );
   });
 
+  it('auto-skips self-audit for doc-only tickets when policy is skip_doc_only', async () => {
+    const nextState = await recordPostVerifySelfAudit(
+      baseInProgressState,
+      undefined,
+      undefined,
+      {
+        isLocalBranchDocOnly: () => true,
+        selfAuditPolicy: 'skip_doc_only',
+      },
+    );
+    expect(nextState.tickets[0]?.selfAuditOutcome).toBe('skipped');
+    expect(nextState.tickets[0]?.status).toBe(
+      'post_verify_self_audit_complete',
+    );
+  });
+
+  it('requires an explicit self-audit outcome for doc-only tickets when policy is required', async () => {
+    await expect(
+      recordPostVerifySelfAudit(baseInProgressState, undefined, undefined, {
+        isLocalBranchDocOnly: () => true,
+        selfAuditPolicy: 'required',
+      }),
+    ).rejects.toThrow(/requires an explicit self-audit outcome/);
+  });
+
   it('renders selfAuditOutcome in formatStatus alongside timestamp', async () => {
     const state = await recordPostVerifySelfAudit(
       baseInProgressState,
@@ -4439,9 +4465,9 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
   it('resolves missing reviewPolicy key to per-stage defaults', () => {
     const resolved = resolveOrchestratorConfig({}, '/tmp');
     expect(resolved.reviewPolicy).toEqual({
-      selfAudit: 'required',
-      codexPreflight: 'disabled',
-      externalReview: 'required',
+      selfAudit: 'skip_doc_only',
+      codexPreflight: 'skip_doc_only',
+      externalReview: 'skip_doc_only',
     });
   });
 
@@ -4501,9 +4527,27 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
         docOnly: true,
       })),
     };
-    const nextState = recordCodexPreflight(docOnlyState);
+    const nextState = recordCodexPreflight(
+      docOnlyState,
+      undefined,
+      true,
+      'skip_doc_only',
+    );
     expect(nextState.tickets[0]?.codexPreflightOutcome).toBe('skipped');
     expect(nextState.tickets[0]?.status).toBe('codex_preflight_complete');
+  });
+
+  it('requires an explicit codex preflight outcome for doc-only tickets when policy is required', () => {
+    const docOnlyState: DeliveryState = {
+      ...basePostAuditState,
+      tickets: basePostAuditState.tickets.map((t) => ({
+        ...t,
+        docOnly: true,
+      })),
+    };
+    expect(() =>
+      recordCodexPreflight(docOnlyState, undefined, true, 'required'),
+    ).toThrow(/requires a Codex preflight outcome/);
   });
 
   it('rejects codex-preflight when ticket is not at post_verify_self_audit_complete', () => {
@@ -4577,6 +4621,39 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
         selfAudit: 'required',
         codexPreflight: 'required',
         externalReview: 'required',
+      },
+    });
+    try {
+      await expect(
+        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
+      ).rejects.toThrow(/requires Codex preflight before opening a PR/);
+    } finally {
+      initOrchestratorConfig({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'bun',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'cook',
+        reviewPolicy: {
+          selfAudit: 'required',
+          codexPreflight: 'disabled',
+          externalReview: 'required',
+        },
+      });
+    }
+  });
+
+  it('open-pr rejects code ticket at post_verify_self_audit_complete when policy is skip_doc_only', async () => {
+    initOrchestratorConfig({
+      defaultBranch: 'main',
+      planRoot: 'docs',
+      runtime: 'bun',
+      packageManager: 'bun',
+      ticketBoundaryMode: 'cook',
+      reviewPolicy: {
+        selfAudit: 'skip_doc_only',
+        codexPreflight: 'skip_doc_only',
+        externalReview: 'skip_doc_only',
       },
     });
     try {
@@ -4679,5 +4756,29 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
     expect(output).toContain(
       'codex_preflight=completed at 2026-04-14T10:00:00.000Z (skipped)',
     );
+  });
+
+  it('auto-records clean for poll-review when policy is disabled', () => {
+    expect(
+      shouldAutoRecordCleanForPollReview('disabled', {
+        docOnly: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('auto-records clean for doc-only poll-review when policy is skip_doc_only', () => {
+    expect(
+      shouldAutoRecordCleanForPollReview('skip_doc_only', {
+        docOnly: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not auto-record clean for doc-only poll-review when policy is required', () => {
+    expect(
+      shouldAutoRecordCleanForPollReview('required', {
+        docOnly: true,
+      }),
+    ).toBe(false);
   });
 });

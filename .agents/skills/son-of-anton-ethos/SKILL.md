@@ -11,7 +11,7 @@ Execution ethos for approved multi-ticket phase/epic work and standalone (non-ti
 
 1. **Entrypoint.** Use `bun run deliver`. Read `docs/03-engineering/delivery-orchestrator.md` for command surface — not ad hoc substitutes.
 2. **When to use.** Smaller bounded changes ship as standalone PRs without a new phase/epic. Use `bun run deliver ai-review [--pr <number>]` — not the ticketed stacked flow (`--plan …`, `poll-review`, `advance`, etc.).
-3. **Before external review.** Complete implement → verify (`bun run verify` + scoped tests) in build mode, then self-audit mode (re-read diff, second-pass risky areas). For ticket stacks run `post-verify-self-audit [clean|patched]` CLI (defaults to `clean` when arg omitted). If `reviewPolicy.codexPreflight` is `"required"`, run the `codex:rescue` skill, apply prudent findings, then record with `codex-preflight [clean|patched]` before `open-pr`. Standalone PRs have no self-audit CLI equivalent, but the same mode switch applies.
+3. **Before external review.** Complete implement → verify (`bun run verify` + scoped tests) in build mode, then self-audit mode (re-read diff, second-pass risky areas). For ticket stacks always run `post-verify-self-audit [clean|patched]`; under `selfAudit: "skip_doc_only"` the command auto-records `skipped` for doc-only tickets, and under `selfAudit: "required"` doc-only tickets still need an explicit `clean` or `patched` outcome. For ticket stacks, `reviewPolicy.codexPreflight: "required"` means run the `codex:rescue` skill, apply prudent findings, then record with `codex-preflight [clean|patched]` before `open-pr`. Under `codexPreflight: "skip_doc_only"`, ticketed doc-only branches auto-record `skipped` at the Codex preflight step while code tickets still need the Codex step before `open-pr`. Standalone PRs have no self-audit or Codex-preflight CLI equivalents, but the same review discipline applies.
 4. **Running `ai-review`.** Uses real wall-clock polling. Surface that before starting; do not hide the time cost.
 5. **Commits.** Follow AGENTS Pre-Commit (Prettier for touched files; spellcheck when docs or user-facing copy changed).
 6. **Product-scope gates** apply to new phase/epic work — not to standalone PRs already allowed outside a new phase.
@@ -37,7 +37,7 @@ Commit the delivery plan and all ticket docs to the default branch before creati
 1. Re-read required repo docs and handoff artifacts at each ticket boundary.
 2. Use the supported orchestrator path, not ad hoc manual substitutes.
 3. Move one ticket at a time in order.
-4. For each ticket: implement → verify → update ticket rationale → self-audit (`post-verify-self-audit [clean|patched]`) → (if `codexPreflight: "required"`) Codex preflight (`codex-preflight [clean|patched]`) → open/refresh PR → run AI-review polling → patch prudent findings → record-review → advance.
+4. For each ticket: implement → verify → update ticket rationale → self-audit (`post-verify-self-audit [clean|patched]`) → (if `codexPreflight` is not `"disabled"`, with doc-only auto-skip under `skip_doc_only`) Codex preflight (`codex-preflight [clean|patched]`) → open/refresh PR → run AI-review polling → patch prudent findings → record-review → advance.
 5. During the external review wait, do nothing.
 6. Do not write ahead across ticket boundaries.
 7. After `advance`, follow the active boundary mode and keep going without asking for permission unless a real blocker exists.
@@ -60,7 +60,7 @@ Canonical `gated` resume prompt:
 
 ## AI Review Polling
 
-Be sabai-sabai during the review window. Token usage is minimal while sleeping; the developer reviews earlier stacked PRs during this time.
+Stay idle during the review window. Token usage is minimal while sleeping; the developer reviews earlier stacked PRs during this time.
 
 When results land:
 
@@ -75,7 +75,7 @@ Record `clean` only when no actionable feedback found. Record `patched` when act
 
 ### Docs-Only PRs
 
-Skip the external review window. Record `clean` immediately and advance. Codex preflight is also auto-skipped for doc-only tickets — the orchestrator records `skipped` without requiring an outcome arg.
+With the repo default `skip_doc_only` policy, doc-only tickets skip the external review window and record `clean` immediately. When a stage is `required`, doc-only tickets wait/run like code tickets. Codex preflight auto-skips doc-only tickets only under `skip_doc_only`, where the orchestrator records `skipped` without requiring an outcome arg.
 
 ## Codex Preflight
 
@@ -93,7 +93,9 @@ Skip the external review window. Record `clean` immediately and advance. Codex p
 
 The CLI is a state recorder only — never invoke Codex from within the CLI.
 
-**When `codexPreflight` is `"disabled"`** (the default): skip the step entirely. `open-pr` does not require `codex_preflight_complete` status.
+**When `codexPreflight` is `"skip_doc_only"`** (the repo default): code tickets still require the Codex step before `open-pr`, while doc-only tickets auto-record `skipped`.
+
+**When `codexPreflight` is `"disabled"`**: skip the step entirely. `open-pr` does not require `codex_preflight_complete` status.
 
 If `codex-plugin-cc` is unavailable, set `codexPreflight: "disabled"` in `orchestrator.config.json` to bypass the gate.
 

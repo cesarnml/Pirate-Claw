@@ -7,6 +7,7 @@ import {
   loadOrchestratorConfig as loadOrchestratorConfigImpl,
   resolveOrchestratorConfig as resolveOrchestratorConfigImpl,
   type OrchestratorConfig,
+  type ReviewPolicyStageValue,
   type ResolvedOrchestratorConfig,
   type TicketBoundaryMode,
 } from './config';
@@ -37,6 +38,7 @@ import {
   runProcess as runPlatformProcess,
   runProcessResult as runPlatformProcessResult,
   type PullRequestSummary,
+  type Runtime,
 } from './platform';
 import {
   createOptions as createOptionsImpl,
@@ -162,7 +164,7 @@ export type TicketStatus =
   | 'reviewed'
   | 'done';
 
-export type ReviewOutcome = 'clean' | 'patched';
+export type ReviewOutcome = 'clean' | 'patched' | 'skipped';
 export type ReviewResult =
   | ReviewOutcome
   | 'needs_patch'
@@ -254,9 +256,9 @@ let _config: ResolvedOrchestratorConfig = {
   packageManager: 'npm',
   ticketBoundaryMode: 'cook',
   reviewPolicy: {
-    selfAudit: 'required',
-    codexPreflight: 'disabled',
-    externalReview: 'required',
+    selfAudit: 'skip_doc_only',
+    codexPreflight: 'skip_doc_only',
+    externalReview: 'skip_doc_only',
   },
 };
 
@@ -269,9 +271,9 @@ export function initOrchestratorConfig(
     ..._config,
     ...config,
     reviewPolicy: config.reviewPolicy ?? {
-      selfAudit: 'required',
-      codexPreflight: 'disabled',
-      externalReview: 'required',
+      selfAudit: 'skip_doc_only',
+      codexPreflight: 'skip_doc_only',
+      externalReview: 'skip_doc_only',
     },
   };
 }
@@ -601,6 +603,7 @@ export async function runDeliveryOrchestrator(
           state,
           preflightOutcome,
           isDocOnly,
+          _config.reviewPolicy.codexPreflight,
         );
         const justRecordedPreflight = nextState.tickets.find(
           (t) =>
@@ -643,17 +646,28 @@ export async function runDeliveryOrchestrator(
           ? state.tickets.find((t) => t.id === pollTicketId)
           : state.tickets.find((t) => t.status === 'in_review');
 
-        if (pollTarget?.docOnly) {
-          // Doc-only PRs skip the external review window — record clean immediately.
+        if (
+          pollTarget &&
+          shouldAutoRecordCleanForPollReview(
+            _config.reviewPolicy.externalReview,
+            pollTarget,
+          )
+        ) {
+          const skipNote =
+            _config.reviewPolicy.externalReview === 'disabled'
+              ? 'external AI review disabled by policy'
+              : 'doc-only PR; external AI review skipped by policy';
           console.log(
-            `doc_only=true for ${pollTarget.id}: skipping AI review window, recording clean`,
+            _config.reviewPolicy.externalReview === 'disabled'
+              ? `externalReview=disabled for ${pollTarget.id}: skipping AI review window, recording clean`
+              : `doc_only=true for ${pollTarget.id} under externalReview=skip_doc_only: skipping AI review window, recording clean`,
           );
           const docOnlyState = await recordReview(
             state,
             cwd,
             pollTarget.id,
             'clean',
-            'doc-only PR; no external AI review required',
+            skipNote,
           );
           await saveState(cwd, docOnlyState);
           console.log(formatCurrentTicketStatus(docOnlyState, pollTicketId));
@@ -1063,7 +1077,41 @@ export async function recordPostVerifySelfAudit(
   state: DeliveryState,
   ticketId?: string,
   outcome?: ReviewOutcome,
+  dependencies: {
+    isLocalBranchDocOnly?: (
+      cwd: string,
+      baseBranch: string,
+      runtime: Runtime,
+    ) => boolean;
+    selfAuditPolicy?: ReviewPolicyStageValue;
+  } = {},
 ): Promise<DeliveryState> {
+  const target =
+    (ticketId
+      ? state.tickets.find((ticket) => ticket.id === ticketId)
+      : state.tickets.find((ticket) => ticket.status === 'in_progress')) ??
+    undefined;
+  const selfAuditPolicy =
+    dependencies.selfAuditPolicy ?? _config.reviewPolicy.selfAudit;
+  const isDocOnly =
+    target &&
+    selfAuditPolicy !== 'disabled' &&
+    (dependencies.isLocalBranchDocOnly ?? isPlatformLocalBranchDocOnly)(
+      target.worktreePath,
+      target.baseBranch,
+      _config.runtime,
+    );
+
+  if (selfAuditPolicy === 'skip_doc_only' && isDocOnly) {
+    return recordPostVerifySelfAuditImpl(state, ticketId, 'skipped');
+  }
+
+  if (selfAuditPolicy === 'required' && isDocOnly && outcome === undefined) {
+    throw new Error(
+      `Ticket ${target.id} requires an explicit self-audit outcome. Pass \`clean\` or \`patched\`.`,
+    );
+  }
+
   return recordPostVerifySelfAuditImpl(state, ticketId, outcome);
 }
 
@@ -1072,15 +1120,26 @@ export async function recordInternalReview(
   state: DeliveryState,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  return recordPostVerifySelfAuditImpl(state, ticketId);
+  return recordPostVerifySelfAudit(state, ticketId);
 }
 
 export function recordCodexPreflight(
   state: DeliveryState,
   outcome?: 'clean' | 'patched',
   isDocOnly?: boolean,
+  policy: ReviewPolicyStageValue = _config.reviewPolicy.codexPreflight,
 ): DeliveryState {
-  return recordCodexPreflightImpl(state, outcome, isDocOnly);
+  return recordCodexPreflightImpl(state, outcome, isDocOnly, policy);
+}
+
+export function shouldAutoRecordCleanForPollReview(
+  policy: ReviewPolicyStageValue,
+  ticket?: Pick<TicketState, 'docOnly'>,
+): boolean {
+  return (
+    policy === 'disabled' ||
+    (policy === 'skip_doc_only' && ticket?.docOnly === true)
+  );
 }
 
 export async function openPullRequest(

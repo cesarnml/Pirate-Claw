@@ -28,9 +28,9 @@ behavior, and review policy are not hardcoded:
   "packageManager": "bun",
   "ticketBoundaryMode": "cook",
   "reviewPolicy": {
-    "selfAudit": "required",
-    "codexPreflight": "disabled",
-    "externalReview": "required"
+    "selfAudit": "skip_doc_only",
+    "codexPreflight": "skip_doc_only",
+    "externalReview": "skip_doc_only"
   }
 }
 ```
@@ -42,9 +42,9 @@ All fields are optional. When the file is absent, the orchestrator infers sensib
 - `runtime`: `"bun"` (`"bun"` uses `Bun.spawnSync`, `"node"` uses `child_process.spawnSync` inside the orchestrator implementation)
 - `packageManager`: inferred from lockfile (`bun.lock` → `"bun"`, `pnpm-lock.yaml` → `"pnpm"`, `yarn.lock` → `"yarn"`, `package-lock.json` → `"npm"`, fallback `"npm"`) for worktree bootstrap behavior
 - `ticketBoundaryMode`: `"cook"`
-- `reviewPolicy.selfAudit`: `"required"`
-- `reviewPolicy.codexPreflight`: `"disabled"` — Codex preflight is off by default; set to `"required"` after a successful trial run
-- `reviewPolicy.externalReview`: `"required"`
+- `reviewPolicy.selfAudit`: `"skip_doc_only"`
+- `reviewPolicy.codexPreflight`: `"skip_doc_only"`
+- `reviewPolicy.externalReview`: `"skip_doc_only"`
 
 Valid `reviewPolicy` stage values are:
 
@@ -132,7 +132,7 @@ For `sonarqube`, the repo-local fetcher reads GitHub check-run annotations rathe
 
 The absence of `ai-code-review` comments after the final 12-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
 
-Doc-only PRs (where the diff touches only `.md` files) skip the review window entirely. External AI agents review code; the developer reads docs. When `open-pr` detects a doc-only diff, it sets a `doc_only` flag in state and `poll-review` auto-records `clean` immediately without waiting.
+Doc-only PRs (where the diff touches only `.md` files) skip the review window only when `reviewPolicy.externalReview` is `"skip_doc_only"` (or the stage is fully `"disabled"` for all PRs). External AI agents review code; the developer reads docs. When `open-pr` detects a doc-only diff, it sets a `doc_only` flag in state, and `poll-review` uses the configured policy to decide whether to auto-record `clean` immediately or wait through the normal review window.
 
 When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket moves into an intermediate `needs_patch` state with the saved artifacts and triage note. From there the follow-up must conclude as either `patched` or `operator_input_needed`. PR body updates remain best-effort in either case.
 
@@ -258,9 +258,9 @@ bun run deliver --plan <plan> codex-preflight patched  # Codex findings were app
 
 The CLI is a state recorder only — it does not invoke Codex. The agent runs the Codex skill, then calls this command.
 
-**Doc-only tickets** auto-skip Codex preflight. The orchestrator detects doc-only by inspecting the local git diff at `codex-preflight` time (all changed files are `.md`) and records `skipped` without requiring an outcome arg. A clear message is printed: "Doc-only ticket — Codex preflight auto-skipped."
+**Doc-only tickets** auto-skip Codex preflight only when `reviewPolicy.codexPreflight` is `"skip_doc_only"`. The orchestrator detects doc-only by inspecting the local git diff at `codex-preflight` time (all changed files are `.md`) and records `skipped` without requiring an outcome arg. A clear message is printed: "Doc-only ticket — Codex preflight auto-skipped."
 
-When `reviewPolicy.codexPreflight` is `"disabled"` (the default), `open-pr` does not require `codex_preflight_complete` status and tickets at `post_verify_self_audit_complete` may proceed directly to `open-pr`.
+When `reviewPolicy.codexPreflight` is `"disabled"`, `open-pr` does not require `codex_preflight_complete` status and tickets at `post_verify_self_audit_complete` may proceed directly to `open-pr`.
 
 If `codex-plugin-cc` is unavailable, set `codexPreflight: "disabled"` in `orchestrator.config.json` to bypass the gate.
 
@@ -294,11 +294,14 @@ Separate post-delivery closeout command:
 
 ## Typical Flow
 
-Default `cook` flow (with Codex preflight disabled — the default):
+Default `cook` flow (with repo-default `skip_doc_only` review policy):
 
 ```bash
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md post-verify-self-audit [clean|patched]
+# for code tickets, run codex:rescue skill, apply prudent findings, then record:
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md codex-preflight [clean|patched]
+# for doc-only tickets under skip_doc_only, codex-preflight auto-records skipped
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md open-pr
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-review
 # if the triager hook leaves the ticket in needs_patch, follow up and then record the final outcome
@@ -344,7 +347,7 @@ bun run deliver ai-review
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
-After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit [clean|patched]` before moving on. When `reviewPolicy.codexPreflight` is `"required"`, run the `codex:rescue` skill, apply prudent findings, then record with `codex-preflight [clean|patched]`. After that (or directly after `post-verify-self-audit` when Codex preflight is disabled), run `open-pr`. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window and auto-record `clean`. At the 6-minute check, the orchestrator advances immediately if all detected external review agents have finished their run (including agents that report clean). Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts and runs the triager hook. When findings are detected, `poll-review` output includes a condensed findings block — `[vendor] path:line — title` per actionable finding — so the implementing agent can triage and patch without reading the full `.txt` artifact. `poll-review` otherwise auto-records `clean` at the final check. After `advance`, follow the selected boundary mode: continue directly in `cook`, or reset and resume with the canonical prompt in `gated` / `glide` fallback.
+After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit [clean|patched]` before moving on. When `reviewPolicy.codexPreflight` is `"required"`, run the `codex:rescue` skill, apply prudent findings, then record with `codex-preflight [clean|patched]`. Under the repo-default `skip_doc_only` setting, code tickets still need that Codex step while doc-only tickets auto-record `skipped`; only `"disabled"` lets tickets go directly from `post-verify-self-audit` to `open-pr`. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window only when `reviewPolicy.externalReview` is `"skip_doc_only"` (or when the stage is fully `"disabled"` for all PRs). When `open-pr` detects a doc-only diff, it sets a `docOnly` flag in state and `poll-review` uses that plus the configured policy to decide whether to auto-record `clean` immediately or wait through the normal review window. At the 6-minute check, the orchestrator advances immediately if all detected external review agents have finished their run (including agents that report clean). Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts and runs the triager hook. When findings are detected, `poll-review` output includes a condensed findings block — `[vendor] path:line — title` per actionable finding — so the implementing agent can triage and patch without reading the full `.txt` artifact. `poll-review` otherwise auto-records `clean` at the final check. After `advance`, follow the selected boundary mode: continue directly in `cook`, or reset and resume with the canonical prompt in `gated` / `glide` fallback.
 
 If a parent ticket was squash-merged onto `main`, run:
 

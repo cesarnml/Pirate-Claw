@@ -141,9 +141,9 @@ export function resolveOrchestratorConfig(
     packageManager: raw.packageManager ?? inferPackageManager(cwd),
     ticketBoundaryMode: raw.ticketBoundaryMode ?? 'cook',
     reviewPolicy: {
-      selfAudit: raw.reviewPolicy?.selfAudit ?? 'required',
-      codexPreflight: raw.reviewPolicy?.codexPreflight ?? 'disabled',
-      externalReview: raw.reviewPolicy?.externalReview ?? 'required',
+      selfAudit: raw.reviewPolicy?.selfAudit ?? 'skip_doc_only',
+      codexPreflight: raw.reviewPolicy?.codexPreflight ?? 'skip_doc_only',
+      externalReview: raw.reviewPolicy?.externalReview ?? 'skip_doc_only',
     },
   };
 }

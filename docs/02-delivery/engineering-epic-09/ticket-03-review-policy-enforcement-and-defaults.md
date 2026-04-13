@@ -177,6 +177,12 @@ said skip" is observably different from "review ran and was clean." Persisting
 that distinction prevents the state file from claiming work happened when it
 did not.
 
+The delivered slice keeps the policy branching narrow: self-audit decides
+whether a doc-only ticket records `skipped`, `poll-review` decides whether to
+wait or auto-record `clean`, and `open-pr` only gates on stage policy plus
+status. That keeps doc-only handling out of unrelated branches while making the
+configured defaults behaviorally real.
+
 ## Notes
 
 - This ticket depends on `EE9.01` because self-audit auto-skip must call
