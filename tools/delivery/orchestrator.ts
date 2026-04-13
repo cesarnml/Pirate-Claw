@@ -261,7 +261,11 @@ export function initOrchestratorConfig(
   _config = {
     ..._config,
     ...config,
-    reviewPolicy: config.reviewPolicy ?? _config.reviewPolicy,
+    reviewPolicy: config.reviewPolicy ?? {
+      selfAudit: 'required',
+      codexPreflight: 'disabled',
+      externalReview: 'required',
+    },
   };
 }
 
