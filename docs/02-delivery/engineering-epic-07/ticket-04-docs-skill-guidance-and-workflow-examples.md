@@ -45,7 +45,15 @@ Update the docs so they describe the shipped policy model exactly:
 
 ## Rationale
 
-To be filled during implementation if behavior or trade-offs shift.
+The main documentation risk after EE7 was stale EE6 language that still treated
+every `advance` as a compaction stop. The updated guidance now makes boundary
+policy mode-specific: `cook` continues automatically, `gated` stops with reset
+guidance and the canonical resume prompt, and `glide` is documented as an
+explicit fallback to `gated` in this repo.
+
+This ticket also corrects the operator guide's config example so it matches the
+actual shipped orchestrator fields instead of documenting forward-looking review
+policy settings that are not implemented yet.
 
 ## Notes
 

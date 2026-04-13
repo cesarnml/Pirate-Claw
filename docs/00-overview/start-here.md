@@ -143,7 +143,7 @@ When implementing a ticket:
 - keep the ticket end to end
 - test what the user can observe
 - for orchestrated stacked delivery, re-read the handoff artifact and required docs at each ticket boundary instead of relying on prior conversational context
-- during external waits such as AI-review windows, read ahead into the next ticket and nearby seams if it helps maintain momentum, but do not write ahead across ticket boundaries
+- during external waits such as AI-review windows, do not read ahead into the next ticket; the review wait is intentionally idle and the next ticket should start from the handoff artifact plus current repo state
 - avoid unrelated cleanup during the ticket unless required to land safely
 - update rationale and operator-facing docs when behavior changes
 - stop at the ticket boundary for single-ticket work; for phase or epic requests, keep advancing through the stack until blocked or the user explicitly stops you

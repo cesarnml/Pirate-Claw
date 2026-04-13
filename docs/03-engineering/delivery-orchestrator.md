@@ -17,8 +17,8 @@ This keeps the product boundary honest. `src/` remains the Pirate Claw applicati
 ## Configurable Core
 
 The orchestrator core now reads `orchestrator.config.json` at the repo root so
-branch, plan-root, runtime-internal, bootstrap defaults, and repo review policy
-are not hardcoded:
+branch, plan-root, runtime-internal, bootstrap defaults, and ticket-boundary
+behavior are not hardcoded:
 
 ```json
 {
@@ -26,11 +26,7 @@ are not hardcoded:
   "planRoot": "docs",
   "runtime": "bun",
   "packageManager": "bun",
-  "reviewPolicy": {
-    "selfAudit": "required",
-    "codexPreflight": "required",
-    "externalReview": "required"
-  }
+  "ticketBoundaryMode": "cook"
 }
 ```
 
@@ -40,17 +36,13 @@ All fields are optional. When the file is absent, the orchestrator infers sensib
 - `planRoot`: `"docs"` (plans live at `{planRoot}/02-delivery/<phase>/implementation-plan.md`)
 - `runtime`: `"bun"` (`"bun"` uses `Bun.spawnSync`, `"node"` uses `child_process.spawnSync` inside the orchestrator implementation)
 - `packageManager`: inferred from lockfile (`bun.lock` → `"bun"`, `pnpm-lock.yaml` → `"pnpm"`, `yarn.lock` → `"yarn"`, `package-lock.json` → `"npm"`, fallback `"npm"`) for worktree bootstrap behavior
-- `reviewPolicy.selfAudit`: `"required"`
-- `reviewPolicy.codexPreflight`: `"required"`
-- `reviewPolicy.externalReview`: `"required"`
+- `ticketBoundaryMode`: `"cook"`
 
-Review-policy stages use explicit values rather than booleans so delivery state
-and status output can distinguish a required gate, a doc-only skip, and a
-repo-disabled stage. Supported values are:
+Supported `ticketBoundaryMode` values are:
 
-- `required`
-- `skip_doc_only`
-- `disabled`
+- `cook`
+- `gated`
+- `glide`
 
 The internal convention below `planRoot` is fixed: `{planRoot}/02-delivery/<phase>/implementation-plan.md`. Only the top-level directory name is configurable.
 
@@ -156,9 +148,34 @@ The handoff includes:
 
 This does not automatically create a brand-new agent session, but it is the current repo mechanism for reducing reasoning carryover between tickets while preserving stacked branch continuity.
 
-**No read-ahead during the review window.** The agent does nothing while waiting on external AI review. The wait is free (LLM idle during subprocess sleep). Read-ahead during the window burns context that is dead weight when the agent compacts at the next ticket boundary. Be sabaai sabaai.
+**No read-ahead during the review window.** The agent does nothing while waiting on external AI review. The wait is free (LLM idle during subprocess sleep). Read-ahead during the window burns context that is dead weight at the next ticket boundary. Be sabaai sabaai.
 
-**Context compaction at every ticket boundary.** `advance` marks the current ticket done and emits `compaction_required=true` plus a directive to call `/compact`. It does **not** start the next ticket. After compacting, call `start` (zero-arg) to initialize the next ticket's worktree, branch, and handoff — then read the handoff path from the `start` output. The handoff artifact plus the `modified_sections` field gives the resuming context everything it needs; nothing else from prior ticket history is load-bearing.
+## Ticket Boundary Modes
+
+EE7 makes the ticket-boundary policy explicit.
+
+- `cook`: repo default. `advance` marks the current ticket `done` and
+  immediately starts the next pending ticket by reusing the shared `start`
+  mechanics. The next worktree, branch, and handoff are created automatically.
+- `gated`: `advance` marks the current ticket `done`, stops, and prints reset
+  guidance plus a ready-to-paste resume prompt for the next agent session.
+  `advance` does **not** create the next handoff or worktree; `start` remains
+  the command that initializes the next ticket.
+- `glide`: selectable but not fully supported in repo-local code. The
+  orchestrator surfaces `glide` as an explicit mode, but today it falls back to
+  `gated` because host-driven self-reset is outside the CLI's control.
+
+For `gated`, the canonical resume prompt is:
+
+```text
+Immediately execute `bun run deliver --plan <plan> start`, read the generated handoff artifact as the source of truth for context, and implement <next-ticket-id>.
+```
+
+Operator reset guidance in `gated` and `glide` fallback:
+
+- prefer `/clear` for minimum token use
+- use `/compact` only when intentionally preserving compressed carry-forward
+  context
 
 **Handoff artifact `modified_sections`.** The handoff now includes a `## Modified Sections` block extracted from the ticket's `## Scope` section. Read only the file sections listed there — do not re-read full files. This keeps per-ticket context bounded as implementation files grow across the phase.
 
@@ -221,6 +238,8 @@ Separate post-delivery closeout command:
 
 ## Typical Flow
 
+Default `cook` flow:
+
 ```bash
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md post-verify-self-audit
@@ -229,8 +248,15 @@ bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-rev
 # if the triager hook leaves the ticket in needs_patch, follow up and then record the final outcome
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md record-review P2.02 patched "patched the two actionable correctness issues"
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
-# /compact  ← compact conversation context here before starting the next ticket
-bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
+```
+
+`gated` flow:
+
+```bash
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance
+# reset context now; prefer /clear and use /compact only when compressed carry-forward is intentional
+# next agent session prompt:
+# Immediately execute `bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start`, read the generated handoff artifact as the source of truth for context, and implement P2.03.
 ```
 
 After the developer has reviewed the full stacked PR chain and is ready to merge it, use:
@@ -250,7 +276,7 @@ bun run deliver ai-review
 
 At each ticket boundary, read the generated handoff artifact before continuing implementation.
 
-After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window and auto-record `clean`. At the 6-minute check, the orchestrator advances immediately if all detected external review agents have finished their run (including agents that report clean). Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts and runs the triager hook. When findings are detected, `poll-review` output includes a condensed findings block — `[vendor] path:line — title` per actionable finding — so the implementing agent can triage and patch without reading the full `.txt` artifact. `poll-review` otherwise auto-records `clean` at the final check. After `advance`, call `/compact`, then call `start` to initialize the next ticket.
+After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit` before opening a substantial ticket-linked PR. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window and auto-record `clean`. At the 6-minute check, the orchestrator advances immediately if all detected external review agents have finished their run (including agents that report clean). Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts and runs the triager hook. When findings are detected, `poll-review` output includes a condensed findings block — `[vendor] path:line — title` per actionable finding — so the implementing agent can triage and patch without reading the full `.txt` artifact. `poll-review` otherwise auto-records `clean` at the final check. After `advance`, follow the selected boundary mode: continue directly in `cook`, or reset and resume with the canonical prompt in `gated` / `glide` fallback.
 
 If a parent ticket was squash-merged onto `main`, run:
 
@@ -323,7 +349,10 @@ PR descriptions are maintained as delivery metadata, not one-shot text.
 - `poll-review` auto-records `clean` when no `ai-code-review` feedback is detected by the final check and refreshes the PR body immediately
 - PR-body AI-review notes now distinguish current-head review from stale-history review when the reviewed SHA no longer matches the branch head
 - ticket-linked and standalone PR refreshes now share the same reviewer-facing external-review section builder, metadata-refresh adapter, and command-layer persistence helpers while preserving their intentionally different outer PR-body shapes
-- `advance` refreshes the PR body from that recorded review state, marks the ticket done, emits `compaction_required=true`, and stops — it does not start the next ticket
+- `advance` refreshes the PR body from recorded review state, marks the ticket done, then applies the configured `ticketBoundaryMode`
+- in `cook`, `advance` auto-starts the next pending ticket and prints the next handoff path
+- in `gated`, `advance` stops and prints reset guidance plus the canonical resume prompt; `start` still owns next-ticket handoff creation
+- in `glide`, `advance` currently falls back explicitly to `gated`
 - `start` (zero-arg) finds the next pending ticket, creates its worktree and branch, writes its handoff, and prints the handoff path; explicit `start <ticket-id>` form is unchanged
 
 This matters because the repo squash-merges PRs onto `main`, so the PR body needs to mention prudent ai-cr follow-up work before the stack moves on.

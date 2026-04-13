@@ -38,9 +38,25 @@ Commit the delivery plan and all ticket docs to the default branch before creati
 2. Use the supported orchestrator path, not ad hoc manual substitutes.
 3. Move one ticket at a time in order.
 4. For each ticket: implement → verify → update ticket rationale → open/refresh PR → run AI-review polling → patch prudent findings → advance.
-5. During the external review wait, do nothing. When `advance` emits `compaction_required=true`, call `/compact`, then call `start` to initialize the next ticket.
+5. During the external review wait, do nothing.
 6. Do not write ahead across ticket boundaries.
-7. After `advance` + compact + `start`, keep going without asking for permission unless a real blocker exists.
+7. After `advance`, follow the active boundary mode and keep going without asking for permission unless a real blocker exists.
+
+## Ticket Boundary Modes
+
+Treat `ticketBoundaryMode` as the contract for ticket-boundary behavior.
+
+- `cook`: default Son-of-Anton path. `advance` immediately starts the next
+  ticket. Read the generated handoff and continue.
+- `gated`: `advance` stops, tells the operator to reset context, and prints the
+  canonical resume prompt for the next agent session. Prefer `/clear`; use
+  `/compact` only when compressed carry-forward context is intentional.
+- `glide`: currently falls back to `gated` in repo-local code. Do not pretend
+  the host agent can self-reset unless the runtime actually supports it.
+
+Canonical `gated` resume prompt:
+
+`Immediately execute \`bun run deliver --plan <plan> start\`, read the generated handoff artifact as the source of truth for context, and implement <next-ticket-id>.`
 
 ## AI Review Polling
 
