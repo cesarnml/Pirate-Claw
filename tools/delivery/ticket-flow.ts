@@ -329,6 +329,7 @@ export const recordInternalReview = recordPostVerifySelfAudit;
 export function recordCodexPreflight(
   state: DeliveryState,
   outcome?: 'clean' | 'patched',
+  isDocOnly?: boolean,
   now: () => string = () => new Date().toISOString(),
 ): DeliveryState {
   const target = state.tickets.find(
@@ -341,10 +342,10 @@ export function recordCodexPreflight(
     );
   }
 
-  const isDocOnly = !!target.docOnly;
+  const docOnly = isDocOnly ?? !!target.docOnly;
   let resolvedOutcome: CodexPreflightOutcome;
 
-  if (isDocOnly) {
+  if (docOnly) {
     resolvedOutcome = 'skipped';
   } else if (outcome === 'clean' || outcome === 'patched') {
     resolvedOutcome = outcome;
@@ -448,7 +449,7 @@ export function openPullRequest(
     dependencies.codexPreflightPolicy === 'required'
   ) {
     throw new Error(
-      `Ticket ${target.id} requires Codex preflight before opening a PR. Run \`bun run deliver codex-preflight [clean|patched]\` after completing the Codex review step. If codex-plugin-cc is unavailable, set codexPreflight to "disabled" in orchestrator.config.json to bypass.`,
+      `Ticket ${target.id} requires Codex preflight before opening a PR. Run \`bun run deliver codex-preflight <clean|patched>\` after completing the Codex review step. If codex-plugin-cc is unavailable, set codexPreflight to "disabled" in orchestrator.config.json to bypass.`,
     );
   }
 

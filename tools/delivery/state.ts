@@ -265,6 +265,7 @@ export function syncStateWithPlan(
           ),
         selfAuditOutcome:
           previous?.selfAuditOutcome ?? inferredTicket?.selfAuditOutcome,
+        docOnly: (previous?.docOnly ?? inferredTicket?.docOnly) || undefined,
         codexPreflightOutcome:
           previous?.codexPreflightOutcome ??
           inferredTicket?.codexPreflightOutcome,
