@@ -327,6 +327,15 @@ export function formatReviewWindowMessage(
     return '';
   }
 
+  if (ticket.docOnly) {
+    return [
+      'AI Review Window',
+      '- doc_only=true',
+      '- external AI review window skipped for docs-only PRs',
+      '- run `poll-review` to record `clean` immediately and continue',
+    ].join('\n');
+  }
+
   const openedAt = Date.parse(ticket.prOpenedAt);
 
   if (Number.isNaN(openedAt)) {

@@ -1187,6 +1187,50 @@ describe('delivery orchestrator', () => {
     expect(message).toContain('the orchestrator records `clean` and continues');
   });
 
+  it('surfaces the docs-only fast path after opening a docs-only PR', () => {
+    const message = formatReviewWindowMessage(
+      {
+        planKey: 'phase-03',
+        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        statePath: '.agents/delivery/phase-03/state.json',
+        reviewsDirPath: '.agents/delivery/phase-03/reviews',
+        handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
+        tickets: [
+          {
+            id: 'P3.01',
+            title: 'Persist Transmission Identity For Queued Torrents',
+            slug: 'persist-transmission-identity-for-queued-torrents',
+            ticketFile:
+              'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            status: 'in_review',
+            branch:
+              'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+            baseBranch: 'main',
+            worktreePath: '/tmp/p3_01',
+            prUrl: 'https://example.test/pull/20',
+            prNumber: 20,
+            prOpenedAt: '2026-04-01T10:00:00.000Z',
+            docOnly: true,
+          },
+        ],
+      },
+      'P3.01',
+    );
+
+    expect(message).toContain('AI Review Window');
+    expect(message).toContain('doc_only=true');
+    expect(message).toContain(
+      'external AI review window skipped for docs-only PRs',
+    );
+    expect(message).toContain(
+      'run `poll-review` to record `clean` immediately and continue',
+    );
+    expect(message).not.toContain('first check at:');
+    expect(message).not.toContain('final check at:');
+  });
+
   it('maps orchestrator commands to notification events', () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
