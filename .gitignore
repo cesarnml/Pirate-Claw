@@ -15,3 +15,4 @@ pirate-claw.db
 notes/private/
 .cursor/
 .claude/settings.local.json
+.claude/*.lock

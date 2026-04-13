@@ -16,14 +16,21 @@ This keeps the product boundary honest. `src/` remains the Pirate Claw applicati
 
 ## Configurable Core
 
-The orchestrator core now reads `orchestrator.config.json` at the repo root so branch, plan-root, runtime-internal, and bootstrap defaults are not hardcoded:
+The orchestrator core now reads `orchestrator.config.json` at the repo root so
+branch, plan-root, runtime-internal, bootstrap defaults, and repo review policy
+are not hardcoded:
 
 ```json
 {
   "defaultBranch": "main",
   "planRoot": "docs",
   "runtime": "bun",
-  "packageManager": "bun"
+  "packageManager": "bun",
+  "reviewPolicy": {
+    "selfAudit": "required",
+    "codexPreflight": "required",
+    "externalReview": "required"
+  }
 }
 ```
 
@@ -33,6 +40,17 @@ All fields are optional. When the file is absent, the orchestrator infers sensib
 - `planRoot`: `"docs"` (plans live at `{planRoot}/02-delivery/<phase>/implementation-plan.md`)
 - `runtime`: `"bun"` (`"bun"` uses `Bun.spawnSync`, `"node"` uses `child_process.spawnSync` inside the orchestrator implementation)
 - `packageManager`: inferred from lockfile (`bun.lock` → `"bun"`, `pnpm-lock.yaml` → `"pnpm"`, `yarn.lock` → `"yarn"`, `package-lock.json` → `"npm"`, fallback `"npm"`) for worktree bootstrap behavior
+- `reviewPolicy.selfAudit`: `"required"`
+- `reviewPolicy.codexPreflight`: `"required"`
+- `reviewPolicy.externalReview`: `"required"`
+
+Review-policy stages use explicit values rather than booleans so delivery state
+and status output can distinguish a required gate, a doc-only skip, and a
+repo-disabled stage. Supported values are:
+
+- `required`
+- `skip_doc_only`
+- `disabled`
 
 The internal convention below `planRoot` is fixed: `{planRoot}/02-delivery/<phase>/implementation-plan.md`. Only the top-level directory name is configurable.
 

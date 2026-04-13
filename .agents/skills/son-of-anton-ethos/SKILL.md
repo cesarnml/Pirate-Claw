@@ -11,7 +11,7 @@ Execution ethos for approved multi-ticket phase/epic work and standalone (non-ti
 
 1. **Entrypoint.** Use `bun run deliver`. Read `docs/03-engineering/delivery-orchestrator.md` for command surface — not ad hoc substitutes.
 2. **When to use.** Smaller bounded changes ship as standalone PRs without a new phase/epic. Use `bun run deliver ai-review [--pr <number>]` — not the ticketed stacked flow (`--plan …`, `poll-review`, `advance`, etc.).
-3. **Before external review.** Complete implement → verify (`bun run verify` + scoped tests) in build mode, then self-audit mode (re-read diff, second-pass risky areas). For ticket stacks run `post-verify-self-audit` CLI; standalone PRs have no CLI equivalent but the same mode switch applies.
+3. **Before external review.** Complete implement → verify (`bun run verify` + scoped tests) in build mode, then self-audit mode (re-read diff, second-pass risky areas). For ticket stacks run `post-verify-self-audit` CLI. If the active ticket workflow includes Codex preflight, complete that gate before `open-pr`. Standalone PRs have no self-audit CLI equivalent, but the same mode switch applies.
 4. **Running `ai-review`.** Uses real wall-clock polling. Surface that before starting; do not hide the time cost.
 5. **Commits.** Follow AGENTS Pre-Commit (Prettier for touched files; spellcheck when docs or user-facing copy changed).
 6. **Product-scope gates** apply to new phase/epic work — not to standalone PRs already allowed outside a new phase.
