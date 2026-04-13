@@ -59,11 +59,12 @@ describe('/config', () => {
 			},
 			form: undefined
 		});
-		expect(screen.getByRole('heading', { name: 'Feeds' })).toBeInTheDocument();
-		expect(screen.getByRole('heading', { name: 'TV shows' })).toBeInTheDocument();
-		expect(screen.getByRole('heading', { name: 'Movies' })).toBeInTheDocument();
-		expect(screen.getByRole('heading', { name: 'Transmission' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'RSS Feeds' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'TV Configuration' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Movie Policy' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'TV Shows' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Runtime' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: /Transmission/ })).toBeInTheDocument();
 		expect(screen.getByText('TestFeed')).toBeInTheDocument();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save shows' })).toBeInTheDocument();
@@ -134,5 +135,66 @@ describe('/config', () => {
 			form: undefined
 		});
 		expect(screen.queryByRole('button', { name: /restart daemon/i })).not.toBeInTheDocument();
+	});
+
+	it('renders all accordion items open on load', () => {
+		render(Page, {
+			data: {
+				config: mockConfig,
+				error: null,
+				etag: '"rev-1"',
+				canWrite: true,
+				transmissionSession: null
+			},
+			form: undefined
+		});
+
+		expect(screen.getByRole('button', { name: 'RSS Feeds' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(screen.getByRole('button', { name: 'TV Configuration' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(screen.getByRole('button', { name: 'Movie Policy' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(screen.getByRole('button', { name: /Transmission/ })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(screen.getByRole('button', { name: 'TV Shows' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+		expect(screen.getByRole('button', { name: 'Runtime' })).toHaveAttribute(
+			'aria-expanded',
+			'true'
+		);
+	});
+
+	it('disables all write controls in read-only mode but keeps Test Connection enabled', () => {
+		render(Page, {
+			data: {
+				config: mockConfig,
+				error: null,
+				etag: '"rev-1"',
+				canWrite: false,
+				transmissionSession: null
+			},
+			form: undefined
+		});
+
+		expect(screen.getByRole('button', { name: 'Save feeds' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Save TV defaults' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Save movies policy' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Save shows' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Add show' })).toBeDisabled();
+		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeDisabled();
+		expect(screen.getByRole('spinbutton', { name: 'Run interval (minutes)' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Test Connection' })).toBeEnabled();
 	});
 });

@@ -5,6 +5,7 @@
     "": {
       "name": "pirate-claw-web",
       "dependencies": {
+        "@internationalized/date": "^3.12.0",
         "@lucide/svelte": "^1.8.0",
         "bits-ui": "^2.17.3",
         "clsx": "^2.1.1",
