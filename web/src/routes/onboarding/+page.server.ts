@@ -52,6 +52,20 @@ function parseExistingFeeds(raw: string | File | null): FeedConfig[] {
 	}
 }
 
+function parseExistingShows(raw: string | File | null): string[] {
+	if (raw === null) return [];
+	try {
+		const parsed = JSON.parse(String(raw));
+		if (!Array.isArray(parsed)) return [];
+		return parsed
+			.filter((entry): entry is string => typeof entry === 'string')
+			.map((entry) => entry.trim())
+			.filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
 export const actions: Actions = {
 	saveFeed: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
@@ -112,6 +126,91 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[onboarding] saveFeed failed:', error);
 			return fail(500, { feedsMessage: 'Could not save feed.' });
+		}
+	},
+
+	saveTvTarget: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { tvTargetMessage: 'Config writes are disabled.' });
+		}
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, { tvTargetMessage: 'Missing config revision. Reload and try again.' });
+		}
+
+		const showName = String(formData.get('showName') ?? '').trim();
+		if (!showName) {
+			return fail(400, { tvTargetMessage: 'A TV show name is required.' });
+		}
+
+		const existingShows = parseExistingShows(formData.get('existingShowsJson'));
+		const nextShows = existingShows.includes(showName)
+			? existingShows
+			: [...existingShows, showName];
+		const resolutions = formData.getAll('tvResolution').map(String);
+		const codecs = formData.getAll('tvCodec').map(String);
+
+		try {
+			const defaultsResponse = await apiRequest('/api/config/tv/defaults', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify({ resolutions, codecs })
+			});
+
+			if (!defaultsResponse.ok) {
+				let tvTargetMessage = `Save failed (${defaultsResponse.status}).`;
+				try {
+					const body = (await defaultsResponse.json()) as { error?: string };
+					if (body.error) tvTargetMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(defaultsResponse.status, {
+					tvTargetMessage,
+					tvTargetEtag: defaultsResponse.headers.get('etag')
+				});
+			}
+
+			const defaultsEtag = defaultsResponse.headers.get('etag') ?? ifMatch;
+			const showsResponse = await apiRequest('/api/config', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': defaultsEtag
+				},
+				body: JSON.stringify({ runtime: {}, tv: { shows: nextShows } })
+			});
+
+			if (!showsResponse.ok) {
+				let tvTargetMessage = `Save failed (${showsResponse.status}).`;
+				try {
+					const body = (await showsResponse.json()) as { error?: string };
+					if (body.error) tvTargetMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(showsResponse.status, {
+					tvTargetMessage,
+					tvTargetEtag: showsResponse.headers.get('etag')
+				});
+			}
+
+			return {
+				tvTargetSuccess: true,
+				tvTargetMessage: 'TV target saved.',
+				tvTargetEtag: showsResponse.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[onboarding] saveTvTarget failed:', error);
+			return fail(500, { tvTargetMessage: 'Could not save TV target.' });
 		}
 	}
 };

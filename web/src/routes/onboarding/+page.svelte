@@ -4,19 +4,44 @@
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import type { ActionData, PageData } from './$types';
 
+	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
+	const ALL_CODECS = ['x264', 'x265'];
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	let selectedPath = $state<'tv' | 'movie' | 'both'>('tv');
 	let feedMediaType = $state<'tv' | 'movie'>('tv');
+	let tvResolutions = $state<string[]>([]);
+	let tvCodecs = $state<string[]>([]);
 
 	$effect(() => {
 		feedMediaType = selectedPath === 'movie' ? 'movie' : 'tv';
+	});
+
+	$effect(() => {
+		tvResolutions = [...(data.config?.tvDefaults?.resolutions ?? [])];
+		tvCodecs = [...(data.config?.tvDefaults?.codecs ?? [])];
 	});
 
 	function dismissOnboarding() {
 		if (!browser) return;
 		writeOnboardingDismissed(true);
 		window.location.href = '/';
+	}
+
+	function toggleResolution(resolution: string) {
+		if (tvResolutions.includes(resolution)) {
+			tvResolutions = tvResolutions.filter((entry) => entry !== resolution);
+			return;
+		}
+		tvResolutions = [...tvResolutions, resolution];
+	}
+
+	function toggleCodec(codec: string) {
+		if (tvCodecs.includes(codec)) {
+			tvCodecs = tvCodecs.filter((entry) => entry !== codec);
+			return;
+		}
+		tvCodecs = [...tvCodecs, codec];
 	}
 </script>
 
@@ -150,12 +175,103 @@
 					</div>
 				</form>
 			</div>
+		{:else if !(data.onboarding?.hasTvTargets ?? false) && !(data.onboarding?.hasMovieTargets ?? false)}
+			<Alert>
+				<AlertTitle>Step 3 — Add a TV target</AlertTitle>
+				<AlertDescription>
+					Your first feed is saved. Add a TV show and optional defaults without replacing any
+					existing shows already in config.
+				</AlertDescription>
+			</Alert>
+
+			<form method="POST" action="?/saveTvTarget" class="space-y-4">
+				<input type="hidden" name="ifMatch" value={form?.tvTargetEtag ?? data.etag ?? ''} />
+				<input
+					type="hidden"
+					name="existingShowsJson"
+					value={JSON.stringify(data.config?.tv.map((rule) => rule.name) ?? [])}
+				/>
+				{#each tvResolutions as resolution}
+					<input type="hidden" name="tvResolution" value={resolution} />
+				{/each}
+				{#each tvCodecs as codec}
+					<input type="hidden" name="tvCodec" value={codec} />
+				{/each}
+
+				<div class="space-y-1">
+					<label for="show-name" class="text-sm font-medium">TV show</label>
+					<input
+						id="show-name"
+						name="showName"
+						type="text"
+						placeholder="The Example Show"
+						class="border-input bg-background ring-offset-background h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+					/>
+				</div>
+
+				<div class="space-y-2">
+					<p class="text-sm font-medium">TV resolutions</p>
+					<div class="flex flex-wrap gap-2">
+						{#each ALL_RESOLUTIONS as resolution}
+							<button
+								type="button"
+								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {tvResolutions.includes(
+									resolution
+								)
+									? 'bg-primary text-primary-foreground border-primary'
+									: 'border-border bg-card hover:bg-muted/50'}"
+								onclick={() => toggleResolution(resolution)}
+							>
+								{resolution}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<p class="text-sm font-medium">TV codecs</p>
+					<div class="flex flex-wrap gap-2">
+						{#each ALL_CODECS as codec}
+							<button
+								type="button"
+								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {tvCodecs.includes(
+									codec
+								)
+									? 'bg-primary text-primary-foreground border-primary'
+									: 'border-border bg-card hover:bg-muted/50'}"
+								onclick={() => toggleCodec(codec)}
+							>
+								{codec}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				{#if form?.tvTargetMessage}
+					<p class:text-destructive={!(form?.tvTargetSuccess ?? false)} class="text-sm">
+						{form.tvTargetMessage}
+					</p>
+				{/if}
+
+				<div class="flex flex-wrap items-center gap-3">
+					<button
+						type="submit"
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+						disabled={!(form?.tvTargetEtag ?? data.etag)}
+					>
+						Save TV target
+					</button>
+					<a href="/config" class="text-muted-foreground text-sm hover:underline"
+						>Use Config page instead</a
+					>
+				</div>
+			</form>
 		{:else}
 			<Alert>
-				<AlertTitle>First feed already saved</AlertTitle>
+				<AlertTitle>TV target already saved</AlertTitle>
 				<AlertDescription>
-					Your feed is in place. The next onboarding tickets will add guided TV and movie target
-					setup. You can continue later from this route or work directly in the
+					Your feed and at least one target are already in place. Continue later from this route or
+					work directly in the
 					<a href="/config" class="text-primary font-medium hover:underline">Config page</a>.
 				</AlertDescription>
 			</Alert>

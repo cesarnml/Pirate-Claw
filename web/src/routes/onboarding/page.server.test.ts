@@ -159,4 +159,138 @@ describe('onboarding page server', () => {
 			);
 		});
 	});
+
+	describe('saveTvTarget', () => {
+		it('returns fail(400) when ifMatch is missing', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+
+			const body = new URLSearchParams();
+			body.set('showName', 'Show Alpha');
+
+			const result = await actions.saveTvTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect((result as { data?: { tvTargetMessage?: string } }).data?.tvTargetMessage).toContain(
+				'Missing config revision'
+			);
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('appends a new show after saving tv defaults', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+			apiRequestMock
+				.mockResolvedValueOnce(new Response(null, { status: 200, headers: { etag: '"rev-2"' } }))
+				.mockResolvedValueOnce(new Response(null, { status: 200, headers: { etag: '"rev-3"' } }));
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('showName', 'Show Beta');
+			body.set('existingShowsJson', JSON.stringify(['Show Alpha']));
+			body.append('tvResolution', '1080p');
+			body.append('tvCodec', 'x265');
+
+			const result = await actions.saveTvTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { tvTargetSuccess?: boolean }).tvTargetSuccess).toBe(true);
+			expect((result as { tvTargetEtag?: string }).tvTargetEtag).toBe('"rev-3"');
+			expect(apiRequestMock).toHaveBeenNthCalledWith(
+				1,
+				'/api/config/tv/defaults',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({ resolutions: ['1080p'], codecs: ['x265'] })
+				})
+			);
+			expect(apiRequestMock).toHaveBeenNthCalledWith(
+				2,
+				'/api/config',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({ runtime: {}, tv: { shows: ['Show Alpha', 'Show Beta'] } })
+				})
+			);
+		});
+
+		it('does not duplicate an existing show name', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+			apiRequestMock
+				.mockResolvedValueOnce(new Response(null, { status: 200, headers: { etag: '"rev-2"' } }))
+				.mockResolvedValueOnce(new Response(null, { status: 200, headers: { etag: '"rev-3"' } }));
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('showName', 'Show Alpha');
+			body.set('existingShowsJson', JSON.stringify(['Show Alpha']));
+
+			const result = await actions.saveTvTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { tvTargetSuccess?: boolean }).tvTargetSuccess).toBe(true);
+			expect(apiRequestMock).toHaveBeenNthCalledWith(
+				2,
+				'/api/config',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({ runtime: {}, tv: { shows: ['Show Alpha'] } })
+				})
+			);
+		});
+
+		it('surfaces tv defaults save errors', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(JSON.stringify({ error: 'TV defaults failed.' }), {
+					status: 400,
+					headers: { etag: '"rev-2"' }
+				})
+			);
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('showName', 'Show Alpha');
+			body.set('existingShowsJson', JSON.stringify([]));
+
+			const result = await actions.saveTvTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect((result as { data?: { tvTargetMessage?: string } }).data?.tvTargetMessage).toContain(
+				'TV defaults failed'
+			);
+		});
+	});
 });
