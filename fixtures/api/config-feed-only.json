@@ -1,0 +1,28 @@
+{
+  "feeds": [
+    {
+      "name": "TV Feed",
+      "url": "https://example.com/tv.rss",
+      "mediaType": "tv"
+    }
+  ],
+  "tv": [],
+  "movies": {
+    "years": [],
+    "resolutions": [],
+    "codecs": [],
+    "codecPolicy": "prefer"
+  },
+  "transmission": {
+    "url": "http://localhost:9091/transmission/rpc",
+    "username": "[redacted]",
+    "password": "[redacted]"
+  },
+  "runtime": {
+    "runIntervalMinutes": 30,
+    "reconcileIntervalMinutes": 1,
+    "artifactDir": ".pirate-claw/runtime",
+    "artifactRetentionDays": 7,
+    "apiPort": 4321
+  }
+}
