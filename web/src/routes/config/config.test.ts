@@ -55,7 +55,8 @@ describe('/config', () => {
 				error: null,
 				etag: '"rev-1"',
 				canWrite: true,
-				transmissionSession: null
+				transmissionSession: null,
+				onboarding: null
 			},
 			form: undefined
 		});
@@ -78,7 +79,8 @@ describe('/config', () => {
 				error: 'Could not reach the API.',
 				etag: null,
 				canWrite: false,
-				transmissionSession: null
+				transmissionSession: null,
+				onboarding: null
 			},
 			form: undefined
 		});
@@ -92,7 +94,8 @@ describe('/config', () => {
 				error: null,
 				etag: '"rev-1"',
 				canWrite: true,
-				transmissionSession: null
+				transmissionSession: null,
+				onboarding: null
 			},
 			form: undefined
 		});
@@ -110,7 +113,8 @@ describe('/config', () => {
 				error: null,
 				etag: '"rev-1"',
 				canWrite: true,
-				transmissionSession: null
+				transmissionSession: null,
+				onboarding: null
 			},
 			form: undefined
 		});
@@ -130,11 +134,37 @@ describe('/config', () => {
 				error: null,
 				etag: '"rev-1"',
 				canWrite: true,
-				transmissionSession: null
+				transmissionSession: null,
+				onboarding: null
 			},
 			form: undefined
 		});
 		expect(screen.queryByRole('button', { name: /restart daemon/i })).not.toBeInTheDocument();
+	});
+
+	it('renders resume onboarding banner for partial setup', () => {
+		render(Page, {
+			data: {
+				config: mockConfig,
+				error: null,
+				etag: '"rev-1"',
+				canWrite: true,
+				transmissionSession: null,
+				onboarding: {
+					state: 'partial_setup',
+					hasFeeds: true,
+					hasTvTargets: false,
+					hasMovieTargets: false,
+					minimumComplete: false
+				}
+			},
+			form: undefined
+		});
+		expect(screen.getAllByText('Resume onboarding')).toHaveLength(2);
+		expect(screen.getByRole('link', { name: 'Resume onboarding' })).toHaveAttribute(
+			'href',
+			'/onboarding'
+		);
 	});
 
 	it('renders all accordion items open on load', () => {
@@ -144,7 +174,8 @@ describe('/config', () => {
 				error: null,
 				etag: '"rev-1"',
 				canWrite: true,
-				transmissionSession: null
+				transmissionSession: null,
+				onboarding: null
 			},
 			form: undefined
 		});
@@ -182,7 +213,8 @@ describe('/config', () => {
 				error: null,
 				etag: '"rev-1"',
 				canWrite: false,
-				transmissionSession: null
+				transmissionSession: null,
+				onboarding: null
 			},
 			form: undefined
 		});

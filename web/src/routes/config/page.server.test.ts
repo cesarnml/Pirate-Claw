@@ -12,6 +12,38 @@ describe('config page server actions', () => {
 	});
 
 	describe('load', () => {
+		it('returns onboarding status for partial setup config', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { load } = await import('./+page.server');
+
+			apiRequestMock
+				.mockResolvedValueOnce(
+					new Response(
+						JSON.stringify({
+							feeds: [{ name: 'TV Feed', url: 'https://example.com/tv.rss', mediaType: 'tv' }],
+							tv: [],
+							movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' },
+							transmission: { url: 'http://localhost:9091', username: '', password: '' },
+							runtime: {
+								runIntervalMinutes: 60,
+								reconcileIntervalMinutes: 60,
+								artifactDir: '/tmp',
+								artifactRetentionDays: 7
+							}
+						}),
+						{ status: 200 }
+					)
+				)
+				.mockRejectedValueOnce(new Error('network error'));
+
+			const result = await load({} as never);
+			expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
+				'partial_setup'
+			);
+		});
+
 		it('returns transmissionSession: null when session fetch fails', async () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }

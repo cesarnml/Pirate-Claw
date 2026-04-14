@@ -1,7 +1,8 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
+import { deriveOnboardingStatus } from '$lib/onboarding';
 import { apiRequest } from '$lib/server/api';
-import type { AppConfig } from '$lib/types';
+import type { AppConfig, OnboardingStatus } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
@@ -16,10 +17,12 @@ export const load: PageServerLoad = async () => {
 	let etag: string | null = null;
 	let error: string | null = null;
 	let transmissionSession: { version: string } | null = null;
+	let onboarding: OnboardingStatus | null = null;
 
 	if (configResult.status === 'fulfilled' && configResult.value.ok) {
 		config = (await configResult.value.json()) as AppConfig;
 		etag = configResult.value.headers.get('etag');
+		onboarding = deriveOnboardingStatus(config, canWrite);
 	} else {
 		console.error('[config] failed to load config');
 		error = 'Could not reach the API.';
@@ -30,7 +33,7 @@ export const load: PageServerLoad = async () => {
 		transmissionSession = { version: sessionData.version };
 	}
 
-	return { config, etag, canWrite, error, transmissionSession };
+	return { config, etag, canWrite, error, transmissionSession, onboarding };
 };
 
 function parseOptionalInt(input: unknown): number | undefined {

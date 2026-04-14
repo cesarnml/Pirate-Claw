@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { writeOnboardingDismissed } from '$lib/onboarding';
+	import {
+		readOnboardingPath,
+		writeOnboardingDismissed,
+		writeOnboardingPath
+	} from '$lib/onboarding';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import type { ActionData, PageData } from './$types';
 
@@ -8,7 +12,7 @@
 	const ALL_CODECS = ['x264', 'x265'];
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	let selectedPath = $state<'tv' | 'movie' | 'both'>('tv');
+	let selectedPath = $state<'tv' | 'movie' | 'both'>(browser ? readOnboardingPath() : 'tv');
 	let feedMediaType = $state<'tv' | 'movie'>('tv');
 	let tvResolutions = $state<string[]>([]);
 	let tvCodecs = $state<string[]>([]);
@@ -19,6 +23,7 @@
 	const hasMovieFeed = $derived(
 		(data.config?.feeds ?? []).some((feed) => feed.mediaType === 'movie')
 	);
+	const persistedPath = $derived(browser ? readOnboardingPath() : 'tv');
 	const onboardingPath = $derived.by<'tv' | 'movie' | 'both'>(() => {
 		if (
 			form?.onboardingPath === 'tv' ||
@@ -27,6 +32,7 @@
 		) {
 			return form.onboardingPath;
 		}
+		if (persistedPath === 'movie' || persistedPath === 'both') return persistedPath;
 		if (hasTvFeed && hasMovieFeed) return 'both';
 		if (hasMovieFeed) return 'movie';
 		return 'tv';
@@ -52,9 +58,32 @@
 	const movieStepTitle = $derived(
 		onboardingPath === 'both' ? 'Step 4 — Add a movie target' : 'Step 3 — Add a movie target'
 	);
+	const minimumComplete = $derived(
+		(data.onboarding?.minimumComplete ?? false) ||
+			!!form?.tvTargetSuccess ||
+			!!form?.movieTargetSuccess
+	);
+	const showDoneStep = $derived(minimumComplete && !showMovieTargetStep);
+	const configuredFeedCount = $derived(data.config?.feeds.length ?? 0);
+	const firstFeedLabel = $derived(
+		configuredFeedCount > 0
+			? `${data.config?.feeds[0]?.name} (${data.config?.feeds[0]?.mediaType})`
+			: null
+	);
+	const hasTvSummary = $derived(
+		(data.onboarding?.hasTvTargets ?? false) || !!form?.tvTargetSuccess
+	);
+	const hasMovieSummary = $derived(
+		(data.onboarding?.hasMovieTargets ?? false) || !!form?.movieTargetSuccess
+	);
 
 	$effect(() => {
 		feedMediaType = selectedPath === 'movie' ? 'movie' : 'tv';
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		writeOnboardingPath(selectedPath);
 	});
 
 	$effect(() => {
@@ -118,31 +147,23 @@
 			Enable config writes before using onboarding. You can still review the existing dashboard.
 		</AlertDescription>
 	</Alert>
-{:else if data.onboarding?.state === 'ready' && !showMovieTargetStep}
-	<Alert class="mt-6">
-		<AlertTitle>Onboarding already complete</AlertTitle>
-		<AlertDescription>
-			Your config already has at least one feed and one target. Continue in the
-			<a href="/config" class="text-primary font-medium hover:underline">Config page</a>
-			or return to the
-			<a href="/" class="text-primary font-medium hover:underline">Dashboard</a>.
-		</AlertDescription>
-	</Alert>
 {:else}
 	<section class="mt-8 space-y-6">
-		<Alert>
-			<AlertTitle>
-				{data.onboarding?.state === 'partial_setup' ? 'Resume onboarding' : 'First-time setup'}
-			</AlertTitle>
-			<AlertDescription>
-				{#if data.onboarding?.state === 'partial_setup'}
-					You already saved part of your config. Continue onboarding here or return to the
-					<a href="/config" class="text-primary font-medium hover:underline">Config page</a>.
-				{:else}
-					Start by choosing your feed path and saving your first RSS feed.
-				{/if}
-			</AlertDescription>
-		</Alert>
+		{#if !showDoneStep}
+			<Alert>
+				<AlertTitle>
+					{data.onboarding?.state === 'partial_setup' ? 'Resume onboarding' : 'First-time setup'}
+				</AlertTitle>
+				<AlertDescription>
+					{#if data.onboarding?.state === 'partial_setup'}
+						You already saved part of your config. Continue onboarding here or return to the
+						<a href="/config" class="text-primary font-medium hover:underline">Config page</a>.
+					{:else}
+						Start by choosing your feed path and saving your first RSS feed.
+					{/if}
+				</AlertDescription>
+			</Alert>
+		{/if}
 
 		{#if !(data.onboarding?.hasFeeds ?? false)}
 			<div class="space-y-3">
@@ -486,6 +507,47 @@
 					>
 				</div>
 			</form>
+		{:else if showDoneStep}
+			<Alert>
+				<AlertTitle>Done</AlertTitle>
+				<AlertDescription>
+					Your minimum setup is complete. Review the summary, then continue in the dashboard.
+				</AlertDescription>
+			</Alert>
+
+			<div class="border-border bg-card space-y-4 rounded-lg border p-4">
+				<h2 class="text-lg font-semibold tracking-tight">Setup summary</h2>
+				<dl class="grid gap-3 text-sm sm:grid-cols-2">
+					<div class="space-y-1">
+						<dt class="text-muted-foreground">Feeds configured</dt>
+						<dd class="font-medium">{configuredFeedCount}</dd>
+					</div>
+					<div class="space-y-1">
+						<dt class="text-muted-foreground">First feed</dt>
+						<dd class="font-medium">{firstFeedLabel ?? 'None yet'}</dd>
+					</div>
+					<div class="space-y-1">
+						<dt class="text-muted-foreground">TV target</dt>
+						<dd class="font-medium">{hasTvSummary ? 'Added' : 'Not added'}</dd>
+					</div>
+					<div class="space-y-1">
+						<dt class="text-muted-foreground">Movie target</dt>
+						<dd class="font-medium">{hasMovieSummary ? 'Added' : 'Not added'}</dd>
+					</div>
+				</dl>
+
+				<div class="flex flex-wrap items-center gap-3">
+					<a
+						href="/"
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium"
+					>
+						Go to Dashboard
+					</a>
+					<a href="/config" class="text-muted-foreground text-sm hover:underline">
+						Review Config
+					</a>
+				</div>
+			</div>
 		{:else if !(data.onboarding?.hasTvTargets ?? false) && !(data.onboarding?.hasMovieTargets ?? false)}
 			<Alert>
 				<AlertTitle>Target setup depends on your feed path</AlertTitle>
@@ -493,24 +555,6 @@
 					Your first feed is saved. Continue in the
 					<a href="/config" class="text-primary font-medium hover:underline">Config page</a>
 					to finish target setup for this feed type.
-				</AlertDescription>
-			</Alert>
-		{:else if data.onboarding?.hasTvTargets}
-			<Alert>
-				<AlertTitle>TV target already saved</AlertTitle>
-				<AlertDescription>
-					Your feed and at least one target are already in place. Continue later from this route or
-					work directly in the
-					<a href="/config" class="text-primary font-medium hover:underline">Config page</a>.
-				</AlertDescription>
-			</Alert>
-		{:else}
-			<Alert>
-				<AlertTitle>Movie target already saved</AlertTitle>
-				<AlertDescription>
-					Your feed and at least one target are already in place. Continue in the
-					<a href="/config" class="text-primary font-medium hover:underline">Config page</a>
-					for any additional target setup.
 				</AlertDescription>
 			</Alert>
 		{/if}

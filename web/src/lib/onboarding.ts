@@ -1,7 +1,9 @@
 import type { AppConfig, OnboardingStatus } from '$lib/types';
 
 export const ONBOARDING_DISMISSED_KEY = 'pirate-claw:onboarding-dismissed';
+export const ONBOARDING_PATH_KEY = 'pirate-claw:onboarding-path';
 let onboardingDismissedFallback = false;
+let onboardingPathFallback: 'tv' | 'movie' | 'both' = 'tv';
 
 export function deriveOnboardingStatus(config: AppConfig, canWrite: boolean): OnboardingStatus {
 	const hasFeeds = config.feeds.length > 0;
@@ -67,4 +69,18 @@ export function writeOnboardingDismissed(value: boolean): void {
 	const storage = getStorage();
 	if (!storage) return;
 	storage.setItem(ONBOARDING_DISMISSED_KEY, value ? 'true' : 'false');
+}
+
+export function readOnboardingPath(): 'tv' | 'movie' | 'both' {
+	const storage = getStorage();
+	const raw = storage ? storage.getItem(ONBOARDING_PATH_KEY) : onboardingPathFallback;
+	if (raw === 'movie' || raw === 'both') return raw;
+	return 'tv';
+}
+
+export function writeOnboardingPath(value: 'tv' | 'movie' | 'both'): void {
+	onboardingPathFallback = value;
+	const storage = getStorage();
+	if (!storage) return;
+	storage.setItem(ONBOARDING_PATH_KEY, value);
 }

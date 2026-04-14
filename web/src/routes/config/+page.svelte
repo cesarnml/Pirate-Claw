@@ -150,6 +150,30 @@
 	Effective configuration from the API (secrets redacted).
 </p>
 
+{#if data.onboarding && data.onboarding.state !== 'ready'}
+	<Alert class="mt-6">
+		<AlertTitle>
+			{data.onboarding.state === 'partial_setup' ? 'Resume onboarding' : 'Start onboarding'}
+		</AlertTitle>
+		<AlertDescription class="flex flex-wrap items-center gap-3">
+			<span>
+				{#if data.onboarding.state === 'writes_disabled'}
+					Enable config writes before using onboarding.
+				{:else if data.onboarding.state === 'partial_setup'}
+					Your setup is still incomplete. Resume the guided flow or keep configuring manually here.
+				{:else}
+					No setup has been completed yet. Start onboarding for the guided path.
+				{/if}
+			</span>
+			{#if data.onboarding.state !== 'writes_disabled'}
+				<a href="/onboarding" class="text-primary text-sm font-medium hover:underline">
+					{data.onboarding.state === 'partial_setup' ? 'Resume onboarding' : 'Start onboarding'}
+				</a>
+			{/if}
+		</AlertDescription>
+	</Alert>
+{/if}
+
 {#if data.error}
 	<Alert variant="destructive" class="mt-6">
 		<AlertTitle>API unavailable</AlertTitle>

@@ -55,3 +55,5 @@ The onboarding flow has a coherent end state: it knows when minimum setup is sat
 ## Rationale
 
 This ticket owns the cross-step state machine rather than burying it in one of the target tickets. That keeps the movie and TV target tickets focused on their write semantics and makes the completion rules easy to review.
+
+The done state is implemented as a read-only summary on `/onboarding` instead of an automatic redirect so operators can see what the guided flow actually configured before leaving. Resume behavior stays lightweight: the dashboard and config page surface links back into onboarding, while the strict auto-trigger remains limited to the initial-empty case.
