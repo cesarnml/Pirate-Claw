@@ -216,15 +216,17 @@ After **build mode** (implementation and automated verification, for example `bu
 
 The `post-verify-self-audit` command **records** that self-audit mode completed (ticket status, outcome, and timestamp in local delivery state). It does **not** run checks or read the diff; the agent performs verification in build mode and the diff review in self-audit mode, then invokes this command.
 
-The command accepts an optional outcome argument:
+The command accepts an optional outcome argument. When the outcome is `patched`,
+record one or more patch-commit SHAs so the PR body can link the exact
+self-audit follow-up commits:
 
 ```bash
 bun run deliver --plan <plan> post-verify-self-audit          # defaults to "clean"
 bun run deliver --plan <plan> post-verify-self-audit clean    # no changes during self-audit
-bun run deliver --plan <plan> post-verify-self-audit patched  # self-audit found and fixed issues
+bun run deliver --plan <plan> post-verify-self-audit patched <sha...>  # self-audit found and fixed issues
 ```
 
-When omitted, outcome defaults to `clean`. The `status` command renders the outcome alongside the completion timestamp.
+When omitted, outcome defaults to `clean`. The `status` command renders the outcome alongside the completion timestamp. A recorded self-audit patch commit must use a subject suffix of `[self-audit]`.
 
 **Before `post-verify-self-audit`, confirm at least:**
 
@@ -249,14 +251,14 @@ When `reviewPolicy.codexPreflight` is `"required"`, the agent must record a Code
 
 1. Run the Codex review step by invoking the `codex:rescue` skill.
 2. Apply any prudent findings.
-3. Record the outcome:
+3. Record the outcome. When the outcome is `patched`, include one or more patch-commit SHAs so the PR body can link the exact Codex follow-up commits:
 
 ```bash
 bun run deliver --plan <plan> codex-preflight clean    # Codex found nothing worth patching
-bun run deliver --plan <plan> codex-preflight patched  # Codex findings were applied
+bun run deliver --plan <plan> codex-preflight patched <sha...>  # Codex findings were applied
 ```
 
-The CLI is a state recorder only — it does not invoke Codex. The agent runs the Codex skill, then calls this command.
+The CLI is a state recorder only — it does not invoke Codex. The agent runs the Codex skill, then calls this command. A recorded Codex patch commit must use a subject suffix of `[codexPreflight]`.
 
 **Doc-only tickets** auto-skip Codex preflight only when `reviewPolicy.codexPreflight` is `"skip_doc_only"`. The orchestrator detects doc-only by inspecting the local git diff at `codex-preflight` time (all changed files are `.md`) and records `skipped` without requiring an outcome arg. A clear message is printed: "Doc-only ticket — Codex preflight auto-skipped."
 
@@ -279,8 +281,8 @@ Available commands:
 - `repair-state`
 - `ai-review [--pr <number>]`
 - `start [ticket-id]`
-- `post-verify-self-audit [clean|patched]` (alias: `internal-review`, deprecated)
-- `codex-preflight [clean|patched]`
+- `post-verify-self-audit [ticket-id] [clean|patched] [patch-commit-sha ...]` (alias: `internal-review`, deprecated)
+- `codex-preflight [clean|patched] [patch-commit-sha ...]`
 - `open-pr [ticket-id]`
 - `poll-review [ticket-id]`
 - `reconcile-late-review <ticket-id>`
@@ -298,9 +300,9 @@ Default `cook` flow (with repo-default `skip_doc_only` review policy):
 
 ```bash
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
-bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md post-verify-self-audit [clean|patched]
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md post-verify-self-audit [clean|patched] [patch-commit-sha ...]
 # for code tickets, run codex:rescue skill, apply prudent findings, then record:
-bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md codex-preflight [clean|patched]
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md codex-preflight [clean|patched] [patch-commit-sha ...]
 # for doc-only tickets under skip_doc_only, codex-preflight auto-records skipped
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md open-pr
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-review
@@ -313,9 +315,9 @@ With `codexPreflight: "required"` in `orchestrator.config.json`, add the Codex p
 
 ```bash
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md start
-bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md post-verify-self-audit [clean|patched]
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md post-verify-self-audit [clean|patched] [patch-commit-sha ...]
 # run codex:rescue skill, apply prudent findings, then record:
-bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md codex-preflight [clean|patched]
+bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md codex-preflight [clean|patched] [patch-commit-sha ...]
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md open-pr
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md poll-review
 bun run deliver --plan docs/02-delivery/phase-02/implementation-plan.md advance

@@ -301,6 +301,9 @@ function syncStateWithPlan(
           ),
         selfAuditOutcome:
           previous?.selfAuditOutcome ?? inferredTicket?.selfAuditOutcome,
+        selfAuditPatchCommits:
+          previous?.selfAuditPatchCommits ??
+          inferredTicket?.selfAuditPatchCommits,
         docOnly: (previous?.docOnly ?? inferredTicket?.docOnly) || undefined,
         codexPreflightOutcome:
           previous?.codexPreflightOutcome ??
@@ -308,6 +311,9 @@ function syncStateWithPlan(
         codexPreflightCompletedAt:
           previous?.codexPreflightCompletedAt ??
           inferredTicket?.codexPreflightCompletedAt,
+        codexPreflightPatchCommits:
+          previous?.codexPreflightPatchCommits ??
+          inferredTicket?.codexPreflightPatchCommits,
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
@@ -486,8 +492,10 @@ function inferStateFromRepo(
       handoffPath: undefined,
       handoffGeneratedAt: undefined,
       selfAuditOutcome: undefined,
+      selfAuditPatchCommits: undefined,
       codexPreflightOutcome: undefined,
       codexPreflightCompletedAt: undefined,
+      codexPreflightPatchCommits: undefined,
       prNumber: pr?.number,
       prUrl: pr?.url,
       prOpenedAt: undefined,

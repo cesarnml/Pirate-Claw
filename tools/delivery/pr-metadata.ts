@@ -3,6 +3,7 @@ import type {
   AiReviewThreadResolution,
   DeliveryState,
   DeliveryNotificationEvent,
+  InternalReviewPatchCommit,
   ReviewResult,
   StandaloneAiReviewResult,
   StandalonePullRequest,
@@ -34,6 +35,11 @@ type TicketReviewMetadataRefreshTarget = Pick<
   | 'ticketFile'
   | 'baseBranch'
   | 'postVerifySelfAuditCompletedAt'
+  | 'selfAuditOutcome'
+  | 'selfAuditPatchCommits'
+  | 'codexPreflightOutcome'
+  | 'codexPreflightCompletedAt'
+  | 'codexPreflightPatchCommits'
   | 'reviewActionSummary'
   | 'reviewIncompleteAgents'
   | 'reviewComments'
@@ -543,6 +549,48 @@ function buildActionCommitBullets(
   });
 }
 
+function buildRecordedPatchCommitBullets(
+  patchCommits: InternalReviewPatchCommit[] | undefined,
+  githubRepo:
+    | { defaultBranch: string; name: string; owner: string }
+    | undefined,
+): string[] {
+  return (patchCommits ?? []).map((commit) => {
+    const shaLabel = githubRepo
+      ? buildGitHubCommitLink({ githubRepo, sha: commit.sha })
+      : `\`${shortenSha(commit.sha)}\``;
+    return `- ${shaLabel} ${commit.subject}`;
+  });
+}
+
+function buildInternalReviewStageLine(input: {
+  completedAt?: string;
+  outcome?: 'clean' | 'patched' | 'skipped';
+  stageLabel: string;
+}): string | undefined {
+  if (!input.completedAt && !input.outcome) {
+    return undefined;
+  }
+
+  const outcome = input.outcome ?? 'unknown';
+  const completedSuffix = input.completedAt
+    ? ` completed at ${formatHumanUtcTimestamp(input.completedAt)}`
+    : '';
+  return `- ${input.stageLabel}: outcome \`${outcome}\`${completedSuffix}`;
+}
+
+function assertPatchedStageHasCommitEvidence(input: {
+  outcome?: 'clean' | 'patched' | 'skipped';
+  patchCommits?: InternalReviewPatchCommit[];
+  stageLabel: string;
+}): void {
+  if (input.outcome === 'patched' && (input.patchCommits?.length ?? 0) === 0) {
+    throw new Error(
+      `${input.stageLabel} PR metadata requires recorded patch commits for patched outcomes.`,
+    );
+  }
+}
+
 function hasPatchEvidence(input: {
   actionCommits?: ReviewActionCommit[];
   threadResolutions?: AiReviewThreadResolution[];
@@ -844,6 +892,17 @@ export function buildPullRequestBody(
     githubRepo?: { defaultBranch: string; name: string; owner: string };
   } = {},
 ): string {
+  assertPatchedStageHasCommitEvidence({
+    outcome: ticket.selfAuditOutcome,
+    patchCommits: ticket.selfAuditPatchCommits,
+    stageLabel: 'Self-audit',
+  });
+  assertPatchedStageHasCommitEvidence({
+    outcome: ticket.codexPreflightOutcome,
+    patchCommits: ticket.codexPreflightPatchCommits,
+    stageLabel: 'Codex preflight',
+  });
+
   const lines = [
     '## Summary',
     '',
@@ -861,9 +920,47 @@ export function buildPullRequestBody(
 
   lines.push(`- stacked base branch: \`${ticket.baseBranch}\``);
 
-  if (ticket.postVerifySelfAuditCompletedAt) {
+  const selfAuditLine = buildInternalReviewStageLine({
+    completedAt: ticket.postVerifySelfAuditCompletedAt,
+    outcome: ticket.selfAuditOutcome,
+    stageLabel: 'self-audit',
+  });
+  if (selfAuditLine) {
+    lines.push(selfAuditLine);
+  }
+
+  const codexPreflightLine = buildInternalReviewStageLine({
+    completedAt: ticket.codexPreflightCompletedAt,
+    outcome: ticket.codexPreflightOutcome,
+    stageLabel: 'codexPreflight',
+  });
+  if (codexPreflightLine) {
+    lines.push(codexPreflightLine);
+  }
+
+  const selfAuditPatchCommitBullets = buildRecordedPatchCommitBullets(
+    ticket.selfAuditPatchCommits,
+    options.githubRepo,
+  );
+  if (selfAuditPatchCommitBullets.length > 0) {
     lines.push(
-      `- post-verify self-audit: completed at ${formatHumanUtcTimestamp(ticket.postVerifySelfAuditCompletedAt)}`,
+      '',
+      '### Self-Audit Patch Commits',
+      '',
+      ...selfAuditPatchCommitBullets,
+    );
+  }
+
+  const codexPatchCommitBullets = buildRecordedPatchCommitBullets(
+    ticket.codexPreflightPatchCommits,
+    options.githubRepo,
+  );
+  if (codexPatchCommitBullets.length > 0) {
+    lines.push(
+      '',
+      '### Codex Preflight Patch Commits',
+      '',
+      ...codexPatchCommitBullets,
     );
   }
 

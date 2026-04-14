@@ -412,6 +412,18 @@ export function readLatestCommitSubject(cwd: string, runtime: Runtime): string {
   return runProcess(cwd, ['git', 'log', '-1', '--pretty=%s'], runtime).trim();
 }
 
+export function readCommitSubject(
+  cwd: string,
+  sha: string,
+  runtime: Runtime,
+): string {
+  return runProcess(
+    cwd,
+    ['git', 'log', '-1', '--pretty=%s', sha],
+    runtime,
+  ).trim();
+}
+
 export function readHeadSha(cwd: string, runtime: Runtime): string {
   return runProcess(cwd, ['git', 'rev-parse', 'HEAD'], runtime).trim();
 }
