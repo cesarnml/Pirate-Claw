@@ -122,7 +122,11 @@ describe('/movies', () => {
 
 	it('renders empty state', () => {
 		render(Page, { data: { movies: [], torrents: null, error: null } });
-		expect(screen.getByText('No movie candidates yet.')).toBeInTheDocument();
+		expect(screen.getByText(/No movie targets yet/)).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: 'Go to movie policy in Config' })).toHaveAttribute(
+			'href',
+			'/config#movie-policy'
+		);
 	});
 
 	it('renders error state', () => {

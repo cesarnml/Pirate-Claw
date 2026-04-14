@@ -184,7 +184,7 @@
 
 	<Accordion type="multiple" bind:value={accordionValue} class="mt-8 space-y-3 pr-1">
 		<!-- RSS Feeds -->
-		<AccordionItem value="feeds" class="border-border bg-card rounded-lg border px-4">
+		<AccordionItem id="feeds" value="feeds" class="border-border bg-card rounded-lg border px-4">
 			<form
 				method="POST"
 				action="?/saveFeeds"
@@ -214,7 +214,10 @@
 				<AccordionContent>
 					<div class="space-y-4 pb-4">
 						{#if feedsList.length === 0}
-							<p class="text-muted-foreground text-sm">No feeds configured.</p>
+							<p class="text-muted-foreground text-sm">
+								No feeds configured yet. Add your first RSS feed to start onboarding or manual
+								setup.
+							</p>
 						{:else}
 							<ul class="list-none space-y-2">
 								{#each feedsList as feed, i}
@@ -400,7 +403,11 @@
 		</AccordionItem>
 
 		<!-- Movie Policy -->
-		<AccordionItem value="movie-policy" class="border-border bg-card rounded-lg border px-4">
+		<AccordionItem
+			id="movie-policy"
+			value="movie-policy"
+			class="border-border bg-card rounded-lg border px-4"
+		>
 			<form
 				method="POST"
 				action="?/saveMovies"
@@ -664,7 +671,11 @@
 		</AccordionItem>
 
 		<!-- TV Shows -->
-		<AccordionItem value="tv-shows" class="border-border bg-card rounded-lg border px-4">
+		<AccordionItem
+			id="tv-shows"
+			value="tv-shows"
+			class="border-border bg-card rounded-lg border px-4"
+		>
 			<form
 				method="POST"
 				action="?/saveShows"

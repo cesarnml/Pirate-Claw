@@ -45,7 +45,10 @@
 {:else if data.outcomes.length === 0}
 	<Card class="mt-6">
 		<CardContent class="pt-6">
-			<p class="text-muted-foreground text-sm">No unmatched candidates in the last 30 days.</p>
+			<p class="text-muted-foreground text-sm">
+				No unmatched candidates in the last 30 days. When feed items miss every rule, they will show
+				up here for follow-up.
+			</p>
 		</CardContent>
 	</Card>
 {:else}

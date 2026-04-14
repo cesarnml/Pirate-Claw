@@ -37,3 +37,5 @@ The route-level pages with existing local empty states match the Phase 17 contra
 ## Rationale
 
 These surfaces already have isolated tests and local load/render ownership. Keeping them in one ticket makes the copy/CTA review straightforward without mixing in the home dashboard.
+
+The route CTAs now deep-link into stable config anchors (`#tv-shows` and `#movie-policy`) so the empty-state guidance lands on the relevant editing surface instead of a generic config page top. The unmatched route stays informational only: it explains what the page is for without pretending there is a direct remediation action there.

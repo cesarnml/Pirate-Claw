@@ -99,7 +99,7 @@ describe('/config', () => {
 			},
 			form: undefined
 		});
-		expect(screen.getByText('No feeds configured.')).toBeInTheDocument();
+		expect(screen.getByText(/No feeds configured yet/)).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeInTheDocument();
 	});
 

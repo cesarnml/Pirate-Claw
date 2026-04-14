@@ -69,13 +69,14 @@ describe('/candidates/unmatched', () => {
 		expect(table).toBeInTheDocument();
 		expect(table.querySelectorAll('tbody tr')).toHaveLength(0);
 		expect(
-			screen.queryByText('No unmatched candidates in the last 30 days.')
+			screen.queryByText(/No unmatched candidates in the last 30 days/)
 		).not.toBeInTheDocument();
 	});
 
 	it('renders empty state when no outcomes', () => {
 		render(Page, { data: { outcomes: [], error: null } });
-		expect(screen.getByText('No unmatched candidates in the last 30 days.')).toBeInTheDocument();
+		expect(screen.getByText(/No unmatched candidates in the last 30 days/)).toBeInTheDocument();
+		expect(screen.getByText(/they will show up here for follow-up/)).toBeInTheDocument();
 	});
 
 	it('renders error alert when error is set', () => {

@@ -157,7 +157,15 @@
 {:else if data.movies.length === 0}
 	<Card class="mt-6">
 		<CardContent class="pt-6">
-			<p class="text-muted-foreground text-sm">No movie candidates yet.</p>
+			<p class="text-muted-foreground text-sm">
+				No movie targets yet. Add a movie year in Config to start building your movie queue.
+			</p>
+			<a
+				href="/config#movie-policy"
+				class="text-primary mt-3 inline-flex text-sm font-medium hover:underline"
+			>
+				Go to movie policy in Config
+			</a>
 		</CardContent>
 	</Card>
 {:else}

@@ -65,7 +65,15 @@
 {:else if data.shows.length === 0}
 	<Card class="mt-6">
 		<CardContent class="pt-6">
-			<p class="text-muted-foreground text-sm">No shows recorded yet.</p>
+			<p class="text-muted-foreground text-sm">
+				No tracked shows yet. Add a TV target in Config to start building your library view.
+			</p>
+			<a
+				href="/config#tv-shows"
+				class="text-primary mt-3 inline-flex text-sm font-medium hover:underline"
+			>
+				Go to TV shows in Config
+			</a>
 		</CardContent>
 	</Card>
 {:else}

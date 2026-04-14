@@ -87,7 +87,11 @@ describe('/shows', () => {
 
 	it('renders empty state when there are no shows', () => {
 		render(Page, { data: { shows: [], torrents: null, error: null } });
-		expect(screen.getByText('No shows recorded yet.')).toBeInTheDocument();
+		expect(screen.getByText(/No tracked shows yet/)).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: 'Go to TV shows in Config' })).toHaveAttribute(
+			'href',
+			'/config#tv-shows'
+		);
 	});
 
 	it('renders error state when API is unreachable', () => {
