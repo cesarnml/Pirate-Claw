@@ -27,16 +27,16 @@ Update the onboarding/runbook docs, mark Phase 17 delivered across status docs, 
 
 ### Phase exit verification checklist
 
-- [ ] onboarding route exists and honors strict initial-empty auto-trigger only
-- [ ] dismissal suppression and explicit resume behavior implemented
-- [ ] write-disabled onboarding blocked state implemented
-- [ ] first feed save works via existing feeds write path
-- [ ] TV target onboarding appends without clobbering existing shows
-- [ ] movie target onboarding preserves existing movie policy when present
-- [ ] Done step enforces the minimum completion gate and renders a summary
-- [ ] route-level empty states aligned (`/shows`, `/movies`, `/candidates/unmatched`, `/config`)
-- [ ] dashboard empty states and `/` + `/config` onboarding affordances aligned
-- [ ] onboarding fixture snapshots committed and referenced by dependent tests
+- [x] onboarding route exists and honors strict initial-empty auto-trigger only
+- [x] dismissal suppression and explicit resume behavior implemented
+- [x] write-disabled onboarding blocked state implemented
+- [x] first feed save works via existing feeds write path
+- [x] TV target onboarding appends without clobbering existing shows
+- [x] movie target onboarding preserves existing movie policy when present
+- [x] Done step enforces the minimum completion gate and renders a summary
+- [x] route-level empty states aligned (`/shows`, `/movies`, `/candidates/unmatched`, `/config`)
+- [x] dashboard empty states and `/` + `/config` onboarding affordances aligned
+- [x] onboarding fixture snapshots committed and referenced by dependent tests
 
 ## Out of Scope
 

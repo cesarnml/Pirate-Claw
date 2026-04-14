@@ -436,7 +436,7 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-17-onboarding-and-empty-state.md`](../01-product/phase-17-onboarding-and-empty-state.md)
+- implemented on `main` via `P17.01`-`P17.07` stacked delivery; see [`docs/02-delivery/phase-17/implementation-plan.md`](../02-delivery/phase-17/implementation-plan.md) and [`docs/01-product/phase-17-onboarding-and-empty-state.md`](../01-product/phase-17-onboarding-and-empty-state.md)
 
 ## Phase 18: v1.0.0 Release and Schema Versioning
 
@@ -467,8 +467,8 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 
 ## Current Planning Posture
 
-- product phases `01`–`16` are implemented on `main`; **Phase 16** is delivered via `P16.01`–`P16.09` stacked delivery
-- product phases `12`–`18` are defined in `docs/01-product/`; **Phases 17–18** remain product-definition-first until their tickets are approved and implemented
+- product phases `01`–`17` are implemented on `main`; **Phase 17** is delivered via `P17.01`–`P17.07` stacked delivery
+- product phases `12`–`18` are defined in `docs/01-product/`; **Phase 18** remains product-definition-first until its tickets are approved and implemented
 - engineering epic write-ups **`EE01`–`EE06`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
@@ -487,4 +487,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-13 (Phase 16 delivered).
+Last verified against `README.md` and active delivery plans: 2026-04-14 (Phase 17 delivered).

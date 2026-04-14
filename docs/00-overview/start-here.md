@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 16** on `main` (product phases 01–16; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–16 live under [`docs/02-delivery/`](../02-delivery/). Product definitions for **Phases 17–18** live under [`docs/01-product/`](../01-product/) ahead of implementation; the Phase 16 product spec is the contract reference for the latest shipped scope. Phases **17–18** are **not yet implemented** in code.
+Pirate Claw is implemented through **Phase 17** on `main` (product phases 01–17; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–17 live under [`docs/02-delivery/`](../02-delivery/). The product definition for **Phase 18** lives under [`docs/01-product/`](../01-product/) ahead of implementation; the Phase 17 product spec is the contract reference for the latest shipped scope. Phase **18** is **not yet implemented** in code.
 
 Current delivered surface:
 
@@ -32,6 +32,7 @@ Current delivered surface:
 - Phase 15 dashboard visibility: home overview (Transmission session strip, active downloads, recent outcomes, archive grid), TV and movie library views with live transfer stats where a `transmissionTorrentHash` joins to Transmission, skipped-no-match outcomes, and `/candidates/unmatched` — refresh on page reload only (no WebSocket/SSE push)
 - optional TMDB enrichment: `tmdb` config block and/or `PIRATE_CLAW_TMDB_API_KEY`, SQLite-backed cache, lazy enrichment on API reads, and an optional daemon background refresh cadence via `runtime.tmdbRefreshIntervalMinutes` (default 6 hours; set `0` to disable)
 - Phase 16 config editing: unified `/config` accordion cards, per-section toast feedback, post-save daemon restart affordance, Transmission ping, and read-only tooltips when write auth is absent
+- Phase 17 onboarding and empty states: `/onboarding` guided first-run flow, strict initial-empty auto-trigger plus dismissal suppression/resume, blocked onboarding when writes are disabled, and explicit empty-state guidance across `/`, `/config`, `/shows`, `/movies`, and `/candidates/unmatched`
 
 Current product boundary:
 
@@ -47,9 +48,8 @@ Current product boundary:
 - read-only daemon HTTP API (`/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, `/api/movies`, `/api/feeds`, `/api/config`, plus Phase 15 `/api/transmission/session`, `/api/transmission/torrents`, `/api/outcomes`) when `runtime.apiPort` is configured
 - TMDB metadata is display-only and does not gate RSS intake
 
-Still deferred (Phases 17–18):
+Still deferred (Phase 18 and beyond):
 
-- onboarding wizard and per-section empty states (Phase 17)
 - v1.0.0 release and config/DB schema versioning (Phase 18)
 - remote feed capture
 - hosted persistence
@@ -57,13 +57,14 @@ Still deferred (Phases 17–18):
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and CLI commands: 2026-04-13 (Phase 16 delivered).
+Last verified against `README.md` and CLI commands: 2026-04-14 (Phase 17 delivered).
 
 Current planning focus:
 
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
+- Phase 18 release/versioning work is the next numbered product phase after the shipped onboarding and empty-state surface
 
 ## Read These Docs By Task Type
 

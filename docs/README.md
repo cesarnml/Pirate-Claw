@@ -41,7 +41,7 @@ Phase-level product definitions.
 - `phase-14-feed-setup-and-target-management.md`: feed and target management via web UI — feeds, TV defaults, movie policy (implemented)
 - `phase-15-rich-visual-state-and-activity-views.md`: live Transmission progress, TV/movie enriched views, unmatched candidates (implemented)
 - `phase-16-config-editing-hot-reload-and-daemon-controls.md`: unified Config page, inline validation, post-save daemon restart (implemented)
-- `phase-17-onboarding-and-empty-state.md`: first-time setup wizard and per-section empty states (product definition)
+- `phase-17-onboarding-and-empty-state.md`: first-time setup wizard and per-section empty states (implemented)
 - `phase-18-v1-release-and-schema-versioning.md`: v1.0.0 release, config schemaVersion, SQLite PRAGMA user_version (product definition)
 
 ### `02-delivery`
@@ -74,6 +74,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-14/implementation-plan.md`: feed setup and target management delivery plan (tickets P14.01–P14.06)
 - `phase-15/implementation-plan.md`: rich visual state and activity views delivery plan (tickets P15.01–P15.07; delivered on `main`)
 - `phase-16/implementation-plan.md`: config editing, hot reload, and daemon controls delivery plan (tickets P16.01–P16.09; delivered on `main`)
+- `phase-17/implementation-plan.md`: onboarding and empty-state delivery plan (tickets P17.01–P17.07; delivered on `main`)
 
 ### `03-engineering`
 

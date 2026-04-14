@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–16** are implemented on `main`. **Phases 17–18** are defined in `docs/01-product/` and start after ticket decomposition and developer sign-off.
+Phases **01–17** are implemented on `main`. **Phase 18** remains in product-definition/planning mode under `docs/01-product/`.
 
 It currently supports:
 
@@ -42,6 +42,8 @@ It currently supports:
 ```
 
 Check state with `pirate-claw status`. Retry failed submissions with `pirate-claw retry-failed`. Reconcile tracked torrents from Transmission with `pirate-claw reconcile`.
+
+For the guided first-run path: start the daemon, open the dashboard, and use `/onboarding` to save your first feed and first target instead of editing the config by hand.
 
 ## Configuration
 
@@ -189,9 +191,9 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 18 targets eliminating the need to SSH in for day-to-day operation.
 
-**Implemented (Phases 01–16):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, and live Transmission activity views.
+**Implemented (Phases 01–17):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, and explicit empty states across the dashboard and key routes.
 
-**Planned (Phases 17–18):** Onboarding wizard, v1.0.0 release, and schema versioning.
+**Planned (Phase 18):** v1.0.0 release and schema versioning.
 
 Not in scope through v1:
 

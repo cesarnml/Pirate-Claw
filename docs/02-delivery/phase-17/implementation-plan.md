@@ -94,4 +94,4 @@ Pause for review if:
 
 ## Delivery status
 
-Planning/decomposition only. Implementation has not started.
+Delivered on `main` via `P17.01`-`P17.07` stacked delivery.

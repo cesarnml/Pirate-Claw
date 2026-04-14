@@ -1,6 +1,6 @@
 # Phase 17: Onboarding and Empty State Experience
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-17/` implementation plan until tickets are approved.
+**Delivery status:** Delivered on `main` via `P17.01`-`P17.07`; see [`docs/02-delivery/phase-17/`](../02-delivery/phase-17/).
 
 Phase 17 covers two distinct surfaces: a first-time setup wizard for operators who just installed pirate-claw, and per-section empty states in the main UI for operators who have a running daemon but haven't added feeds or targets yet.
 
