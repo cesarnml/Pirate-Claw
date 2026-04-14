@@ -345,9 +345,15 @@ bun run deliver ai-review
 # or: bun run deliver ai-review --pr 32
 ```
 
-At each ticket boundary, read the generated handoff artifact before continuing implementation.
+For standalone PRs, the internal review contract is behavior-first, not state-recorded:
 
-After implementation and verification in build mode, use `bun run verify:quiet` rather than `bun run verify` to suppress passing output and show only failures. Complete **self-audit mode** (see above), then record it with `post-verify-self-audit [clean|patched]` before moving on. When `reviewPolicy.codexPreflight` is `"required"`, run the `codex:rescue` skill, apply prudent findings, then record with `codex-preflight [clean|patched]`. Under the repo-default `skip_doc_only` setting, code tickets still need that Codex step while doc-only tickets auto-record `skipped`; only `"disabled"` lets tickets go directly from `post-verify-self-audit` to `open-pr`. After `open-pr`, the orchestrator surfaces the ai-review polling cadence and check timestamps. `poll-review` checks at 6 and 12 minutes after PR open; doc-only PRs (diff touches only `.md` files) skip the window only when `reviewPolicy.externalReview` is `"skip_doc_only"` (or when the stage is fully `"disabled"` for all PRs). When `open-pr` detects a doc-only diff, it sets a `docOnly` flag in state and `poll-review` uses that plus the configured policy to decide whether to auto-record `clean` immediately or wait through the normal review window. At the 6-minute check, the orchestrator advances immediately if all detected external review agents have finished their run (including agents that report clean). Otherwise it waits for the 12-minute final check. Do nothing during the review window — no file reads, no ticket prep. The wait is free. `poll-review` writes `json` and `txt` artifacts and runs the triager hook. When findings are detected, `poll-review` output includes a condensed findings block — `[vendor] path:line — title` per actionable finding — so the implementing agent can triage and patch without reading the full `.txt` artifact. `poll-review` otherwise auto-records `clean` at the final check. After `advance`, follow the selected boundary mode: continue directly in `cook`, or reset and resume with the canonical prompt in `gated` / `glide` fallback.
+- implement
+- verify
+- self-audit the diff and risky areas
+- for non-trivial code changes, run `codex:rescue` informally before `ai-review`
+- run standalone `ai-review` as the orchestrator-visible external review gate
+
+The ticket-only commands `post-verify-self-audit`, `codex-preflight`, `open-pr`, `poll-review`, `record-review`, and `advance` do not apply to standalone PRs because there is no ticket state to update. That architectural constraint does not remove the underlying review discipline; it only means the self-audit and optional Codex pass are not CLI-recorded in standalone mode.
 
 If a parent ticket was squash-merged onto `main`, run:
 
