@@ -168,6 +168,16 @@ export type AppConfig = {
 	runtime: RuntimeConfig;
 };
 
+export type OnboardingState = 'initial_empty' | 'partial_setup' | 'ready' | 'writes_disabled';
+
+export type OnboardingStatus = {
+	state: OnboardingState;
+	hasFeeds: boolean;
+	hasTvTargets: boolean;
+	hasMovieTargets: boolean;
+	minimumComplete: boolean;
+};
+
 export type TorrentStatSnapshot = {
 	hash: string;
 	name: string;

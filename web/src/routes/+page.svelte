@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+	import { readOnboardingDismissed, writeOnboardingDismissed } from '$lib/onboarding';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import {
@@ -13,6 +15,7 @@
 	import type { PageData } from './$types';
 
 	const { data }: { data: PageData } = $props();
+	let onboardingDismissed = $state(false);
 
 	function formatUptime(ms: number): string {
 		const totalSeconds = Math.floor(ms / 1000);
@@ -114,9 +117,55 @@
 			.sort((a, b) => b.transmissionDoneDate.localeCompare(a.transmissionDoneDate))
 			.slice(0, 6)
 	);
+
+	$effect(() => {
+		if (!browser) return;
+		onboardingDismissed = readOnboardingDismissed();
+	});
+
+	function dismissOnboardingPrompt() {
+		if (!browser) return;
+		writeOnboardingDismissed(true);
+		onboardingDismissed = readOnboardingDismissed();
+	}
 </script>
 
 <h1 class="text-3xl font-bold tracking-tight">Dashboard</h1>
+
+{#if data.onboarding && data.onboarding.state !== 'ready'}
+	<Alert class="mt-6">
+		<AlertTitle>
+			{data.onboarding.state === 'partial_setup' || onboardingDismissed
+				? 'Resume onboarding'
+				: 'Finish first-time setup'}
+		</AlertTitle>
+		<AlertDescription class="flex flex-wrap items-center gap-3">
+			<span>
+				{#if data.onboarding.state === 'writes_disabled'}
+					Enable config writes before using onboarding.
+				{:else if data.onboarding.state === 'partial_setup' || onboardingDismissed}
+					Continue the guided setup flow from where you left off.
+				{:else}
+					Start with your first feed, then continue into guided setup.
+				{/if}
+			</span>
+			<a href="/onboarding" class="text-primary text-sm font-medium hover:underline">
+				{data.onboarding.state === 'partial_setup' || onboardingDismissed
+					? 'Resume onboarding'
+					: 'Start onboarding'}
+			</a>
+			{#if data.onboarding.state === 'initial_empty' && !onboardingDismissed}
+				<button
+					type="button"
+					class="text-muted-foreground text-sm hover:underline"
+					onclick={dismissOnboardingPrompt}
+				>
+					Skip for now
+				</button>
+			{/if}
+		</AlertDescription>
+	</Alert>
+{/if}
 
 {#if data.error}
 	<Alert variant="destructive" class="mt-6" role="alert">

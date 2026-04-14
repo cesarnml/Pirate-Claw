@@ -80,3 +80,5 @@ The app can detect the strict initial-empty case, launch onboarding only there, 
 ## Rationale
 
 This ticket is intentionally a thin real slice rather than a route-only shell. It proves the entry contract, dismissal semantics, and incremental-save model before later tickets add target-specific branching.
+
+The home route currently takes the "surface onboarding entry" branch rather than forcing an immediate redirect. That still honors the agreed trigger contract for this ticket while keeping the first slice smaller: the route now derives the strict initial-empty vs partial-setup state, surfaces onboarding affordances accordingly, and leaves stronger redirect behavior available as a later refinement if product review still wants it after the dedicated onboarding route exists.

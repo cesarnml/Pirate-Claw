@@ -4,9 +4,11 @@ import Page from './+page.svelte';
 import type {
 	CandidateStateRecord,
 	DaemonHealth,
+	OnboardingStatus,
 	SessionInfo,
 	TorrentStatSnapshot
 } from '$lib/types';
+import { writeOnboardingDismissed } from '$lib/onboarding';
 
 const mockHealth: DaemonHealth = {
 	uptime: 3661000,
@@ -59,6 +61,7 @@ const baseData = {
 	transmissionSession: mockSession,
 	transmissionTorrents: [],
 	candidates: [],
+	onboarding: null as OnboardingStatus | null,
 	error: null
 };
 
@@ -85,6 +88,62 @@ describe('/', () => {
 	it('renders error state when health is null', () => {
 		render(Page, { data: { ...baseData, health: null, error: 'Could not reach the API.' } });
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
+	});
+
+	it('surfaces onboarding entry for strict initial-empty setup', () => {
+		render(Page, {
+			data: {
+				...baseData,
+				onboarding: {
+					state: 'initial_empty',
+					hasFeeds: false,
+					hasTvTargets: false,
+					hasMovieTargets: false,
+					minimumComplete: false
+				}
+			}
+		});
+		expect(screen.getByRole('link', { name: 'Start onboarding' })).toHaveAttribute(
+			'href',
+			'/onboarding'
+		);
+	});
+
+	it('respects dismissal suppression by switching to resume onboarding copy', () => {
+		writeOnboardingDismissed(true);
+		render(Page, {
+			data: {
+				...baseData,
+				onboarding: {
+					state: 'initial_empty',
+					hasFeeds: false,
+					hasTvTargets: false,
+					hasMovieTargets: false,
+					minimumComplete: false
+				}
+			}
+		});
+		expect(screen.getByRole('link', { name: 'Resume onboarding' })).toHaveAttribute(
+			'href',
+			'/onboarding'
+		);
+		writeOnboardingDismissed(false);
+	});
+
+	it('does not surface onboarding entry when setup is already complete', () => {
+		render(Page, {
+			data: {
+				...baseData,
+				onboarding: {
+					state: 'ready',
+					hasFeeds: true,
+					hasTvTargets: true,
+					hasMovieTargets: false,
+					minimumComplete: true
+				}
+			}
+		});
+		expect(screen.queryByRole('link', { name: /onboarding/i })).not.toBeInTheDocument();
 	});
 
 	it('Active Downloads hidden when transmissionTorrents is empty', () => {
