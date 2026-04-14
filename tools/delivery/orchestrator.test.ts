@@ -553,6 +553,18 @@ describe('delivery orchestrator', () => {
       ),
     ).toBe('feat: add torrent lifecycle reconciliation [P3.02]');
     expect(
+      buildPullRequestTitle(
+        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
+        'fix: tighten review provenance [self-audit]',
+      ),
+    ).toBe('fix: tighten review provenance [P3.02]');
+    expect(
+      buildPullRequestTitle(
+        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
+        'fix: tighten review provenance [codexPreflight]',
+      ),
+    ).toBe('fix: tighten review provenance [P3.02]');
+    expect(
       buildPullRequestTitle({
         id: 'P3.02',
         title: 'Reconcile Torrent Lifecycle From Transmission',
@@ -877,6 +889,7 @@ describe('delivery orchestrator', () => {
             'docs/02-delivery/engineering-epic-02/ticket-05-shared-review-metadata-refresh-adapter.md',
           baseBranch: 'agents/e2-04-shared-clean-and-timeout-recording-core',
           postVerifySelfAuditCompletedAt: '2026-04-07T00:00:00.000Z',
+          selfAuditOutcome: 'clean',
           reviewActionSummary: reviewState.actionSummary,
           reviewIncompleteAgents: undefined,
           reviewComments: reviewState.comments,
@@ -915,7 +928,7 @@ describe('delivery orchestrator', () => {
       '- delivery ticket: `E2.05 Shared Review Metadata Refresh Adapter`',
     );
     expect(ticketBody).toContain(
-      '- post-verify self-audit: completed at 2026-04-07 00:00 UTC',
+      '- self-audit: outcome `clean` completed at 2026-04-07 00:00 UTC',
     );
     expect(ticketBody).toContain(expectedReviewSection);
     expect(standaloneBody).toContain('- preserve this author-owned context');
@@ -933,6 +946,127 @@ describe('delivery orchestrator', () => {
 
     expect(body).not.toContain('artifact (json)');
     expect(body).not.toContain('artifact (text)');
+  });
+
+  it('renders internal review outcomes and linked patch commits in ticket pr bodies', () => {
+    const body = buildPullRequestBody(
+      {
+        planKey: 'engineering-epic-08',
+        planPath: 'docs/02-delivery/engineering-epic-08/implementation-plan.md',
+        statePath: '.agents/delivery/engineering-epic-08/state.json',
+        reviewsDirPath: '.agents/delivery/engineering-epic-08/reviews',
+        handoffsDirPath: '.agents/delivery/engineering-epic-08/handoffs',
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
+        tickets: [],
+      },
+      {
+        id: 'EE8.04',
+        title: 'PR body internal review observability',
+        ticketFile:
+          'docs/02-delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
+        baseBranch: 'main',
+        postVerifySelfAuditCompletedAt: '2026-04-14T08:33:00.000Z',
+        selfAuditOutcome: 'patched',
+        selfAuditPatchCommits: [
+          {
+            sha: 'aaaaaaaaaaaa1111111111111111111111111111',
+            subject: 'fix: clarify PR body review state [self-audit]',
+          },
+        ],
+        codexPreflightCompletedAt: '2026-04-14T08:48:00.000Z',
+        codexPreflightOutcome: 'patched',
+        codexPreflightPatchCommits: [
+          {
+            sha: 'bbbbbbbbbbbb2222222222222222222222222222',
+            subject:
+              'fix: surface codex preflight patch commits [codexPreflight]',
+          },
+        ],
+        status: 'codex_preflight_complete',
+      },
+      {
+        githubRepo: {
+          owner: 'cesarnml',
+          name: 'pirate_claw',
+          defaultBranch: 'main',
+        },
+      },
+    );
+
+    expect(body).toContain(
+      '- self-audit: outcome `patched` completed at 2026-04-14 08:33 UTC',
+    );
+    expect(body).toContain(
+      '- codexPreflight: outcome `patched` completed at 2026-04-14 08:48 UTC',
+    );
+    expect(body).toContain('### Self-Audit Patch Commits');
+    expect(body).toContain('### Codex Preflight Patch Commits');
+    expect(body).toContain(
+      '[`aaaaaaaaaaaa`](https://github.com/cesarnml/pirate_claw/commit/aaaaaaaaaaaa1111111111111111111111111111) fix: clarify PR body review state [self-audit]',
+    );
+    expect(body).toContain(
+      '[`bbbbbbbbbbbb`](https://github.com/cesarnml/pirate_claw/commit/bbbbbbbbbbbb2222222222222222222222222222) fix: surface codex preflight patch commits [codexPreflight]',
+    );
+  });
+
+  it('rejects patched internal review outcomes without recorded patch commits in ticket pr bodies', () => {
+    expect(() =>
+      buildPullRequestBody(
+        {
+          planKey: 'engineering-epic-08',
+          planPath:
+            'docs/02-delivery/engineering-epic-08/implementation-plan.md',
+          statePath: '.agents/delivery/engineering-epic-08/state.json',
+          reviewsDirPath: '.agents/delivery/engineering-epic-08/reviews',
+          handoffsDirPath: '.agents/delivery/engineering-epic-08/handoffs',
+          reviewPollIntervalMinutes: 6,
+          reviewPollMaxWaitMinutes: 12,
+          tickets: [],
+        },
+        {
+          id: 'EE8.04',
+          title: 'PR body internal review observability',
+          ticketFile:
+            'docs/02-delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
+          baseBranch: 'main',
+          postVerifySelfAuditCompletedAt: '2026-04-14T08:33:00.000Z',
+          selfAuditOutcome: 'patched',
+          selfAuditPatchCommits: [],
+          status: 'post_verify_self_audit_complete',
+        },
+      ),
+    ).toThrow(/Self-audit PR metadata requires recorded patch commits/);
+  });
+
+  it('tolerates legacy patched internal review states with no recorded patch commits', () => {
+    const body = buildPullRequestBody(
+      {
+        planKey: 'engineering-epic-08',
+        planPath: 'docs/02-delivery/engineering-epic-08/implementation-plan.md',
+        statePath: '.agents/delivery/engineering-epic-08/state.json',
+        reviewsDirPath: '.agents/delivery/engineering-epic-08/reviews',
+        handoffsDirPath: '.agents/delivery/engineering-epic-08/handoffs',
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
+        tickets: [],
+      },
+      {
+        id: 'EE8.04',
+        title: 'PR body internal review observability',
+        ticketFile:
+          'docs/02-delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
+        baseBranch: 'main',
+        postVerifySelfAuditCompletedAt: '2026-04-14T08:33:00.000Z',
+        selfAuditOutcome: 'patched',
+        status: 'post_verify_self_audit_complete',
+      },
+    );
+
+    expect(body).toContain(
+      '- self-audit: outcome `patched` completed at 2026-04-14 08:33 UTC',
+    );
+    expect(body).not.toContain('### Self-Audit Patch Commits');
   });
 
   it('does not include external summary-only noise in the ticket pr body', () => {
@@ -4341,8 +4475,21 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
       baseInProgressState,
       undefined,
       'patched',
+      {},
+      [
+        {
+          sha: 'aaaaaaaaaaaa1111111111111111111111111111',
+          subject: 'fix: tighten self-audit evidence [self-audit]',
+        },
+      ],
     );
     expect(nextState.tickets[0]?.selfAuditOutcome).toBe('patched');
+    expect(nextState.tickets[0]?.selfAuditPatchCommits).toEqual([
+      {
+        sha: 'aaaaaaaaaaaa1111111111111111111111111111',
+        subject: 'fix: tighten self-audit evidence [self-audit]',
+      },
+    ]);
     expect(nextState.tickets[0]?.status).toBe(
       'post_verify_self_audit_complete',
     );
@@ -4386,6 +4533,13 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
       baseInProgressState,
       undefined,
       'patched',
+      {},
+      [
+        {
+          sha: 'aaaaaaaaaaaa1111111111111111111111111111',
+          subject: 'fix: tighten self-audit evidence [self-audit]',
+        },
+      ],
     );
     initOrchestratorConfig({
       defaultBranch: 'main',
@@ -4397,6 +4551,14 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
     const output = formatStatus(state);
     expect(output).toMatch(
       /post_verify_self_audit=completed at .+ \(patched\)/,
+    );
+  });
+
+  it('rejects patched self-audit outcomes without recorded patch commits', async () => {
+    await expect(
+      recordPostVerifySelfAudit(baseInProgressState, undefined, 'patched'),
+    ).rejects.toThrow(
+      /Self-audit recorded as patched requires at least one patch commit/,
     );
   });
 
@@ -4514,8 +4676,26 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
   });
 
   it('records codexPreflightOutcome: patched and transitions to codex_preflight_complete', () => {
-    const nextState = recordCodexPreflight(basePostAuditState, 'patched');
+    const nextState = recordCodexPreflight(
+      basePostAuditState,
+      'patched',
+      false,
+      'skip_doc_only',
+      [
+        {
+          sha: 'bbbbbbbbbbbb2222222222222222222222222222',
+          subject:
+            'fix: surface codex preflight patch commits [codexPreflight]',
+        },
+      ],
+    );
     expect(nextState.tickets[0]?.codexPreflightOutcome).toBe('patched');
+    expect(nextState.tickets[0]?.codexPreflightPatchCommits).toEqual([
+      {
+        sha: 'bbbbbbbbbbbb2222222222222222222222222222',
+        subject: 'fix: surface codex preflight patch commits [codexPreflight]',
+      },
+    ]);
     expect(nextState.tickets[0]?.status).toBe('codex_preflight_complete');
   });
 
@@ -4560,6 +4740,12 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
     };
     expect(() => recordCodexPreflight(inProgressState, 'clean')).toThrow(
       /No ticket at post_verify_self_audit_complete status/,
+    );
+  });
+
+  it('rejects patched codex-preflight outcomes without recorded patch commits', () => {
+    expect(() => recordCodexPreflight(basePostAuditState, 'patched')).toThrow(
+      /Codex preflight recorded as patched requires at least one patch commit/,
     );
   });
 

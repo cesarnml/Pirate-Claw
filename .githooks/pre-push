@@ -2,4 +2,24 @@
 
 set -eu
 
-bun run verify
+if command -v bun >/dev/null 2>&1; then
+  BUN_BIN="$(command -v bun)"
+else
+  BUN_BIN=""
+  for candidate in /opt/homebrew/bin/bun /usr/local/bin/bun; do
+    if [ -x "$candidate" ]; then
+      BUN_BIN="$candidate"
+      break
+    fi
+  done
+  if [ -z "$BUN_BIN" ] && [ -n "${HOME:-}" ] && [ -x "$HOME/.bun/bin/bun" ]; then
+    BUN_BIN="$HOME/.bun/bin/bun"
+  fi
+fi
+
+if [ -z "$BUN_BIN" ]; then
+  echo "pre-push: bun not found in PATH or common install locations" >&2
+  exit 1
+fi
+
+exec "$BUN_BIN" run verify

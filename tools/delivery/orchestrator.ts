@@ -25,6 +25,7 @@ import {
   hasMergedPullRequestForBranch as hasPlatformMergedPullRequestForBranch,
   isLocalBranchDocOnly as isPlatformLocalBranchDocOnly,
   listCommitSubjectsBetween as listPlatformCommitSubjectsBetween,
+  readCommitSubject as readPlatformCommitSubject,
   readCurrentBranch as readPlatformCurrentBranch,
   readHeadSha as readPlatformHeadSha,
   readLatestCommitSubject as readPlatformLatestCommitSubject,
@@ -172,6 +173,11 @@ export type ReviewResult =
 
 export type CodexPreflightOutcome = 'clean' | 'patched' | 'skipped';
 
+export type InternalReviewPatchCommit = {
+  sha: string;
+  subject: string;
+};
+
 export type TicketDefinition = {
   id: string;
   title: string;
@@ -188,8 +194,10 @@ export type TicketState = TicketDefinition & {
   handoffGeneratedAt?: string;
   postVerifySelfAuditCompletedAt?: string;
   selfAuditOutcome?: ReviewOutcome;
+  selfAuditPatchCommits?: InternalReviewPatchCommit[];
   codexPreflightOutcome?: CodexPreflightOutcome;
   codexPreflightCompletedAt?: string;
+  codexPreflightPatchCommits?: InternalReviewPatchCommit[];
   docOnly?: boolean;
   prNumber?: number;
   prUrl?: string;
@@ -565,19 +573,34 @@ export async function runDeliveryOrchestrator(
             'Note: `internal-review` is deprecated; use `post-verify-self-audit`.',
           );
         }
-        const positional0 = parsed.positionals[0];
-        const auditOutcome: ReviewOutcome | undefined =
-          positional0 === 'clean' || positional0 === 'patched'
-            ? positional0
-            : undefined;
-        const auditTicketId =
-          positional0 !== 'clean' && positional0 !== 'patched'
-            ? positional0
+        const { auditOutcome, auditTicketId, auditPatchCommitArgs } =
+          parseSelfAuditArgs(parsed.positionals);
+        if (auditOutcome !== 'patched' && auditPatchCommitArgs.length > 0) {
+          throw new Error(
+            'Self-audit patch commits are only allowed when outcome is `patched`.',
+          );
+        }
+        const auditPatchCommits =
+          auditOutcome === 'patched'
+            ? resolveInternalReviewPatchCommits(
+                (
+                  state.tickets.find((ticket) => ticket.id === auditTicketId) ??
+                  state.tickets.find(
+                    (ticket) => ticket.status === 'in_progress',
+                  ) ??
+                  state.tickets[0]
+                )?.worktreePath ?? cwd,
+                auditPatchCommitArgs,
+                '[self-audit]',
+                'Self-audit',
+              )
             : undefined;
         const nextState = await recordPostVerifySelfAudit(
           state,
           auditTicketId,
           auditOutcome,
+          {},
+          auditPatchCommits,
         );
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState));
@@ -599,11 +622,24 @@ export async function runDeliveryOrchestrator(
               _config.runtime,
             )
           : false;
+        if (preflightOutcome !== 'patched' && parsed.positionals.length > 1) {
+          throw new Error(
+            'Codex preflight patch commits are only allowed when outcome is `patched`.',
+          );
+        }
         const nextState = recordCodexPreflight(
           state,
           preflightOutcome,
           isDocOnly,
           _config.reviewPolicy.codexPreflight,
+          preflightOutcome === 'patched'
+            ? resolveInternalReviewPatchCommits(
+                preflightTarget?.worktreePath ?? cwd,
+                parsed.positionals.slice(1),
+                '[codexPreflight]',
+                'Codex preflight',
+              )
+            : undefined,
         );
         const justRecordedPreflight = nextState.tickets.find(
           (t) =>
@@ -1085,6 +1121,7 @@ export async function recordPostVerifySelfAudit(
     ) => boolean;
     selfAuditPolicy?: ReviewPolicyStageValue;
   } = {},
+  patchCommits?: InternalReviewPatchCommit[],
 ): Promise<DeliveryState> {
   const target =
     (ticketId
@@ -1103,7 +1140,7 @@ export async function recordPostVerifySelfAudit(
     );
 
   if (selfAuditPolicy === 'skip_doc_only' && isDocOnly) {
-    return recordPostVerifySelfAuditImpl(state, ticketId, 'skipped');
+    return recordPostVerifySelfAuditImpl(state, ticketId, 'skipped', undefined);
   }
 
   if (selfAuditPolicy === 'required' && isDocOnly && outcome === undefined) {
@@ -1112,7 +1149,7 @@ export async function recordPostVerifySelfAudit(
     );
   }
 
-  return recordPostVerifySelfAuditImpl(state, ticketId, outcome);
+  return recordPostVerifySelfAuditImpl(state, ticketId, outcome, patchCommits);
 }
 
 /** @deprecated Use `recordPostVerifySelfAudit`. */
@@ -1128,8 +1165,15 @@ export function recordCodexPreflight(
   outcome?: 'clean' | 'patched',
   isDocOnly?: boolean,
   policy: ReviewPolicyStageValue = _config.reviewPolicy.codexPreflight,
+  patchCommits?: InternalReviewPatchCommit[],
 ): DeliveryState {
-  return recordCodexPreflightImpl(state, outcome, isDocOnly, policy);
+  return recordCodexPreflightImpl(
+    state,
+    outcome,
+    isDocOnly,
+    policy,
+    patchCommits,
+  );
 }
 
 export function shouldAutoRecordCleanForPollReview(
@@ -1140,6 +1184,50 @@ export function shouldAutoRecordCleanForPollReview(
     policy === 'disabled' ||
     (policy === 'skip_doc_only' && ticket?.docOnly === true)
   );
+}
+
+function normalizeUniquePatchCommitShas(rawShas: string[]): string[] {
+  return [...new Set(rawShas.map((sha) => sha.trim()).filter(Boolean))];
+}
+
+function parseSelfAuditArgs(positionals: string[]): {
+  auditOutcome?: ReviewOutcome;
+  auditPatchCommitArgs: string[];
+  auditTicketId?: string;
+} {
+  const positional0 = positionals[0];
+  const positional1 = positionals[1];
+  const auditOutcome: ReviewOutcome | undefined =
+    positional0 === 'clean' || positional0 === 'patched'
+      ? positional0
+      : positional1 === 'clean' || positional1 === 'patched'
+        ? positional1
+        : undefined;
+  const auditTicketId =
+    positional0 !== 'clean' && positional0 !== 'patched'
+      ? positional0
+      : undefined;
+  const auditPatchCommitArgs = auditTicketId
+    ? positionals.slice(2)
+    : positionals.slice(1);
+  return { auditOutcome, auditTicketId, auditPatchCommitArgs };
+}
+
+function resolveInternalReviewPatchCommits(
+  cwd: string,
+  rawShas: string[],
+  suffix: '[self-audit]' | '[codexPreflight]',
+  stageLabel: string,
+): InternalReviewPatchCommit[] {
+  return normalizeUniquePatchCommitShas(rawShas).map((sha) => {
+    const subject = readCommitSubject(cwd, sha);
+    if (!subject.endsWith(` ${suffix}`)) {
+      throw new Error(
+        `${stageLabel} patch commit ${sha.slice(0, 12)} must end with " ${suffix}" (note the space).`,
+      );
+    }
+    return { sha, subject };
+  });
 }
 
 export async function openPullRequest(
@@ -1431,6 +1519,10 @@ function hasMergedPullRequestForBranch(cwd: string, branch: string): boolean {
 
 function readLatestCommitSubject(cwd: string): string {
   return readPlatformLatestCommitSubject(cwd, _config.runtime);
+}
+
+function readCommitSubject(cwd: string, sha: string): string {
+  return readPlatformCommitSubject(cwd, sha, _config.runtime);
 }
 
 function readHeadSha(cwd: string): string {

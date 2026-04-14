@@ -7,10 +7,30 @@ import type { ReviewActionCommit } from './pr-metadata';
 import type {
   CodexPreflightOutcome,
   DeliveryState,
+  InternalReviewPatchCommit,
   ReviewOutcome,
   ReviewPolicyStageValue,
   TicketState,
 } from './orchestrator';
+
+function validateInternalReviewPatchCommits(input: {
+  outcome: ReviewOutcome | CodexPreflightOutcome;
+  patchCommits: InternalReviewPatchCommit[] | undefined;
+  stageLabel: string;
+}): void {
+  const patchCount = input.patchCommits?.length ?? 0;
+  if (input.outcome === 'patched' && patchCount === 0) {
+    throw new Error(
+      `${input.stageLabel} recorded as patched requires at least one patch commit.`,
+    );
+  }
+
+  if (input.outcome !== 'patched' && patchCount > 0) {
+    throw new Error(
+      `${input.stageLabel} patch commits are only allowed when outcome is \`patched\`.`,
+    );
+  }
+}
 
 export function findNextPendingTicket(
   state: DeliveryState,
@@ -281,6 +301,7 @@ export function recordPostVerifySelfAudit(
   state: DeliveryState,
   ticketId?: string,
   outcome?: ReviewOutcome,
+  patchCommits?: InternalReviewPatchCommit[],
   now: () => string = () => new Date().toISOString(),
 ): DeliveryState {
   const target =
@@ -307,6 +328,11 @@ export function recordPostVerifySelfAudit(
 
   const completedAt = now();
   const resolvedOutcome: ReviewOutcome = outcome ?? 'clean';
+  validateInternalReviewPatchCommits({
+    outcome: resolvedOutcome,
+    patchCommits,
+    stageLabel: 'Self-audit',
+  });
 
   return {
     ...state,
@@ -317,6 +343,7 @@ export function recordPostVerifySelfAudit(
             status: 'post_verify_self_audit_complete',
             postVerifySelfAuditCompletedAt: completedAt,
             selfAuditOutcome: resolvedOutcome,
+            selfAuditPatchCommits: patchCommits,
           }
         : ticket,
     ),
@@ -331,6 +358,7 @@ export function recordCodexPreflight(
   outcome?: 'clean' | 'patched',
   isDocOnly?: boolean,
   policy: ReviewPolicyStageValue = 'skip_doc_only',
+  patchCommits?: InternalReviewPatchCommit[],
   now: () => string = () => new Date().toISOString(),
 ): DeliveryState {
   const target = state.tickets.find(
@@ -355,6 +383,11 @@ export function recordCodexPreflight(
       `Ticket ${target.id} requires a Codex preflight outcome. Pass \`clean\` or \`patched\`.`,
     );
   }
+  validateInternalReviewPatchCommits({
+    outcome: resolvedOutcome,
+    patchCommits,
+    stageLabel: 'Codex preflight',
+  });
 
   const completedAt = now();
 
@@ -367,6 +400,7 @@ export function recordCodexPreflight(
             status: 'codex_preflight_complete',
             codexPreflightOutcome: resolvedOutcome,
             codexPreflightCompletedAt: completedAt,
+            codexPreflightPatchCommits: patchCommits,
           }
         : ticket,
     ),
