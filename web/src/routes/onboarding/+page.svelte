@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { writeOnboardingDismissed } from '$lib/onboarding';
+	import {
+		readOnboardingPath,
+		writeOnboardingDismissed,
+		writeOnboardingPath
+	} from '$lib/onboarding';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import type { ActionData, PageData } from './$types';
 
@@ -8,7 +12,7 @@
 	const ALL_CODECS = ['x264', 'x265'];
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	let selectedPath = $state<'tv' | 'movie' | 'both'>('tv');
+	let selectedPath = $state<'tv' | 'movie' | 'both'>(browser ? readOnboardingPath() : 'tv');
 	let feedMediaType = $state<'tv' | 'movie'>('tv');
 	let tvResolutions = $state<string[]>([]);
 	let tvCodecs = $state<string[]>([]);
@@ -19,6 +23,7 @@
 	const hasMovieFeed = $derived(
 		(data.config?.feeds ?? []).some((feed) => feed.mediaType === 'movie')
 	);
+	const persistedPath = $derived(browser ? readOnboardingPath() : 'tv');
 	const onboardingPath = $derived.by<'tv' | 'movie' | 'both'>(() => {
 		if (
 			form?.onboardingPath === 'tv' ||
@@ -27,6 +32,7 @@
 		) {
 			return form.onboardingPath;
 		}
+		if (persistedPath === 'movie' || persistedPath === 'both') return persistedPath;
 		if (hasTvFeed && hasMovieFeed) return 'both';
 		if (hasMovieFeed) return 'movie';
 		return 'tv';
@@ -73,6 +79,11 @@
 
 	$effect(() => {
 		feedMediaType = selectedPath === 'movie' ? 'movie' : 'tv';
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		writeOnboardingPath(selectedPath);
 	});
 
 	$effect(() => {
@@ -138,19 +149,21 @@
 	</Alert>
 {:else}
 	<section class="mt-8 space-y-6">
-		<Alert>
-			<AlertTitle>
-				{data.onboarding?.state === 'partial_setup' ? 'Resume onboarding' : 'First-time setup'}
-			</AlertTitle>
-			<AlertDescription>
-				{#if data.onboarding?.state === 'partial_setup'}
-					You already saved part of your config. Continue onboarding here or return to the
-					<a href="/config" class="text-primary font-medium hover:underline">Config page</a>.
-				{:else}
-					Start by choosing your feed path and saving your first RSS feed.
-				{/if}
-			</AlertDescription>
-		</Alert>
+		{#if !showDoneStep}
+			<Alert>
+				<AlertTitle>
+					{data.onboarding?.state === 'partial_setup' ? 'Resume onboarding' : 'First-time setup'}
+				</AlertTitle>
+				<AlertDescription>
+					{#if data.onboarding?.state === 'partial_setup'}
+						You already saved part of your config. Continue onboarding here or return to the
+						<a href="/config" class="text-primary font-medium hover:underline">Config page</a>.
+					{:else}
+						Start by choosing your feed path and saving your first RSS feed.
+					{/if}
+				</AlertDescription>
+			</Alert>
+		{/if}
 
 		{#if !(data.onboarding?.hasFeeds ?? false)}
 			<div class="space-y-3">

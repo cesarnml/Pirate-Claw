@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent } from '@testing-library/svelte';
 import { render, screen } from '@testing-library/svelte';
+import { writeOnboardingPath } from '$lib/onboarding';
 import emptyConfig from '../../../../fixtures/api/config-empty.json';
 import feedOnlyConfig from '../../../../fixtures/api/config-feed-only.json';
 import configWithMovies from '../../../../fixtures/api/config-with-movies.json';
@@ -14,6 +15,32 @@ const configWithMoviesFixture = configWithMovies as AppConfig;
 const configWithTvDefaultsFixture = configWithTvDefaults as AppConfig;
 
 describe('/onboarding', () => {
+	it('suppresses the intro alert once the done summary is active', () => {
+		render(Page, {
+			data: {
+				config: {
+					...configWithMoviesFixture,
+					tv: []
+				},
+				etag: '"rev-3"',
+				canWrite: true,
+				onboarding: {
+					state: 'ready',
+					hasFeeds: true,
+					hasTvTargets: false,
+					hasMovieTargets: true,
+					minimumComplete: true
+				},
+				error: null
+			},
+			form: undefined
+		});
+
+		expect(screen.getByText('Done')).toBeInTheDocument();
+		expect(screen.queryByText('First-time setup')).not.toBeInTheDocument();
+		expect(screen.queryByText('Resume onboarding')).not.toBeInTheDocument();
+	});
+
 	it('renders blocked state when writes are disabled', () => {
 		render(Page, {
 			data: {
@@ -233,6 +260,33 @@ describe('/onboarding', () => {
 
 		expect(screen.getByText('Step 4 — Add a movie target')).toBeInTheDocument();
 		expect(screen.queryByText('Done')).not.toBeInTheDocument();
+	});
+
+	it('keeps the movie step pending after reload for the both flow', () => {
+		writeOnboardingPath('both');
+		render(Page, {
+			data: {
+				config: {
+					...configWithMoviesFixture,
+					movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
+				},
+				etag: '"rev-3"',
+				canWrite: true,
+				onboarding: {
+					state: 'ready',
+					hasFeeds: true,
+					hasTvTargets: true,
+					hasMovieTargets: false,
+					minimumComplete: true
+				},
+				error: null
+			},
+			form: undefined
+		});
+
+		expect(screen.getByText('Step 4 — Add a movie target')).toBeInTheDocument();
+		expect(screen.queryByText('Done')).not.toBeInTheDocument();
+		writeOnboardingPath('tv');
 	});
 
 	it('preserves existing movie policy copy when present', () => {
