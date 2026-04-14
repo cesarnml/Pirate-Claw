@@ -1,3 +1,12 @@
 {
-  "ticketBoundaryMode": "cook"
+  "defaultBranch": "main",
+  "planRoot": "docs",
+  "runtime": "bun",
+  "packageManager": "bun",
+  "ticketBoundaryMode": "cook",
+  "reviewPolicy": {
+    "selfAudit": "skip_doc_only",
+    "codexPreflight": "skip_doc_only",
+    "externalReview": "skip_doc_only"
+  }
 }
