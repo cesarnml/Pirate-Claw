@@ -321,4 +321,144 @@ describe('onboarding page server', () => {
 			);
 		});
 	});
+
+	describe('saveMovieTarget', () => {
+		it('validates movie year bounds', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('movieYear', '1899');
+			body.set('movieCodecPolicy', 'prefer');
+
+			const result = await actions.saveMovieTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect(
+				(result as { data?: { movieTargetMessage?: string } }).data?.movieTargetMessage
+			).toContain('between 1900 and 2100');
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('validates codec policy', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('movieYear', '2024');
+			body.set('movieCodecPolicy', 'sometimes');
+
+			const result = await actions.saveMovieTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect(
+				(result as { data?: { movieTargetMessage?: string } }).data?.movieTargetMessage
+			).toContain('Codec policy');
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('preserves existing movie policy during resumed onboarding', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-2"' } })
+			);
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('movieYear', '2024');
+			body.set('movieCodecPolicy', 'prefer');
+			body.set('existingMovieYearsJson', JSON.stringify([2023]));
+			body.set('existingMovieResolutionsJson', JSON.stringify(['1080p']));
+			body.set('existingMovieCodecsJson', JSON.stringify(['x265']));
+			body.set('existingMovieCodecPolicy', 'require');
+			body.append('movieResolution', '720p');
+			body.append('movieCodec', 'x264');
+
+			const result = await actions.saveMovieTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { movieTargetSuccess?: boolean }).movieTargetSuccess).toBe(true);
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/config/movies',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({
+						years: [2023, 2024],
+						resolutions: ['1080p'],
+						codecs: ['x265'],
+						codecPolicy: 'require'
+					})
+				})
+			);
+		});
+
+		it('seeds an empty movie policy from onboarding inputs', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('./+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-2"' } })
+			);
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.set('movieYear', '2024');
+			body.set('movieCodecPolicy', 'prefer');
+			body.set('existingMovieYearsJson', JSON.stringify([]));
+			body.set('existingMovieResolutionsJson', JSON.stringify([]));
+			body.set('existingMovieCodecsJson', JSON.stringify([]));
+			body.set('existingMovieCodecPolicy', 'prefer');
+			body.append('movieResolution', '1080p');
+			body.append('movieCodec', 'x265');
+
+			const result = await actions.saveMovieTarget({
+				request: new Request('http://localhost/onboarding', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { movieTargetSuccess?: boolean }).movieTargetSuccess).toBe(true);
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/config/movies',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({
+						years: [2024],
+						resolutions: ['1080p'],
+						codecs: ['x265'],
+						codecPolicy: 'prefer'
+					})
+				})
+			);
+		});
+	});
 });

@@ -3,12 +3,14 @@ import { fireEvent } from '@testing-library/svelte';
 import { render, screen } from '@testing-library/svelte';
 import emptyConfig from '../../../../fixtures/api/config-empty.json';
 import feedOnlyConfig from '../../../../fixtures/api/config-feed-only.json';
+import configWithMovies from '../../../../fixtures/api/config-with-movies.json';
 import configWithTvDefaults from '../../../../fixtures/api/config-with-tv-defaults.json';
 import type { AppConfig } from '$lib/types';
 import Page from './+page.svelte';
 
 const emptyConfigFixture = emptyConfig as AppConfig;
 const feedOnlyConfigFixture = feedOnlyConfig as AppConfig;
+const configWithMoviesFixture = configWithMovies as AppConfig;
 const configWithTvDefaultsFixture = configWithTvDefaults as AppConfig;
 
 describe('/onboarding', () => {
@@ -152,7 +154,7 @@ describe('/onboarding', () => {
 		expect(resolutionButton).toHaveAttribute('aria-pressed', 'true');
 	});
 
-	it('avoids the tv-specific step for movie-only feeds', () => {
+	it('renders the movie target step for movie-only feeds', () => {
 		render(Page, {
 			data: {
 				config: {
@@ -177,7 +179,8 @@ describe('/onboarding', () => {
 		});
 
 		expect(screen.queryByText('Step 3 — Add a TV target')).not.toBeInTheDocument();
-		expect(screen.getByText('Target setup depends on your feed path')).toBeInTheDocument();
+		expect(screen.getByText('Step 3 — Add a movie target')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Save movie target' })).toBeInTheDocument();
 	});
 
 	it('uses movie-specific copy when a movie target already exists', () => {
@@ -200,5 +203,64 @@ describe('/onboarding', () => {
 
 		expect(screen.getByText('Movie target already saved')).toBeInTheDocument();
 		expect(screen.queryByText('TV target already saved')).not.toBeInTheDocument();
+	});
+
+	it('shows the movie step after tv save in the both flow', () => {
+		render(Page, {
+			data: {
+				config: {
+					...configWithMoviesFixture,
+					movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
+				},
+				etag: '"rev-3"',
+				canWrite: true,
+				onboarding: {
+					state: 'ready',
+					hasFeeds: true,
+					hasTvTargets: true,
+					hasMovieTargets: false,
+					minimumComplete: true
+				},
+				error: null
+			},
+			form: {
+				tvTargetSuccess: true,
+				tvTargetMessage: 'TV target saved.',
+				tvTargetEtag: '"rev-3"',
+				onboardingPath: 'both'
+			}
+		});
+
+		expect(screen.getByText('Step 4 — Add a movie target')).toBeInTheDocument();
+		expect(screen.queryByText('Onboarding already complete')).not.toBeInTheDocument();
+	});
+
+	it('preserves existing movie policy copy when present', () => {
+		render(Page, {
+			data: {
+				config: {
+					...configWithMoviesFixture,
+					movies: { years: [], resolutions: ['1080p'], codecs: ['x265'], codecPolicy: 'require' }
+				},
+				etag: '"rev-3"',
+				canWrite: true,
+				onboarding: {
+					state: 'partial_setup',
+					hasFeeds: true,
+					hasTvTargets: true,
+					hasMovieTargets: false,
+					minimumComplete: true
+				},
+				error: null
+			},
+			form: {
+				movieTargetSuccess: false,
+				movieTargetMessage: '',
+				movieTargetEtag: '"rev-3"',
+				onboardingPath: 'both'
+			}
+		});
+
+		expect(screen.getByText(/Existing movie policy is already configured/)).toBeInTheDocument();
 	});
 });

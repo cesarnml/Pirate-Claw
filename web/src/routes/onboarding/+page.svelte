@@ -12,7 +12,46 @@
 	let feedMediaType = $state<'tv' | 'movie'>('tv');
 	let tvResolutions = $state<string[]>([]);
 	let tvCodecs = $state<string[]>([]);
+	let movieResolutions = $state<string[]>([]);
+	let movieCodecs = $state<string[]>([]);
+	let movieCodecPolicy = $state<'prefer' | 'require'>('prefer');
 	const hasTvFeed = $derived((data.config?.feeds ?? []).some((feed) => feed.mediaType === 'tv'));
+	const hasMovieFeed = $derived(
+		(data.config?.feeds ?? []).some((feed) => feed.mediaType === 'movie')
+	);
+	const onboardingPath = $derived.by<'tv' | 'movie' | 'both'>(() => {
+		if (
+			form?.onboardingPath === 'tv' ||
+			form?.onboardingPath === 'movie' ||
+			form?.onboardingPath === 'both'
+		) {
+			return form.onboardingPath;
+		}
+		if (hasTvFeed && hasMovieFeed) return 'both';
+		if (hasMovieFeed) return 'movie';
+		return 'tv';
+	});
+	const showTvTargetStep = $derived(
+		(data.onboarding?.hasFeeds ?? false) &&
+			!(data.onboarding?.hasTvTargets ?? false) &&
+			!(data.onboarding?.hasMovieTargets ?? false) &&
+			onboardingPath !== 'movie'
+	);
+	const showMovieTargetStep = $derived(
+		(data.onboarding?.hasFeeds ?? false) &&
+			!(data.onboarding?.hasMovieTargets ?? false) &&
+			(onboardingPath === 'movie' || onboardingPath === 'both') &&
+			(onboardingPath !== 'both' ||
+				(data.onboarding?.hasTvTargets ?? false) ||
+				!!form?.tvTargetSuccess)
+	);
+	const hasExistingMoviePolicy = $derived(
+		(data.config?.movies.resolutions.length ?? 0) > 0 ||
+			(data.config?.movies.codecs.length ?? 0) > 0
+	);
+	const movieStepTitle = $derived(
+		onboardingPath === 'both' ? 'Step 4 — Add a movie target' : 'Step 3 — Add a movie target'
+	);
 
 	$effect(() => {
 		feedMediaType = selectedPath === 'movie' ? 'movie' : 'tv';
@@ -21,6 +60,9 @@
 	$effect(() => {
 		tvResolutions = [...(data.config?.tvDefaults?.resolutions ?? [])];
 		tvCodecs = [...(data.config?.tvDefaults?.codecs ?? [])];
+		movieResolutions = [...(data.config?.movies.resolutions ?? [])];
+		movieCodecs = [...(data.config?.movies.codecs ?? [])];
+		movieCodecPolicy = data.config?.movies.codecPolicy ?? 'prefer';
 	});
 
 	function dismissOnboarding() {
@@ -44,6 +86,22 @@
 		}
 		tvCodecs = [...tvCodecs, codec];
 	}
+
+	function toggleMovieResolution(resolution: string) {
+		if (movieResolutions.includes(resolution)) {
+			movieResolutions = movieResolutions.filter((entry) => entry !== resolution);
+			return;
+		}
+		movieResolutions = [...movieResolutions, resolution];
+	}
+
+	function toggleMovieCodec(codec: string) {
+		if (movieCodecs.includes(codec)) {
+			movieCodecs = movieCodecs.filter((entry) => entry !== codec);
+			return;
+		}
+		movieCodecs = [...movieCodecs, codec];
+	}
 </script>
 
 <h1 class="text-3xl font-bold tracking-tight">Onboarding</h1>
@@ -60,7 +118,7 @@
 			Enable config writes before using onboarding. You can still review the existing dashboard.
 		</AlertDescription>
 	</Alert>
-{:else if data.onboarding?.state === 'ready'}
+{:else if data.onboarding?.state === 'ready' && !showMovieTargetStep}
 	<Alert class="mt-6">
 		<AlertTitle>Onboarding already complete</AlertTitle>
 		<AlertDescription>
@@ -105,7 +163,7 @@
 				</div>
 				<p class="text-muted-foreground text-sm">
 					{selectedPath === 'both'
-						? 'Both is supported. This first ticket saves one feed and leaves target setup for the next steps.'
+						? 'Both is supported. Save one feed first, then onboarding will guide TV and movie targets in order.'
 						: `Your first feed will default to ${feedMediaType.toUpperCase()}.`}
 				</p>
 			</div>
@@ -114,6 +172,7 @@
 				<h2 class="text-lg font-semibold tracking-tight">Step 2 — Add your first feed</h2>
 				<form method="POST" action="?/saveFeed" class="space-y-4">
 					<input type="hidden" name="ifMatch" value={form?.feedsEtag ?? data.etag ?? ''} />
+					<input type="hidden" name="onboardingPath" value={selectedPath} />
 					<input
 						type="hidden"
 						name="existingFeedsJson"
@@ -176,7 +235,7 @@
 					</div>
 				</form>
 			</div>
-		{:else if !(data.onboarding?.hasTvTargets ?? false) && !(data.onboarding?.hasMovieTargets ?? false) && hasTvFeed}
+		{:else if showTvTargetStep}
 			<Alert>
 				<AlertTitle>Step 3 — Add a TV target</AlertTitle>
 				<AlertDescription>
@@ -187,6 +246,7 @@
 
 			<form method="POST" action="?/saveTvTarget" class="space-y-4">
 				<input type="hidden" name="ifMatch" value={form?.tvTargetEtag ?? data.etag ?? ''} />
+				<input type="hidden" name="onboardingPath" value={onboardingPath} />
 				<input
 					type="hidden"
 					name="existingShowsJson"
@@ -265,6 +325,161 @@
 						disabled={!(form?.tvTargetEtag ?? data.etag)}
 					>
 						Save TV target
+					</button>
+					<a href="/config" class="text-muted-foreground text-sm hover:underline"
+						>Use Config page instead</a
+					>
+				</div>
+			</form>
+		{:else if showMovieTargetStep}
+			<Alert>
+				<AlertTitle>{movieStepTitle}</AlertTitle>
+				<AlertDescription>
+					{#if onboardingPath === 'both'}
+						Your TV target is saved. Finish the guided flow by adding the first movie year target.
+					{:else}
+						Your feed is saved. Add a movie year target and policy defaults.
+					{/if}
+				</AlertDescription>
+			</Alert>
+
+			<form method="POST" action="?/saveMovieTarget" class="space-y-4">
+				<input
+					type="hidden"
+					name="ifMatch"
+					value={form?.movieTargetEtag ?? form?.tvTargetEtag ?? data.etag ?? ''}
+				/>
+				<input type="hidden" name="onboardingPath" value={onboardingPath} />
+				<input
+					type="hidden"
+					name="existingMovieYearsJson"
+					value={JSON.stringify(data.config?.movies.years ?? [])}
+				/>
+				<input
+					type="hidden"
+					name="existingMovieResolutionsJson"
+					value={JSON.stringify(data.config?.movies.resolutions ?? [])}
+				/>
+				<input
+					type="hidden"
+					name="existingMovieCodecsJson"
+					value={JSON.stringify(data.config?.movies.codecs ?? [])}
+				/>
+				<input
+					type="hidden"
+					name="existingMovieCodecPolicy"
+					value={data.config?.movies.codecPolicy ?? 'prefer'}
+				/>
+				{#each movieResolutions as resolution}
+					<input type="hidden" name="movieResolution" value={resolution} />
+				{/each}
+				{#each movieCodecs as codec}
+					<input type="hidden" name="movieCodec" value={codec} />
+				{/each}
+
+				<div class="space-y-1">
+					<label for="movie-year" class="text-sm font-medium">Movie year</label>
+					<input
+						id="movie-year"
+						name="movieYear"
+						type="number"
+						min="1900"
+						max="2100"
+						placeholder="2024"
+						class="border-input bg-background ring-offset-background h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+					/>
+				</div>
+
+				<div class="space-y-2">
+					<p class="text-sm font-medium">Movie resolutions</p>
+					<div class="flex flex-wrap gap-2">
+						{#each ALL_RESOLUTIONS as resolution}
+							<button
+								type="button"
+								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {movieResolutions.includes(
+									resolution
+								)
+									? 'bg-primary text-primary-foreground border-primary'
+									: 'border-border bg-card hover:bg-muted/50'}"
+								aria-label={`Toggle ${resolution}`}
+								aria-pressed={movieResolutions.includes(resolution)}
+								onclick={() => toggleMovieResolution(resolution)}
+							>
+								{resolution}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<p class="text-sm font-medium">Movie codecs</p>
+					<div class="flex flex-wrap gap-2">
+						{#each ALL_CODECS as codec}
+							<button
+								type="button"
+								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {movieCodecs.includes(
+									codec
+								)
+									? 'bg-primary text-primary-foreground border-primary'
+									: 'border-border bg-card hover:bg-muted/50'}"
+								aria-label={`Toggle ${codec}`}
+								aria-pressed={movieCodecs.includes(codec)}
+								onclick={() => toggleMovieCodec(codec)}
+							>
+								{codec}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<p class="text-sm font-medium">Codec policy</p>
+					<div class="flex flex-wrap gap-3">
+						<label
+							class="border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+						>
+							<input
+								type="radio"
+								name="movieCodecPolicy"
+								value="prefer"
+								bind:group={movieCodecPolicy}
+							/>
+							<span>Prefer</span>
+						</label>
+						<label
+							class="border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+						>
+							<input
+								type="radio"
+								name="movieCodecPolicy"
+								value="require"
+								bind:group={movieCodecPolicy}
+							/>
+							<span>Require</span>
+						</label>
+					</div>
+				</div>
+
+				{#if hasExistingMoviePolicy}
+					<p class="text-muted-foreground text-sm">
+						Existing movie policy is already configured. Onboarding will preserve it and only add
+						the new year target.
+					</p>
+				{/if}
+
+				{#if form?.movieTargetMessage}
+					<p class:text-destructive={!(form?.movieTargetSuccess ?? false)} class="text-sm">
+						{form.movieTargetMessage}
+					</p>
+				{/if}
+
+				<div class="flex flex-wrap items-center gap-3">
+					<button
+						type="submit"
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+						disabled={!(form?.movieTargetEtag ?? form?.tvTargetEtag ?? data.etag)}
+					>
+						Save movie target
 					</button>
 					<a href="/config" class="text-muted-foreground text-sm hover:underline"
 						>Use Config page instead</a

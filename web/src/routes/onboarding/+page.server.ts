@@ -2,7 +2,7 @@ import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { deriveOnboardingStatus } from '$lib/onboarding';
 import { apiRequest } from '$lib/server/api';
-import type { AppConfig, FeedConfig } from '$lib/types';
+import type { AppConfig, FeedConfig, MoviePolicy } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
@@ -66,6 +66,19 @@ function parseExistingShows(raw: string | File | null): string[] {
 	}
 }
 
+function parseExistingYears(raw: string | File | null): number[] {
+	if (raw === null) return [];
+	try {
+		const parsed = JSON.parse(String(raw));
+		if (!Array.isArray(parsed)) return [];
+		return parsed
+			.map((entry) => Number(entry))
+			.filter((entry) => Number.isInteger(entry) && entry >= 1900 && entry <= 2100);
+	} catch {
+		return [];
+	}
+}
+
 export const actions: Actions = {
 	saveFeed: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
@@ -83,6 +96,7 @@ export const actions: Actions = {
 		const name = String(formData.get('feedName') ?? '').trim();
 		const url = String(formData.get('feedUrl') ?? '').trim();
 		const mediaType = String(formData.get('feedMediaType') ?? 'tv').trim();
+		const onboardingPath = String(formData.get('onboardingPath') ?? 'tv').trim();
 
 		if (!name || !url) {
 			return fail(400, { feedsMessage: 'Feed name and URL are required.' });
@@ -121,7 +135,8 @@ export const actions: Actions = {
 			return {
 				feedsSuccess: true,
 				feedsMessage: 'Feed saved.',
-				feedsEtag: response.headers.get('etag')
+				feedsEtag: response.headers.get('etag'),
+				onboardingPath
 			};
 		} catch (error) {
 			console.error('[onboarding] saveFeed failed:', error);
@@ -145,6 +160,7 @@ export const actions: Actions = {
 		if (!showName) {
 			return fail(400, { tvTargetMessage: 'A TV show name is required.' });
 		}
+		const onboardingPath = String(formData.get('onboardingPath') ?? 'tv').trim();
 
 		const existingShows = parseExistingShows(formData.get('existingShowsJson'));
 		const nextShows = existingShows.includes(showName)
@@ -207,7 +223,8 @@ export const actions: Actions = {
 			return {
 				tvTargetSuccess: true,
 				tvTargetMessage: 'TV target saved.',
-				tvTargetEtag: showsResponse.headers.get('etag')
+				tvTargetEtag: showsResponse.headers.get('etag'),
+				onboardingPath
 			};
 		} catch (error) {
 			console.error('[onboarding] saveTvTarget failed:', error);
@@ -215,6 +232,90 @@ export const actions: Actions = {
 				tvTargetMessage: 'Could not save TV target.',
 				tvTargetEtag
 			});
+		}
+	},
+
+	saveMovieTarget: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { movieTargetMessage: 'Config writes are disabled.' });
+		}
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, { movieTargetMessage: 'Missing config revision. Reload and try again.' });
+		}
+
+		const rawYear = String(formData.get('movieYear') ?? '').trim();
+		const movieYear = Number(rawYear);
+		if (!Number.isInteger(movieYear) || movieYear < 1900 || movieYear > 2100) {
+			return fail(400, {
+				movieTargetMessage: 'Movie year must be a whole number between 1900 and 2100.'
+			});
+		}
+
+		const movieCodecPolicy = String(formData.get('movieCodecPolicy') ?? '').trim();
+		if (movieCodecPolicy !== 'prefer' && movieCodecPolicy !== 'require') {
+			return fail(400, {
+				movieTargetMessage: 'Codec policy must be "prefer" or "require".'
+			});
+		}
+
+		const onboardingPath = String(formData.get('onboardingPath') ?? 'movie').trim();
+		const movieResolutions = formData.getAll('movieResolution').map(String);
+		const movieCodecs = formData.getAll('movieCodec').map(String);
+		const existingYears = parseExistingYears(formData.get('existingMovieYearsJson'));
+		const existingResolutions = parseExistingShows(formData.get('existingMovieResolutionsJson'));
+		const existingCodecs = parseExistingShows(formData.get('existingMovieCodecsJson'));
+		const existingCodecPolicy = String(formData.get('existingMovieCodecPolicy') ?? 'prefer').trim();
+		const nextYears = [...new Set([...existingYears, movieYear])].sort((a, b) => a - b);
+		const hasExistingMoviePolicy = existingResolutions.length > 0 || existingCodecs.length > 0;
+		const payload: MoviePolicy = {
+			years: nextYears,
+			resolutions: hasExistingMoviePolicy ? existingResolutions : movieResolutions,
+			codecs: hasExistingMoviePolicy ? existingCodecs : movieCodecs,
+			codecPolicy:
+				hasExistingMoviePolicy &&
+				(existingCodecPolicy === 'prefer' || existingCodecPolicy === 'require')
+					? existingCodecPolicy
+					: movieCodecPolicy
+		};
+
+		try {
+			const response = await apiRequest('/api/config/movies', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify(payload)
+			});
+
+			if (!response.ok) {
+				let movieTargetMessage = `Save failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) movieTargetMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, {
+					movieTargetMessage,
+					movieTargetEtag: response.headers.get('etag')
+				});
+			}
+
+			return {
+				movieTargetSuccess: true,
+				movieTargetMessage: 'Movie target saved.',
+				movieTargetEtag: response.headers.get('etag'),
+				onboardingPath
+			};
+		} catch (error) {
+			console.error('[onboarding] saveMovieTarget failed:', error);
+			return fail(500, { movieTargetMessage: 'Could not save movie target.' });
 		}
 	}
 };

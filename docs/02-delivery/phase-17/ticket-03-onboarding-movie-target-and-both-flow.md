@@ -55,3 +55,5 @@ An operator can complete the movie onboarding path, and the `Both` branch can gu
 ## Rationale
 
 Movie onboarding is separated from TV onboarding because the backend write semantics are different: movie writes replace the full movies section, so preservation behavior must be tested and reviewed on its own.
+
+The onboarding route keeps the chosen path (`tv`, `movie`, or `both`) in route-local form state across post-backs instead of introducing a second onboarding state machine. That keeps the `Both` flow explicit while still letting movie-only partial setups land directly on the movie step and preserving existing movie policy whenever it is already populated.
