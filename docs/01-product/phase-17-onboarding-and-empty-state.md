@@ -44,6 +44,16 @@ No new endpoints. The wizard uses the existing write endpoints from Phase 14:
 
 **Wizard completion condition**: at least 1 feed AND (at least 1 TV show OR at least 1 movie year) must be saved before the "Done" step is reached. The wizard does not enforce this as a hard block — it can be skipped — but it won't show the Done screen until the minimum is met.
 
+**Onboarding decisions**
+
+- Auto-trigger onboarding only for the strict initial-empty case: no feeds AND no TV shows AND no movie years. Once any of those exist, the product does not auto-redirect into onboarding again.
+- If the operator dismisses onboarding, that dismissal suppresses future auto-redirects until they explicitly choose to resume onboarding from the main UI.
+- The wizard saves incrementally at each successful step rather than batching everything into a final submit. In practice: adding the first feed saves at the feed step; adding targets saves at the target step; the Done step is summary-only.
+- When onboarding adds a TV show, it appends to the existing `tv.shows` list and preserves any shows already configured. Onboarding must not replace the show list with only the newly entered show.
+- When onboarding adds a movie target, it preserves any existing movie policy already on disk. The wizard may seed movie resolutions, codecs, and codec policy only when the current movie policy is effectively empty; it does not overwrite an existing movie policy as part of resumed onboarding.
+- If config writes are disabled in the web app, onboarding does not launch. Show a blocked state instead, directing the operator to enable config writes before using the wizard.
+- After the initial-empty auto-trigger case, partially configured installs should surface a prominent "Resume onboarding" CTA rather than forcing the user back into the wizard.
+
 **Per-section empty states** (shown in the main UI when a section has no data)
 
 | Section                     | Empty condition             | Empty state message                                       | CTA                                            |
