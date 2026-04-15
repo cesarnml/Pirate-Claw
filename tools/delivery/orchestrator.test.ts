@@ -3075,7 +3075,7 @@ describe('delivery orchestrator', () => {
       expect(sleeps).toEqual([]);
       expect(fetchCount).toBe(1);
       expect(nextState.tickets[0]?.status).toBe('done');
-      expect(nextState.tickets[0]?.reviewOutcome).toBe('patched');
+      expect(nextState.tickets[0]?.reviewOutcome).toBe('needs_patch');
       expect(nextState.tickets[0]?.reviewFetchArtifactPath).toBe(
         '.agents/delivery/phase-03/reviews/P3.01-ai-review.fetch.json',
       );

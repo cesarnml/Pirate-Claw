@@ -1808,6 +1808,13 @@ export async function recordTicketReview(
         outcome === 'operator_input_needed'
           ? 'operator_input_needed'
           : 'reviewed',
+      reviewFetchArtifactPath: fetchArtifactPath
+        ? dependencies.relativeToRepo(cwd, fetchArtifactPath)
+        : ticket.reviewFetchArtifactPath,
+      reviewTriageArtifactPath: dependencies.relativeToRepo(
+        cwd,
+        triageArtifactPath,
+      ),
       reviewOutcome: accumulateTicketReviewOutcome(
         ticket.reviewOutcome,
         outcome,
