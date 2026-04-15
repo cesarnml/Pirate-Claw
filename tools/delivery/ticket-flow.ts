@@ -113,23 +113,15 @@ export function buildTicketHandoff(
       lines.push(`- Review outcome: \`${previous.reviewOutcome}\``);
     }
 
-    if (previous.reviewNote) {
-      lines.push(`- Review note: ${previous.reviewNote}`);
-    }
-
-    if (previous.reviewVendors && previous.reviewVendors.length > 0) {
+    if (previous.reviewFetchArtifactPath ?? previous.reviewArtifactPath) {
       lines.push(
-        `- Review vendors: ${previous.reviewVendors.map((vendor) => `\`${vendor}\``).join(', ')}`,
+        `- Review fetch artifact: \`${previous.reviewFetchArtifactPath ?? previous.reviewArtifactPath}\``,
       );
     }
 
-    if (previous.reviewArtifactPath) {
-      lines.push(`- Review artifact: \`${previous.reviewArtifactPath}\``);
-    }
-
-    if (previous.reviewArtifactJsonPath) {
+    if (previous.reviewTriageArtifactPath ?? previous.reviewArtifactJsonPath) {
       lines.push(
-        `- Review artifact (json): \`${previous.reviewArtifactJsonPath}\``,
+        `- Review triage artifact: \`${previous.reviewTriageArtifactPath ?? previous.reviewArtifactJsonPath}\``,
       );
     }
   }

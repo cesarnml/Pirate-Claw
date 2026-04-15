@@ -15,7 +15,7 @@ This skill owns: fetching review data with `gh`, detection logic, normalizing co
 
 Contract:
 
-- fetcher outputs: `detected`, `agents`, `artifact_text`, `reviewed_head_sha`, `vendors`, `comments`
+- fetcher outputs: `detected`, `agents`, `reviewed_head_sha`, `vendors`, `comments`
 - triager outputs: `outcome` (`clean|needs_patch|patched`), `note`, `action_summary`, `non_action_summary`, `vendors`
 
 When triager returns `needs_patch`, follow-up must conclude as `patched` or `operator_input_needed` — not stop permanently at `needs_patch`.
@@ -24,7 +24,7 @@ When triager returns `needs_patch`, follow-up must conclude as `patched` or `ope
 
 1. Resolve PR number with `gh pr view` if not provided.
 2. Fetch with `.agents/skills/ai-code-review/scripts/fetch_ai_pr_comments.sh <pr-number>`.
-3. If orchestrator already saved `review.json`, use that as the source of truth for vendor attribution and comment shape.
+3. If orchestrator already saved `review.fetch.json`, use that as the source of truth for vendor attribution and comment shape.
 4. Detection policy: supported vendor identities, explicit vendor wording in comment body, check-run annotations. Human drive-by comments do not count. Preserve head SHA, inline resolution/outdated state, and native thread identity.
 5. Return fetcher contract when inside `poll-review`: `detected=false` → keep polling or auto-clean; `detected=true` → orchestrator inspects agent state and decides.
 6. Triage each detected comment: actionable, stale, wrong, over-scoped, or out of scope.

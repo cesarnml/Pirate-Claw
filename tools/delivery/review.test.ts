@@ -13,7 +13,6 @@ import type { TicketReviewDependencies } from './review';
 function emptyUndetected(): AiReviewFetcherResult {
   return {
     agents: [],
-    artifactText: '',
     comments: [],
     detected: false,
     vendors: [],
@@ -30,7 +29,6 @@ function inFlight(): AiReviewFetcherResult {
         note: undefined,
       },
     ],
-    artifactText: '',
     comments: [],
     detected: true,
     vendors: [],
@@ -47,7 +45,6 @@ function allTerminal(): AiReviewFetcherResult {
         note: undefined,
       },
     ],
-    artifactText: '',
     comments: [],
     detected: true,
     vendors: [],
@@ -74,7 +71,9 @@ describe('pollForAiReview', () => {
     let virtualNow = 0;
     let pollCalls = 0;
     const profile: ReviewPollingProfile = {
-      ...DEFAULT_REVIEW_POLLING_PROFILE,
+      intervalMinutes: 2,
+      maxWaitMinutes: 10,
+      extendByOneInterval: true,
     };
 
     const result = await pollForAiReview(
@@ -113,7 +112,9 @@ describe('pollForAiReview', () => {
     let virtualNow = 0;
     let pollCalls = 0;
     const profile: ReviewPollingProfile = {
-      ...DEFAULT_REVIEW_POLLING_PROFILE,
+      intervalMinutes: 2,
+      maxWaitMinutes: 10,
+      extendByOneInterval: true,
     };
 
     const result = await pollForAiReview(
@@ -148,7 +149,8 @@ describe('pollForAiReview', () => {
     let virtualNow = 0;
     let pollCalls = 0;
     const profile: ReviewPollingProfile = {
-      ...DEFAULT_REVIEW_POLLING_PROFILE,
+      intervalMinutes: 2,
+      maxWaitMinutes: 10,
       extendByOneInterval: false,
     };
 

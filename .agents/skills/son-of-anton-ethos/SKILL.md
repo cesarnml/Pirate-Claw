@@ -107,7 +107,7 @@ Applies to both standalone PRs (`ai-review`) and ticket stacks (`poll-review`). 
 - **Qodo** posts a single actionable PR comment with all findings — treat it as actionable when present.
 - **SonarQube** posts a Quality Gate summary PR comment; check-run annotations are secondary signal.
 
-For ticket stacks, the orchestrator's `reviewComments` in state is the source of truth for triage. Do not re-read the full `.txt` artifact unless you need prose context not in the condensed findings block.
+For ticket stacks, the orchestrator persists vendor evidence in `reviews/<ticket>.fetch.json` and repo-local judgment in `reviews/<ticket>.triage.json`. `state.json` is only an index into those artifacts, not the source of truth for comment payloads.
 
 ### Outcome Recording
 

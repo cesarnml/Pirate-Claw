@@ -19,7 +19,7 @@ The orchestrator owns the mechanics:
 - branch and worktree flow
 - PR open/update behavior
 - AI review polling
-- artifact and note persistence
+- review-artifact and note persistence
 - notification hooks
 
 The repo-local `ai-code-review` skill owns the judgment:
@@ -30,6 +30,12 @@ The repo-local `ai-code-review` skill owns the judgment:
 
 The boundary is implemented as repo-local hooks under `.agents/skills/ai-code-review/`: a fetcher that normalizes supported external AI review into structured data, and a triager hook that turns that data into a final outcome plus concise rationale.
 
+The persisted review contract is split on purpose:
+
+- `reviews/<ticket>.fetch.json` stores normalized vendor evidence
+- `reviews/<ticket>.triage.json` stores repo-local judgment and triage side effects
+- `state.json` only indexes those artifacts plus compact review status fields
+
 Supported external review agents are currently:
 
 - `coderabbit`
@@ -39,9 +45,9 @@ Supported external review agents are currently:
 
 Other AI-review vendors are out of scope unless repo policy explicitly adds them.
 
-SonarQube support uses GitHub check annotations instead of native PR review comments. The standalone `ai-review` flow normalizes only failed-check annotations into the review artifact so triage stays focused on higher-signal static-analysis findings such as complexity/code-smell failures instead of importing the full warning stream.
+SonarQube support uses GitHub check annotations instead of native PR review comments. The standalone `ai-review` flow normalizes only failed-check annotations into the fetch artifact so triage stays focused on higher-signal static-analysis findings such as complexity/code-smell failures instead of importing the full warning stream.
 
-The normalized artifact now carries reviewed-commit provenance and native GitHub inline-thread identity when available. That lets the PR body distinguish current-head review from stale-history review, and it lets patched inline findings be resolved in the GitHub PR UI without vendor-specific logic.
+The normalized fetch artifact carries reviewed-commit provenance and native GitHub inline-thread identity when available. The paired triage artifact records the repo judgment and any follow-through such as thread resolution or PR-body refresh attempts. Together they let the PR body distinguish current-head review from stale-history review and let patched inline findings be resolved in the GitHub PR UI without vendor-specific logic.
 
 That boundary matters. AI is used aggressively, but not blindly.
 

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 import type {
@@ -16,6 +16,17 @@ import type {
   StandalonePullRequest,
   TicketState,
 } from './orchestrator';
+
+import {
+  buildReviewArtifactPaths,
+  readFetchArtifact,
+  readTriageArtifact,
+  updateTriageArtifact,
+  writeFetchArtifact,
+  writeTriageArtifact,
+  type AiReviewFetchArtifact,
+  type AiReviewTriageArtifact,
+} from './review-artifacts';
 
 import {
   type ReviewPollingProfile,
@@ -118,7 +129,7 @@ export function parseAiReviewFetcherOutput(
 
   if (!isRecord(parsed)) {
     throw new Error(
-      'AI review fetcher output must be a JSON object with `agents`, `detected`, `artifact_text`, `vendors`, and `comments` fields.',
+      'AI review fetcher output must be a JSON object with `agents`, `detected`, `vendors`, and `comments` fields.',
     );
   }
 
@@ -137,13 +148,12 @@ export function parseAiReviewFetcherOutput(
           parseOptionalString(entry.note) !== undefined),
     ) ||
     typeof parsed.detected !== 'boolean' ||
-    typeof parsed.artifact_text !== 'string' ||
     !Array.isArray(parsed.vendors) ||
     !parsed.vendors.every((value) => typeof value === 'string') ||
     !Array.isArray(parsed.comments)
   ) {
     throw new Error(
-      'AI review fetcher output must be JSON with `agents`, boolean `detected`, string `artifact_text`, string[] `vendors`, and array `comments` fields.',
+      'AI review fetcher output must be JSON with `agents`, boolean `detected`, string[] `vendors`, and array `comments` fields.',
     );
   }
 
@@ -209,7 +219,6 @@ export function parseAiReviewFetcherOutput(
       findingsCount: parseOptionalNumber(entry.findingsCount),
       note: parseOptionalString(entry.note),
     })) satisfies AiReviewAgentResult[],
-    artifactText: parsed.artifact_text,
     comments,
     detected: parsed.detected,
     reviewedHeadSha: parseOptionalString(parsed.reviewed_head_sha),
@@ -406,23 +415,20 @@ export type PollForAiReviewResult =
     };
 
 type DetectedReviewProcessingResult = {
-  actionSummary?: string;
-  artifactJsonPath: string;
-  artifactTextPath: string;
-  comments: AiReviewComment[];
+  fetchArtifactPath: string;
   incompleteAgents?: string[];
-  nonActionSummary?: string;
   note: string;
   outcome: ReviewResult;
   reviewedHeadSha?: string;
-  threadResolutions?: AiReviewThreadResolution[];
-  vendors: string[];
+  recordedAt: string;
+  triageArtifactPath: string;
 };
 
 type CleanReviewProcessingResult = {
   incompleteAgents?: string[];
   note: string;
   outcome: ReviewResult;
+  recordedAt: string;
 };
 
 function runAiReviewFetcher(
@@ -503,18 +509,22 @@ function formatNoAiReviewFeedbackNote(maxWaitMinutes: number): string {
 }
 
 function mergeReviewOutcome(
-  previous: ReviewOutcome | undefined,
-  next: ReviewOutcome | undefined,
+  previous: ReviewResult | undefined,
+  next: ReviewResult | undefined,
 ): ReviewOutcome | undefined {
   if (previous === 'patched' || next === 'patched') {
     return 'patched';
   }
 
-  return previous ?? next;
+  if (previous === 'clean' || next === 'clean') {
+    return 'clean';
+  }
+
+  return undefined;
 }
 
 function accumulateReviewOutcome(
-  previous: ReviewOutcome | undefined,
+  previous: ReviewResult | undefined,
   next: ReviewResult,
 ): ReviewResult | undefined {
   if (next === 'clean' || next === 'patched') {
@@ -525,16 +535,10 @@ function accumulateReviewOutcome(
 }
 
 function accumulateTicketReviewOutcome(
-  previous: ReviewOutcome | undefined,
+  previous: ReviewResult | undefined,
   next: ReviewResult,
-): ReviewOutcome | undefined {
-  const accumulated = accumulateReviewOutcome(previous, next);
-
-  if (accumulated === 'clean' || accumulated === 'patched') {
-    return accumulated;
-  }
-
-  return previous;
+): ReviewResult | undefined {
+  return accumulateReviewOutcome(previous, next);
 }
 
 function mapStandaloneReviewOutcome(outcome: ReviewResult): ReviewResult {
@@ -554,7 +558,7 @@ function formatCumulativePatchedReviewNote(note: string | undefined): string {
 }
 
 function formatAccumulatedReviewNote(
-  previous: ReviewOutcome | undefined,
+  previous: ReviewResult | undefined,
   next: ReviewResult,
   note: string | undefined,
 ): string | undefined {
@@ -582,7 +586,7 @@ function defaultFinalReviewNote(
 }
 
 function formatNoFeedbackReviewNote(
-  previous: ReviewOutcome | undefined,
+  previous: ReviewResult | undefined,
   maxWaitMinutes: number,
 ): string {
   return (
@@ -598,22 +602,23 @@ async function readStandaloneAiReviewOutcome(
   cwd: string,
   prNumber: number,
 ): Promise<ReviewOutcome | undefined> {
-  const notePath = resolve(
+  const triageArtifactPath = resolve(
     cwd,
     '.agents/ai-review',
     `pr-${prNumber}`,
-    'note.md',
+    'review.triage.json',
   );
 
-  if (!existsSync(notePath)) {
+  if (!existsSync(triageArtifactPath)) {
     return undefined;
   }
 
-  const note = await readFile(notePath, 'utf8');
-  const match = note.match(/^- Outcome: `([^`]+)`$/m);
-
-  if (match?.[1] === 'clean' || match?.[1] === 'patched') {
-    return match[1];
+  const triageArtifact = readTriageArtifact(triageArtifactPath);
+  if (
+    triageArtifact?.outcome === 'clean' ||
+    triageArtifact?.outcome === 'patched'
+  ) {
+    return triageArtifact.outcome;
   }
 
   return undefined;
@@ -818,80 +823,27 @@ export async function pollForAiReview(
 async function writeAiReviewArtifacts(
   artifactStemPath: string,
   result: AiReviewFetcherResult,
-): Promise<{ artifactJsonPath: string; artifactTextPath: string }> {
-  const artifactJsonPath = `${artifactStemPath}.json`;
-  const artifactTextPath = `${artifactStemPath}.txt`;
+  fetchedAt: string,
+): Promise<{ fetchArtifactPath: string; triageArtifactPath: string }> {
+  const { fetchArtifactPath, triageArtifactPath } =
+    buildReviewArtifactPaths(artifactStemPath);
 
-  await mkdir(dirname(artifactJsonPath), { recursive: true });
-  await writeFile(
-    artifactJsonPath,
-    JSON.stringify(
-      {
-        artifact_text: result.artifactText,
-        agents: result.agents.map((agent) => ({
-          agent: agent.agent,
-          state: agent.state,
-          findingsCount: agent.findingsCount ?? null,
-          note: agent.note ?? null,
-        })),
-        detected: result.detected,
-        reviewed_head_sha: result.reviewedHeadSha ?? null,
-        vendors: result.vendors,
-        comments: result.comments.map((comment) => ({
-          author_login: comment.authorLogin,
-          author_type: comment.authorType,
-          body: comment.body,
-          channel: comment.channel,
-          database_id: comment.databaseId ?? null,
-          is_outdated: comment.isOutdated ?? null,
-          is_resolved: comment.isResolved ?? null,
-          kind: comment.kind,
-          line: comment.line ?? null,
-          path: comment.path ?? null,
-          thread_id: comment.threadId ?? null,
-          thread_viewer_can_resolve: comment.threadViewerCanResolve ?? null,
-          updated_at: comment.updatedAt ?? null,
-          url: comment.url ?? null,
-          vendor: comment.vendor,
-        })),
-        thread_resolutions: [],
-      },
-      null,
-      2,
-    ) + '\n',
-    'utf8',
-  );
-  await writeFile(artifactTextPath, result.artifactText, 'utf8');
+  const fetchArtifact: AiReviewFetchArtifact = {
+    schemaVersion: 1,
+    fetchedAt,
+    reviewedHeadSha: result.reviewedHeadSha,
+    detected: result.detected,
+    vendors: result.vendors,
+    agents: result.agents,
+    comments: result.comments,
+  };
+
+  await writeFetchArtifact(fetchArtifactPath, fetchArtifact);
 
   return {
-    artifactJsonPath,
-    artifactTextPath,
+    fetchArtifactPath,
+    triageArtifactPath,
   };
-}
-
-async function writeAiReviewThreadResolutions(
-  artifactJsonPath: string | undefined,
-  resolutions: AiReviewThreadResolution[],
-): Promise<void> {
-  if (!artifactJsonPath) {
-    return;
-  }
-
-  const existing = JSON.parse(
-    await readFile(artifactJsonPath, 'utf8'),
-  ) as Record<string, unknown>;
-  existing.thread_resolutions = resolutions.map((resolution) => ({
-    message: resolution.message ?? null,
-    status: resolution.status,
-    thread_id: resolution.threadId,
-    url: resolution.url ?? null,
-    vendor: resolution.vendor,
-  }));
-  await writeFile(
-    artifactJsonPath,
-    JSON.stringify(existing, null, 2) + '\n',
-    'utf8',
-  );
 }
 
 async function processDetectedAiReview(options: {
@@ -901,7 +853,7 @@ async function processDetectedAiReview(options: {
   incompleteAgents?: string[];
   mapOutcome?: (outcome: ReviewResult) => ReviewResult;
   mode: 'standalone' | 'ticketed';
-  previousOutcome: ReviewOutcome | undefined;
+  previousOutcome: ReviewResult | undefined;
   resolveThreads: (
     worktreePath: string,
     comments: AiReviewComment[],
@@ -912,13 +864,15 @@ async function processDetectedAiReview(options: {
   ) => AiReviewTriagerResult;
   worktreePath: string;
 }): Promise<DetectedReviewProcessingResult> {
+  const fetchedAt = new Date().toISOString();
   const artifacts = await writeAiReviewArtifacts(
     options.artifactStemPath,
     options.detectedReview,
+    fetchedAt,
   );
   const triageResult = options.triager(
     options.worktreePath,
-    artifacts.artifactJsonPath,
+    artifacts.fetchArtifactPath,
   );
   const latestOutcome =
     options.mapOutcome?.(triageResult.outcome) ?? triageResult.outcome;
@@ -931,20 +885,14 @@ async function processDetectedAiReview(options: {
         options.detectedReview.comments,
       )
     : [];
-  if (threadResolutions.length > 0) {
-    await writeAiReviewThreadResolutions(
-      artifacts.artifactJsonPath,
-      threadResolutions,
-    );
-  }
-
-  return {
-    actionSummary: triageResult.actionSummary,
-    artifactJsonPath: artifacts.artifactJsonPath,
-    artifactTextPath: artifacts.artifactTextPath,
-    comments: options.detectedReview.comments,
-    incompleteAgents: options.incompleteAgents,
-    nonActionSummary: triageResult.nonActionSummary,
+  const recordedAt = new Date().toISOString();
+  const triageArtifact: AiReviewTriageArtifact = {
+    schemaVersion: 1,
+    recordedAt,
+    reviewedHeadSha: options.detectedReview.reviewedHeadSha,
+    outcome:
+      accumulateReviewOutcome(options.previousOutcome, latestOutcome) ??
+      latestOutcome,
     note: options.incompleteAgents?.length
       ? formatPartialAiReviewTimeoutNote(
           options.effectiveMaxWaitMinutes,
@@ -955,16 +903,22 @@ async function processDetectedAiReview(options: {
           latestOutcome,
           triageResult.note,
         ) ?? triageResult.note),
-    outcome:
-      accumulateReviewOutcome(options.previousOutcome, latestOutcome) ??
-      latestOutcome,
-    reviewedHeadSha: options.detectedReview.reviewedHeadSha,
+    actionSummary: triageResult.actionSummary,
+    nonActionSummary: triageResult.nonActionSummary,
+    incompleteAgents: options.incompleteAgents,
     threadResolutions:
       threadResolutions.length > 0 ? threadResolutions : undefined,
-    vendors:
-      triageResult.vendors.length > 0
-        ? triageResult.vendors
-        : options.detectedReview.vendors,
+  };
+  await writeTriageArtifact(artifacts.triageArtifactPath, triageArtifact);
+
+  return {
+    fetchArtifactPath: artifacts.fetchArtifactPath,
+    incompleteAgents: options.incompleteAgents,
+    note: triageArtifact.note,
+    outcome: triageArtifact.outcome,
+    reviewedHeadSha: options.detectedReview.reviewedHeadSha,
+    recordedAt,
+    triageArtifactPath: artifacts.triageArtifactPath,
   };
 }
 
@@ -972,8 +926,9 @@ function processCleanAiReview(options: {
   effectiveMaxWaitMinutes: number;
   incompleteAgents?: string[];
   maxWaitMinutes: number;
-  previousOutcome: ReviewOutcome | undefined;
+  previousOutcome: ReviewResult | undefined;
 }): CleanReviewProcessingResult {
+  const recordedAt = new Date().toISOString();
   return {
     incompleteAgents: options.incompleteAgents,
     note: options.incompleteAgents?.length
@@ -987,10 +942,34 @@ function processCleanAiReview(options: {
         ),
     outcome:
       accumulateReviewOutcome(options.previousOutcome, 'clean') ?? 'clean',
+    recordedAt,
   };
 }
 
+async function writeCleanTriageArtifact(
+  artifactStemPath: string,
+  input: {
+    incompleteAgents?: string[];
+    note: string;
+    outcome: ReviewResult;
+    recordedAt: string;
+    reviewedHeadSha?: string;
+  },
+): Promise<string> {
+  const { triageArtifactPath } = buildReviewArtifactPaths(artifactStemPath);
+  await writeTriageArtifact(triageArtifactPath, {
+    schemaVersion: 1,
+    recordedAt: input.recordedAt,
+    reviewedHeadSha: input.reviewedHeadSha,
+    outcome: input.outcome,
+    note: input.note,
+    incompleteAgents: input.incompleteAgents,
+  });
+  return triageArtifactPath;
+}
+
 async function applyTicketReviewUpdate(
+  cwd: string,
   state: DeliveryState,
   ticketId: string,
   updateTicket: (ticket: TicketState) => TicketState,
@@ -1024,13 +1003,57 @@ async function applyTicketReviewUpdate(
     tickets: finalizedTickets,
   };
   const persistedTarget = nextState.tickets[updatedIndex]!;
+  const triageArtifactPath = persistedTarget.reviewTriageArtifactPath
+    ? resolve(cwd, persistedTarget.reviewTriageArtifactPath)
+    : undefined;
 
   try {
     await dependencies.updatePullRequestBody?.(nextState, persistedTarget);
+    if (triageArtifactPath) {
+      await updateTriageArtifact(triageArtifactPath, (current) => ({
+        ...current,
+        schemaVersion: 1,
+        recordedAt:
+          current?.recordedAt ??
+          persistedTarget.reviewRecordedAt ??
+          new Date().toISOString(),
+        outcome: current?.outcome ?? persistedTarget.reviewOutcome ?? 'clean',
+        note:
+          current?.note ??
+          'External AI review completed without prudent follow-up changes.',
+        reviewedHeadSha:
+          current?.reviewedHeadSha ?? persistedTarget.reviewHeadSha,
+        prBodyRefresh: {
+          attemptedAt: new Date().toISOString(),
+          status: 'updated',
+        },
+      }));
+    }
   } catch (error) {
     console.warn(
       `Review was recorded locally for ${persistedTarget.id}, but PR body update failed: ${formatError(error)}`,
     );
+    if (triageArtifactPath) {
+      await updateTriageArtifact(triageArtifactPath, (current) => ({
+        ...current,
+        schemaVersion: 1,
+        recordedAt:
+          current?.recordedAt ??
+          persistedTarget.reviewRecordedAt ??
+          new Date().toISOString(),
+        outcome: current?.outcome ?? persistedTarget.reviewOutcome ?? 'clean',
+        note:
+          current?.note ??
+          'External AI review completed without prudent follow-up changes.',
+        reviewedHeadSha:
+          current?.reviewedHeadSha ?? persistedTarget.reviewHeadSha,
+        prBodyRefresh: {
+          attemptedAt: new Date().toISOString(),
+          status: 'failed',
+          message: formatError(error),
+        },
+      }));
+    }
   }
 
   return nextState;
@@ -1048,12 +1071,46 @@ async function persistStandaloneAiReviewResult(
   const writeNote = dependencies.writeNote ?? writeStandaloneAiReviewNote;
 
   await writeNote(cwd, pullRequest.number, result);
+  const triageArtifactPath = result.triageArtifactPath
+    ? resolve(cwd, result.triageArtifactPath)
+    : undefined;
   try {
     await dependencies.updatePullRequestBody?.(cwd, pullRequest, result);
+    if (triageArtifactPath) {
+      await updateTriageArtifact(triageArtifactPath, (current) => ({
+        ...current,
+        schemaVersion: 1,
+        recordedAt:
+          current?.recordedAt ?? result.recordedAt ?? new Date().toISOString(),
+        outcome: current?.outcome ?? result.outcome,
+        note: current?.note ?? result.note,
+        reviewedHeadSha: current?.reviewedHeadSha ?? result.reviewedHeadSha,
+        prBodyRefresh: {
+          attemptedAt: new Date().toISOString(),
+          status: 'updated',
+        },
+      }));
+    }
   } catch (error) {
     console.warn(
       `Standalone AI review was recorded locally for PR #${pullRequest.number}, but PR body update failed: ${formatError(error)}`,
     );
+    if (triageArtifactPath) {
+      await updateTriageArtifact(triageArtifactPath, (current) => ({
+        ...current,
+        schemaVersion: 1,
+        recordedAt:
+          current?.recordedAt ?? result.recordedAt ?? new Date().toISOString(),
+        outcome: current?.outcome ?? result.outcome,
+        note: current?.note ?? result.note,
+        reviewedHeadSha: current?.reviewedHeadSha ?? result.reviewedHeadSha,
+        prBodyRefresh: {
+          attemptedAt: new Date().toISOString(),
+          status: 'failed',
+          message: formatError(error),
+        },
+      }));
+    }
   }
 
   return result;
@@ -1152,33 +1209,27 @@ export async function runTicketReviewLifecycle(
       const nextStatus =
         processedReview.outcome === 'needs_patch' ? 'needs_patch' : 'reviewed';
       return applyTicketReviewUpdate(
+        cwd,
         state,
         target.id,
         (ticket) => ({
           ...ticket,
           prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
           status: nextStatus,
-          reviewActionSummary: processedReview.actionSummary,
-          reviewComments: processedReview.comments,
-          reviewArtifactJsonPath: dependencies.relativeToRepo(
+          reviewFetchArtifactPath: dependencies.relativeToRepo(
             cwd,
-            processedReview.artifactJsonPath,
+            processedReview.fetchArtifactPath,
           ),
-          reviewArtifactPath: dependencies.relativeToRepo(
+          reviewTriageArtifactPath: dependencies.relativeToRepo(
             cwd,
-            processedReview.artifactTextPath,
+            processedReview.triageArtifactPath,
           ),
-          reviewFetchedAt: new Date(now()).toISOString(),
           reviewHeadSha: processedReview.reviewedHeadSha,
-          reviewNonActionSummary: processedReview.nonActionSummary,
+          reviewRecordedAt: processedReview.recordedAt,
           reviewOutcome: accumulateTicketReviewOutcome(
             ticket.reviewOutcome,
             processedReview.outcome,
           ),
-          reviewNote: processedReview.note,
-          reviewIncompleteAgents: processedReview.incompleteAgents,
-          reviewThreadResolutions: processedReview.threadResolutions,
-          reviewVendors: processedReview.vendors,
         }),
         dependencies,
       );
@@ -1193,27 +1244,35 @@ export async function runTicketReviewLifecycle(
         maxWaitMinutes: profile.maxWaitMinutes,
         previousOutcome: target.reviewOutcome,
       });
+      const triageArtifactPath = await writeCleanTriageArtifact(
+        resolve(cwd, state.reviewsDirPath, `${target.id}-ai-review`),
+        {
+          incompleteAgents: processedReview.incompleteAgents,
+          note: processedReview.note,
+          outcome: processedReview.outcome,
+          recordedAt: processedReview.recordedAt,
+          reviewedHeadSha: target.reviewHeadSha,
+        },
+      );
       return applyTicketReviewUpdate(
+        cwd,
         state,
         target.id,
         (ticket) => ({
           ...ticket,
           prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
           status: 'reviewed',
-          reviewActionSummary: undefined,
-          reviewComments: undefined,
-          reviewArtifactJsonPath: undefined,
-          reviewArtifactPath: undefined,
-          reviewHeadSha: undefined,
-          reviewNonActionSummary: undefined,
+          reviewFetchArtifactPath: ticket.reviewFetchArtifactPath,
+          reviewTriageArtifactPath: dependencies.relativeToRepo(
+            cwd,
+            triageArtifactPath,
+          ),
+          reviewHeadSha: ticket.reviewHeadSha,
+          reviewRecordedAt: processedReview.recordedAt,
           reviewOutcome: accumulateTicketReviewOutcome(
             ticket.reviewOutcome,
             processedReview.outcome,
           ),
-          reviewNote: processedReview.note,
-          reviewIncompleteAgents: processedReview.incompleteAgents,
-          reviewThreadResolutions: undefined,
-          reviewVendors: [],
         }),
         dependencies,
       );
@@ -1288,33 +1347,27 @@ export async function runReconcileLateTicketReview(
         worktreePath: target.worktreePath,
       });
       return applyTicketReviewUpdate(
+        cwd,
         state,
         target.id,
         (ticket) => ({
           ...ticket,
           prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
           status: 'done',
-          reviewActionSummary: processedReview.actionSummary,
-          reviewComments: processedReview.comments,
-          reviewArtifactJsonPath: dependencies.relativeToRepo(
+          reviewFetchArtifactPath: dependencies.relativeToRepo(
             cwd,
-            processedReview.artifactJsonPath,
+            processedReview.fetchArtifactPath,
           ),
-          reviewArtifactPath: dependencies.relativeToRepo(
+          reviewTriageArtifactPath: dependencies.relativeToRepo(
             cwd,
-            processedReview.artifactTextPath,
+            processedReview.triageArtifactPath,
           ),
-          reviewFetchedAt: new Date(now()).toISOString(),
           reviewHeadSha: processedReview.reviewedHeadSha,
-          reviewNonActionSummary: processedReview.nonActionSummary,
+          reviewRecordedAt: processedReview.recordedAt,
           reviewOutcome: accumulateTicketReviewOutcome(
             ticket.reviewOutcome,
             processedReview.outcome,
           ),
-          reviewNote: processedReview.note,
-          reviewIncompleteAgents: processedReview.incompleteAgents,
-          reviewThreadResolutions: processedReview.threadResolutions,
-          reviewVendors: processedReview.vendors,
         }),
         dependencies,
       );
@@ -1329,19 +1382,34 @@ export async function runReconcileLateTicketReview(
         maxWaitMinutes: profile.maxWaitMinutes,
         previousOutcome: target.reviewOutcome,
       });
+      const triageArtifactPath = await writeCleanTriageArtifact(
+        resolve(cwd, state.reviewsDirPath, `${target.id}-ai-review`),
+        {
+          incompleteAgents: processedReview.incompleteAgents,
+          note: processedReview.note,
+          outcome: processedReview.outcome,
+          recordedAt: processedReview.recordedAt,
+          reviewedHeadSha: target.reviewHeadSha,
+        },
+      );
       return applyTicketReviewUpdate(
+        cwd,
         state,
         target.id,
         (ticket) => ({
           ...ticket,
           prOpenedAt: ticket.prOpenedAt ?? pollWindowStartedAtIso,
           status: 'done',
+          reviewFetchArtifactPath: ticket.reviewFetchArtifactPath,
+          reviewTriageArtifactPath: dependencies.relativeToRepo(
+            cwd,
+            triageArtifactPath,
+          ),
           reviewOutcome: accumulateTicketReviewOutcome(
             ticket.reviewOutcome,
             processedReview.outcome,
           ),
-          reviewNote: processedReview.note,
-          reviewIncompleteAgents: processedReview.incompleteAgents,
+          reviewRecordedAt: processedReview.recordedAt,
         }),
         dependencies,
       );
@@ -1402,26 +1470,30 @@ export async function runStandaloneAiReviewLifecycle(
         triager,
         worktreePath: cwd,
       });
+      const triageArtifact = readTriageArtifact(
+        processedReview.triageArtifactPath,
+      );
       const standaloneResult: StandaloneAiReviewResult = {
-        actionSummary: processedReview.actionSummary,
-        artifactJsonPath: dependencies.relativeToRepo(
+        actionSummary: triageArtifact?.actionSummary,
+        comments: reviewPollResult.result.comments,
+        fetchArtifactPath: dependencies.relativeToRepo(
           cwd,
-          processedReview.artifactJsonPath,
-        ),
-        artifactTextPath: dependencies.relativeToRepo(
-          cwd,
-          processedReview.artifactTextPath,
+          processedReview.fetchArtifactPath,
         ),
         incompleteAgents: processedReview.incompleteAgents,
+        nonActionSummary: triageArtifact?.nonActionSummary,
+        triageArtifactPath: dependencies.relativeToRepo(
+          cwd,
+          processedReview.triageArtifactPath,
+        ),
         note: processedReview.note,
-        comments: processedReview.comments,
-        nonActionSummary: processedReview.nonActionSummary,
         outcome: processedReview.outcome,
         prNumber: pullRequest.number,
         prUrl: pullRequest.url,
         reviewedHeadSha: processedReview.reviewedHeadSha,
-        threadResolutions: processedReview.threadResolutions,
-        vendors: processedReview.vendors,
+        recordedAt: processedReview.recordedAt,
+        threadResolutions: triageArtifact?.threadResolutions,
+        vendors: reviewPollResult.result.vendors,
       };
       return persistStandaloneAiReviewResult(
         cwd,
@@ -1440,12 +1512,32 @@ export async function runStandaloneAiReviewLifecycle(
         maxWaitMinutes: profile.maxWaitMinutes,
         previousOutcome,
       });
+      const triageArtifactPath = await writeCleanTriageArtifact(
+        resolve(cwd, '.agents/ai-review', `pr-${pullRequest.number}`, 'review'),
+        {
+          incompleteAgents: processedReview.incompleteAgents,
+          note: processedReview.note,
+          outcome: processedReview.outcome,
+          recordedAt: processedReview.recordedAt,
+        },
+      );
+      const existingFetchArtifactPath = buildReviewArtifactPaths(
+        resolve(cwd, '.agents/ai-review', `pr-${pullRequest.number}`, 'review'),
+      ).fetchArtifactPath;
       const standaloneResult: StandaloneAiReviewResult = {
+        fetchArtifactPath: existsSync(existingFetchArtifactPath)
+          ? dependencies.relativeToRepo(cwd, existingFetchArtifactPath)
+          : undefined,
         incompleteAgents: processedReview.incompleteAgents,
         note: processedReview.note,
         outcome: processedReview.outcome,
         prNumber: pullRequest.number,
         prUrl: pullRequest.url,
+        recordedAt: processedReview.recordedAt,
+        triageArtifactPath: dependencies.relativeToRepo(
+          cwd,
+          triageArtifactPath,
+        ),
         vendors: [],
       };
       return persistStandaloneAiReviewResult(
@@ -1477,24 +1569,13 @@ export async function writeStandaloneAiReviewNote(
       '',
       `- PR: ${result.prUrl}`,
       `- Outcome: \`${result.outcome}\``,
-      result.vendors.length > 0
-        ? `- Vendors: ${result.vendors.map((vendor) => `\`${vendor}\``).join(', ')}`
-        : undefined,
-      result.actionSummary
-        ? `- Action summary: ${result.actionSummary}`
-        : undefined,
-      result.nonActionSummary
-        ? `- Non-action summary: ${result.nonActionSummary}`
-        : undefined,
-      result.incompleteAgents?.length
-        ? `- Incomplete agents at timeout: ${result.incompleteAgents.map((agent) => `\`${agent}\``).join(', ')}`
-        : undefined,
+      result.recordedAt ? `- Recorded at: ${result.recordedAt}` : undefined,
       `- Note: ${result.note}`,
-      result.artifactJsonPath
-        ? `- Artifact (json): \`${result.artifactJsonPath}\``
+      result.fetchArtifactPath
+        ? `- Fetch artifact: \`${result.fetchArtifactPath}\``
         : undefined,
-      result.artifactTextPath
-        ? `- Artifact (text): \`${result.artifactTextPath}\``
+      result.triageArtifactPath
+        ? `- Triage artifact: \`${result.triageArtifactPath}\``
         : undefined,
     ]
       .filter((line): line is string => line !== undefined)
@@ -1541,28 +1622,184 @@ export async function recordTicketReview(
     dependencies.resolveThreads ??
     ((worktreePath: string, comments: AiReviewComment[]) =>
       resolveNativeReviewThreads(worktreePath, comments, dependencies));
+  const artifactStemPath = resolve(
+    cwd,
+    state.reviewsDirPath,
+    `${ticketId}-ai-review`,
+  );
+  let fetchArtifactPath = target.reviewFetchArtifactPath
+    ? resolve(cwd, target.reviewFetchArtifactPath)
+    : undefined;
+  let triageArtifactPath = target.reviewTriageArtifactPath
+    ? resolve(cwd, target.reviewTriageArtifactPath)
+    : undefined;
+  let fetchArtifact = fetchArtifactPath
+    ? readFetchArtifact(fetchArtifactPath)
+    : undefined;
+  let existingTriageArtifact = triageArtifactPath
+    ? readTriageArtifact(triageArtifactPath)
+    : undefined;
+
+  if (
+    !fetchArtifact &&
+    target.reviewComments &&
+    target.reviewComments.length > 0
+  ) {
+    const paths = buildReviewArtifactPaths(artifactStemPath);
+    fetchArtifactPath = paths.fetchArtifactPath;
+    await writeFetchArtifact(fetchArtifactPath, {
+      schemaVersion: 1,
+      fetchedAt: new Date().toISOString(),
+      reviewedHeadSha: target.reviewHeadSha,
+      detected: true,
+      vendors:
+        target.reviewVendors && target.reviewVendors.length > 0
+          ? target.reviewVendors
+          : [
+              ...new Set(
+                target.reviewComments.map((comment) => comment.vendor),
+              ),
+            ],
+      agents: [],
+      comments: target.reviewComments,
+    });
+    fetchArtifact = readFetchArtifact(fetchArtifactPath);
+  }
+
+  if (!existingTriageArtifact) {
+    const paths = buildReviewArtifactPaths(artifactStemPath);
+    triageArtifactPath = paths.triageArtifactPath;
+    await writeTriageArtifact(triageArtifactPath, {
+      schemaVersion: 1,
+      recordedAt: new Date().toISOString(),
+      reviewedHeadSha: target.reviewHeadSha,
+      outcome:
+        target.reviewOutcome ??
+        (target.status === 'needs_patch'
+          ? 'needs_patch'
+          : target.status === 'operator_input_needed'
+            ? 'operator_input_needed'
+            : 'clean'),
+      note:
+        target.reviewNote ??
+        'External AI review completed without prudent follow-up changes.',
+      actionSummary: target.reviewActionSummary,
+      nonActionSummary: target.reviewNonActionSummary,
+      incompleteAgents: target.reviewIncompleteAgents,
+      threadResolutions: target.reviewThreadResolutions,
+    });
+    existingTriageArtifact = readTriageArtifact(triageArtifactPath);
+  }
+
+  if (!triageArtifactPath || !existingTriageArtifact) {
+    throw new Error(
+      `Ticket ${ticketId} has incomplete review state: triage artifact is missing.`,
+    );
+  }
+  if (
+    outcome === 'patched' &&
+    (!fetchArtifact || fetchArtifact.comments.length === 0) &&
+    (!existingTriageArtifact.threadResolutions ||
+      existingTriageArtifact.threadResolutions.length === 0)
+  ) {
+    throw new Error(
+      `Ticket ${ticketId} has incomplete review state: fetch artifact is missing or empty, so patched review threads cannot be reconciled safely.`,
+    );
+  }
   const reviewThreadResolutions =
     outcome === 'patched' &&
-    target.reviewThreadResolutions &&
-    target.reviewThreadResolutions.length > 0
-      ? target.reviewThreadResolutions
-      : outcome === 'patched' && target.reviewComments
-        ? resolveThreads(target.worktreePath, target.reviewComments)
-        : target.reviewThreadResolutions;
+    existingTriageArtifact?.threadResolutions &&
+    existingTriageArtifact.threadResolutions.length > 0
+      ? existingTriageArtifact.threadResolutions
+      : outcome === 'patched' && fetchArtifact?.comments
+        ? resolveThreads(target.worktreePath, fetchArtifact.comments)
+        : existingTriageArtifact?.threadResolutions;
   if (
     outcome === 'patched' &&
     reviewThreadResolutions &&
-    reviewThreadResolutions.length > 0
+    reviewThreadResolutions.length > 0 &&
+    triageArtifactPath
   ) {
-    await writeAiReviewThreadResolutions(
-      target.reviewArtifactJsonPath
-        ? resolve(cwd, target.reviewArtifactJsonPath)
-        : undefined,
-      reviewThreadResolutions,
-    );
+    await updateTriageArtifact(triageArtifactPath, (current) => ({
+      schemaVersion: 1,
+      recordedAt: new Date().toISOString(),
+      reviewedHeadSha:
+        current?.reviewedHeadSha ??
+        existingTriageArtifact?.reviewedHeadSha ??
+        target.reviewHeadSha,
+      outcome,
+      note:
+        formatAccumulatedReviewNote(
+          target.reviewOutcome,
+          outcome,
+          defaultFinalReviewNote(
+            outcome,
+            note,
+            current?.note ?? existingTriageArtifact?.note,
+          ),
+        ) ??
+        defaultFinalReviewNote(
+          outcome,
+          note,
+          current?.note ?? existingTriageArtifact?.note,
+        ) ??
+        'External AI review completed without prudent follow-up changes.',
+      actionSummary:
+        current?.actionSummary ?? existingTriageArtifact?.actionSummary,
+      nonActionSummary:
+        current?.nonActionSummary ?? existingTriageArtifact?.nonActionSummary,
+      incompleteAgents:
+        current?.incompleteAgents ?? existingTriageArtifact?.incompleteAgents,
+      patchCommitShas:
+        current?.patchCommitShas ?? existingTriageArtifact?.patchCommitShas,
+      threadResolutions: reviewThreadResolutions,
+      prBodyRefresh:
+        current?.prBodyRefresh ?? existingTriageArtifact?.prBodyRefresh,
+    }));
+  } else if (triageArtifactPath) {
+    await updateTriageArtifact(triageArtifactPath, (current) => ({
+      schemaVersion: 1,
+      recordedAt: new Date().toISOString(),
+      reviewedHeadSha:
+        current?.reviewedHeadSha ??
+        existingTriageArtifact?.reviewedHeadSha ??
+        target.reviewHeadSha,
+      outcome,
+      note:
+        formatAccumulatedReviewNote(
+          target.reviewOutcome,
+          outcome,
+          defaultFinalReviewNote(
+            outcome,
+            note,
+            current?.note ?? existingTriageArtifact?.note,
+          ),
+        ) ??
+        defaultFinalReviewNote(
+          outcome,
+          note,
+          current?.note ?? existingTriageArtifact?.note,
+        ) ??
+        'External AI review completed without prudent follow-up changes.',
+      actionSummary:
+        current?.actionSummary ?? existingTriageArtifact?.actionSummary,
+      nonActionSummary:
+        current?.nonActionSummary ?? existingTriageArtifact?.nonActionSummary,
+      incompleteAgents:
+        current?.incompleteAgents ?? existingTriageArtifact?.incompleteAgents,
+      patchCommitShas:
+        current?.patchCommitShas ?? existingTriageArtifact?.patchCommitShas,
+      threadResolutions:
+        outcome === 'patched'
+          ? reviewThreadResolutions
+          : current?.threadResolutions,
+      prBodyRefresh:
+        current?.prBodyRefresh ?? existingTriageArtifact?.prBodyRefresh,
+    }));
   }
 
   return applyTicketReviewUpdate(
+    cwd,
     state,
     ticketId,
     (ticket) => ({
@@ -1571,18 +1808,18 @@ export async function recordTicketReview(
         outcome === 'operator_input_needed'
           ? 'operator_input_needed'
           : 'reviewed',
+      reviewFetchArtifactPath: fetchArtifactPath
+        ? dependencies.relativeToRepo(cwd, fetchArtifactPath)
+        : ticket.reviewFetchArtifactPath,
+      reviewTriageArtifactPath: dependencies.relativeToRepo(
+        cwd,
+        triageArtifactPath,
+      ),
       reviewOutcome: accumulateTicketReviewOutcome(
         ticket.reviewOutcome,
         outcome,
       ),
-      reviewNote:
-        formatAccumulatedReviewNote(
-          ticket.reviewOutcome,
-          outcome,
-          defaultFinalReviewNote(outcome, note, ticket.reviewNote),
-        ) ?? defaultFinalReviewNote(outcome, note, ticket.reviewNote),
-      reviewThreadResolutions:
-        outcome === 'patched' ? reviewThreadResolutions : undefined,
+      reviewRecordedAt: new Date().toISOString(),
     }),
     dependencies,
   );
