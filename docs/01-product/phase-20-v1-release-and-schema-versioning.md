@@ -1,6 +1,6 @@
-# Phase 18: v1.0.0 Release and Schema Versioning
+# Phase 20: v1.0.0 Release and Schema Versioning
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-18/` implementation plan until tickets are approved.
+**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-20/` implementation plan until tickets are approved.
 
 ## TL;DR
 
@@ -12,16 +12,16 @@
 
 ---
 
-Phase 18 is the formal v1.0.0 milestone. It stamps the config and database with versioning, establishes the breaking change policy, and cuts the first tagged release. No new features, no new API endpoints, no new auth enforcement — Phase 13 already delivered the security model.
+Phase 20 is the formal v1.0.0 milestone. It stamps the config and database with versioning, establishes the breaking change policy, and cuts the first tagged release. No new features, no new API endpoints, no new auth enforcement — Phase 13 already delivered the security model.
 
 ## Phase Goal
 
-Phase 18 should leave Pirate Claw in a state where:
+Phase 20 should leave Pirate Claw in a state where:
 
 - the running daemon, config file, and SQLite database are all stamped with a schema version that future operators and tooling can inspect
 - the breaking change policy is documented: major version bump = new config/db schema pair; no cross-version migration path is guaranteed
 - `package.json` version is `1.0.0` and a tagged release exists on the repository
-- existing installs are not broken by any of the above — an unversioned config or DB from before Phase 18 is treated as v1 automatically
+- existing installs are not broken by any of the above — an unversioned config or DB from before Phase 20 is treated as v1 automatically
 
 ## Committed Scope
 
@@ -34,7 +34,7 @@ Phase 18 should leave Pirate Claw in a state where:
 ### Database schema versioning
 
 - use SQLite `PRAGMA user_version` — built in, no extra table needed
-- on first startup after Phase 18 ships: if `user_version` is `0` (the default for all existing DBs), set it to `1` — this is non-destructive and silent
+- on first startup after Phase 20 ships: if `user_version` is `0` (the default for all existing DBs), set it to `1` — this is non-destructive and silent
 - future breaking DB changes increment `user_version`; the startup check refuses to run if the DB version is ahead of what the binary knows
 - the existing ad-hoc `ALTER TABLE ADD COLUMN` guards in `src/repository.ts` are preserved as the migration mechanism for non-breaking additive changes; `user_version` only changes on breaking schema changes
 
@@ -42,7 +42,7 @@ Phase 18 should leave Pirate Claw in a state where:
 
 - `package.json` version bumped to `1.0.0`
 - `web/package.json` version bumped to `1.0.0`
-- tagged release on `main` with a CHANGELOG entry covering Phase 13–18 deliverables
+- tagged release on `main` with a CHANGELOG entry covering Phase 13–20 deliverables
 - `VERSIONING.md` added to the repo root documenting the breaking change policy (see below)
 
 ### Breaking change policy (`VERSIONING.md`)
@@ -74,11 +74,15 @@ columns) are backward-compatible and do not require operator action.
 - automated migration tooling between major versions (manual re-import is the policy)
 - audit logs, plugin or extension support (not in v1)
 - new auth enforcement beyond what Phase 13 delivered (bearer token + localhost bind)
-- any new user-visible features — Phase 18 is infrastructure and release only
+- any new user-visible features — Phase 20 is infrastructure and release only
 
 ## Exit Condition
 
-The repo has a `v1.0.0` tag. A fresh install sees `"schemaVersion": 1` in the config after first write and `PRAGMA user_version = 1` in the DB. An operator upgrading from a pre-Phase-18 install sees no errors — the unversioned config is silently treated as v1, and the DB is silently stamped on first startup.
+The repo has a `v1.0.0` tag. A fresh install sees `"schemaVersion": 1` in the config after first write and `PRAGMA user_version = 1` in the DB. An operator upgrading from a pre-Phase-20 install sees no errors — the unversioned config is silently treated as v1, and the DB is silently stamped on first startup.
+
+## Retrospective
+
+`skip` — pure ceremony, no durable learning.
 
 ## Rationale
 

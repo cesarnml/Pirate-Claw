@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–17** are implemented on `main`. **Phase 18** remains in product-definition/planning mode under `docs/01-product/`.
+Phases **01–17** are implemented on `main`. **Phases 18–20** are in product-definition/planning mode under `docs/01-product/`.
 
 It currently supports:
 
@@ -189,17 +189,21 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 ## Current Scope
 
-Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 18 targets eliminating the need to SSH in for day-to-day operation.
+Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 20 targets a polished, fully-featured v1.0.0 release.
 
 **Implemented (Phases 01–17):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, and explicit empty states across the dashboard and key routes.
 
-**Planned (Phase 18):** v1.0.0 release and schema versioning.
+**Planned (Phase 18):** Optional Plex Media Server enrichment — library status (`in_library` / `missing`), watch counts, and last-watched timestamps surfaced in the dashboard alongside download state. Display-only; no intake gating.
+
+**Planned (Phase 19):** Full UI/UX redesign — Obsidian Tide design language, left sidebar navigation, poster-forward layouts, and consolidation of the Candidates and Unmatched views into a redesigned Dashboard.
+
+**Planned (Phase 20):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release.
 
 Not in scope through v1:
 
 - remote feed capture or hosted persistence
 - post-completion file handling or download renaming
-- Synology archiving or media server integration
+- Jellyfin / Emby / Kodi integration (Plex is Phase 18; other providers are v2)
 - multi-user access or auth beyond the single write token
 - broader ingestion redesign
 

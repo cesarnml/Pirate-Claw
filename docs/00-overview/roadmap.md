@@ -438,18 +438,73 @@ Current status:
 
 - implemented on `main` via `P17.01`-`P17.07` stacked delivery; see [`docs/02-delivery/phase-17/implementation-plan.md`](../02-delivery/phase-17/implementation-plan.md) and [`docs/01-product/phase-17-onboarding-and-empty-state.md`](../01-product/phase-17-onboarding-and-empty-state.md)
 
-## Phase 18: v1.0.0 Release and Schema Versioning
+## Phase 18: Plex Media Server Enrichment
 
 Goal:
 
-- `package.json` bumped to `1.0.0`; tagged release with CHANGELOG covering Phases 13–18
+- close the loop between "downloaded by pirate-claw" and "in your Plex library / watched"
+- enrich `/api/shows` and `/api/movies` with `plexStatus` (in_library | missing | unknown), `watchCount`, and `lastWatchedAt`
+- display-only; no intake gating in v1
+
+Committed scope:
+
+- optional `plex` config block (`url`, `token`, `refreshIntervalMinutes`)
+- Plex HTTP API client under `src/plex/` (read-only)
+- SQLite cache: `plex_tv_cache`, `plex_movie_cache`; background refresh timer
+- enriched API responses on existing endpoints; `plex.token` redacted in `/api/config`
+- zero behavior change when Plex is not configured
+
+Explicitly deferred:
+
+- intake gating based on Plex state (`skipIfInLibrary`, etc.)
+- write operations to Plex
+- Jellyfin / Emby / Kodi support
+- Plex.tv cloud OAuth; per-episode watch state
+
+Working notes:
+
+- `docs/01-product/phase-18-plex-media-server-enrichment.md`
+
+## Phase 19: UI/UX Redesign ("Razzle-Dazzle")
+
+Goal:
+
+- elevate the web UI to a visually premium, poster-forward media command center
+- adopt the Obsidian Tide design language (`#0F172A` navy, `#14B8A6` teal, Inter)
+- restructure navigation to a left sidebar; absorb Candidates and Unmatched into Dashboard
+- surface existing API data that the current UI leaves on the table (movie backdrops, Phase 18 Plex state)
+
+Committed scope:
+
+- Obsidian Tide design tokens replacing current oklch vars in `web/src/app.css`
+- left sidebar (persistent desktop, icon rail on medium viewports, drawer on mobile)
+- 4 top-level nav items: Dashboard / TV Shows / Movies / Config
+- Dashboard absorbs `/candidates` (Active Downlink panel) and `/unmatched` (Event Log panel)
+- all views redesigned: Dashboard, TV Shows, TV Show Detail, Movies, Config
+- zero new daemon API endpoints; all visual improvements draw from data already returned
+
+Explicitly deferred:
+
+- new daemon endpoints or config surface
+- dark/light theme toggle (Obsidian Tide dark is the single theme in v1)
+- onboarding wizard re-architecture (retouched for new tokens only)
+
+Working notes:
+
+- `docs/01-product/phase-19-ui-redesign-razzle-dazzle.md`
+
+## Phase 20: v1.0.0 Release and Schema Versioning
+
+Goal:
+
+- `package.json` bumped to `1.0.0`; tagged release with CHANGELOG covering Phases 13–20
 - config file stamped with `schemaVersion: 1` on next write; absent = v1 (silent)
 - SQLite DB stamped with `PRAGMA user_version = 1` on first startup
 - `VERSIONING.md` documents breaking change policy: major version = config/db schema pair
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-18-v1-release-and-schema-versioning.md`](../01-product/phase-18-v1-release-and-schema-versioning.md)
+- product definition only; see [`docs/01-product/phase-20-v1-release-and-schema-versioning.md`](../01-product/phase-20-v1-release-and-schema-versioning.md)
 
 ## Future Deferrals
 
@@ -462,14 +517,15 @@ These items are still explicitly deferred or not yet assigned a numbered phase:
 The following items are **mapped** to numbered phases (no longer “unbounded” deferrals):
 
 - **Config editor via web UI** — Phase 13 (runtime subset); Phase 14 (feeds, movies, TV defaults); Phase 16 (unified UX)
-- **Visual polish / design system iteration** — Phase 12
-- **v1.0.0 release** — Phase 18
+- **Visual polish / design system iteration** — Phase 12 (baseline); Phase 19 (full Obsidian Tide redesign)
+- **Plex Media Server enrichment** — Phase 18
+- **v1.0.0 release** — Phase 20
 
 ## Current Planning Posture
 
 - product phases `01`–`17` are implemented on `main`; **Phase 17** is delivered via `P17.01`–`P17.07` stacked delivery
-- product phases `12`–`18` are defined in `docs/01-product/`; **Phase 18** remains product-definition-first until its tickets are approved and implemented
-- engineering epic write-ups **`EE01`–`EE06`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
+- product phases `18`–`20` are defined in `docs/01-product/`; all three remain product-definition-first until their tickets are approved and implemented
+- engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
 
@@ -487,4 +543,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-14 (Phase 17 delivered).
+Last verified against `README.md` and active delivery plans: 2026-04-15 (Phases 18–20 arc planned).
