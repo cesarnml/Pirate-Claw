@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import type {
   AiReviewComment,
   AiReviewThreadResolution,
@@ -11,6 +13,7 @@ import type {
   TicketStatus,
 } from './orchestrator';
 import { DEFAULT_REVIEW_POLLING_PROFILE } from './review-polling-profile';
+import { readReviewArtifacts } from './review-artifacts';
 
 const MAX_ACTION_COMMITS = 20;
 const STANDALONE_AI_REVIEW_SECTION_START = '<!-- ai-review:start -->';
@@ -41,19 +44,25 @@ type TicketReviewMetadataRefreshTarget = Pick<
   | 'codexPreflightCompletedAt'
   | 'codexPreflightPatchCommits'
   | 'reviewActionSummary'
-  | 'reviewIncompleteAgents'
+  | 'reviewArtifactJsonPath'
+  | 'reviewArtifactPath'
   | 'reviewComments'
+  | 'reviewFetchArtifactPath'
   | 'reviewHeadSha'
-  | 'status'
-  | 'reviewOutcome'
-  | 'reviewNote'
+  | 'reviewIncompleteAgents'
   | 'reviewNonActionSummary'
+  | 'reviewNote'
+  | 'reviewRecordedAt'
+  | 'status'
   | 'reviewThreadResolutions'
+  | 'reviewTriageArtifactPath'
+  | 'reviewOutcome'
   | 'reviewVendors'
 >;
 
 type ReviewMetadataRefreshBodyOptions =
   | {
+      cwd?: string;
       mode: 'standalone';
       body: string;
       result: StandaloneAiReviewResult;
@@ -85,6 +94,50 @@ type PrMetadataDependencies = {
     cwd: string,
   ) => { defaultBranch: string; name: string; owner: string } | undefined;
 };
+
+type PersistedReviewDetails = {
+  actionSummary?: string;
+  comments?: AiReviewComment[];
+  incompleteAgents?: string[];
+  nonActionSummary?: string;
+  note?: string;
+  outcome?: ReviewResult;
+  recordedAt?: string;
+  reviewedHeadSha?: string;
+  threadResolutions?: AiReviewThreadResolution[];
+  vendors?: string[];
+};
+
+function loadPersistedReviewDetails(
+  cwd: string,
+  paths: {
+    fetchArtifactPath?: string;
+    triageArtifactPath?: string;
+  },
+): PersistedReviewDetails {
+  const artifacts = readReviewArtifacts({
+    fetchArtifactPath: paths.fetchArtifactPath
+      ? resolve(cwd, paths.fetchArtifactPath)
+      : undefined,
+    triageArtifactPath: paths.triageArtifactPath
+      ? resolve(cwd, paths.triageArtifactPath)
+      : undefined,
+  });
+
+  return {
+    actionSummary: artifacts.triage?.actionSummary,
+    comments: artifacts.fetch?.comments,
+    incompleteAgents: artifacts.triage?.incompleteAgents,
+    nonActionSummary: artifacts.triage?.nonActionSummary,
+    note: artifacts.triage?.note,
+    outcome: artifacts.triage?.outcome,
+    recordedAt: artifacts.triage?.recordedAt,
+    reviewedHeadSha:
+      artifacts.triage?.reviewedHeadSha ?? artifacts.fetch?.reviewedHeadSha,
+    threadResolutions: artifacts.triage?.threadResolutions,
+    vendors: artifacts.fetch?.vendors,
+  };
+}
 
 function parseFenceMarker(line: string): {
   char: '`' | '~';
@@ -895,7 +948,30 @@ export function buildPullRequestBody(
     currentHeadSha?: string;
     githubRepo?: { defaultBranch: string; name: string; owner: string };
   } = {},
+  review: PersistedReviewDetails = loadPersistedReviewDetails(
+    (ticket as TicketReviewMetadataRefreshTarget & { worktreePath?: string })
+      .worktreePath ?? '',
+    {
+      fetchArtifactPath:
+        ticket.reviewFetchArtifactPath ?? ticket.reviewArtifactPath,
+      triageArtifactPath:
+        ticket.reviewTriageArtifactPath ?? ticket.reviewArtifactJsonPath,
+    },
+  ),
 ): string {
+  const effectiveReview: PersistedReviewDetails = {
+    actionSummary: review.actionSummary ?? ticket.reviewActionSummary,
+    comments: review.comments ?? ticket.reviewComments,
+    incompleteAgents: review.incompleteAgents ?? ticket.reviewIncompleteAgents,
+    nonActionSummary: review.nonActionSummary ?? ticket.reviewNonActionSummary,
+    note: review.note ?? ticket.reviewNote,
+    outcome: review.outcome ?? ticket.reviewOutcome,
+    recordedAt: review.recordedAt ?? ticket.reviewRecordedAt,
+    reviewedHeadSha: review.reviewedHeadSha ?? ticket.reviewHeadSha,
+    threadResolutions:
+      review.threadResolutions ?? ticket.reviewThreadResolutions,
+    vendors: review.vendors ?? ticket.reviewVendors,
+  };
   assertPatchedStageHasCommitEvidence({
     outcome: ticket.selfAuditOutcome,
     patchCommits: ticket.selfAuditPatchCommits,
@@ -969,7 +1045,7 @@ export function buildPullRequestBody(
   }
 
   if (
-    ticket.reviewOutcome ||
+    effectiveReview.outcome ||
     ticket.status === 'needs_patch' ||
     ticket.status === 'operator_input_needed'
   ) {
@@ -977,21 +1053,22 @@ export function buildPullRequestBody(
       '',
       buildExternalAiReviewSection(
         {
-          actionSummary: ticket.reviewActionSummary,
-          comments: ticket.reviewComments,
-          note: ticket.reviewNote,
-          nonActionSummary: ticket.reviewNonActionSummary,
-          outcome: ticket.reviewOutcome,
-          reviewedHeadSha: ticket.reviewHeadSha,
+          actionSummary: effectiveReview.actionSummary,
+          comments: effectiveReview.comments,
+          note: effectiveReview.note,
+          nonActionSummary: effectiveReview.nonActionSummary,
+          outcome: effectiveReview.outcome,
+          reviewedHeadSha:
+            effectiveReview.reviewedHeadSha ?? ticket.reviewHeadSha,
           status: ticket.status,
-          threadResolutions: ticket.reviewThreadResolutions,
-          vendors: ticket.reviewVendors,
+          threadResolutions: effectiveReview.threadResolutions,
+          vendors: effectiveReview.vendors,
         },
         {
           actionCommits: options.actionCommits,
           currentHeadSha: options.currentHeadSha,
           githubRepo: options.githubRepo,
-          incompleteAgents: ticket.reviewIncompleteAgents,
+          incompleteAgents: effectiveReview.incompleteAgents,
           maxWaitMinutes: state.reviewPollMaxWaitMinutes,
         },
       ),
@@ -1002,18 +1079,7 @@ export function buildPullRequestBody(
 }
 
 export function buildStandaloneAiReviewSection(
-  result: Pick<
-    StandaloneAiReviewResult,
-    | 'actionSummary'
-    | 'comments'
-    | 'incompleteAgents'
-    | 'note'
-    | 'nonActionSummary'
-    | 'outcome'
-    | 'reviewedHeadSha'
-    | 'threadResolutions'
-    | 'vendors'
-  >,
+  result: PersistedReviewDetails,
   options: {
     actionCommits?: ReviewActionCommit[];
     currentHeadSha?: string;
@@ -1063,12 +1129,37 @@ export function buildReviewMetadataRefreshBody(
   context: ReviewMetadataRefreshContext = {},
 ): string {
   if (options.mode === 'ticketed') {
-    return buildPullRequestBody(options.state, options.ticket, context);
+    const review = buildPullRequestBody(options.state, options.ticket, context);
+    return review;
   }
 
+  const review = loadPersistedReviewDetails(options.cwd ?? '', {
+    fetchArtifactPath:
+      options.result.fetchArtifactPath ?? options.result.artifactJsonPath,
+    triageArtifactPath:
+      options.result.triageArtifactPath ?? options.result.artifactJsonPath,
+  });
   return mergeStandaloneAiReviewSection(
     options.body,
-    buildStandaloneAiReviewSection(options.result, context),
+    buildStandaloneAiReviewSection(
+      {
+        actionSummary: review.actionSummary ?? options.result.actionSummary,
+        comments: review.comments ?? options.result.comments,
+        incompleteAgents:
+          review.incompleteAgents ?? options.result.incompleteAgents,
+        nonActionSummary:
+          review.nonActionSummary ?? options.result.nonActionSummary,
+        note: review.note ?? options.result.note,
+        outcome: review.outcome ?? options.result.outcome,
+        reviewedHeadSha:
+          review.reviewedHeadSha ?? options.result.reviewedHeadSha,
+        recordedAt: review.recordedAt ?? options.result.recordedAt,
+        threadResolutions:
+          review.threadResolutions ?? options.result.threadResolutions,
+        vendors: review.vendors ?? options.result.vendors,
+      },
+      context,
+    ),
   );
 }
 
@@ -1104,6 +1195,10 @@ export function updatePullRequestBody(
 
   const currentHeadSha = dependencies.readHeadSha(ticket.worktreePath);
   const githubRepo = dependencies.resolveGitHubRepo?.(ticket.worktreePath);
+  const review = loadPersistedReviewDetails(ticket.worktreePath, {
+    fetchArtifactPath: ticket.reviewFetchArtifactPath,
+    triageArtifactPath: ticket.reviewTriageArtifactPath,
+  });
   const body = buildReviewMetadataRefreshBody(
     {
       mode: 'ticketed',
@@ -1113,10 +1208,10 @@ export function updatePullRequestBody(
     {
       actionCommits: listReviewActionCommits(
         ticket.worktreePath,
-        ticket.reviewHeadSha,
+        review.reviewedHeadSha ?? ticket.reviewHeadSha,
         currentHeadSha,
-        ticket.reviewComments,
-        ticket.reviewVendors,
+        review.comments,
+        review.vendors,
         dependencies,
       ),
       currentHeadSha,
@@ -1138,19 +1233,24 @@ export function updateStandalonePullRequestBody(
   >,
 ): void {
   const githubRepo = dependencies.resolveGitHubRepo?.(cwd);
+  const review = loadPersistedReviewDetails(cwd, {
+    fetchArtifactPath: result.fetchArtifactPath,
+    triageArtifactPath: result.triageArtifactPath,
+  });
   const nextBody = buildReviewMetadataRefreshBody(
     {
       body: pullRequest.body,
+      cwd,
       mode: 'standalone',
       result,
     },
     {
       actionCommits: listReviewActionCommits(
         cwd,
-        result.reviewedHeadSha,
+        review.reviewedHeadSha ?? result.reviewedHeadSha,
         pullRequest.headRefOid,
-        result.comments,
-        result.vendors,
+        review.comments,
+        review.vendors,
         dependencies,
       ),
       currentHeadSha: pullRequest.headRefOid,

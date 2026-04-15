@@ -93,7 +93,7 @@ The orchestrator owns process mechanics:
 - stacked PR base chaining
 - idempotent PR open/update behavior for already-pushed ticket branches
 - a 6/12-minute AI-review polling loop after PR open (two checkpoints: 6 minutes and 12 minutes)
-- invoking the repo-local `ai-code-review` fetcher and persisting structured JSON plus rendered text artifacts when AI review is detected
+- invoking the repo-local `ai-code-review` fetcher and persisting split review artifacts when AI review is detected
 - optional Telegram milestone notifications for long-running delivery runs
 - blocking advancement until review is explicitly recorded or auto-recorded as `clean` after the final polling check
 - refreshing the current PR body from recorded follow-up notes immediately before advancing to the next ticket
@@ -112,8 +112,8 @@ So the orchestrator only consumes the skill hook contracts:
 
 - fetcher:
   - `detected=false`: keep polling, or auto-record `clean` on the final check
-  - `detected=true`: save structured and rendered artifacts, then call the triager hook
-  - preserves supported-vendor identity, reviewed head SHA, native thread identity when available, and inline-comment resolution/outdated metadata in the saved `json` artifact
+  - `detected=true`: save `reviews/<ticket>.fetch.json`, then call the triager hook and persist `reviews/<ticket>.triage.json`
+  - preserves supported-vendor identity, reviewed head SHA, native thread identity when available, and inline-comment resolution/outdated metadata in the saved fetch artifact
 - triager:
   - returns `clean`, `needs_patch`, or `patched`
   - returns the final note plus concise action and non-action summaries
@@ -128,13 +128,21 @@ In this repo, supported external AI-review vendors are currently:
 
 Other vendors are out of scope unless the repo-local `ai-code-review` skill is deliberately expanded.
 
-For `sonarqube`, the repo-local fetcher reads GitHub check-run annotations rather than native PR review threads and intentionally keeps only failed-check annotations in the normalized artifact. Lower-severity warning annotations remain available in SonarQube itself but do not enter the orchestrator triage loop by default.
+For `sonarqube`, the repo-local fetcher reads GitHub check-run annotations rather than native PR review threads and intentionally keeps only failed-check annotations in the normalized fetch artifact. Lower-severity warning annotations remain available in SonarQube itself but do not enter the orchestrator triage loop by default.
 
 The absence of `ai-code-review` comments after the final 12-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
 
 Doc-only PRs (where the diff touches only `.md` files) skip the review window only when `reviewPolicy.externalReview` is `"skip_doc_only"` (or the stage is fully `"disabled"` for all PRs). External AI agents review code; the developer reads docs. When `open-pr` detects a doc-only diff, it sets a `doc_only` flag in state, and `poll-review` uses the configured policy to decide whether to auto-record `clean` immediately or wait through the normal review window.
 
-When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket moves into an intermediate `needs_patch` state with the saved artifacts and triage note. From there the follow-up must conclude as either `patched` or `operator_input_needed`. PR body updates remain best-effort in either case.
+When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket moves into an intermediate `needs_patch` state with the saved fetch/triage artifacts and triage note. From there the follow-up must conclude as either `patched` or `operator_input_needed`. PR body updates remain best-effort in either case.
+
+Review artifact persistence now follows a hard split:
+
+- `reviews/<ticket>.fetch.json` is the only persisted source of normalized vendor review evidence
+- `reviews/<ticket>.triage.json` is the only persisted source of repo-local review judgment and triage side effects
+- `state.json` stores only compact index/control-plane review fields such as artifact paths, `reviewOutcome`, `reviewRecordedAt`, and optionally `reviewHeadSha`
+- no rendered `.txt` review artifact is persisted
+- a stable `fetch.json` without `triage.json` is an incomplete internal state and should be surfaced as such rather than treated as a completed review
 
 At this point in the repo, `poll-review`, `record-review`, and standalone `ai-review` are intentionally thin mode-specific shells around the same post-PR lifecycle helpers. Ticket-linked flow still owns stacked state transitions and standalone flow still owns PR discovery plus author-body preservation, but the semantic review handling between those edges is shared.
 

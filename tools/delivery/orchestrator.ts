@@ -84,6 +84,7 @@ import {
   updatePullRequestBody as updatePrMetadataPullRequestBody,
   updateStandalonePullRequestBody as updateStandalonePrMetadataPullRequestBody,
 } from './pr-metadata';
+import { readReviewArtifacts } from './review-artifacts';
 import {
   buildReviewPollCheckMinutes,
   parseAiReviewFetcherOutput,
@@ -202,16 +203,19 @@ export type TicketState = TicketDefinition & {
   prNumber?: number;
   prUrl?: string;
   prOpenedAt?: string;
-  reviewArtifactPath?: string;
-  reviewArtifactJsonPath?: string;
-  reviewActionSummary?: string;
-  reviewFetchedAt?: string;
+  reviewFetchArtifactPath?: string;
+  reviewTriageArtifactPath?: string;
   reviewHeadSha?: string;
-  reviewNonActionSummary?: string;
+  reviewRecordedAt?: string;
+  reviewOutcome?: ReviewResult;
+  // Legacy compatibility fields: current write paths do not persist these.
+  reviewArtifactJsonPath?: string;
+  reviewArtifactPath?: string;
+  reviewActionSummary?: string;
   reviewComments?: AiReviewComment[];
-  reviewOutcome?: ReviewOutcome;
-  reviewNote?: string;
   reviewIncompleteAgents?: string[];
+  reviewNonActionSummary?: string;
+  reviewNote?: string;
   reviewThreadResolutions?: AiReviewThreadResolution[];
   reviewVendors?: string[];
 };
@@ -435,7 +439,8 @@ export type AiReviewThreadResolution = {
 
 export type AiReviewFetcherResult = {
   agents: AiReviewAgentResult[];
-  artifactText: string;
+  // Legacy compatibility field: not populated by the current fetcher contract.
+  artifactText?: string;
   comments: AiReviewComment[];
   detected: boolean;
   reviewedHeadSha?: string;
@@ -451,19 +456,23 @@ export type AiReviewTriagerResult = {
 };
 
 export type StandaloneAiReviewResult = {
-  actionSummary?: string;
-  artifactJsonPath?: string;
-  artifactTextPath?: string;
-  incompleteAgents?: string[];
-  comments?: AiReviewComment[];
+  fetchArtifactPath?: string;
   note: string;
-  nonActionSummary?: string;
   outcome: ReviewResult;
   prNumber: number;
   prUrl: string;
   reviewedHeadSha?: string;
+  recordedAt?: string;
+  triageArtifactPath?: string;
+  // Legacy compatibility fields: current write paths do not persist these.
+  actionSummary?: string;
+  artifactJsonPath?: string;
+  artifactTextPath?: string;
+  comments?: AiReviewComment[];
+  incompleteAgents?: string[];
+  nonActionSummary?: string;
   threadResolutions?: AiReviewThreadResolution[];
-  vendors: string[];
+  vendors?: string[];
 };
 
 export type StandalonePullRequest = {
@@ -1654,6 +1663,45 @@ async function bootstrapWorktreeIfNeeded(worktreePath: string): Promise<void> {
   );
 }
 
+function loadTicketReviewSnapshot(ticket: TicketState): {
+  actionSummary?: string;
+  comments?: AiReviewComment[];
+  incompleteAgents?: string[];
+  note?: string;
+  nonActionSummary?: string;
+  threadResolutions?: AiReviewThreadResolution[];
+  vendors?: string[];
+} {
+  const artifacts = readReviewArtifacts({
+    fetchArtifactPath:
+      (ticket.reviewFetchArtifactPath ?? ticket.reviewArtifactJsonPath)
+        ? resolve(
+            ticket.reviewFetchArtifactPath ?? ticket.reviewArtifactJsonPath!,
+          )
+        : undefined,
+    triageArtifactPath:
+      (ticket.reviewTriageArtifactPath ?? ticket.reviewArtifactJsonPath)
+        ? resolve(
+            ticket.reviewTriageArtifactPath ?? ticket.reviewArtifactJsonPath!,
+          )
+        : undefined,
+  });
+
+  return {
+    actionSummary:
+      artifacts.triage?.actionSummary ?? ticket.reviewActionSummary,
+    comments: artifacts.fetch?.comments ?? ticket.reviewComments,
+    incompleteAgents:
+      artifacts.triage?.incompleteAgents ?? ticket.reviewIncompleteAgents,
+    note: artifacts.triage?.note ?? ticket.reviewNote,
+    nonActionSummary:
+      artifacts.triage?.nonActionSummary ?? ticket.reviewNonActionSummary,
+    threadResolutions:
+      artifacts.triage?.threadResolutions ?? ticket.reviewThreadResolutions,
+    vendors: artifacts.fetch?.vendors ?? ticket.reviewVendors,
+  };
+}
+
 export function formatStatus(state: DeliveryState): string {
   return [
     'Delivery Orchestrator',
@@ -1679,22 +1727,18 @@ export function formatStatus(state: DeliveryState): string {
           ? `codex_preflight=completed at ${ticket.codexPreflightCompletedAt} (${ticket.codexPreflightOutcome ?? 'unknown'})`
           : undefined,
         ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
-        ticket.reviewArtifactJsonPath
-          ? `review_artifact_json=${ticket.reviewArtifactJsonPath}`
+        ticket.reviewFetchArtifactPath
+          ? `review_fetch_artifact=${ticket.reviewFetchArtifactPath}`
           : undefined,
-        ticket.reviewArtifactPath
-          ? `review_artifact=${ticket.reviewArtifactPath}`
+        ticket.reviewTriageArtifactPath
+          ? `review_triage_artifact=${ticket.reviewTriageArtifactPath}`
           : undefined,
-        ticket.reviewIncompleteAgents?.length
-          ? `review_incomplete_agents=${ticket.reviewIncompleteAgents.join(',')}`
-          : undefined,
-        ticket.reviewVendors && ticket.reviewVendors.length > 0
-          ? `review_vendors=${ticket.reviewVendors.join(',')}`
+        ticket.reviewRecordedAt
+          ? `review_recorded_at=${ticket.reviewRecordedAt}`
           : undefined,
         ticket.reviewOutcome
           ? `review_outcome=${ticket.reviewOutcome}`
           : undefined,
-        ticket.reviewNote ? `review_note=${ticket.reviewNote}` : undefined,
       ]
         .filter((value): value is string => value !== undefined)
         .join('\n'),
@@ -1789,7 +1833,8 @@ export function formatCurrentTicketStatus(
     return header;
   }
 
-  const actionableFindings = (ticket.reviewComments ?? []).filter(
+  const review = loadTicketReviewSnapshot(ticket);
+  const actionableFindings = (review.comments ?? []).filter(
     (c) => c.kind !== 'summary' && !c.isOutdated && !c.isResolved,
   );
 
@@ -1817,17 +1862,17 @@ export function formatCurrentTicketStatus(
     `title=${ticket.title}`,
     ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
     ticket.docOnly ? `doc_only=true` : undefined,
-    ticket.reviewVendors && ticket.reviewVendors.length > 0
-      ? `review_vendors=${ticket.reviewVendors.join(',')}`
+    review.vendors && review.vendors.length > 0
+      ? `review_vendors=${review.vendors.join(',')}`
       : undefined,
     ticket.reviewOutcome ? `review_outcome=${ticket.reviewOutcome}` : undefined,
-    ticket.reviewActionSummary
-      ? `review_action_summary=${ticket.reviewActionSummary}`
+    review.actionSummary
+      ? `review_action_summary=${review.actionSummary}`
       : undefined,
     findingsBlock,
-    ticket.reviewNote ? `review_note=${ticket.reviewNote}` : undefined,
-    ticket.reviewIncompleteAgents?.length
-      ? `review_incomplete_agents=${ticket.reviewIncompleteAgents.join(',')}`
+    review.note ? `review_note=${review.note}` : undefined,
+    review.incompleteAgents?.length
+      ? `review_incomplete_agents=${review.incompleteAgents.join(',')}`
       : undefined,
   ]
     .filter((value): value is string => value !== undefined)
@@ -1856,21 +1901,12 @@ function formatStandaloneAiReviewResult(
     'Standalone AI Review',
     `pr=${result.prUrl}`,
     `outcome=${result.outcome}`,
-    result.incompleteAgents?.length
-      ? `incomplete_agents=${result.incompleteAgents.join(',')}`
+    result.recordedAt ? `recorded_at=${result.recordedAt}` : undefined,
+    result.fetchArtifactPath
+      ? `fetch_artifact=${result.fetchArtifactPath}`
       : undefined,
-    result.vendors.length > 0
-      ? `vendors=${result.vendors.join(',')}`
-      : undefined,
-    result.artifactJsonPath
-      ? `artifact_json=${result.artifactJsonPath}`
-      : undefined,
-    result.artifactTextPath
-      ? `artifact_text=${result.artifactTextPath}`
-      : undefined,
-    result.actionSummary ? `action_summary=${result.actionSummary}` : undefined,
-    result.nonActionSummary
-      ? `non_action_summary=${result.nonActionSummary}`
+    result.triageArtifactPath
+      ? `triage_artifact=${result.triageArtifactPath}`
       : undefined,
     `note=${result.note}`,
   ]

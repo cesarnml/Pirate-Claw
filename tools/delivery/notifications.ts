@@ -1,4 +1,7 @@
+import { resolve } from 'node:path';
+
 import { buildReviewPollCheckMinutes } from './review';
+import { readReviewArtifacts } from './review-artifacts';
 import type {
   DeliveryState,
   DeliveryNotificationEvent,
@@ -81,13 +84,30 @@ function buildReviewRecordedEvent(
     | 'id'
     | 'title'
     | 'branch'
-    | 'reviewOutcome'
-    | 'reviewNote'
     | 'prUrl'
+    | 'reviewArtifactJsonPath'
+    | 'reviewArtifactPath'
+    | 'reviewFetchArtifactPath'
+    | 'reviewNote'
+    | 'reviewOutcome'
+    | 'reviewTriageArtifactPath'
     | 'status'
   >,
 ): DeliveryNotificationEvent | undefined {
+  const artifacts = readReviewArtifacts({
+    fetchArtifactPath: ticket.reviewFetchArtifactPath
+      ? resolve(ticket.reviewFetchArtifactPath)
+      : ticket.reviewArtifactPath
+        ? resolve(ticket.reviewArtifactPath)
+        : undefined,
+    triageArtifactPath: ticket.reviewTriageArtifactPath
+      ? resolve(ticket.reviewTriageArtifactPath)
+      : ticket.reviewArtifactJsonPath
+        ? resolve(ticket.reviewArtifactJsonPath)
+        : undefined,
+  });
   const outcome: ReviewResult | undefined =
+    artifacts.triage?.outcome ??
     ticket.reviewOutcome ??
     (ticket.status === 'needs_patch'
       ? 'needs_patch'
@@ -106,7 +126,7 @@ function buildReviewRecordedEvent(
     ticketTitle: ticket.title,
     branch: ticket.branch,
     outcome,
-    note: ticket.reviewNote,
+    note: artifacts.triage?.note ?? ticket.reviewNote,
     prUrl: ticket.prUrl,
   };
 }

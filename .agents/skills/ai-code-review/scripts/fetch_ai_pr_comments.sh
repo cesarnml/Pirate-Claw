@@ -5,7 +5,6 @@ set -euo pipefail
 #   {
 #     "agents": [{"agent":"coderabbit","state":"started|completed|findings_detected","findingsCount":1,"note":"..."}],
 #     "detected": true|false,
-#     "artifact_text": "normalized text artifact",
 #     "vendors": ["coderabbit", "qodo", "greptile", "sonarqube"],
 #     "comments": [...]
 #   }
@@ -544,43 +543,6 @@ jq -n \
         agents: $agents,
         detected: ($matches | length > 0),
         reviewed_head_sha: ($pr.headRefOid // null),
-        artifact_text:
-          (
-            [
-              "PR #\($pr.number): \($pr.title)",
-              "URL: \($pr.url)",
-              "Branch: \($pr.headRefName) -> \($pr.baseRefName)",
-              "Reviewed head SHA: \($pr.headRefOid // "unknown")",
-              "State: \($pr.state)\(if $pr.isDraft then " (draft)" else "" end)",
-              "Detected AI review comments: \($matches | length)",
-              "Detected AI review agents: \($agents | length)",
-              "Vendors: \(if ($vendors | length) > 0 then ($vendors | join(", ")) else "none" end)",
-              ""
-            ]
-            + (
-              if ($agents | length) > 0 then
-                ["Agent states:"]
-                + ($agents | map("- \(.agent): \(.state)\(if (.findingsCount // 0) > 0 then " (\(.findingsCount) findings)" else "" end)"))
-                + [""]
-              else
-                []
-              end
-            )
-            + (
-              $matches
-              | map(
-                  "- [\(.kind)][\(.vendor)][\(.channel)][\(.derived_state)] \(.author_login)"
-                  + (if .path then " on \(.path):\(.line // 0)" else "" end)
-                  + (if .thread_id then " [thread \(.thread_id)]" else "" end)
-                  + (if .is_resolved then " [resolved]" else "" end)
-                  + (if .is_outdated then " [outdated]" else "" end)
-                  + (if .updated_at != "" then " at \(.updated_at)" else "" end)
-                  + "\n  "
-                  + (.body | gsub("\r"; "") | gsub("\n"; "\n  "))
-                  + (if .url != "" then "\n  \(.url)" else "" end)
-                )
-            )
-          ) | join("\n"),
         vendors: $vendors,
         comments: $matches
       }

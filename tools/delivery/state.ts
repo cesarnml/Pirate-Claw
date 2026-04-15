@@ -317,30 +317,16 @@ function syncStateWithPlan(
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
-        reviewArtifactPath:
-          previous?.reviewArtifactPath ?? inferredTicket?.reviewArtifactPath,
-        reviewArtifactJsonPath:
-          previous?.reviewArtifactJsonPath ??
-          inferredTicket?.reviewArtifactJsonPath,
-        reviewActionSummary:
-          previous?.reviewActionSummary ?? inferredTicket?.reviewActionSummary,
-        reviewFetchedAt:
-          previous?.reviewFetchedAt ?? inferredTicket?.reviewFetchedAt,
+        reviewFetchArtifactPath:
+          previous?.reviewFetchArtifactPath ??
+          inferredTicket?.reviewFetchArtifactPath,
+        reviewTriageArtifactPath:
+          previous?.reviewTriageArtifactPath ??
+          inferredTicket?.reviewTriageArtifactPath,
         reviewHeadSha: previous?.reviewHeadSha ?? inferredTicket?.reviewHeadSha,
-        reviewNonActionSummary:
-          previous?.reviewNonActionSummary ??
-          inferredTicket?.reviewNonActionSummary,
-        reviewIncompleteAgents:
-          previous?.reviewIncompleteAgents ??
-          inferredTicket?.reviewIncompleteAgents,
-        reviewComments:
-          previous?.reviewComments ?? inferredTicket?.reviewComments,
+        reviewRecordedAt:
+          previous?.reviewRecordedAt ?? inferredTicket?.reviewRecordedAt,
         reviewOutcome: previous?.reviewOutcome ?? inferredTicket?.reviewOutcome,
-        reviewNote: previous?.reviewNote ?? inferredTicket?.reviewNote,
-        reviewThreadResolutions:
-          previous?.reviewThreadResolutions ??
-          inferredTicket?.reviewThreadResolutions,
-        reviewVendors: previous?.reviewVendors ?? inferredTicket?.reviewVendors,
       };
     }),
   };
@@ -499,17 +485,11 @@ function inferStateFromRepo(
       prNumber: pr?.number,
       prUrl: pr?.url,
       prOpenedAt: undefined,
-      reviewArtifactPath: undefined,
-      reviewArtifactJsonPath: undefined,
-      reviewActionSummary: undefined,
-      reviewFetchedAt: undefined,
+      reviewFetchArtifactPath: undefined,
+      reviewTriageArtifactPath: undefined,
       reviewHeadSha: undefined,
-      reviewNonActionSummary: undefined,
-      reviewComments: undefined,
+      reviewRecordedAt: undefined,
       reviewOutcome: undefined,
-      reviewNote: undefined,
-      reviewThreadResolutions: undefined,
-      reviewVendors: undefined,
     } satisfies TicketState;
   });
 
