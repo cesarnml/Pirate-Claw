@@ -13,10 +13,11 @@ Son of Anton drives approved work to completion. How ticket boundaries are handl
 
 1. **Entrypoint.** Use `bun run deliver`. Read `docs/03-engineering/delivery-orchestrator.md` for command surface — not ad hoc substitutes.
 2. **When to use.** Smaller bounded changes ship as standalone PRs without a new phase/epic. Use `bun run deliver ai-review [--pr <number>]` — not the ticketed stacked flow (`--plan …`, `poll-review`, `advance`, etc.).
-3. **Review discipline.** Complete implement → verify (`bun run verify` + scoped tests) → named self-audit (re-read diff, second-pass risky areas). Standalone PRs do not use the ticket-only `post-verify-self-audit` or `codex-preflight` recorders because the flow is stateless, but the review behaviors still apply.
+3. **Review discipline.** Complete implement → verify (`bun run verify` + scoped tests) → named self-audit (re-read diff, second-pass risky areas). Standalone PRs do not use the ticket-only `post-verify-self-audit` or `codex-preflight` recorders because the flow is stateless, so these remain expected preflight behaviors rather than orchestrator-enforced gates.
    - Self-audit is required for every standalone PR.
    - For non-trivial code changes, run `codex:rescue` informally before `ai-review`; doc-only or genuinely trivial changes may skip it.
-   - If the change needs recorded self-audit / Codex gates to feel safe, it likely should not stay a standalone PR.
+   - Standalone `ai-review` is the only orchestrator-visible review gate on this path.
+   - If the change needs recorded self-audit / Codex gates to feel safe, it likely should not stay a standalone PR unless the repo first adds lightweight standalone review state.
 4. **Running `ai-review`.** Uses real wall-clock polling. Surface that before starting; do not hide the time cost.
 5. **Commits.** Follow AGENTS Pre-Commit (Prettier for touched files; spellcheck when docs or user-facing copy changed).
 6. **Product-scope gates** apply to new phase/epic work — not to standalone PRs already allowed outside a new phase.

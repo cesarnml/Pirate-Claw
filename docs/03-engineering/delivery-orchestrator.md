@@ -363,7 +363,11 @@ For standalone PRs, the internal review contract is behavior-first, not state-re
 - for non-trivial code changes, run `codex:rescue` informally before `ai-review`
 - run standalone `ai-review` as the orchestrator-visible external review gate
 
-The ticket-only commands `post-verify-self-audit`, `codex-preflight`, `open-pr`, `poll-review`, `record-review`, and `advance` do not apply to standalone PRs because there is no ticket state to update. That architectural constraint does not remove the underlying review discipline; it only means the self-audit and optional Codex pass are not CLI-recorded in standalone mode.
+In standalone mode, `selfAudit` and `codexPreflight` are expected preflight discipline, not orchestrator gates. The orchestrator can tell the agent to do them, but without standalone state it cannot verify, audit, or block on them. Only standalone `ai-review` is an orchestrator-visible gate today.
+
+The ticket-only commands `post-verify-self-audit`, `codex-preflight`, `open-pr`, `poll-review`, `record-review`, and `advance` do not apply to standalone PRs because there is no ticket state to update. That architectural constraint does not remove the underlying review discipline; it does mean the self-audit and optional Codex pass remain guided discretion in standalone mode rather than durable workflow state.
+
+If standalone delivery ever needs true self-audit or Codex gate semantics, add a lightweight standalone state artifact first. Do not present soft preflight discipline as a hard gate without durable evidence.
 
 If a parent ticket was squash-merged onto `main`, run:
 
