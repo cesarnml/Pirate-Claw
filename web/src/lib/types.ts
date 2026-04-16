@@ -64,6 +64,8 @@ export type TmdbTvShowMeta = {
 	numberOfSeasons?: number;
 };
 
+export type PlexStatus = 'in_library' | 'missing' | 'unknown';
+
 export type ShowEpisode = {
 	episode: number;
 	identityKey: string;
@@ -83,6 +85,9 @@ export type ShowSeason = {
 export type ShowBreakdown = {
 	normalizedTitle: string;
 	seasons: ShowSeason[];
+	plexStatus: PlexStatus;
+	watchCount: number | null;
+	lastWatchedAt: string | null;
 	tmdb?: TmdbTvShowMeta;
 };
 
@@ -107,6 +112,9 @@ export type MovieBreakdown = {
 	queuedAt?: string;
 	transmissionPercentDone?: number;
 	transmissionTorrentHash?: string;
+	plexStatus: PlexStatus;
+	watchCount: number | null;
+	lastWatchedAt: string | null;
 	tmdb?: TmdbMoviePublic;
 };
 

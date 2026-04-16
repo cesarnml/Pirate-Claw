@@ -10,6 +10,9 @@ const mockMovie = (overrides: Partial<MovieBreakdown> = {}): MovieBreakdown => (
 	year: 2020,
 	resolution: '1080p',
 	codec: 'h264',
+	plexStatus: 'unknown',
+	watchCount: null,
+	lastWatchedAt: null,
 	tmdb: {
 		title: 'Example Film',
 		posterUrl: 'https://example.com/poster.jpg',
@@ -39,6 +42,28 @@ describe('/movies', () => {
 		expect(screen.getByText('A test overview.')).toBeInTheDocument();
 		expect(screen.getByLabelText(/TMDB vote average/)).toHaveTextContent('★ 7.2');
 		expect(screen.getByText('1080p')).toBeInTheDocument();
+	});
+
+	it('renders Plex status, watch count, and last watched date', () => {
+		render(Page, {
+			data: {
+				movies: [
+					mockMovie({
+						plexStatus: 'in_library',
+						watchCount: 3,
+						lastWatchedAt: '2026-04-15T00:00:00.000Z'
+					})
+				],
+				torrents: null,
+				error: null
+			}
+		});
+
+		expect(screen.getByText('In library')).toBeInTheDocument();
+		expect(screen.getByText('3')).toBeInTheDocument();
+		expect(
+			screen.getByText(new Date('2026-04-15T00:00:00.000Z').toLocaleDateString())
+		).toBeInTheDocument();
 	});
 
 	it('filter tabs render correct counts', () => {

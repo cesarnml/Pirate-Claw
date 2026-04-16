@@ -5,6 +5,9 @@ import type { ShowBreakdown, TorrentStatSnapshot } from '$lib/types';
 
 const mockShow: ShowBreakdown = {
 	normalizedTitle: 'The Show',
+	plexStatus: 'unknown',
+	watchCount: null,
+	lastWatchedAt: null,
 	seasons: [
 		{
 			season: 1,

@@ -36,6 +36,8 @@ import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import { enrichMovieBreakdowns } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
 import { enrichShowBreakdowns } from './tmdb/tv-enrichment';
+import type { PlexMovieEnrichDeps } from './plex/movies';
+import { enrichMovieBreakdownsFromPlexCache } from './plex/movies';
 
 export type CycleSnapshot = {
   status: CycleResult['status'];
@@ -90,6 +92,8 @@ export type ApiFetchDeps = {
   loadPollState: (path: string) => PollState;
   /** When set (TMDB configured), GET /api/movies lazily enriches from cache + TMDB. */
   tmdbMovies?: MovieEnrichDeps;
+  /** When set (Plex configured), GET /api/movies merges Plex cache status only. */
+  plexMovies?: PlexMovieEnrichDeps;
   /** When set (TMDB configured), GET /api/shows lazily enriches from cache + TMDB. */
   tmdbShows?: TvEnrichDeps;
   /**
@@ -142,6 +146,7 @@ export function createApiFetch(
     pollStatePath,
     loadPollState,
     tmdbMovies,
+    plexMovies,
     tmdbShows,
     tmdbCache,
     onCandidateTmdbCacheError,
@@ -198,9 +203,12 @@ export function createApiFetch(
       try {
         const candidates = repository.listCandidateStates();
         const base = buildMovieBreakdowns(candidates);
-        const movies = tmdbMovies
-          ? await enrichMovieBreakdowns(base, tmdbMovies)
+        const withPlex = plexMovies
+          ? enrichMovieBreakdownsFromPlexCache(base, plexMovies)
           : base;
+        const movies = tmdbMovies
+          ? await enrichMovieBreakdowns(withPlex, tmdbMovies)
+          : withPlex;
         return Response.json({ movies });
       } catch {
         return json500();

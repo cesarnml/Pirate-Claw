@@ -39,11 +39,33 @@ export class PlexHttpClient {
 
   async listLibrarySections(): Promise<PlexLibrarySection[]> {
     const container = await this.getXml('/library/sections');
+    if (!container) {
+      return [];
+    }
     const directories = asArray(container?.MediaContainer?.Directory);
     return directories.map((entry) => ({
       key: stringField(entry.key),
       type: optionalStringField(entry.type),
       title: optionalStringField(entry.title),
+    }));
+  }
+
+  async searchMovies(title: string): Promise<PlexSearchResult[] | null> {
+    const query = encodeURIComponent(title);
+    const container = await this.getXml(
+      `/library/search?query=${query}&type=1`,
+    );
+    if (!container) {
+      return null;
+    }
+    const videos = asArray(container?.MediaContainer?.Video);
+    return videos.map((entry) => ({
+      ratingKey: optionalStringField(entry.ratingKey),
+      title: optionalStringField(entry.title),
+      type: optionalStringField(entry.type),
+      year: optionalNumberField(entry.year),
+      viewCount: optionalNumberField(entry.viewCount),
+      lastViewedAt: optionalNumberField(entry.lastViewedAt),
     }));
   }
 
@@ -55,6 +77,9 @@ export class PlexHttpClient {
     const container = await this.getXml(
       `/library/sections/${encodeURIComponent(sectionKey)}/search?query=${query}`,
     );
+    if (!container) {
+      return [];
+    }
     const videos = asArray(container?.MediaContainer?.Video);
     return videos.map((entry) => ({
       ratingKey: optionalStringField(entry.ratingKey),

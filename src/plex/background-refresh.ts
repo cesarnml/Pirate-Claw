@@ -1,9 +1,23 @@
+import { buildMovieBreakdowns } from '../api';
+import type { Repository } from '../repository';
+import type { PlexMovieEnrichDeps } from './movies';
+import { refreshMovieLibraryCache } from './movies';
+
 /**
- * Phase 18 foundation ticket: reserve the daemon hook and prove scheduling
- * works without introducing Plex matching behavior yet.
+ * Warm or refresh Plex cache for tracked media without blocking RSS intake.
  */
 export async function runPlexBackgroundRefresh(input: {
+  repository: Repository;
+  plexMovies?: PlexMovieEnrichDeps;
   log: (message: string) => void;
 }): Promise<void> {
-  input.log('[plex] background refresh noop');
+  const { repository, plexMovies, log } = input;
+  if (!plexMovies) {
+    return;
+  }
+
+  const candidates = repository.listCandidateStates();
+  const movies = buildMovieBreakdowns(candidates);
+  await refreshMovieLibraryCache(movies, plexMovies);
+  log('[plex] background refresh completed');
 }

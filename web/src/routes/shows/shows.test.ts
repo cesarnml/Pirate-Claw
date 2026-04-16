@@ -5,6 +5,9 @@ import type { ShowBreakdown } from '$lib/types';
 
 const mockShow: ShowBreakdown = {
 	normalizedTitle: 'The Example Show',
+	plexStatus: 'unknown',
+	watchCount: null,
+	lastWatchedAt: null,
 	seasons: [
 		{
 			season: 1,
@@ -35,6 +38,9 @@ const mockShow: ShowBreakdown = {
 
 const mockShow2: ShowBreakdown = {
 	normalizedTitle: 'Another Show',
+	plexStatus: 'unknown',
+	watchCount: null,
+	lastWatchedAt: null,
 	seasons: [
 		{
 			season: 1,

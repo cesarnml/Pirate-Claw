@@ -18,6 +18,9 @@ import {
   runPipeline,
 } from './pipeline';
 import { runPlexBackgroundRefresh } from './plex/background-refresh';
+import { PlexCache } from './plex/cache';
+import { PlexHttpClient } from './plex/client';
+import type { PlexMovieEnrichDeps } from './plex/movies';
 import {
   filterDueFeeds,
   loadPollState,
@@ -43,6 +46,27 @@ import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
 import { resolveTmdbSettings } from './tmdb/settings';
 import { createTransmissionDownloader } from './transmission';
+
+function plexMovieEnrichDeps(
+  database: Database,
+  config: AppConfig,
+  log: (message: string) => void,
+): PlexMovieEnrichDeps | undefined {
+  if (!config.plex) {
+    return undefined;
+  }
+
+  return {
+    cache: new PlexCache(database),
+    client: new PlexHttpClient(
+      config.plex.url,
+      config.plex.token,
+      (m: string) => log(`[plex] ${m}`),
+    ),
+    refreshIntervalMinutes: config.plex.refreshIntervalMinutes,
+    log: (m: string) => log(`[plex] ${m}`),
+  };
+}
 
 function tmdbMovieEnrichDeps(
   database: Database,
@@ -197,6 +221,7 @@ export async function runCli(argv: string[]): Promise<number> {
 
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
         const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
+        const plexMovies = plexMovieEnrichDeps(database, config, log);
         const tmdbRefreshIntervalMinutes =
           config.runtime.tmdbRefreshIntervalMinutes!;
         const scheduleTmdbRefresh =
@@ -258,6 +283,8 @@ export async function runCli(argv: string[]): Promise<number> {
           plexRefreshCycle: schedulePlexRefresh
             ? async () => {
                 await runPlexBackgroundRefresh({
+                  repository,
+                  plexMovies,
                   log,
                 });
               }
@@ -285,6 +312,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   loadPollState,
                   tmdbMovies,
                   tmdbShows,
+                  plexMovies,
                   tmdbCache: tmdbMovies?.cache ?? tmdbShows?.cache,
                   onCandidateTmdbCacheError: (err, c) =>
                     log(

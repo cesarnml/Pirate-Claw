@@ -61,6 +61,35 @@
 		}
 	}
 
+	function plexChipClass(status: MovieBreakdown['plexStatus']): string {
+		switch (status) {
+			case 'in_library':
+				return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200';
+			case 'missing':
+				return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200';
+			default:
+				return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+		}
+	}
+
+	function plexStatusLabel(status: MovieBreakdown['plexStatus']): string {
+		switch (status) {
+			case 'in_library':
+				return 'In library';
+			case 'missing':
+				return 'Missing';
+			default:
+				return 'Unknown';
+		}
+	}
+
+	function formatLastWatched(value: string | null): string {
+		if (!value) return '—';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return '—';
+		return date.toLocaleDateString();
+	}
+
 	/** Unified downloading predicate used in tab counts, filtering, and row rendering. */
 	function isMovieDownloading(m: MovieBreakdown): boolean {
 		return m.status === 'downloading' || m.lifecycleStatus === 'active';
@@ -276,6 +305,22 @@
 											<dd class="text-foreground inline">{movie.codec}</dd>
 										</div>
 									{/if}
+									<div>
+										<dt class="inline">Plex:</dt>
+										<dd class="inline">
+											<Badge variant="secondary" class={plexChipClass(movie.plexStatus)}>
+												{plexStatusLabel(movie.plexStatus)}
+											</Badge>
+										</dd>
+									</div>
+									<div>
+										<dt class="inline">Watches:</dt>
+										<dd class="text-foreground inline">{movie.watchCount ?? '—'}</dd>
+									</div>
+									<div>
+										<dt class="inline">Last watched:</dt>
+										<dd class="text-foreground inline">{formatLastWatched(movie.lastWatchedAt)}</dd>
+									</div>
 								</dl>
 								<!-- Progress bar -->
 								{#if showProgress}
