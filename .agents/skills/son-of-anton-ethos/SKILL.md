@@ -116,7 +116,7 @@ Record `clean` only when no actionable feedback found. Record `patched` when act
 
 ### Docs-Only PRs
 
-With the repo default `skip_doc_only` policy, doc-only tickets skip the external review window and record `clean` immediately. When a stage is `required`, doc-only tickets wait/run like code tickets.
+With the repo default `skip_doc_only` policy, doc-only tickets skip the external review window and record `skipped` immediately. When a stage is `required`, doc-only tickets wait/run like code tickets.
 
 ---
 

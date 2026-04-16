@@ -48,7 +48,9 @@ export function findTicketByBranch(
 export function canAdvanceTicket(ticket: TicketState): boolean {
   return (
     ticket.status === 'reviewed' &&
-    (ticket.reviewOutcome === 'clean' || ticket.reviewOutcome === 'patched')
+    (ticket.reviewOutcome === 'clean' ||
+      ticket.reviewOutcome === 'patched' ||
+      ticket.reviewOutcome === 'skipped')
   );
 }
 
@@ -562,7 +564,7 @@ export async function advanceToNextTicket(
 
   if (!canAdvanceTicket(current)) {
     throw new Error(
-      `Ticket ${current.id} cannot advance until review is recorded as clean or patched.`,
+      `Ticket ${current.id} cannot advance until review is recorded as clean, patched, or skipped.`,
     );
   }
 

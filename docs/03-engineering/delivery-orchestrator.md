@@ -132,7 +132,7 @@ For `sonarqube`, the repo-local fetcher reads GitHub check-run annotations rathe
 
 The absence of `ai-code-review` comments after the final 12-minute polling check is not itself a blocker. In that case, the orchestrator records the review as `clean`, updates the PR metadata, and continues unless another real ambiguity or prerequisite issue exists.
 
-Doc-only PRs (where the diff touches only `.md` files) skip the review window only when `reviewPolicy.externalReview` is `"skip_doc_only"` (or the stage is fully `"disabled"` for all PRs). External AI agents review code; the developer reads docs. When `open-pr` detects a doc-only diff, it sets a `doc_only` flag in state, and `poll-review` uses the configured policy to decide whether to auto-record `clean` immediately or wait through the normal review window.
+Doc-only PRs (where the diff touches only `.md` files) skip the review window only when `reviewPolicy.externalReview` is `"skip_doc_only"` (or the stage is fully `"disabled"` for all PRs). External AI agents review code; the developer reads docs. When `open-pr` detects a doc-only diff, it sets a `doc_only` flag in state, and `poll-review` uses the configured policy to decide whether to auto-record `skipped` immediately or wait through the normal review window.
 
 When the triager hook resolves to `clean` or `patched`, `poll-review` records that result immediately. When it resolves to `needs_patch`, the ticket moves into an intermediate `needs_patch` state with the saved fetch/triage artifacts and triage note. From there the follow-up must conclude as either `patched` or `operator_input_needed`. PR body updates remain best-effort in either case.
 

@@ -54,7 +54,7 @@ import {
   resolveReviewFetcher,
   resolveReviewTriager,
   runStandaloneAiReview,
-  shouldAutoRecordCleanForPollReview,
+  shouldAutoRecordReviewSkippedForPollReview,
   summarizeStateDifferences,
   syncStateFromExisting,
   syncStateFromScratch,
@@ -514,7 +514,7 @@ describe('delivery orchestrator', () => {
     );
   });
 
-  it('only allows advance after clean or patched review outcomes', () => {
+  it('allows advance after clean, patched, or skipped review outcomes', () => {
     expect(
       canAdvanceTicket({
         id: 'P2.02',
@@ -527,6 +527,21 @@ describe('delivery orchestrator', () => {
         baseBranch: 'agents/p2-01-enclosure-first-feed-parsing',
         worktreePath: '/tmp/p2_02',
         reviewOutcome: 'clean',
+      }),
+    ).toBe(true);
+
+    expect(
+      canAdvanceTicket({
+        id: 'P2.02',
+        title: 'Movie Matcher Allows Missing Codec',
+        slug: 'movie-matcher-allows-missing-codec',
+        ticketFile:
+          'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+        status: 'reviewed',
+        branch: 'agents/p2-02-movie-matcher-missing-codec',
+        baseBranch: 'agents/p2-01-enclosure-first-feed-parsing',
+        worktreePath: '/tmp/p2_02',
+        reviewOutcome: 'skipped',
       }),
     ).toBe(true);
 
@@ -4971,25 +4986,25 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
     );
   });
 
-  it('auto-records clean for poll-review when policy is disabled', () => {
+  it('auto-records skipped for poll-review when policy is disabled', () => {
     expect(
-      shouldAutoRecordCleanForPollReview('disabled', {
+      shouldAutoRecordReviewSkippedForPollReview('disabled', {
         docOnly: false,
       }),
     ).toBe(true);
   });
 
-  it('auto-records clean for doc-only poll-review when policy is skip_doc_only', () => {
+  it('auto-records skipped for doc-only poll-review when policy is skip_doc_only', () => {
     expect(
-      shouldAutoRecordCleanForPollReview('skip_doc_only', {
+      shouldAutoRecordReviewSkippedForPollReview('skip_doc_only', {
         docOnly: true,
       }),
     ).toBe(true);
   });
 
-  it('does not auto-record clean for doc-only poll-review when policy is required', () => {
+  it('does not auto-record skipped for doc-only poll-review when policy is required', () => {
     expect(
-      shouldAutoRecordCleanForPollReview('required', {
+      shouldAutoRecordReviewSkippedForPollReview('required', {
         docOnly: true,
       }),
     ).toBe(false);

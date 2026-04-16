@@ -693,7 +693,7 @@ export async function runDeliveryOrchestrator(
 
         if (
           pollTarget &&
-          shouldAutoRecordCleanForPollReview(
+          shouldAutoRecordReviewSkippedForPollReview(
             _config.reviewPolicy.externalReview,
             pollTarget,
           )
@@ -704,14 +704,14 @@ export async function runDeliveryOrchestrator(
               : 'doc-only PR; external AI review skipped by policy';
           console.log(
             _config.reviewPolicy.externalReview === 'disabled'
-              ? `externalReview=disabled for ${pollTarget.id}: skipping AI review window, recording clean`
-              : `doc_only=true for ${pollTarget.id} under externalReview=skip_doc_only: skipping AI review window, recording clean`,
+              ? `externalReview=disabled for ${pollTarget.id}: skipping AI review window, recording skipped`
+              : `doc_only=true for ${pollTarget.id} under externalReview=skip_doc_only: skipping AI review window, recording skipped`,
           );
           const docOnlyState = await recordReview(
             state,
             cwd,
             pollTarget.id,
-            'clean',
+            'skipped',
             skipNote,
           );
           await saveState(cwd, docOnlyState);
@@ -1185,7 +1185,7 @@ export function recordCodexPreflight(
   );
 }
 
-export function shouldAutoRecordCleanForPollReview(
+export function shouldAutoRecordReviewSkippedForPollReview(
   policy: ReviewPolicyStageValue,
   ticket?: Pick<TicketState, 'docOnly'>,
 ): boolean {

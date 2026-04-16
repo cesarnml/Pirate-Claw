@@ -352,7 +352,7 @@ export function formatReviewWindowMessage(
       'AI Review Window',
       '- doc_only=true',
       '- external AI review window skipped for docs-only PRs',
-      '- run `poll-review` to record `clean` immediately and continue',
+      '- run `poll-review` to record `skipped` immediately and continue',
     ].join('\n');
   }
 

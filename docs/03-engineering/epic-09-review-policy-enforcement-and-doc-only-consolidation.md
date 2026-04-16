@@ -89,8 +89,8 @@ normal operation.
 ### `poll-review` restructured logic
 
 ```
-if disabled → record clean immediately (all tickets)
-if skip_doc_only && docOnly → record clean immediately
+if disabled → record skipped immediately (all tickets)
+if skip_doc_only && docOnly → record skipped immediately
 otherwise → real review window
 ```
 
