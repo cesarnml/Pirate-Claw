@@ -164,15 +164,21 @@ Plex enrichment is optional. Add a `plex` block to
 ```json
 {
   "plex": {
-    "url": "http://192.168.1.10:32400",
+    "url": "http://172.17.0.1:32400",
     "token": "YOUR_PLEX_TOKEN",
     "refreshIntervalMinutes": 30
   }
 }
 ```
 
-- `url`: base URL of the local Plex Media Server — use the LAN IP, not
-  `localhost`, so the pirate-claw container can reach it
+- `url`: base URL of the local Plex Media Server
+- when Plex is installed on the NAS via Synology Package Center and
+  `pirate-claw` runs in Docker, `localhost` and `127.0.0.1` inside the
+  container point back to the container, not to the NAS host
+- in that deployment shape, point `plex.url` at the Docker host gateway instead;
+  on this NAS the working value is `http://172.17.0.1:32400`
+- if your Docker bridge uses a different gateway, inspect that network and use
+  the host-side gateway address instead
 - `token`: your Plex authentication token (see below for how to find it)
 - `refreshIntervalMinutes`: how often the background refresh fires; defaults to
   `30`; set `0` to disable background refresh
@@ -181,14 +187,41 @@ The token is redacted in `GET /api/config` responses. If you prefer to keep it
 out of the JSON file entirely, set `PIRATE_CLAW_PLEX_TOKEN` in
 `/volume1/pirate-claw/config/.env` instead and omit the `token` field.
 
+### Host vs Container `localhost`
+
+- from an SSH shell on the NAS, `localhost:32400` reaches the Plex service on
+  the NAS host
+- from inside the `pirate-claw` container, `localhost:32400` means the
+  container itself, so Plex requests fail or time out
+- Docker exposes the NAS host to containers through the bridge gateway; on this
+  NAS that host-side address is `172.17.0.1`
+
+### Verify The Plex URL From Inside The Container
+
+```sh
+sudo /usr/local/bin/docker exec pirate-claw sh -lc \
+  'wget -S -O - --timeout=5 "http://172.17.0.1:32400/identity?X-Plex-Token=YOUR_PLEX_TOKEN"'
+```
+
+Expected result: `HTTP/1.1 200 OK` with a short XML `MediaContainer` response.
+
 ### How To Find Your Plex Token
 
-1. Sign in to Plex Web at `http://<nas-ip>:32400/web`
-2. Play any item, then open the developer console
-3. Look for any request to the Plex API — the token appears as the
-   `X-Plex-Token` query parameter
-4. Alternatively: Settings → Account → `<username>` XML link; the token is in
-   the `authToken` attribute
+Recommended method:
+
+1. Sign in to Plex Web at `http://<nas-ip>:32400/web` or `https://app.plex.tv`
+2. Open any movie or TV episode in your library
+3. Click the `...` menu on that item and choose `Get Info`
+4. In the media info dialog, click `View XML`
+5. In the new browser tab, look at the URL in the address bar
+6. The Plex token is the value after `X-Plex-Token=` at the end of that URL
+
+Fallback methods:
+
+1. Play any item, open the browser developer console, and inspect a Plex API
+   request; the token appears as the `X-Plex-Token` query parameter
+2. Settings → Account → `<username>` XML link; the token appears in the
+   `authToken` attribute
 
 ### Verification
 
