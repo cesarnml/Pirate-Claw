@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–17** are implemented on `main`. **Phases 18–20** are in product-definition/planning mode under `docs/01-product/`.
+Phases **01–18** are implemented on `main`. **Phases 19–20** are in product-definition/planning mode under `docs/01-product/`.
 
 It currently supports:
 
@@ -18,6 +18,7 @@ It currently supports:
 - env-backed Transmission credentials via process env or `.env`
 - daemon HTTP API with read endpoints and bounded config writes when `runtime.apiPort` is set
 - optional TMDB-backed posters, ratings, and metadata when a `tmdb` API key is configured
+- optional Plex-backed library status, watch counts, and last-watched timestamps when a `plex` server is configured
 - browser dashboard (`web/`) with unified config editing, in-context daemon controls, full feed and target management, live Transmission stats, skipped-no-match outcomes, and an unmatched candidates page
 
 ## Commands
@@ -55,6 +56,7 @@ Config file: `pirate-claw.config.json` (see [`pirate-claw.config.example.json`](
 - `transmission` — RPC URL, credentials, optional `downloadDirs` per media type
 - `runtime` — daemon scheduling and artifacts; `apiPort` enables HTTP API; `apiWriteToken` enables config writes; `tmdbRefreshIntervalMinutes` controls background TMDB refresh (default 360, `0` disables)
 - `tmdb` — optional `apiKey` (or env `PIRATE_CLAW_TMDB_API_KEY`) and cache TTL overrides
+- `plex` — optional `url`, `token` (or env `PIRATE_CLAW_PLEX_TOKEN`), and `refreshIntervalMinutes` for read-only library/watch enrichment
 
 ```json
 {
@@ -103,6 +105,11 @@ Config file: `pirate-claw.config.json` (see [`pirate-claw.config.example.json`](
     "artifactDir": ".pirate-claw/runtime",
     "artifactRetentionDays": 7,
     "apiPort": 5555
+  },
+  "plex": {
+    "url": "http://192.168.1.10:32400",
+    "token": "YOUR_PLEX_TOKEN",
+    "refreshIntervalMinutes": 30
   }
 }
 ```
@@ -143,22 +150,22 @@ Set `runtime.apiPort` to start an HTTP JSON API alongside the daemon:
 
 ### Endpoints
 
-| Endpoint                         | Description                                                    |
-| -------------------------------- | -------------------------------------------------------------- |
-| `GET /api/health`                | Uptime, start time, last run/reconcile snapshots               |
-| `GET /api/status`                | Recent run summaries                                           |
-| `GET /api/candidates`            | All tracked candidate state records                            |
-| `GET /api/shows`                 | TV candidates grouped by show → season → episode               |
-| `GET /api/movies`                | Movie candidates sorted by title                               |
-| `GET /api/feeds`                 | Feed config with poll state and `isDue`                        |
-| `GET /api/config`                | Effective config (credentials redacted); returns `ETag`        |
-| `PUT /api/config`                | Bounded runtime + tv.shows write (token + `If-Match` required) |
-| `PUT /api/config/feeds`          | Replace feeds array (token + `If-Match` required)              |
-| `PUT /api/config/movies`         | Replace movie policy (token + `If-Match` required)             |
-| `PUT /api/config/tv/defaults`    | Replace TV defaults (token + `If-Match` required)              |
-| `GET /api/transmission/session`  | Transmission session stats                                     |
-| `GET /api/transmission/torrents` | Pirate Claw-managed torrents with progress, speed, ETA         |
-| `GET /api/outcomes`              | Feed item outcomes (`?status=skipped_no_match`)                |
+| Endpoint                         | Description                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `GET /api/health`                | Uptime, start time, last run/reconcile snapshots                                |
+| `GET /api/status`                | Recent run summaries                                                            |
+| `GET /api/candidates`            | All tracked candidate state records                                             |
+| `GET /api/shows`                 | TV candidates grouped by show → season → episode, with Plex status/watch fields |
+| `GET /api/movies`                | Movie candidates sorted by title, with Plex status/watch fields                 |
+| `GET /api/feeds`                 | Feed config with poll state and `isDue`                                         |
+| `GET /api/config`                | Effective config (credentials redacted); returns `ETag`                         |
+| `PUT /api/config`                | Bounded runtime + tv.shows write (token + `If-Match` required)                  |
+| `PUT /api/config/feeds`          | Replace feeds array (token + `If-Match` required)                               |
+| `PUT /api/config/movies`         | Replace movie policy (token + `If-Match` required)                              |
+| `PUT /api/config/tv/defaults`    | Replace TV defaults (token + `If-Match` required)                               |
+| `GET /api/transmission/session`  | Transmission session stats                                                      |
+| `GET /api/transmission/torrents` | Pirate Claw-managed torrents with progress, speed, ETA                          |
+| `GET /api/outcomes`              | Feed item outcomes (`?status=skipped_no_match`)                                 |
 
 Write rules: `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`) must be set; all writes require `Authorization: Bearer <token>` and `If-Match` from the latest `GET /api/config` ETag. Writes are atomic file updates.
 
@@ -191,9 +198,7 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 20 targets a polished, fully-featured v1.0.0 release.
 
-**Implemented (Phases 01–17):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, and explicit empty states across the dashboard and key routes.
-
-**Planned (Phase 18):** Optional Plex Media Server enrichment — library status (`in_library` / `missing`), watch counts, and last-watched timestamps surfaced in the dashboard alongside download state. Display-only; no intake gating.
+**Implemented (Phases 01–18):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, and optional read-only Plex Media Server enrichment.
 
 **Planned (Phase 19):** Full UI/UX redesign — Obsidian Tide design language, left sidebar navigation, poster-forward layouts, and consolidation of the Candidates and Unmatched views into a redesigned Dashboard.
 
@@ -203,7 +208,7 @@ Not in scope through v1:
 
 - remote feed capture or hosted persistence
 - post-completion file handling or download renaming
-- Jellyfin / Emby / Kodi integration (Plex is Phase 18; other providers are v2)
+- Jellyfin / Emby / Kodi integration (Plex is implemented; other providers are v2)
 - multi-user access or auth beyond the single write token
 - broader ingestion redesign
 

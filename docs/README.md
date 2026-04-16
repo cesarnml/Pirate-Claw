@@ -47,7 +47,7 @@ Phase-level product definitions.
 - `phase-15-rich-visual-state-and-activity-views.md`: live Transmission progress, TV/movie enriched views, unmatched candidates (implemented)
 - `phase-16-config-editing-hot-reload-and-daemon-controls.md`: unified Config page, inline validation, post-save daemon restart (implemented)
 - `phase-17-onboarding-and-empty-state.md`: first-time setup wizard and per-section empty states (implemented)
-- `phase-18-plex-media-server-enrichment.md`: Plex read-only enrichment — library status, watch state, background refresh (product definition)
+- `phase-18-plex-media-server-enrichment.md`: Plex read-only enrichment — library status, watch state, background refresh (implemented)
 - `phase-19-ui-redesign-razzle-dazzle.md`: Obsidian Tide UI/UX redesign — left sidebar, poster-forward layouts, view consolidation (product definition)
 - `phase-20-v1-release-and-schema-versioning.md`: v1.0.0 release, config schemaVersion, SQLite PRAGMA user_version (product definition)
 
@@ -82,6 +82,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-15/implementation-plan.md`: rich visual state and activity views delivery plan (tickets P15.01–P15.07; delivered on `main`)
 - `phase-16/implementation-plan.md`: config editing, hot reload, and daemon controls delivery plan (tickets P16.01–P16.09; delivered on `main`)
 - `phase-17/implementation-plan.md`: onboarding and empty-state delivery plan (tickets P17.01–P17.07; delivered on `main`)
+- `phase-18/implementation-plan.md`: Plex Media Server enrichment delivery plan (tickets P18.01–P18.04; delivered on `main`)
 
 ### `03-engineering`
 

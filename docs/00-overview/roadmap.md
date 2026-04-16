@@ -448,6 +448,12 @@ Goal:
 - enrich `/api/shows` and `/api/movies` with `plexStatus` (in_library | missing | unknown), `watchCount`, and `lastWatchedAt`
 - display-only; no intake gating in v1
 
+Current status:
+
+- implemented on `main` via `P18.01`-`P18.04` stacked delivery
+- optional `plex` config now drives background movie/show refresh, read-only API enrichment, and dashboard badges/details for movies and shows
+- resilience follow-up landed during review: movie and show sweeps fail independently, and per-show lookup failures no longer abort the rest of the refresh pass
+
 Committed scope:
 
 - optional `plex` config block (`url`, `token`, `refreshIntervalMinutes`)
@@ -466,6 +472,7 @@ Explicitly deferred:
 Working notes:
 
 - `docs/01-product/phase-18-plex-media-server-enrichment.md`
+- `docs/02-delivery/phase-18/implementation-plan.md`
 
 ## Phase 19: UI/UX Redesign ("Razzle-Dazzle")
 
@@ -525,8 +532,8 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 
 ## Current Planning Posture
 
-- product phases `01`–`17` are implemented on `main`; **Phase 17** is delivered via `P17.01`–`P17.07` stacked delivery
-- product phases `18`–`20` are defined in `docs/01-product/`; all three remain product-definition-first until their tickets are approved and implemented
+- product phases `01`–`18` are implemented on `main`; **Phase 18** is delivered via `P18.01`–`P18.04` stacked delivery
+- product phases `19`–`20` are defined in `docs/01-product/`; both remain product-definition-first until their tickets are approved and implemented
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
