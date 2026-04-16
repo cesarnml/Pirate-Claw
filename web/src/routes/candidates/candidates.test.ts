@@ -3,6 +3,8 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { CandidateStateRecord } from '$lib/types';
 
+const sharedLayoutData = { health: null, transmissionSession: null };
+
 const mockCandidate: CandidateStateRecord = {
 	identityKey: 'key-1',
 	mediaType: 'tv',
@@ -35,13 +37,13 @@ describe('/candidates', () => {
 				voteAverage: 8.2
 			}
 		};
-		render(Page, { data: { candidates: [withTmdb], error: null } });
+		render(Page, { data: { ...sharedLayoutData, candidates: [withTmdb], error: null } });
 		expect(screen.getByText('The Show TMDB')).toBeInTheDocument();
 		expect(screen.getByTitle('TMDB vote average')).toHaveTextContent('★ 8.2');
 	});
 
 	it('renders table with candidate data', () => {
-		render(Page, { data: { candidates: [mockCandidate], error: null } });
+		render(Page, { data: { ...sharedLayoutData, candidates: [mockCandidate], error: null } });
 		expect(screen.getByText('The Show')).toBeInTheDocument();
 		expect(screen.getByText('tv')).toBeInTheDocument();
 		expect(screen.getByText('hd-tv')).toBeInTheDocument();
@@ -53,12 +55,14 @@ describe('/candidates', () => {
 	});
 
 	it('renders empty state when no candidates', () => {
-		render(Page, { data: { candidates: [], error: null } });
+		render(Page, { data: { ...sharedLayoutData, candidates: [], error: null } });
 		expect(screen.getByText('No candidates found.')).toBeInTheDocument();
 	});
 
 	it('renders error state when API is unreachable', () => {
-		render(Page, { data: { candidates: [], error: 'Could not reach the API.' } });
+		render(Page, {
+			data: { ...sharedLayoutData, candidates: [], error: 'Could not reach the API.' }
+		});
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 });

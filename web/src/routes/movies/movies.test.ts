@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
 
+const sharedLayoutData = { health: null, transmissionSession: null };
+
 const mockMovie = (overrides: Partial<MovieBreakdown> = {}): MovieBreakdown => ({
 	identityKey: 'movie-1',
 	normalizedTitle: 'Example Film',
@@ -32,7 +34,7 @@ const mockTorrent = (overrides: Partial<TorrentStatSnapshot> = {}): TorrentStatS
 	...overrides
 });
 
-const baseData = { movies: [mockMovie()], torrents: null, error: null };
+const baseData = { ...sharedLayoutData, movies: [mockMovie()], torrents: null, error: null };
 
 describe('/movies', () => {
 	it('renders movie cards with TMDB metadata', () => {
@@ -47,6 +49,7 @@ describe('/movies', () => {
 	it('renders Plex status, watch count, and last watched date', () => {
 		render(Page, {
 			data: {
+				...sharedLayoutData,
 				movies: [
 					mockMovie({
 						plexStatus: 'in_library',
@@ -72,7 +75,7 @@ describe('/movies', () => {
 			mockMovie({ identityKey: 'b', status: 'failed' }),
 			mockMovie({ identityKey: 'c', status: 'queued' })
 		];
-		render(Page, { data: { movies, torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, movies, torrents: null, error: null } });
 		// All tab shows total count 3
 		expect(screen.getByRole('tab', { name: /^All/ })).toHaveTextContent('(3)');
 		expect(screen.getByRole('tab', { name: /^Completed/ })).toHaveTextContent('(1)');
@@ -89,7 +92,7 @@ describe('/movies', () => {
 			}),
 			mockMovie({ identityKey: 'b', normalizedTitle: 'Beta', status: 'failed', tmdb: undefined })
 		];
-		render(Page, { data: { movies, torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, movies, torrents: null, error: null } });
 		// Both visible on All tab
 		expect(screen.getByText('Alpha')).toBeInTheDocument();
 		expect(screen.getByText('Beta')).toBeInTheDocument();
@@ -105,7 +108,7 @@ describe('/movies', () => {
 			mockMovie({ identityKey: 'z', normalizedTitle: 'Zulu', tmdb: undefined }),
 			mockMovie({ identityKey: 'a', normalizedTitle: 'Alpha', tmdb: undefined })
 		];
-		render(Page, { data: { movies, torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, movies, torrents: null, error: null } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Title (A–Z)' }));
 		const headings = screen.getAllByRole('heading', { level: 2 });
 		expect(headings[0]).toHaveTextContent('Alpha');
@@ -120,7 +123,9 @@ describe('/movies', () => {
 			transmissionPercentDone: 0.1
 		});
 		const torrent = mockTorrent();
-		render(Page, { data: { movies: [movie], torrents: [torrent], error: null } });
+		render(Page, {
+			data: { ...sharedLayoutData, movies: [movie], torrents: [torrent], error: null }
+		});
 		// 55% from live torrent
 		expect(screen.getByText('55%')).toBeInTheDocument();
 		// 2097152 B/s = 2.0 MB/s
@@ -135,7 +140,7 @@ describe('/movies', () => {
 			status: 'downloading',
 			transmissionTorrentHash: 'abc123'
 		});
-		render(Page, { data: { movies: [movie], torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, movies: [movie], torrents: null, error: null } });
 		expect(screen.queryByText(/MB\/s|KB\/s/)).not.toBeInTheDocument();
 	});
 
@@ -146,7 +151,7 @@ describe('/movies', () => {
 	});
 
 	it('renders empty state', () => {
-		render(Page, { data: { movies: [], torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, movies: [], torrents: null, error: null } });
 		expect(screen.getByText(/No movie targets yet/)).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Go to movie policy in Config' })).toHaveAttribute(
 			'href',
@@ -155,7 +160,9 @@ describe('/movies', () => {
 	});
 
 	it('renders error state', () => {
-		render(Page, { data: { movies: [], torrents: null, error: 'Could not reach the API.' } });
+		render(Page, {
+			data: { ...sharedLayoutData, movies: [], torrents: null, error: 'Could not reach the API.' }
+		});
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 });

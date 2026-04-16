@@ -14,26 +14,32 @@ const feedOnlyConfigFixture = feedOnlyConfig as AppConfig;
 const configWithMoviesFixture = configWithMovies as AppConfig;
 const configWithTvDefaultsFixture = configWithTvDefaults as AppConfig;
 
+const sharedLayoutData = { health: null, transmissionSession: null };
+
+function renderPage(data: Record<string, unknown>) {
+	return render(Page, {
+		data: { ...sharedLayoutData, ...data } as never,
+		form: undefined
+	});
+}
+
 describe('/onboarding', () => {
 	it('suppresses the intro alert once the done summary is active', () => {
-		render(Page, {
-			data: {
-				config: {
-					...configWithMoviesFixture,
-					tv: []
-				},
-				etag: '"rev-3"',
-				canWrite: true,
-				onboarding: {
-					state: 'ready',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: true,
-					minimumComplete: true
-				},
-				error: null
+		renderPage({
+			config: {
+				...configWithMoviesFixture,
+				tv: []
 			},
-			form: undefined
+			etag: '"rev-3"',
+			canWrite: true,
+			onboarding: {
+				state: 'ready',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: true,
+				minimumComplete: true
+			},
+			error: null
 		});
 
 		expect(screen.getByText('Done')).toBeInTheDocument();
@@ -42,42 +48,36 @@ describe('/onboarding', () => {
 	});
 
 	it('renders blocked state when writes are disabled', () => {
-		render(Page, {
-			data: {
-				config: emptyConfigFixture,
-				etag: '"rev-1"',
-				canWrite: false,
-				onboarding: {
-					state: 'writes_disabled',
-					hasFeeds: false,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				},
-				error: null
+		renderPage({
+			config: emptyConfigFixture,
+			etag: '"rev-1"',
+			canWrite: false,
+			onboarding: {
+				state: 'writes_disabled',
+				hasFeeds: false,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
 			},
-			form: undefined
+			error: null
 		});
 
 		expect(screen.getByText('Config writes are disabled')).toBeInTheDocument();
 	});
 
 	it('renders the first feed step for strict initial-empty config', () => {
-		render(Page, {
-			data: {
-				config: emptyConfigFixture,
-				etag: '"rev-1"',
-				canWrite: true,
-				onboarding: {
-					state: 'initial_empty',
-					hasFeeds: false,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				},
-				error: null
+		renderPage({
+			config: emptyConfigFixture,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: {
+				state: 'initial_empty',
+				hasFeeds: false,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
 			},
-			form: undefined
+			error: null
 		});
 
 		expect(screen.getByRole('heading', { name: 'Step 1 — Feed type' })).toBeInTheDocument();
@@ -88,21 +88,18 @@ describe('/onboarding', () => {
 	});
 
 	it('renders partial-setup guidance instead of a ready/completed state for feed-only config', () => {
-		render(Page, {
-			data: {
-				config: feedOnlyConfigFixture,
-				etag: '"rev-2"',
-				canWrite: true,
-				onboarding: {
-					state: 'partial_setup',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				},
-				error: null
+		renderPage({
+			config: feedOnlyConfigFixture,
+			etag: '"rev-2"',
+			canWrite: true,
+			onboarding: {
+				state: 'partial_setup',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
 			},
-			form: undefined
+			error: null
 		});
 
 		expect(screen.getByText('Resume onboarding')).toBeInTheDocument();
@@ -110,21 +107,18 @@ describe('/onboarding', () => {
 	});
 
 	it('renders the TV target step for feed-only config', () => {
-		render(Page, {
-			data: {
-				config: feedOnlyConfigFixture,
-				etag: '"rev-2"',
-				canWrite: true,
-				onboarding: {
-					state: 'partial_setup',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				},
-				error: null
+		renderPage({
+			config: feedOnlyConfigFixture,
+			etag: '"rev-2"',
+			canWrite: true,
+			onboarding: {
+				state: 'partial_setup',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
 			},
-			form: undefined
+			error: null
 		});
 
 		expect(screen.getByText('Step 3 — Add a TV target')).toBeInTheDocument();
@@ -132,21 +126,18 @@ describe('/onboarding', () => {
 	});
 
 	it('pre-populates tv defaults chips from config.tvDefaults', () => {
-		render(Page, {
-			data: {
-				config: configWithTvDefaultsFixture,
-				etag: '"rev-2"',
-				canWrite: true,
-				onboarding: {
-					state: 'partial_setup',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				},
-				error: null
+		renderPage({
+			config: configWithTvDefaultsFixture,
+			etag: '"rev-2"',
+			canWrite: true,
+			onboarding: {
+				state: 'partial_setup',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
 			},
-			form: undefined
+			error: null
 		});
 
 		const resolutionButton = screen.getByRole('button', { name: 'Toggle 1080p' });
@@ -158,21 +149,18 @@ describe('/onboarding', () => {
 	});
 
 	it('toggles tv defaults chips in the tv target step', async () => {
-		render(Page, {
-			data: {
-				config: feedOnlyConfigFixture,
-				etag: '"rev-2"',
-				canWrite: true,
-				onboarding: {
-					state: 'partial_setup',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				},
-				error: null
+		renderPage({
+			config: feedOnlyConfigFixture,
+			etag: '"rev-2"',
+			canWrite: true,
+			onboarding: {
+				state: 'partial_setup',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
 			},
-			form: undefined
+			error: null
 		});
 
 		const resolutionButton = screen.getByRole('button', { name: 'Toggle 1080p' });
@@ -182,27 +170,24 @@ describe('/onboarding', () => {
 	});
 
 	it('renders the movie target step for movie-only feeds', () => {
-		render(Page, {
-			data: {
-				config: {
-					...feedOnlyConfigFixture,
-					feeds: feedOnlyConfigFixture.feeds.map((feed) => ({
-						...feed,
-						mediaType: 'movie' as const
-					}))
-				},
-				etag: '"rev-2"',
-				canWrite: true,
-				onboarding: {
-					state: 'partial_setup',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				},
-				error: null
+		renderPage({
+			config: {
+				...feedOnlyConfigFixture,
+				feeds: feedOnlyConfigFixture.feeds.map((feed) => ({
+					...feed,
+					mediaType: 'movie' as const
+				}))
 			},
-			form: undefined
+			etag: '"rev-2"',
+			canWrite: true,
+			onboarding: {
+				state: 'partial_setup',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
+			},
+			error: null
 		});
 
 		expect(screen.queryByText('Step 3 — Add a TV target')).not.toBeInTheDocument();
@@ -211,21 +196,18 @@ describe('/onboarding', () => {
 	});
 
 	it('uses movie-specific copy when a movie target already exists', () => {
-		render(Page, {
-			data: {
-				config: feedOnlyConfigFixture,
-				etag: '"rev-2"',
-				canWrite: true,
-				onboarding: {
-					state: 'partial_setup',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: true,
-					minimumComplete: true
-				},
-				error: null
+		renderPage({
+			config: feedOnlyConfigFixture,
+			etag: '"rev-2"',
+			canWrite: true,
+			onboarding: {
+				state: 'partial_setup',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: true,
+				minimumComplete: true
 			},
-			form: undefined
+			error: null
 		});
 
 		expect(screen.getByText('Done')).toBeInTheDocument();
@@ -235,6 +217,7 @@ describe('/onboarding', () => {
 	it('shows the movie step after tv save in the both flow', () => {
 		render(Page, {
 			data: {
+				...sharedLayoutData,
 				config: {
 					...configWithMoviesFixture,
 					movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
@@ -264,24 +247,21 @@ describe('/onboarding', () => {
 
 	it('keeps the movie step pending after reload for the both flow', () => {
 		writeOnboardingPath('both');
-		render(Page, {
-			data: {
-				config: {
-					...configWithMoviesFixture,
-					movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
-				},
-				etag: '"rev-3"',
-				canWrite: true,
-				onboarding: {
-					state: 'ready',
-					hasFeeds: true,
-					hasTvTargets: true,
-					hasMovieTargets: false,
-					minimumComplete: true
-				},
-				error: null
+		renderPage({
+			config: {
+				...configWithMoviesFixture,
+				movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
 			},
-			form: undefined
+			etag: '"rev-3"',
+			canWrite: true,
+			onboarding: {
+				state: 'ready',
+				hasFeeds: true,
+				hasTvTargets: true,
+				hasMovieTargets: false,
+				minimumComplete: true
+			},
+			error: null
 		});
 
 		expect(screen.getByText('Step 4 — Add a movie target')).toBeInTheDocument();
@@ -292,6 +272,7 @@ describe('/onboarding', () => {
 	it('preserves existing movie policy copy when present', () => {
 		render(Page, {
 			data: {
+				...sharedLayoutData,
 				config: {
 					...configWithMoviesFixture,
 					movies: { years: [], resolutions: ['1080p'], codecs: ['x265'], codecPolicy: 'require' }
@@ -319,25 +300,22 @@ describe('/onboarding', () => {
 	});
 
 	it('shows the done summary after feed and tv target are present', () => {
-		render(Page, {
-			data: {
-				config: {
-					...configWithMoviesFixture,
-					feeds: [{ name: 'TV Feed', url: 'https://example.com/tv.rss', mediaType: 'tv' }],
-					movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
-				},
-				etag: '"rev-3"',
-				canWrite: true,
-				onboarding: {
-					state: 'ready',
-					hasFeeds: true,
-					hasTvTargets: true,
-					hasMovieTargets: false,
-					minimumComplete: true
-				},
-				error: null
+		renderPage({
+			config: {
+				...configWithMoviesFixture,
+				feeds: [{ name: 'TV Feed', url: 'https://example.com/tv.rss', mediaType: 'tv' }],
+				movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
 			},
-			form: undefined
+			etag: '"rev-3"',
+			canWrite: true,
+			onboarding: {
+				state: 'ready',
+				hasFeeds: true,
+				hasTvTargets: true,
+				hasMovieTargets: false,
+				minimumComplete: true
+			},
+			error: null
 		});
 
 		expect(screen.getByText('Done')).toBeInTheDocument();
@@ -347,24 +325,21 @@ describe('/onboarding', () => {
 	});
 
 	it('shows the done summary after feed and movie target are present', () => {
-		render(Page, {
-			data: {
-				config: {
-					...configWithMoviesFixture,
-					tv: []
-				},
-				etag: '"rev-3"',
-				canWrite: true,
-				onboarding: {
-					state: 'ready',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: true,
-					minimumComplete: true
-				},
-				error: null
+		renderPage({
+			config: {
+				...configWithMoviesFixture,
+				tv: []
 			},
-			form: undefined
+			etag: '"rev-3"',
+			canWrite: true,
+			onboarding: {
+				state: 'ready',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: true,
+				minimumComplete: true
+			},
+			error: null
 		});
 
 		expect(screen.getByText('Done')).toBeInTheDocument();

@@ -47,18 +47,23 @@ const mockConfig: AppConfig = {
 	}
 };
 
+const sharedLayoutData = { health: null, transmissionSession: null };
+
+function renderPage(data: Record<string, unknown>) {
+	return render(Page, {
+		data: { ...sharedLayoutData, ...data } as never,
+		form: undefined
+	});
+}
+
 describe('/config', () => {
 	it('renders config sections with mock data', () => {
-		render(Page, {
-			data: {
-				config: mockConfig,
-				error: null,
-				etag: '"rev-1"',
-				canWrite: true,
-				transmissionSession: null,
-				onboarding: null
-			},
-			form: undefined
+		renderPage({
+			config: mockConfig,
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
 		});
 		expect(screen.getByRole('heading', { name: 'RSS Feeds' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'TV Configuration' })).toBeInTheDocument();
@@ -73,50 +78,38 @@ describe('/config', () => {
 	});
 
 	it('renders error state when API is unreachable', () => {
-		render(Page, {
-			data: {
-				config: null,
-				error: 'Could not reach the API.',
-				etag: null,
-				canWrite: false,
-				transmissionSession: null,
-				onboarding: null
-			},
-			form: undefined
+		renderPage({
+			config: null,
+			error: 'Could not reach the API.',
+			etag: null,
+			canWrite: false,
+			onboarding: null
 		});
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 
 	it('renders when feeds list is empty and tv list is empty', () => {
-		render(Page, {
-			data: {
-				config: { ...mockConfig, feeds: [], tv: [] },
-				error: null,
-				etag: '"rev-1"',
-				canWrite: true,
-				transmissionSession: null,
-				onboarding: null
-			},
-			form: undefined
+		renderPage({
+			config: { ...mockConfig, feeds: [], tv: [] },
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
 		});
 		expect(screen.getByText(/No feeds configured yet/)).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeInTheDocument();
 	});
 
 	it('renders TV defaults chips pre-populated from config.tvDefaults', () => {
-		render(Page, {
-			data: {
-				config: {
-					...mockConfig,
-					tvDefaults: { resolutions: ['1080p', '720p'], codecs: ['x265'] }
-				},
-				error: null,
-				etag: '"rev-1"',
-				canWrite: true,
-				transmissionSession: null,
-				onboarding: null
+		renderPage({
+			config: {
+				...mockConfig,
+				tvDefaults: { resolutions: ['1080p', '720p'], codecs: ['x265'] }
 			},
-			form: undefined
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
 		});
 		const resolutionButtons = screen
 			.getAllByRole('button', { name: /2160p|1080p|720p|480p/ })
@@ -128,37 +121,29 @@ describe('/config', () => {
 	});
 
 	it('does not render restart offer by default', () => {
-		render(Page, {
-			data: {
-				config: mockConfig,
-				error: null,
-				etag: '"rev-1"',
-				canWrite: true,
-				transmissionSession: null,
-				onboarding: null
-			},
-			form: undefined
+		renderPage({
+			config: mockConfig,
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
 		});
 		expect(screen.queryByRole('button', { name: /restart daemon/i })).not.toBeInTheDocument();
 	});
 
 	it('renders resume onboarding banner for partial setup', () => {
-		render(Page, {
-			data: {
-				config: mockConfig,
-				error: null,
-				etag: '"rev-1"',
-				canWrite: true,
-				transmissionSession: null,
-				onboarding: {
-					state: 'partial_setup',
-					hasFeeds: true,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				}
-			},
-			form: undefined
+		renderPage({
+			config: mockConfig,
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: {
+				state: 'partial_setup',
+				hasFeeds: true,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
+			}
 		});
 		expect(screen.getAllByText('Resume onboarding')).toHaveLength(2);
 		expect(screen.getByRole('link', { name: 'Resume onboarding' })).toHaveAttribute(
@@ -168,22 +153,18 @@ describe('/config', () => {
 	});
 
 	it('renders start onboarding banner for initial-empty setup', () => {
-		render(Page, {
-			data: {
-				config: { ...mockConfig, feeds: [], tv: [], movies: { ...mockConfig.movies, years: [] } },
-				error: null,
-				etag: '"rev-1"',
-				canWrite: true,
-				transmissionSession: null,
-				onboarding: {
-					state: 'initial_empty',
-					hasFeeds: false,
-					hasTvTargets: false,
-					hasMovieTargets: false,
-					minimumComplete: false
-				}
-			},
-			form: undefined
+		renderPage({
+			config: { ...mockConfig, feeds: [], tv: [], movies: { ...mockConfig.movies, years: [] } },
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: {
+				state: 'initial_empty',
+				hasFeeds: false,
+				hasTvTargets: false,
+				hasMovieTargets: false,
+				minimumComplete: false
+			}
 		});
 		expect(screen.getByRole('link', { name: 'Start onboarding' })).toHaveAttribute(
 			'href',
@@ -195,16 +176,12 @@ describe('/config', () => {
 	});
 
 	it('renders all accordion items open on load', () => {
-		render(Page, {
-			data: {
-				config: mockConfig,
-				error: null,
-				etag: '"rev-1"',
-				canWrite: true,
-				transmissionSession: null,
-				onboarding: null
-			},
-			form: undefined
+		renderPage({
+			config: mockConfig,
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
 		});
 
 		expect(screen.getByRole('button', { name: 'RSS Feeds' })).toHaveAttribute(
@@ -234,16 +211,12 @@ describe('/config', () => {
 	});
 
 	it('disables all write controls in read-only mode but keeps Test Connection enabled', () => {
-		render(Page, {
-			data: {
-				config: mockConfig,
-				error: null,
-				etag: '"rev-1"',
-				canWrite: false,
-				transmissionSession: null,
-				onboarding: null
-			},
-			form: undefined
+		renderPage({
+			config: mockConfig,
+			error: null,
+			etag: '"rev-1"',
+			canWrite: false,
+			onboarding: null
 		});
 
 		expect(screen.getByRole('button', { name: 'Save feeds' })).toBeDisabled();
