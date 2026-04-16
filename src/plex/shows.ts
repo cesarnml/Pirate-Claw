@@ -40,40 +40,47 @@ export async function refreshShowLibraryCache(
   const uniqueShows = dedupeShows(shows);
 
   for (const show of uniqueShows) {
-    const searchResults = await deps.client.searchShows(show.normalizedTitle);
-    if (searchResults === null) {
-      deps.log(
-        `plex show refresh skipped for ${show.normalizedTitle}: search unavailable`,
-      );
-      continue;
-    }
+    try {
+      const searchResults = await deps.client.searchShows(show.normalizedTitle);
+      if (searchResults === null) {
+        deps.log(
+          `plex show refresh skipped for ${show.normalizedTitle}: search unavailable`,
+        );
+        continue;
+      }
 
-    const best = selectBestShowMatch(show, searchResults);
-    const cachedAt = new Date().toISOString();
+      const best = selectBestShowMatch(show, searchResults);
+      const cachedAt = new Date().toISOString();
 
-    if (!best) {
+      if (!best) {
+        deps.cache.upsertTv({
+          normalizedTitle: show.normalizedTitle,
+          plexRatingKey: null,
+          inLibrary: false,
+          watchCount: 0,
+          lastWatchedAt: null,
+          cachedAt,
+        });
+        continue;
+      }
+
       deps.cache.upsertTv({
         normalizedTitle: show.normalizedTitle,
-        plexRatingKey: null,
-        inLibrary: false,
-        watchCount: 0,
-        lastWatchedAt: null,
+        plexRatingKey: best.ratingKey ?? null,
+        inLibrary: true,
+        watchCount: best.viewCount ?? 0,
+        lastWatchedAt:
+          best.lastViewedAt != null
+            ? new Date(best.lastViewedAt * 1000).toISOString()
+            : null,
         cachedAt,
       });
-      continue;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.log(
+        `plex show refresh failed for ${show.normalizedTitle}: ${message}`,
+      );
     }
-
-    deps.cache.upsertTv({
-      normalizedTitle: show.normalizedTitle,
-      plexRatingKey: best.ratingKey ?? null,
-      inLibrary: true,
-      watchCount: best.viewCount ?? 0,
-      lastWatchedAt:
-        best.lastViewedAt != null
-          ? new Date(best.lastViewedAt * 1000).toISOString()
-          : null,
-      cachedAt,
-    });
   }
 }
 

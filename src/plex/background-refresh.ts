@@ -22,12 +22,22 @@ export async function runPlexBackgroundRefresh(input: {
 
   const candidates = repository.listCandidateStates();
   if (plexMovies) {
-    const movies = buildMovieBreakdowns(candidates);
-    await refreshMovieLibraryCache(movies, plexMovies);
+    try {
+      const movies = buildMovieBreakdowns(candidates);
+      await refreshMovieLibraryCache(movies, plexMovies);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[plex] movie refresh failed: ${message}`);
+    }
   }
   if (plexShows) {
-    const shows = buildShowBreakdowns(candidates);
-    await refreshShowLibraryCache(shows, plexShows);
+    try {
+      const shows = buildShowBreakdowns(candidates);
+      await refreshShowLibraryCache(shows, plexShows);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[plex] show refresh failed: ${message}`);
+    }
   }
   log('[plex] background refresh completed');
 }

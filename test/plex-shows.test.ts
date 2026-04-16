@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, it } from 'bun:test';
 
 import { createApiFetch, createHealthState } from '../src/api';
+import { runPlexBackgroundRefresh } from '../src/plex/background-refresh';
 import { PlexCache } from '../src/plex/cache';
 import {
   enrichShowBreakdownsFromPlexCache,
@@ -223,5 +224,144 @@ describe('plex show enrichment', () => {
       watchCount: 5,
       lastWatchedAt: '2026-04-15T00:00:00.000Z',
     });
+  });
+
+  it('continues refreshing later shows when one show lookup throws', async () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+
+    await refreshShowLibraryCache(
+      [
+        {
+          normalizedTitle: 'Broken Show',
+          seasons: [],
+          plexStatus: 'unknown',
+          watchCount: null,
+          lastWatchedAt: null,
+        },
+        {
+          normalizedTitle: 'Healthy Show',
+          seasons: [],
+          plexStatus: 'unknown',
+          watchCount: null,
+          lastWatchedAt: null,
+        },
+      ],
+      {
+        cache,
+        client: {
+          searchShows: async (title: string) => {
+            if (title === 'Broken Show') {
+              throw new Error('boom');
+            }
+            return [
+              {
+                ratingKey: '789',
+                title: 'Healthy Show',
+                type: 'show',
+                viewCount: 1,
+              },
+            ];
+          },
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      },
+    );
+
+    expect(cache.getTv('Broken Show')).toBeUndefined();
+    expect(cache.getTv('Healthy Show')).toMatchObject({
+      inLibrary: true,
+      plexRatingKey: '789',
+    });
+  });
+
+  it('continues the show sweep when the movie sweep fails', async () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+    const log: string[] = [];
+
+    await runPlexBackgroundRefresh({
+      repository: {
+        ...stubRepository(),
+        listCandidateStates: () =>
+          [
+            {
+              identityKey: 'movie:example film|2024',
+              mediaType: 'movie',
+              status: 'queued',
+              ruleName: 'Example Film',
+              score: 100,
+              reasons: ['matched'],
+              rawTitle: 'Example Film 2024 1080p',
+              normalizedTitle: 'Example Film',
+              year: 2024,
+              feedName: 'Movie Feed',
+              guidOrLink: 'https://example.test/movie',
+              publishedAt: '2026-01-01T00:00:00Z',
+              downloadUrl: 'https://example.test/movie.torrent',
+              firstSeenRunId: 1,
+              lastSeenRunId: 1,
+              updatedAt: '2026-01-01T00:00:00Z',
+            },
+            {
+              identityKey: 'tv:example show|1|1',
+              mediaType: 'tv',
+              status: 'queued',
+              ruleName: 'Example Show',
+              score: 100,
+              reasons: ['matched'],
+              rawTitle: 'Example.Show.S01E01.1080p',
+              normalizedTitle: 'Example Show',
+              season: 1,
+              episode: 1,
+              feedName: 'TV Feed',
+              guidOrLink: 'https://example.test/show',
+              publishedAt: '2026-01-01T00:00:00Z',
+              downloadUrl: 'https://example.test/show.torrent',
+              firstSeenRunId: 1,
+              lastSeenRunId: 1,
+              updatedAt: '2026-01-01T00:00:00Z',
+            },
+          ] as never,
+      },
+      plexMovies: {
+        cache,
+        client: {
+          searchMovies: async () => {
+            throw new Error('movie sweep failed');
+          },
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      },
+      plexShows: {
+        cache,
+        client: {
+          searchShows: async () => [
+            {
+              ratingKey: '456',
+              title: 'Example Show',
+              type: 'show',
+              viewCount: 2,
+            },
+          ],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      },
+      log: (message: string) => log.push(message),
+    });
+
+    expect(cache.getTv('Example Show')).toMatchObject({
+      inLibrary: true,
+      plexRatingKey: '456',
+    });
+    expect(log.some((entry) => entry.includes('movie refresh failed'))).toBe(
+      true,
+    );
+    expect(log).toContain('[plex] background refresh completed');
   });
 });
