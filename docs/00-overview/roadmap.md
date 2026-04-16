@@ -144,7 +144,8 @@ Goal:
 Current status:
 
 - Phase 06 is complete. All tickets (`P6.01`–`P6.10`) are on `main`.
-- The canonical Synology runbook (`docs/02-delivery/phase-06/synology-runbook.md`) covers: storage layout, Transmission baseline, Pirate Claw container baseline, secrets/env injection, restart semantics, upgrade path, end-to-end validation, troubleshooting, and portability notes.
+- The canonical Synology operator runbook now lives at `docs/synology-runbook.md`.
+- The historical Phase 06 validation artifact remains at `docs/02-delivery/phase-06/synology-runbook.md`.
 - Validated on `DS918+ / DSM 7.1.1-42962 Update 9` with Docker 20.10.3 on kernel 4.4.x.
 - Key finding: Bun's `statx` syscall crashes silently on kernel 4.4.x when auto-loading `.env`. Workaround: mount config and `.env` under `/config/` instead of `/app/`.
 
@@ -161,6 +162,7 @@ Working notes:
 
 - `docs/01-product/phase-06-synology-runbook.md`
 - `docs/02-delivery/phase-06/implementation-plan.md`
+- `docs/synology-runbook.md`
 - `docs/02-delivery/phase-06/synology-runbook.md`
 
 ## Phase 07: Config Ergonomics

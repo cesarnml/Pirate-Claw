@@ -2,6 +2,10 @@
 
 Phase 06 makes Pirate Claw operational for NAS use as a documentation-and-validation phase, not an implementation phase for deployment tooling.
 
+The current canonical operator runbook now lives at `docs/synology-runbook.md`.
+Keep this phase doc focused on the original Phase 06 scope, boundaries, and
+validation posture.
+
 ## Phase Goal
 
 Phase 06 should leave Pirate Claw in a state where an operator can follow a tested runbook to run Pirate Claw and Transmission continuously on Synology.

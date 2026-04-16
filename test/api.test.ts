@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { mkdtemp } from 'node:fs/promises';
+import { chmod, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, spyOn } from 'bun:test';
@@ -870,6 +870,61 @@ describe('PUT /api/config', () => {
       expect(put.status).toBe(400);
       const body = (await put.json()) as { error?: string };
       expect(body.error).toContain('must include "tv"');
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
+  it('returns a deployment-specific error when the config file is not writable', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'pirate-claw-api-config-readonly-'),
+      );
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      await chmod(directory, 0o555);
+
+      const loaded = await loadConfig(configPath);
+      const deps = createDeps();
+      deps.config = loaded;
+      deps.configPath = configPath;
+
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const put = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            runtime: {
+              runIntervalMinutes: 45,
+              reconcileIntervalMinutes: 2,
+              tmdbRefreshIntervalMinutes: 0,
+            },
+            tv: {
+              shows: ['Alpha Show', 'Beta Show'],
+            },
+          }),
+        }),
+      );
+
+      expect(put.status).toBe(500);
+      await expect(put.json()).resolves.toEqual({
+        error:
+          'config file is not writable; check deployment mount permissions and restart the daemon after fixing them',
+      });
     } finally {
       if (prevWrite !== undefined) {
         process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;

@@ -1,5 +1,10 @@
 # Synology Runbook
 
+Historical note:
+The current canonical operator runbook now lives at `docs/synology-runbook.md`.
+This file remains the original Phase 06 validation artifact and baseline
+runbook captured during that delivery phase.
+
 This is the canonical Phase 06 operator runbook for the validated Synology baseline.
 
 ## Validated Baseline

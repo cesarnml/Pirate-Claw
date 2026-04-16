@@ -5,12 +5,17 @@ The docs are organized by purpose so later phases can be added without flattenin
 ## Recommended Reading Order
 
 1. `../README.md`
-2. `00-overview/start-here.md`
-3. `00-overview/roadmap.md`
-4. the most relevant current product doc under `01-product/`
-5. the matching delivery plan under `02-delivery/` when the work is phase/epic-scoped
-6. `03-engineering/delivery-orchestrator.md` for delivery-tooling work
-7. `03-engineering/tdd-workflow.md` for test-first implementation work
+2. `synology-runbook.md` when the work touches NAS deployment or operator setup
+3. `00-overview/start-here.md`
+4. `00-overview/roadmap.md`
+5. the most relevant current product doc under `01-product/`
+6. the matching delivery plan under `02-delivery/` when the work is phase/epic-scoped
+7. `03-engineering/delivery-orchestrator.md` for delivery-tooling work
+8. `03-engineering/tdd-workflow.md` for test-first implementation work
+
+## Top-Level Docs
+
+- `synology-runbook.md`: canonical current Synology operator runbook and live deployment contract
 
 ## Folder Structure
 
@@ -65,7 +70,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-04/implementation-plan.md`: always-on local runtime delivery plan
 - `phase-05/implementation-plan.md`: intake policy and Transmission routing delivery plan
 - `phase-06/implementation-plan.md`: Synology runbook delivery plan
-- `phase-06/synology-runbook.md`: canonical operator-facing Synology runbook (validated)
+- `phase-06/synology-runbook.md`: historical Phase 06 Synology validation artifact and baseline runbook
 - `phase-07/implementation-plan.md`: config ergonomics delivery plan
 - `phase-08/implementation-plan.md`: media placement delivery plan
 - `phase-09/implementation-plan.md`: daemon HTTP API delivery plan

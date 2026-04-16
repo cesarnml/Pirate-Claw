@@ -107,6 +107,16 @@ function json500(): Response {
   return Response.json({ error: 'internal server error' }, { status: 500 });
 }
 
+function jsonConfigWriteFailure(): Response {
+  return Response.json(
+    {
+      error:
+        'config file is not writable; check deployment mount permissions and restart the daemon after fixing them',
+    },
+    { status: 500 },
+  );
+}
+
 function safeJson<T>(body: () => T): Response {
   try {
     return Response.json(body());
@@ -378,6 +388,9 @@ export function createApiFetch(
         if (error instanceof ConfigError) {
           return Response.json({ error: error.message }, { status: 400 });
         }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
+        }
         return json500();
       }
     }
@@ -436,6 +449,9 @@ export function createApiFetch(
         if (error instanceof ConfigError) {
           return Response.json({ error: error.message }, { status: 400 });
         }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
+        }
         return json500();
       }
     }
@@ -493,6 +509,9 @@ export function createApiFetch(
       } catch (error) {
         if (error instanceof ConfigError) {
           return Response.json({ error: error.message }, { status: 400 });
+        }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
         }
         return json500();
       }
@@ -581,6 +600,9 @@ export function createApiFetch(
       } catch (error) {
         if (error instanceof ConfigError) {
           return Response.json({ error: error.message }, { status: 400 });
+        }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
         }
         return json500();
       }
@@ -867,16 +889,24 @@ async function readConfigFileRecord(
   return expectRecord(parsed, 'config');
 }
 
+class ConfigWriteError extends Error {}
+
 function writeConfigAtomically(
   path: string,
   config: Record<string, unknown>,
 ): void {
   const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, {
-    encoding: 'utf8',
-    flag: 'wx',
-  });
-  renameSync(tempPath, path);
+  try {
+    writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
+    renameSync(tempPath, path);
+  } catch (error) {
+    throw new ConfigWriteError(
+      error instanceof Error ? error.message : 'config write failed',
+    );
+  }
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {

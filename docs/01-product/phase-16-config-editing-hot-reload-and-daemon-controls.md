@@ -32,7 +32,7 @@ Phase 16 should leave Pirate Claw in a state where:
 
 - calls `process.kill(process.pid, 'SIGTERM')` and trusts the NAS supervisor (Synology Task Scheduler or systemd) to restart the process
 - only offered as a follow-on action immediately after a successful config save in the SvelteKit Settings flow — not a standalone endpoint callable from the UI at any time
-- documented requirement: the daemon must be run under a supervisor that auto-restarts on exit; the runbook (`docs/01-product/phase-06-synology-runbook.md`) is updated with this requirement
+- documented requirement: the daemon must be run under a supervisor that auto-restarts on exit; the runbook (`docs/synology-runbook.md`) documents the current deployment contract and restart requirement
 
 **Hot reload scope (API-layer only)**
 
