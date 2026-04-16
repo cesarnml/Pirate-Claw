@@ -76,6 +76,29 @@ describe('/shows', () => {
 		expect(screen.getByText(/50% complete/)).toBeInTheDocument();
 	});
 
+	it('renders Plex status, watch count, and last watched date on show cards', () => {
+		render(Page, {
+			data: {
+				shows: [
+					{
+						...mockShow,
+						plexStatus: 'in_library',
+						watchCount: 7,
+						lastWatchedAt: '2026-04-15T00:00:00.000Z'
+					}
+				],
+				torrents: null,
+				error: null
+			}
+		});
+
+		expect(screen.getByText('In library')).toBeInTheDocument();
+		expect(screen.getByText('7')).toBeInTheDocument();
+		expect(
+			screen.getByText(new Date('2026-04-15T00:00:00.000Z').toLocaleDateString())
+		).toBeInTheDocument();
+	});
+
 	it('sort by Progress orders shows by max transmissionPercentDone desc', async () => {
 		render(Page, {
 			data: { shows: [mockShow, mockShow2], torrents: null, error: null }

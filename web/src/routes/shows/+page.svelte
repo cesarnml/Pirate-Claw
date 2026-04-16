@@ -44,6 +44,35 @@
 		return max;
 	}
 
+	function plexChipClass(status: ShowBreakdown['plexStatus']): string {
+		switch (status) {
+			case 'in_library':
+				return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200';
+			case 'missing':
+				return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200';
+			default:
+				return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+		}
+	}
+
+	function plexStatusLabel(status: ShowBreakdown['plexStatus']): string {
+		switch (status) {
+			case 'in_library':
+				return 'In library';
+			case 'missing':
+				return 'Missing';
+			default:
+				return 'Unknown';
+		}
+	}
+
+	function formatLastWatched(value: string | null): string {
+		if (!value) return '—';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return '—';
+		return date.toLocaleDateString();
+	}
+
 	const sortedShows = $derived(
 		[...data.shows].sort((a, b) => {
 			if (sortKey === 'progress') return maxProgress(b) - maxProgress(a);
@@ -149,6 +178,21 @@
 										{/if}
 									</p>
 								{/if}
+								<div class="text-muted-foreground mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+									<span class="inline-flex items-center gap-1">
+										<span>Plex:</span>
+										<Badge variant="secondary" class={plexChipClass(show.plexStatus)}>
+											{plexStatusLabel(show.plexStatus)}
+										</Badge>
+									</span>
+									<span>Watches: <span class="text-foreground">{show.watchCount ?? '—'}</span></span
+									>
+									<span
+										>Last watched:
+										<span class="text-foreground">{formatLastWatched(show.lastWatchedAt)}</span
+										></span
+									>
+								</div>
 							</div>
 						</CardContent>
 					</Card>

@@ -21,6 +21,7 @@ import { runPlexBackgroundRefresh } from './plex/background-refresh';
 import { PlexCache } from './plex/cache';
 import { PlexHttpClient } from './plex/client';
 import type { PlexMovieEnrichDeps } from './plex/movies';
+import type { PlexShowEnrichDeps } from './plex/shows';
 import {
   filterDueFeeds,
   loadPollState,
@@ -52,6 +53,27 @@ function plexMovieEnrichDeps(
   config: AppConfig,
   log: (message: string) => void,
 ): PlexMovieEnrichDeps | undefined {
+  if (!config.plex) {
+    return undefined;
+  }
+
+  return {
+    cache: new PlexCache(database),
+    client: new PlexHttpClient(
+      config.plex.url,
+      config.plex.token,
+      (m: string) => log(`[plex] ${m}`),
+    ),
+    refreshIntervalMinutes: config.plex.refreshIntervalMinutes,
+    log: (m: string) => log(`[plex] ${m}`),
+  };
+}
+
+function plexShowEnrichDeps(
+  database: Database,
+  config: AppConfig,
+  log: (message: string) => void,
+): PlexShowEnrichDeps | undefined {
   if (!config.plex) {
     return undefined;
   }
@@ -222,6 +244,7 @@ export async function runCli(argv: string[]): Promise<number> {
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
         const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
         const plexMovies = plexMovieEnrichDeps(database, config, log);
+        const plexShows = plexShowEnrichDeps(database, config, log);
         const tmdbRefreshIntervalMinutes =
           config.runtime.tmdbRefreshIntervalMinutes!;
         const scheduleTmdbRefresh =
@@ -285,6 +308,7 @@ export async function runCli(argv: string[]): Promise<number> {
                 await runPlexBackgroundRefresh({
                   repository,
                   plexMovies,
+                  plexShows,
                   log,
                 });
               }
@@ -311,6 +335,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   pollStatePath,
                   loadPollState,
                   tmdbMovies,
+                  plexShows,
                   tmdbShows,
                   plexMovies,
                   tmdbCache: tmdbMovies?.cache ?? tmdbShows?.cache,

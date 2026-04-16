@@ -69,6 +69,25 @@ export class PlexHttpClient {
     }));
   }
 
+  async searchShows(title: string): Promise<PlexSearchResult[] | null> {
+    const query = encodeURIComponent(title);
+    const container = await this.getXml(
+      `/library/search?query=${query}&type=2`,
+    );
+    if (!container) {
+      return null;
+    }
+    const videos = asArray(container?.MediaContainer?.Directory);
+    return videos.map((entry) => ({
+      ratingKey: optionalStringField(entry.ratingKey),
+      title: optionalStringField(entry.title),
+      type: optionalStringField(entry.type),
+      year: optionalNumberField(entry.year),
+      viewCount: optionalNumberField(entry.viewCount),
+      lastViewedAt: optionalNumberField(entry.lastViewedAt),
+    }));
+  }
+
   async searchLibrary(
     sectionKey: string,
     title: string,

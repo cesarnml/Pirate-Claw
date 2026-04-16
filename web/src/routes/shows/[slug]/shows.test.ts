@@ -49,6 +49,27 @@ describe('/shows/[slug]', () => {
 		expect(screen.getByText('E01')).toBeInTheDocument();
 	});
 
+	it('renders Plex status details in the show header', () => {
+		render(Page, {
+			data: {
+				show: {
+					...mockShow,
+					plexStatus: 'in_library',
+					watchCount: 2,
+					lastWatchedAt: '2026-04-15T00:00:00.000Z'
+				},
+				torrents: null,
+				error: null
+			}
+		});
+
+		expect(screen.getByText('In library')).toBeInTheDocument();
+		expect(screen.getByText('2')).toBeInTheDocument();
+		expect(
+			screen.getByText(new Date('2026-04-15T00:00:00.000Z').toLocaleDateString())
+		).toBeInTheDocument();
+	});
+
 	it('renders progress bar and speed/ETA for active downloading episode', () => {
 		render(Page, { data: { show: mockShow, torrents: [mockTorrent], error: null } });
 		// 42% progress from live torrent
