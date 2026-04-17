@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { ShowBreakdown } from '$lib/types';
 
+const sharedLayoutData = { health: null, transmissionSession: null };
+
 const mockShow: ShowBreakdown = {
 	normalizedTitle: 'The Example Show',
 	plexStatus: 'unknown',
@@ -59,7 +61,7 @@ const mockShow2: ShowBreakdown = {
 
 describe('/shows', () => {
 	it('renders show cards with TMDB metadata and link to detail', () => {
-		render(Page, { data: { shows: [mockShow], torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, shows: [mockShow], torrents: null, error: null } });
 		expect(screen.getByRole('heading', { name: 'Shows' })).toBeInTheDocument();
 		expect(screen.getByText('The Example Show')).toBeInTheDocument();
 		expect(screen.getByTitle('TMDB vote average')).toHaveTextContent('★ 8.1');
@@ -70,7 +72,7 @@ describe('/shows', () => {
 	});
 
 	it('renders episode count and completion % on show card', () => {
-		render(Page, { data: { shows: [mockShow], torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, shows: [mockShow], torrents: null, error: null } });
 		// 2 episodes, 1 completed → 50%
 		expect(screen.getByText(/2 episodes/)).toBeInTheDocument();
 		expect(screen.getByText(/50% complete/)).toBeInTheDocument();
@@ -79,6 +81,7 @@ describe('/shows', () => {
 	it('renders Plex status, watch count, and last watched date on show cards', () => {
 		render(Page, {
 			data: {
+				...sharedLayoutData,
 				shows: [
 					{
 						...mockShow,
@@ -101,7 +104,7 @@ describe('/shows', () => {
 
 	it('sort by Progress orders shows by max transmissionPercentDone desc', async () => {
 		render(Page, {
-			data: { shows: [mockShow, mockShow2], torrents: null, error: null }
+			data: { ...sharedLayoutData, shows: [mockShow, mockShow2], torrents: null, error: null }
 		});
 		const links = screen.getAllByRole('link');
 		// Default title sort: "Another Show" before "The Example Show"
@@ -115,7 +118,7 @@ describe('/shows', () => {
 	});
 
 	it('renders empty state when there are no shows', () => {
-		render(Page, { data: { shows: [], torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, shows: [], torrents: null, error: null } });
 		expect(screen.getByText(/No tracked shows yet/)).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Go to TV shows in Config' })).toHaveAttribute(
 			'href',
@@ -124,7 +127,9 @@ describe('/shows', () => {
 	});
 
 	it('renders error state when API is unreachable', () => {
-		render(Page, { data: { shows: [], torrents: null, error: 'Could not reach the API.' } });
+		render(Page, {
+			data: { ...sharedLayoutData, shows: [], torrents: null, error: 'Could not reach the API.' }
+		});
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 });

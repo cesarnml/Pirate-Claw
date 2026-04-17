@@ -3,6 +3,8 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { ShowBreakdown, TorrentStatSnapshot } from '$lib/types';
 
+const sharedLayoutData = { health: null, transmissionSession: null };
+
 const mockShow: ShowBreakdown = {
 	normalizedTitle: 'The Show',
 	plexStatus: 'unknown',
@@ -43,7 +45,7 @@ const mockTorrent: TorrentStatSnapshot = {
 
 describe('/shows/[slug]', () => {
 	it('renders show name and season section', () => {
-		render(Page, { data: { show: mockShow, torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, show: mockShow, torrents: null, error: null } });
 		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The Show');
 		expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Season 1');
 		expect(screen.getByText('E01')).toBeInTheDocument();
@@ -52,6 +54,7 @@ describe('/shows/[slug]', () => {
 	it('renders Plex status details in the show header', () => {
 		render(Page, {
 			data: {
+				...sharedLayoutData,
 				show: {
 					...mockShow,
 					plexStatus: 'in_library',
@@ -71,7 +74,9 @@ describe('/shows/[slug]', () => {
 	});
 
 	it('renders progress bar and speed/ETA for active downloading episode', () => {
-		render(Page, { data: { show: mockShow, torrents: [mockTorrent], error: null } });
+		render(Page, {
+			data: { ...sharedLayoutData, show: mockShow, torrents: [mockTorrent], error: null }
+		});
 		// 42% progress from live torrent
 		expect(screen.getByText('42%')).toBeInTheDocument();
 		// Speed: 1048576 B/s = 1.0 MB/s
@@ -81,19 +86,23 @@ describe('/shows/[slug]', () => {
 	});
 
 	it('does not render speed/ETA for completed episodes', () => {
-		render(Page, { data: { show: mockShow, torrents: [mockTorrent], error: null } });
+		render(Page, {
+			data: { ...sharedLayoutData, show: mockShow, torrents: [mockTorrent], error: null }
+		});
 		// E02 is completed — only one speed/ETA row should exist (E01)
 		const speedRows = screen.getAllByText(/MB\/s|KB\/s/);
 		expect(speedRows).toHaveLength(1);
 	});
 
 	it('renders not-found state when show is null', () => {
-		render(Page, { data: { show: null, torrents: null, error: null } });
+		render(Page, { data: { ...sharedLayoutData, show: null, torrents: null, error: null } });
 		expect(screen.getByText('Show not found.')).toBeInTheDocument();
 	});
 
 	it('renders error state when API is unreachable', () => {
-		render(Page, { data: { show: null, torrents: null, error: 'Could not reach the API.' } });
+		render(Page, {
+			data: { ...sharedLayoutData, show: null, torrents: null, error: 'Could not reach the API.' }
+		});
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 });

@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { SkippedOutcomeRecord } from '$lib/types';
 
+const sharedLayoutData = { health: null, transmissionSession: null };
+
 // Anchored to fixtures/api/outcomes-skipped-no-match.json
 const mockOutcomes: SkippedOutcomeRecord[] = [
 	{
@@ -33,7 +35,7 @@ const mockOutcomes: SkippedOutcomeRecord[] = [
 
 describe('/candidates/unmatched', () => {
 	it('renders table with correct columns', () => {
-		render(Page, { data: { outcomes: mockOutcomes, error: null } });
+		render(Page, { data: { ...sharedLayoutData, outcomes: mockOutcomes, error: null } });
 		expect(screen.getByRole('heading', { name: 'Unmatched Candidates' })).toBeInTheDocument();
 		expect(screen.getByRole('columnheader', { name: 'Title' })).toBeInTheDocument();
 		expect(screen.getByRole('columnheader', { name: 'Feed' })).toBeInTheDocument();
@@ -44,14 +46,14 @@ describe('/candidates/unmatched', () => {
 	});
 
 	it('renders null title and feedName as "—"', () => {
-		render(Page, { data: { outcomes: mockOutcomes, error: null } });
+		render(Page, { data: { ...sharedLayoutData, outcomes: mockOutcomes, error: null } });
 		// Outcome id=3 has null title and feedName → both render as "—"
 		const dashes = screen.getAllByText('—');
 		expect(dashes.length).toBeGreaterThanOrEqual(2);
 	});
 
 	it('title search filters rows by partial match (case-insensitive)', async () => {
-		render(Page, { data: { outcomes: mockOutcomes, error: null } });
+		render(Page, { data: { ...sharedLayoutData, outcomes: mockOutcomes, error: null } });
 		const input = screen.getByPlaceholderText('Search by title…');
 		await fireEvent.input(input, { target: { value: 'brutalist' } });
 		expect(
@@ -61,7 +63,7 @@ describe('/candidates/unmatched', () => {
 	});
 
 	it('title search with no match shows empty table body (not placeholder)', async () => {
-		render(Page, { data: { outcomes: mockOutcomes, error: null } });
+		render(Page, { data: { ...sharedLayoutData, outcomes: mockOutcomes, error: null } });
 		const input = screen.getByPlaceholderText('Search by title…');
 		await fireEvent.input(input, { target: { value: 'xyznonexistent' } });
 		// Table still present but no data rows
@@ -74,13 +76,15 @@ describe('/candidates/unmatched', () => {
 	});
 
 	it('renders empty state when no outcomes', () => {
-		render(Page, { data: { outcomes: [], error: null } });
+		render(Page, { data: { ...sharedLayoutData, outcomes: [], error: null } });
 		expect(screen.getByText(/No unmatched candidates in the last 30 days/)).toBeInTheDocument();
 		expect(screen.getByText(/they will show up here for follow-up/)).toBeInTheDocument();
 	});
 
 	it('renders error alert when error is set', () => {
-		render(Page, { data: { outcomes: [], error: 'Could not reach the API.' } });
+		render(Page, {
+			data: { ...sharedLayoutData, outcomes: [], error: 'Could not reach the API.' }
+		});
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 });
