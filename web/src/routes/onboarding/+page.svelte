@@ -133,15 +133,29 @@
 	}
 </script>
 
-<h1 class="text-3xl font-bold tracking-tight">Onboarding</h1>
+<section class="space-y-3">
+	<p class="text-accent text-xs font-semibold tracking-[0.35em] uppercase">Command Deck Setup</p>
+	<h1 class="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">Onboarding</h1>
+	<p class="text-muted-foreground max-w-2xl text-sm leading-6 sm:text-base">
+		Stand up Pirate Claw with the minimum viable config, then continue in the dashboard for deeper
+		tuning. This flow keeps your first feed and first target narrow, reversible, and ready for the
+		wider Phase 19 redesign.
+	</p>
+</section>
 
 {#if data.error}
-	<Alert variant="destructive" class="mt-6" role="alert">
+	<Alert
+		variant="destructive"
+		class="border-border/80 bg-card/85 mt-6 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
+		role="alert"
+	>
 		<AlertTitle>API unavailable</AlertTitle>
 		<AlertDescription>{data.error}</AlertDescription>
 	</Alert>
 {:else if data.onboarding?.state === 'writes_disabled'}
-	<Alert class="mt-6">
+	<Alert
+		class="border-border/80 bg-card/85 mt-6 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
+	>
 		<AlertTitle>Config writes are disabled</AlertTitle>
 		<AlertDescription>
 			Enable config writes before using onboarding. You can still review the existing dashboard.
@@ -150,7 +164,9 @@
 {:else}
 	<section class="mt-8 space-y-6">
 		{#if !showDoneStep}
-			<Alert>
+			<Alert
+				class="border-border/80 bg-card/85 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<AlertTitle>
 					{data.onboarding?.state === 'partial_setup' ? 'Resume onboarding' : 'First-time setup'}
 				</AlertTitle>
@@ -166,18 +182,26 @@
 		{/if}
 
 		{#if !(data.onboarding?.hasFeeds ?? false)}
-			<div class="space-y-3">
+			<div
+				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<h2 class="text-lg font-semibold tracking-tight">Step 1 — Feed type</h2>
 				<div class="flex flex-wrap gap-3">
-					<label class="border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+					<label
+						class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
+					>
 						<input type="radio" bind:group={selectedPath} value="tv" />
 						<span>TV</span>
 					</label>
-					<label class="border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+					<label
+						class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
+					>
 						<input type="radio" bind:group={selectedPath} value="movie" />
 						<span>Movie</span>
 					</label>
-					<label class="border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+					<label
+						class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
+					>
 						<input type="radio" bind:group={selectedPath} value="both" />
 						<span>Both</span>
 					</label>
@@ -189,7 +213,9 @@
 				</p>
 			</div>
 
-			<div class="space-y-3">
+			<div
+				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<h2 class="text-lg font-semibold tracking-tight">Step 2 — Add your first feed</h2>
 				<form method="POST" action="?/saveFeed" class="space-y-4">
 					<input type="hidden" name="ifMatch" value={form?.feedsEtag ?? data.etag ?? ''} />
@@ -207,7 +233,7 @@
 								name="feedName"
 								type="text"
 								placeholder="TV Feed"
-								class="border-input bg-background ring-offset-background h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+								class="border-input bg-background/70 ring-offset-background placeholder:text-muted-foreground/70 h-11 w-full rounded-xl border px-4 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 							/>
 						</div>
 						<div class="space-y-1">
@@ -216,7 +242,7 @@
 								id="feed-type"
 								name="feedMediaType"
 								bind:value={feedMediaType}
-								class="border-input bg-background ring-offset-background h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+								class="border-input bg-background/70 ring-offset-background h-11 w-full rounded-xl border px-4 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 							>
 								<option value="tv">TV</option>
 								<option value="movie">Movie</option>
@@ -230,7 +256,7 @@
 							name="feedUrl"
 							type="url"
 							placeholder="https://example.com/feed.rss"
-							class="border-input bg-background ring-offset-background h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+							class="border-input bg-background/70 ring-offset-background placeholder:text-muted-foreground/70 h-11 w-full rounded-xl border px-4 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 						/>
 					</div>
 					{#if form?.feedsMessage}
@@ -241,7 +267,7 @@
 					<div class="flex flex-wrap items-center gap-3">
 						<button
 							type="submit"
-							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 items-center rounded-xl px-5 text-sm font-semibold shadow-[0_12px_30px_rgb(20_184_166_/_0.18)] disabled:opacity-50"
 							disabled={!(form?.feedsEtag ?? data.etag)}
 						>
 							Save first feed
@@ -257,7 +283,9 @@
 				</form>
 			</div>
 		{:else if showTvTargetStep}
-			<Alert>
+			<Alert
+				class="border-border/80 bg-card/85 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<AlertTitle>Step 3 — Add a TV target</AlertTitle>
 				<AlertDescription>
 					Your first feed is saved. Add a TV show and optional defaults without replacing any
@@ -265,7 +293,11 @@
 				</AlertDescription>
 			</Alert>
 
-			<form method="POST" action="?/saveTvTarget" class="space-y-4">
+			<form
+				method="POST"
+				action="?/saveTvTarget"
+				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<input type="hidden" name="ifMatch" value={form?.tvTargetEtag ?? data.etag ?? ''} />
 				<input type="hidden" name="onboardingPath" value={onboardingPath} />
 				<input
@@ -287,7 +319,7 @@
 						name="showName"
 						type="text"
 						placeholder="The Example Show"
-						class="border-input bg-background ring-offset-background h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+						class="border-input bg-background/70 ring-offset-background placeholder:text-muted-foreground/70 h-11 w-full rounded-xl border px-4 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 					/>
 				</div>
 
@@ -297,11 +329,11 @@
 						{#each ALL_RESOLUTIONS as resolution}
 							<button
 								type="button"
-								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {tvResolutions.includes(
+								class="inline-flex h-9 items-center rounded-full border px-4 text-sm font-medium transition-colors {tvResolutions.includes(
 									resolution
 								)
-									? 'bg-primary text-primary-foreground border-primary'
-									: 'border-border bg-card hover:bg-muted/50'}"
+									? 'border-primary bg-primary text-primary-foreground shadow-[0_8px_24px_rgb(20_184_166_/_0.2)]'
+									: 'border-border bg-background/55 hover:bg-muted/80'}"
 								aria-label={`Toggle ${resolution}`}
 								aria-pressed={tvResolutions.includes(resolution)}
 								onclick={() => toggleResolution(resolution)}
@@ -318,11 +350,11 @@
 						{#each ALL_CODECS as codec}
 							<button
 								type="button"
-								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {tvCodecs.includes(
+								class="inline-flex h-9 items-center rounded-full border px-4 text-sm font-medium transition-colors {tvCodecs.includes(
 									codec
 								)
-									? 'bg-primary text-primary-foreground border-primary'
-									: 'border-border bg-card hover:bg-muted/50'}"
+									? 'border-primary bg-primary text-primary-foreground shadow-[0_8px_24px_rgb(20_184_166_/_0.2)]'
+									: 'border-border bg-background/55 hover:bg-muted/80'}"
 								aria-label={`Toggle ${codec}`}
 								aria-pressed={tvCodecs.includes(codec)}
 								onclick={() => toggleCodec(codec)}
@@ -342,7 +374,7 @@
 				<div class="flex flex-wrap items-center gap-3">
 					<button
 						type="submit"
-						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 items-center rounded-xl px-5 text-sm font-semibold shadow-[0_12px_30px_rgb(20_184_166_/_0.18)] disabled:opacity-50"
 						disabled={!(form?.tvTargetEtag ?? data.etag)}
 					>
 						Save TV target
@@ -353,7 +385,9 @@
 				</div>
 			</form>
 		{:else if showMovieTargetStep}
-			<Alert>
+			<Alert
+				class="border-border/80 bg-card/85 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<AlertTitle>{movieStepTitle}</AlertTitle>
 				<AlertDescription>
 					{#if onboardingPath === 'both'}
@@ -364,7 +398,11 @@
 				</AlertDescription>
 			</Alert>
 
-			<form method="POST" action="?/saveMovieTarget" class="space-y-4">
+			<form
+				method="POST"
+				action="?/saveMovieTarget"
+				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<input
 					type="hidden"
 					name="ifMatch"
@@ -407,7 +445,7 @@
 						min="1900"
 						max="2100"
 						placeholder="2024"
-						class="border-input bg-background ring-offset-background h-9 w-full rounded-md border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+						class="border-input bg-background/70 ring-offset-background placeholder:text-muted-foreground/70 h-11 w-full rounded-xl border px-4 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 					/>
 				</div>
 
@@ -417,11 +455,11 @@
 						{#each ALL_RESOLUTIONS as resolution}
 							<button
 								type="button"
-								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {movieResolutions.includes(
+								class="inline-flex h-9 items-center rounded-full border px-4 text-sm font-medium transition-colors {movieResolutions.includes(
 									resolution
 								)
-									? 'bg-primary text-primary-foreground border-primary'
-									: 'border-border bg-card hover:bg-muted/50'}"
+									? 'border-primary bg-primary text-primary-foreground shadow-[0_8px_24px_rgb(20_184_166_/_0.2)]'
+									: 'border-border bg-background/55 hover:bg-muted/80'}"
 								aria-label={`Toggle ${resolution}`}
 								aria-pressed={movieResolutions.includes(resolution)}
 								onclick={() => toggleMovieResolution(resolution)}
@@ -438,11 +476,11 @@
 						{#each ALL_CODECS as codec}
 							<button
 								type="button"
-								class="inline-flex h-8 items-center rounded-full border px-3 text-sm font-medium transition-colors {movieCodecs.includes(
+								class="inline-flex h-9 items-center rounded-full border px-4 text-sm font-medium transition-colors {movieCodecs.includes(
 									codec
 								)
-									? 'bg-primary text-primary-foreground border-primary'
-									: 'border-border bg-card hover:bg-muted/50'}"
+									? 'border-primary bg-primary text-primary-foreground shadow-[0_8px_24px_rgb(20_184_166_/_0.2)]'
+									: 'border-border bg-background/55 hover:bg-muted/80'}"
 								aria-label={`Toggle ${codec}`}
 								aria-pressed={movieCodecs.includes(codec)}
 								onclick={() => toggleMovieCodec(codec)}
@@ -457,7 +495,7 @@
 					<p class="text-sm font-medium">Codec policy</p>
 					<div class="flex flex-wrap gap-3">
 						<label
-							class="border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+							class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
 						>
 							<input
 								type="radio"
@@ -468,7 +506,7 @@
 							<span>Prefer</span>
 						</label>
 						<label
-							class="border-border flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+							class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
 						>
 							<input
 								type="radio"
@@ -497,7 +535,7 @@
 				<div class="flex flex-wrap items-center gap-3">
 					<button
 						type="submit"
-						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium disabled:opacity-50"
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 items-center rounded-xl px-5 text-sm font-semibold shadow-[0_12px_30px_rgb(20_184_166_/_0.18)] disabled:opacity-50"
 						disabled={!(form?.movieTargetEtag ?? form?.tvTargetEtag ?? data.etag)}
 					>
 						Save movie target
@@ -508,14 +546,18 @@
 				</div>
 			</form>
 		{:else if showDoneStep}
-			<Alert>
+			<Alert
+				class="border-border/80 bg-card/85 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<AlertTitle>Done</AlertTitle>
 				<AlertDescription>
 					Your minimum setup is complete. Review the summary, then continue in the dashboard.
 				</AlertDescription>
 			</Alert>
 
-			<div class="border-border bg-card space-y-4 rounded-lg border p-4">
+			<div
+				class="border-border/80 bg-card/80 space-y-5 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<h2 class="text-lg font-semibold tracking-tight">Setup summary</h2>
 				<dl class="grid gap-3 text-sm sm:grid-cols-2">
 					<div class="space-y-1">
@@ -539,7 +581,7 @@
 				<div class="flex flex-wrap items-center gap-3">
 					<a
 						href="/"
-						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center rounded-md px-4 text-sm font-medium"
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 items-center rounded-xl px-5 text-sm font-semibold shadow-[0_12px_30px_rgb(20_184_166_/_0.18)]"
 					>
 						Go to Dashboard
 					</a>
@@ -549,7 +591,9 @@
 				</div>
 			</div>
 		{:else if !(data.onboarding?.hasTvTargets ?? false) && !(data.onboarding?.hasMovieTargets ?? false)}
-			<Alert>
+			<Alert
+				class="border-border/80 bg-card/85 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
+			>
 				<AlertTitle>Target setup depends on your feed path</AlertTitle>
 				<AlertDescription>
 					Your first feed is saved. Continue in the
