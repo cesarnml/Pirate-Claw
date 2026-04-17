@@ -302,6 +302,7 @@ describe('GET /api/candidates', () => {
         overview: null,
         posterPath: '/t.jpg',
         backdropPath: null,
+        networkName: 'HBO',
         voteAverage: 8,
         voteCount: 5,
         genreIdsJson: '[]',
@@ -484,7 +485,13 @@ function movieCandidate(
 describe('GET /api/shows', () => {
   it('returns grouped TV show breakdowns', async () => {
     const candidates = [
-      tvCandidate({ identityKey: 'k1', season: 1, episode: 1 }),
+      tvCandidate({
+        identityKey: 'k1',
+        season: 1,
+        episode: 1,
+        resolution: '1080p',
+        codec: 'x265',
+      }),
       tvCandidate({ identityKey: 'k2', season: 1, episode: 2 }),
       tvCandidate({
         identityKey: 'k3',
@@ -505,6 +512,8 @@ describe('GET /api/shows', () => {
     expect(body.shows[0].seasons).toHaveLength(2);
     expect(body.shows[0].seasons[0].season).toBe(1);
     expect(body.shows[0].seasons[0].episodes).toHaveLength(2);
+    expect(body.shows[0].seasons[0].episodes[0].resolution).toBe('1080p');
+    expect(body.shows[0].seasons[0].episodes[0].codec).toBe('x265');
     expect(body.shows[0].seasons[1].season).toBe(2);
   });
 
@@ -521,6 +530,95 @@ describe('GET /api/shows', () => {
     const body = await response.json();
 
     expect(body.shows).toHaveLength(1);
+  });
+});
+
+describe('POST /api/shows/:slug/tmdb/refresh', () => {
+  it('refreshes show TMDB metadata and episode details', async () => {
+    const db = new Database(':memory:');
+    try {
+      ensureTmdbSchema(db);
+      const cache = new TmdbCache(db);
+      const deps = createDeps({
+        listCandidateStates: () =>
+          [
+            tvCandidate({
+              identityKey: 'k1',
+              normalizedTitle: 'test show',
+              season: 1,
+              episode: 1,
+              resolution: '1080p',
+              codec: 'x265',
+            }),
+          ] as never,
+      });
+      deps.config.runtime.apiWriteToken = 'write-token';
+      deps.tmdbShows = {
+        cache,
+        client: {
+          searchTv: async () => ({ id: 42, name: 'Test Show' }),
+          getTv: async () => ({
+            id: 42,
+            name: 'Test Show',
+            overview: 'Updated overview',
+            poster_path: '/poster.jpg',
+            backdrop_path: '/backdrop.jpg',
+            networks: [{ name: 'HBO' }],
+            vote_average: 8.8,
+            vote_count: 120,
+            number_of_seasons: 1,
+          }),
+          getTvSeason: async () => ({
+            season_number: 1,
+            episodes: [
+              {
+                episode_number: 1,
+                name: 'Pilot',
+                still_path: '/still.jpg',
+                air_date: '2026-01-01',
+                overview: 'Pilot overview',
+              },
+            ],
+          }),
+        } as never,
+        cacheTtlMs: 60_000,
+        negativeCacheTtlMs: 10_000,
+        log: () => {},
+      };
+
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/shows/test%20show/tmdb/refresh', {
+          method: 'POST',
+          headers: { authorization: 'Bearer write-token' },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        ok: boolean;
+        show: {
+          tmdb?: { network?: string };
+          seasons: Array<{ episodes: Array<{ tmdb?: { name?: string } }> }>;
+        };
+      };
+      expect(body.ok).toBe(true);
+      expect(body.show.tmdb?.network).toBe('HBO');
+      expect(body.show.seasons[0].episodes[0].tmdb?.name).toBe('Pilot');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('requires write auth and configured TMDB refresh support', async () => {
+    const handler = createApiFetch(createDeps());
+    const response = await handler(
+      new Request('http://localhost/api/shows/test%20show/tmdb/refresh', {
+        method: 'POST',
+      }),
+    );
+
+    expect(response.status).toBe(403);
   });
 });
 

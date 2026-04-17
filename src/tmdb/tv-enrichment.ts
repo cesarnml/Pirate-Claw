@@ -24,6 +24,7 @@ function tvRowToShowMeta(row: {
   name: string | null;
   posterPath: string | null;
   backdropPath: string | null;
+  networkName: string | null;
   overview: string | null;
   voteAverage: number | null;
   voteCount: number | null;
@@ -34,11 +35,18 @@ function tvRowToShowMeta(row: {
     name: row.name ?? undefined,
     posterUrl: posterUrl(row.posterPath),
     backdropUrl: backdropUrl(row.backdropPath),
+    network: row.networkName ?? undefined,
     overview: row.overview ?? undefined,
     voteAverage: row.voteAverage ?? undefined,
     voteCount: row.voteCount ?? undefined,
     numberOfSeasons: row.numberOfSeasons ?? undefined,
   };
+}
+
+function primaryNetworkName(details: {
+  networks?: { name: string }[];
+}): string | null {
+  return details.networks?.[0]?.name?.trim() || null;
 }
 
 /** Map a cache row to show meta; returns undefined for negative (miss) rows. */
@@ -55,10 +63,11 @@ async function resolveShow(
   matchKey: string,
   normalizedTitle: string,
   deps: TvEnrichDeps,
+  options?: { forceRefresh?: boolean },
 ): Promise<TmdbTvShowMeta | undefined> {
   try {
     const cached = deps.cache.getTv(matchKey);
-    if (cached && !isCacheExpired(cached.expiresAt)) {
+    if (cached && !options?.forceRefresh && !isCacheExpired(cached.expiresAt)) {
       return cached.isNegative ? undefined : tvRowToShowMeta(cached);
     }
 
@@ -73,6 +82,7 @@ async function resolveShow(
         overview: null,
         posterPath: null,
         backdropPath: null,
+        networkName: null,
         voteAverage: null,
         voteCount: null,
         genreIdsJson: null,
@@ -108,6 +118,7 @@ async function resolveShow(
       overview: details.overview ?? null,
       posterPath: details.poster_path ?? null,
       backdropPath: details.backdrop_path ?? null,
+      networkName: primaryNetworkName(details),
       voteAverage: details.vote_average ?? null,
       voteCount: details.vote_count ?? null,
       genreIdsJson,
@@ -121,6 +132,7 @@ async function resolveShow(
       name: details.name,
       posterPath: details.poster_path ?? null,
       backdropPath: details.backdrop_path ?? null,
+      networkName: primaryNetworkName(details),
       overview: details.overview ?? null,
       voteAverage: details.vote_average ?? null,
       voteCount: details.vote_count ?? null,
@@ -138,6 +150,7 @@ async function loadSeasonEpisodes(
   tvId: number,
   seasonNumber: number,
   deps: TvEnrichDeps,
+  options?: { forceRefresh?: boolean },
 ): Promise<
   | {
       episode_number: number;
@@ -150,7 +163,7 @@ async function loadSeasonEpisodes(
 > {
   try {
     const cached = deps.cache.getTvSeason(showMatchKey, seasonNumber);
-    if (cached && !isCacheExpired(cached.expiresAt)) {
+    if (cached && !options?.forceRefresh && !isCacheExpired(cached.expiresAt)) {
       const parsed = JSON.parse(cached.episodesJson) as {
         episode_number: number;
         name?: string;
@@ -216,12 +229,14 @@ async function enrichSeason(
   tvId: number,
   season: ShowSeason,
   deps: TvEnrichDeps,
+  options?: { forceRefresh?: boolean },
 ): Promise<ShowSeason> {
   const tmdbEps = await loadSeasonEpisodes(
     showMatchKey,
     tvId,
     season.season,
     deps,
+    options,
   );
   if (!tmdbEps) {
     return season;
@@ -266,4 +281,30 @@ export async function enrichShowBreakdowns(
       };
     }),
   );
+}
+
+export async function refreshShowBreakdown(
+  show: ShowBreakdown,
+  deps: TvEnrichDeps,
+): Promise<ShowBreakdown> {
+  const key = tvMatchKey(show.normalizedTitle);
+  const showMeta = await resolveShow(key, show.normalizedTitle, deps, {
+    forceRefresh: true,
+  });
+
+  if (!showMeta?.tmdbId) {
+    return showMeta ? { ...show, tmdb: showMeta } : show;
+  }
+
+  const seasons = await Promise.all(
+    show.seasons.map((season) =>
+      enrichSeason(key, showMeta.tmdbId!, season, deps, { forceRefresh: true }),
+    ),
+  );
+
+  return {
+    ...show,
+    seasons,
+    tmdb: showMeta,
+  };
 }

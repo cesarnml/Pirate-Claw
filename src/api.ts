@@ -35,7 +35,10 @@ import { enrichCandidatesFromCache } from './tmdb/candidate-cache-enrich';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import { enrichMovieBreakdowns } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
-import { enrichShowBreakdowns } from './tmdb/tv-enrichment';
+import {
+  enrichShowBreakdowns,
+  refreshShowBreakdown,
+} from './tmdb/tv-enrichment';
 import type { PlexMovieEnrichDeps } from './plex/movies';
 import { enrichMovieBreakdownsFromPlexCache } from './plex/movies';
 import type { PlexShowEnrichDeps } from './plex/shows';
@@ -126,6 +129,13 @@ function jsonConfigWriteFailure(): Response {
   );
 }
 
+function jsonMethodNotAllowed(allow: string): Response {
+  return Response.json(
+    { error: 'method not allowed' },
+    { status: 405, headers: { Allow: allow } },
+  );
+}
+
 function safeJson<T>(body: () => T): Response {
   try {
     return Response.json(body());
@@ -202,6 +212,48 @@ export function createApiFetch(
           ? await enrichShowBreakdowns(withPlex, tmdbShows)
           : withPlex;
         return Response.json({ shows });
+      } catch {
+        return json500();
+      }
+    }
+
+    const showRefreshMatch = path.match(
+      /^\/api\/shows\/([^/]+)\/tmdb\/refresh$/,
+    );
+    if (showRefreshMatch) {
+      if (request.method !== 'POST') {
+        return jsonMethodNotAllowed('POST');
+      }
+
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!tmdbShows) {
+        return Response.json(
+          { error: 'tmdb refresh is not configured' },
+          { status: 409 },
+        );
+      }
+
+      try {
+        const slug = decodeURIComponent(showRefreshMatch[1]);
+        const candidates = repository.listCandidateStates();
+        const base = buildShowBreakdowns(candidates);
+        const withPlex = plexShows
+          ? enrichShowBreakdownsFromPlexCache(base, plexShows)
+          : base;
+        const show =
+          withPlex.find(
+            (entry) =>
+              entry.normalizedTitle.toLowerCase() === slug.toLowerCase(),
+          ) ?? null;
+
+        if (!show) {
+          return Response.json({ error: 'show not found' }, { status: 404 });
+        }
+
+        const refreshed = await refreshShowBreakdown(show, tmdbShows);
+        return Response.json({ ok: true, show: refreshed });
       } catch {
         return json500();
       }
@@ -748,6 +800,8 @@ export function buildShowBreakdowns(
       status: c.status,
       lifecycleStatus: c.lifecycleStatus,
       queuedAt: c.queuedAt,
+      resolution: c.resolution,
+      codec: c.codec,
       transmissionPercentDone: c.transmissionPercentDone,
       transmissionTorrentHash: c.transmissionTorrentHash,
     });

@@ -45,3 +45,8 @@ Separating this from P19.04 isolates the backdrop hero pattern (a new
 full-width image treatment) from the inline card expansion on the list view.
 The episode table row also introduces the Plex watch count chip, which is
 distinct from the `IN_LIBRARY` / `MISSING` chips on the list view.
+
+Approved scope exception: this ticket now owns the minimal API expansion needed
+to match the design contract. That includes show-level TMDB network metadata,
+episode-level spec tags already present in candidate state, and a
+write-authenticated manual TMDB refresh action for the detail route.

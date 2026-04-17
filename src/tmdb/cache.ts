@@ -24,6 +24,7 @@ export type TmdbTvCacheRow = {
   overview: string | null;
   posterPath: string | null;
   backdropPath: string | null;
+  networkName: string | null;
   voteAverage: number | null;
   voteCount: number | null;
   genreIdsJson: string | null;
@@ -120,6 +121,7 @@ export class TmdbCache {
           overview,
           poster_path AS posterPath,
           backdrop_path AS backdropPath,
+          network_name AS networkName,
           vote_average AS voteAverage,
           vote_count AS voteCount,
           genre_ids_json AS genreIdsJson,
@@ -144,10 +146,10 @@ export class TmdbCache {
     this.db.run(
       `INSERT INTO tmdb_tv_cache (
         match_key, tmdb_id, is_negative, expires_at,
-        name, overview, poster_path, backdrop_path,
+        name, overview, poster_path, backdrop_path, network_name,
         vote_average, vote_count, genre_ids_json,
         first_air_date, number_of_seasons, seasons_json
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
       ON CONFLICT(match_key) DO UPDATE SET
         tmdb_id = excluded.tmdb_id,
         is_negative = excluded.is_negative,
@@ -156,6 +158,7 @@ export class TmdbCache {
         overview = excluded.overview,
         poster_path = excluded.poster_path,
         backdrop_path = excluded.backdrop_path,
+        network_name = excluded.network_name,
         vote_average = excluded.vote_average,
         vote_count = excluded.vote_count,
         genre_ids_json = excluded.genre_ids_json,
@@ -171,6 +174,7 @@ export class TmdbCache {
         row.overview,
         row.posterPath,
         row.backdropPath,
+        row.networkName,
         row.voteAverage,
         row.voteCount,
         row.genreIdsJson,

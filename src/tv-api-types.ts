@@ -6,6 +6,7 @@ export type TmdbTvShowMeta = {
   name?: string;
   posterUrl?: string;
   backdropUrl?: string;
+  network?: string;
   overview?: string;
   voteAverage?: number;
   voteCount?: number;
@@ -26,6 +27,8 @@ export type ShowEpisode = {
   status: string;
   lifecycleStatus?: string;
   queuedAt?: string;
+  resolution?: string;
+  codec?: string;
   transmissionPercentDone?: number;
   transmissionTorrentHash?: string;
   tmdb?: TmdbTvEpisodeMeta;

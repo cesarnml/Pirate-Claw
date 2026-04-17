@@ -33,6 +33,7 @@ export type TmdbTvDetails = {
   overview?: string;
   poster_path?: string | null;
   backdrop_path?: string | null;
+  networks?: { name: string }[];
   vote_average?: number;
   vote_count?: number;
   genres?: { id: number }[];

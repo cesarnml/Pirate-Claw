@@ -32,6 +32,7 @@ export function ensureTmdbSchema(database: Database): void {
         overview TEXT,
         poster_path TEXT,
         backdrop_path TEXT,
+        network_name TEXT,
         vote_average REAL,
         vote_count INTEGER,
         genre_ids_json TEXT,
@@ -40,6 +41,7 @@ export function ensureTmdbSchema(database: Database): void {
         seasons_json TEXT
       );
     `);
+    ensureColumn(database, 'tmdb_tv_cache', 'network_name', 'TEXT');
     database.run(`
       CREATE TABLE IF NOT EXISTS tmdb_tv_season_cache (
         show_match_key TEXT NOT NULL,
@@ -50,4 +52,20 @@ export function ensureTmdbSchema(database: Database): void {
       );
     `);
   })();
+}
+
+function ensureColumn(
+  database: Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const rows = database.query(`PRAGMA table_info(${table})`).all() as Array<{
+    name?: string;
+  }>;
+  if (rows.some((row) => row.name === column)) {
+    return;
+  }
+
+  database.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
