@@ -142,6 +142,24 @@ describe('/shows', () => {
 		expect(screen.queryByText('Pilot')).not.toBeInTheDocument();
 	});
 
+	it('keeps all shows collapsed after the active card is manually closed', async () => {
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [exampleShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		expect(screen.getByText('Inline episode state')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: /Hide season drill-down/i }));
+
+		expect(screen.queryByText('Inline episode state')).not.toBeInTheDocument();
+		expect(screen.queryByText('42%')).not.toBeInTheDocument();
+	});
+
 	it('supports rating, progress, and recently added sorts', async () => {
 		render(Page, {
 			data: {

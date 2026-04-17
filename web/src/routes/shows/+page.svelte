@@ -19,6 +19,7 @@
 
 	let sortKey = $state<SortKey>('title');
 	let expandedShow = $state<string | null>(null);
+	let hasInitializedExpandedShow = $state(false);
 	let selectedSeasonByShow = $state<Record<string, number>>({});
 
 	const torrents = $derived(data.torrents ?? []);
@@ -154,8 +155,9 @@
 	}
 
 	$effect(() => {
-		if (expandedShow !== null || data.shows.length === 0) return;
+		if (hasInitializedExpandedShow || data.shows.length === 0) return;
 		expandedShow = data.shows[0].normalizedTitle;
+		hasInitializedExpandedShow = true;
 	});
 
 	const sortedShows = $derived(
