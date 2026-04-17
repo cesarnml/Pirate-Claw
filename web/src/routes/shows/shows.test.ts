@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
-import type { ShowBreakdown } from '$lib/types';
+import type { ShowBreakdown, TorrentStatSnapshot } from '$lib/types';
 
 const sharedLayoutData = { health: null, transmissionSession: null };
 
-const mockShow: ShowBreakdown = {
+const exampleShow: ShowBreakdown = {
 	normalizedTitle: 'The Example Show',
-	plexStatus: 'unknown',
-	watchCount: null,
-	lastWatchedAt: null,
+	plexStatus: 'in_library',
+	watchCount: 7,
+	lastWatchedAt: '2026-04-15T00:00:00.000Z',
 	seasons: [
 		{
 			season: 1,
@@ -18,14 +18,39 @@ const mockShow: ShowBreakdown = {
 					episode: 1,
 					identityKey: 'key-s01e01',
 					status: 'completed',
-					transmissionPercentDone: 1.0
+					transmissionPercentDone: 1,
+					tmdb: {
+						name: 'Pilot',
+						stillUrl: 'https://example.com/still-1.jpg',
+						airDate: '2026-01-04'
+					}
 				},
 				{
 					episode: 2,
 					identityKey: 'key-s01e02',
 					status: 'downloading',
+					lifecycleStatus: 'active',
 					transmissionPercentDone: 0.5,
-					transmissionTorrentHash: 'abc123'
+					transmissionTorrentHash: 'abc123',
+					queuedAt: '2026-04-16T00:00:00.000Z',
+					tmdb: {
+						name: 'Second Contact',
+						stillUrl: 'https://example.com/still-2.jpg',
+						airDate: '2026-01-11'
+					}
+				}
+			]
+		},
+		{
+			season: 2,
+			episodes: [
+				{
+					episode: 1,
+					identityKey: 'key-s02e01',
+					status: 'queued',
+					transmissionPercentDone: 0.1,
+					queuedAt: '2026-04-17T00:00:00.000Z',
+					tmdb: { name: 'Season Premiere' }
 				}
 			]
 		}
@@ -34,12 +59,13 @@ const mockShow: ShowBreakdown = {
 		name: 'The Example Show',
 		posterUrl: 'https://example.com/poster.jpg',
 		voteAverage: 8.1,
-		numberOfSeasons: 3
+		numberOfSeasons: 2,
+		overview: 'An HBO story about an elite media crew.'
 	}
 };
 
-const mockShow2: ShowBreakdown = {
-	normalizedTitle: 'Another Show',
+const archiveShow: ShowBreakdown = {
+	normalizedTitle: 'Archive Unit',
 	plexStatus: 'unknown',
 	watchCount: null,
 	lastWatchedAt: null,
@@ -49,87 +75,135 @@ const mockShow2: ShowBreakdown = {
 			episodes: [
 				{
 					episode: 1,
-					identityKey: 'key2-s01e01',
+					identityKey: 'archive-s01e01',
 					status: 'downloading',
 					transmissionPercentDone: 0.8,
-					transmissionTorrentHash: 'def456'
+					transmissionTorrentHash: 'def456',
+					queuedAt: '2026-04-10T00:00:00.000Z',
+					tmdb: { name: 'Archive Day' }
 				}
 			]
 		}
-	]
+	],
+	tmdb: {
+		name: 'Archive Unit',
+		posterUrl: 'https://example.com/archive-poster.jpg',
+		voteAverage: 7.4,
+		numberOfSeasons: 1,
+		overview: 'An FX procedural in archive mode.'
+	}
+};
+
+const liveTorrent: TorrentStatSnapshot = {
+	hash: 'abc123',
+	name: 'The.Example.Show.S01E02',
+	status: 'downloading',
+	percentDone: 0.42,
+	rateDownload: 1_048_576,
+	eta: 3600
 };
 
 describe('/shows', () => {
-	it('renders show cards with TMDB metadata and link to detail', () => {
-		render(Page, { data: { ...sharedLayoutData, shows: [mockShow], torrents: null, error: null } });
+	it('renders poster-first cards with rating, network badge, and plex chip', () => {
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [exampleShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
 		expect(screen.getByRole('heading', { name: 'Shows' })).toBeInTheDocument();
 		expect(screen.getByText('The Example Show')).toBeInTheDocument();
-		expect(screen.getByTitle('TMDB vote average')).toHaveTextContent('★ 8.1');
-		expect(screen.getByRole('link', { name: /The Example Show/i })).toHaveAttribute(
+		expect(screen.getByText('HBO')).toBeInTheDocument();
+		expect(screen.getByText('IN_LIBRARY')).toBeInTheDocument();
+		expect(screen.getByText('7')).toBeInTheDocument();
+		expect(screen.getByText(/Watched/)).toBeInTheDocument();
+		expect(screen.getByText('8.1')).toBeInTheDocument();
+	});
+
+	it('expands the selected show inline and switches season tabs', async () => {
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [exampleShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		expect(screen.getByText('Inline episode state')).toBeInTheDocument();
+		expect(screen.getByText('Pilot')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Season 2' }));
+
+		expect(screen.getByText('Season Premiere')).toBeInTheDocument();
+		expect(screen.queryByText('Pilot')).not.toBeInTheDocument();
+	});
+
+	it('supports rating, progress, and recently added sorts', async () => {
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [archiveShow, exampleShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		let headings = screen.getAllByRole('heading', { level: 2 });
+		expect(headings[0]).toHaveTextContent('Archive Unit');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Rating' }));
+		headings = screen.getAllByRole('heading', { level: 2 });
+		expect(headings[0]).toHaveTextContent('The Example Show');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+		headings = screen.getAllByRole('heading', { level: 2 });
+		expect(headings[0]).toHaveTextContent('The Example Show');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Recently Added' }));
+		headings = screen.getAllByRole('heading', { level: 2 });
+		expect(headings[0]).toHaveTextContent('The Example Show');
+	});
+
+	it('renders live transfer progress and detail links inside the expanded state', () => {
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [exampleShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		expect(screen.getByText('42%')).toBeInTheDocument();
+		expect(screen.getAllByText('1.0 MB/s')[0]).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: /Open The Example Show detail page/i })
+		).toHaveAttribute('href', '/shows/the%20example%20show');
+		expect(screen.getByRole('link', { name: /Open full show detail/i })).toHaveAttribute(
 			'href',
 			'/shows/the%20example%20show'
 		);
 	});
 
-	it('renders episode count and completion % on show card', () => {
-		render(Page, { data: { ...sharedLayoutData, shows: [mockShow], torrents: null, error: null } });
-		// 2 episodes, 1 completed → 50%
-		expect(screen.getByText(/2 episodes/)).toBeInTheDocument();
-		expect(screen.getByText(/50% complete/)).toBeInTheDocument();
-	});
-
-	it('renders Plex status, watch count, and last watched date on show cards', () => {
-		render(Page, {
-			data: {
-				...sharedLayoutData,
-				shows: [
-					{
-						...mockShow,
-						plexStatus: 'in_library',
-						watchCount: 7,
-						lastWatchedAt: '2026-04-15T00:00:00.000Z'
-					}
-				],
-				torrents: null,
-				error: null
-			}
+	it('renders empty and error states', () => {
+		const { rerender } = render(Page, {
+			data: { ...sharedLayoutData, shows: [], torrents: null, error: null }
 		});
 
-		expect(screen.getByText('In library')).toBeInTheDocument();
-		expect(screen.getByText('7')).toBeInTheDocument();
-		expect(
-			screen.getByText(new Date('2026-04-15T00:00:00.000Z').toLocaleDateString())
-		).toBeInTheDocument();
-	});
-
-	it('sort by Progress orders shows by max transmissionPercentDone desc', async () => {
-		render(Page, {
-			data: { ...sharedLayoutData, shows: [mockShow, mockShow2], torrents: null, error: null }
-		});
-		const links = screen.getAllByRole('link');
-		// Default title sort: "Another Show" before "The Example Show"
-		expect(links[0]).toHaveTextContent('Another Show');
-
-		// Click Progress sort
-		await fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
-		const linksAfter = screen.getAllByRole('link');
-		// mockShow has max 1.0 (100%), mockShow2 has max 0.8 (80%) → mockShow first
-		expect(linksAfter[0]).toHaveTextContent('The Example Show');
-	});
-
-	it('renders empty state when there are no shows', () => {
-		render(Page, { data: { ...sharedLayoutData, shows: [], torrents: null, error: null } });
 		expect(screen.getByText(/No tracked shows yet/)).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Go to TV shows in Config' })).toHaveAttribute(
 			'href',
 			'/config#tv-shows'
 		);
-	});
 
-	it('renders error state when API is unreachable', () => {
-		render(Page, {
+		rerender({
 			data: { ...sharedLayoutData, shows: [], torrents: null, error: 'Could not reach the API.' }
 		});
+
 		expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the API.');
 	});
 });
