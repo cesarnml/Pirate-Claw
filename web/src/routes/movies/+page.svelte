@@ -1,351 +1,387 @@
 <script lang="ts">
+	import ClapperboardIcon from '@lucide/svelte/icons/clapperboard';
+	import PlusIcon from '@lucide/svelte/icons/plus';
+	import StarIcon from '@lucide/svelte/icons/star';
+	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import type { CandidateStatus, MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
+	import type { MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
 	import type { PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	const props = $props<{ data: PageData }>();
+	const data = $derived(props.data);
 
-	// Genre filter omitted: TmdbMoviePublic does not expose a genres field.
-	// If TMDB genre data becomes available in a future ticket, add the genre
-	// filter dropdown here.
-
-	type FilterTab = 'all' | 'downloading' | 'completed' | 'failed' | 'missing';
-	type SortKey = 'date' | 'title' | 'year' | 'resolution';
+	type FilterTab = 'all' | 'downloading' | 'missing' | 'wanted';
+	type SortKey = 'date' | 'title' | 'year';
+	type CommandStatus = 'downloading' | 'missing' | 'wanted';
 
 	let activeTab = $state<FilterTab>('all');
 	let sortKey = $state<SortKey>('date');
 
 	const torrents = $derived(data.torrents ?? []);
 
+	function displayTitle(movie: MovieBreakdown): string {
+		return movie.tmdb?.title ?? movie.normalizedTitle;
+	}
+
+	function safeImageUrl(value: string | undefined): string | null {
+		if (!value) return null;
+		try {
+			const url = new URL(value);
+			return url.protocol === 'https:' ? url.href : null;
+		} catch {
+			return null;
+		}
+	}
+
 	function liveTorrent(movie: MovieBreakdown): TorrentStatSnapshot | undefined {
 		if (!movie.transmissionTorrentHash) return undefined;
-		return torrents.find((t) => t.hash === movie.transmissionTorrentHash);
+		return torrents.find(
+			(torrent: TorrentStatSnapshot) => torrent.hash === movie.transmissionTorrentHash
+		);
 	}
 
-	function formatRating(v: number | undefined): string {
-		if (v === undefined) return '—';
-		return v.toFixed(1);
+	function isDownloading(movie: MovieBreakdown, live = liveTorrent(movie)): boolean {
+		return (
+			live?.status === 'downloading' ||
+			movie.status === 'downloading' ||
+			movie.lifecycleStatus === 'active'
+		);
 	}
 
-	function formatSpeed(bytesPerSec: number): string {
-		if (bytesPerSec >= 1_048_576) return `${(bytesPerSec / 1_048_576).toFixed(1)} MB/s`;
-		return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
-	}
-
-	function formatEta(eta: number): string {
-		if (eta < 0) return '—';
-		if (eta < 60) return '<1m';
-		const hours = Math.floor(eta / 3600);
-		const minutes = Math.floor((eta % 3600) / 60);
-		if (hours > 0) return `${hours}h ${minutes}m`;
-		return `${minutes}m`;
-	}
-
-	function statusChipClass(status: CandidateStatus | string): string {
-		switch (status) {
-			case 'queued':
-				return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-			case 'completed':
-				return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-			case 'failed':
-				return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-			case 'downloading':
-				return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200';
-			case 'duplicate':
-			case 'skipped':
-				return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
-			default:
-				return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+	function commandStatus(movie: MovieBreakdown, live = liveTorrent(movie)): CommandStatus {
+		if (isDownloading(movie, live)) return 'downloading';
+		if (
+			movie.lifecycleStatus === 'missing_from_transmission' ||
+			movie.status === 'failed' ||
+			movie.status === 'rejected' ||
+			movie.status === 'duplicate'
+		) {
+			return 'missing';
 		}
+		return 'wanted';
 	}
 
-	function plexChipClass(status: MovieBreakdown['plexStatus']): string {
-		switch (status) {
-			case 'in_library':
-				return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200';
-			case 'missing':
-				return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200';
-			default:
-				return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
-		}
+	function progressPercent(movie: MovieBreakdown, live: TorrentStatSnapshot | undefined): number {
+		const raw = live?.percentDone ?? movie.transmissionPercentDone ?? 0;
+		return Math.max(0, Math.min(100, Math.round(raw * 100)));
 	}
 
-	function plexStatusLabel(status: MovieBreakdown['plexStatus']): string {
-		switch (status) {
-			case 'in_library':
-				return 'In library';
-			case 'missing':
-				return 'Missing';
-			default:
-				return 'Unknown';
-		}
+	function formatRating(value: number): string {
+		return value.toFixed(1);
 	}
 
 	function formatLastWatched(value: string | null): string {
-		if (!value) return '—';
+		if (!value) return 'No Plex activity';
 		const date = new Date(value);
-		if (Number.isNaN(date.getTime())) return '—';
+		if (Number.isNaN(date.getTime())) return 'No Plex activity';
+		return `Last watched ${date.toLocaleDateString()}`;
+	}
+
+	function formatDate(value: string | undefined): string {
+		if (!value) return 'Queued date unknown';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return 'Queued date unknown';
 		return date.toLocaleDateString();
 	}
 
-	/** Unified downloading predicate used in tab counts, filtering, and row rendering. */
-	function isMovieDownloading(m: MovieBreakdown): boolean {
-		return m.status === 'downloading' || m.lifecycleStatus === 'active';
+	function formatSpeed(bytesPerSecond: number): string {
+		if (bytesPerSecond >= 1_048_576) return `${(bytesPerSecond / 1_048_576).toFixed(1)} MB/s`;
+		return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+	}
+
+	function movieYear(movie: MovieBreakdown): number {
+		return movie.year ?? 0;
+	}
+
+	function queuedAt(movie: MovieBreakdown): string {
+		return movie.queuedAt ?? '';
+	}
+
+	function hasPlexChip(movie: MovieBreakdown): boolean {
+		return movie.plexStatus === 'in_library' || movie.plexStatus === 'missing';
+	}
+
+	function matchesFilter(movie: MovieBreakdown): boolean {
+		const status = commandStatus(movie);
+		if (activeTab === 'all') return true;
+		return status === activeTab;
 	}
 
 	function tabCount(tab: FilterTab): number {
-		const movies = data.movies;
-		switch (tab) {
-			case 'downloading':
-				return movies.filter(isMovieDownloading).length;
-			case 'completed':
-				return movies.filter((m) => m.status === 'completed').length;
-			case 'failed':
-				return movies.filter((m) => m.status === 'failed').length;
-			case 'missing':
-				return movies.filter((m) => m.lifecycleStatus === 'missing_from_transmission').length;
-			default:
-				return movies.length;
-		}
+		if (tab === 'all') return data.movies.length;
+		return data.movies.filter((movie: MovieBreakdown) => commandStatus(movie) === tab).length;
 	}
 
-	const resolutionOrder: Record<string, number> = {
-		'2160p': 4,
-		'1080p': 3,
-		'720p': 2,
-		'480p': 1
-	};
-
 	const filteredMovies = $derived(
-		data.movies
-			.filter((m) => {
-				switch (activeTab) {
-					case 'downloading':
-						return isMovieDownloading(m);
-					case 'completed':
-						return m.status === 'completed';
-					case 'failed':
-						return m.status === 'failed';
-					case 'missing':
-						return m.lifecycleStatus === 'missing_from_transmission';
-					default:
-						return true;
-				}
-			})
-			.sort((a, b) => {
-				switch (sortKey) {
-					case 'title':
-						return (a.tmdb?.title ?? a.normalizedTitle).localeCompare(
-							b.tmdb?.title ?? b.normalizedTitle
-						);
-					case 'year':
-						return (b.year ?? 0) - (a.year ?? 0);
-					case 'resolution':
-						return (
-							(resolutionOrder[b.resolution ?? ''] ?? 0) -
-							(resolutionOrder[a.resolution ?? ''] ?? 0)
-						);
-					default:
-						// date desc — queuedAt descending; missing → oldest
-						if (!a.queuedAt && !b.queuedAt) return 0;
-						if (!a.queuedAt) return 1;
-						if (!b.queuedAt) return -1;
-						return b.queuedAt.localeCompare(a.queuedAt);
-				}
-			})
+		[...data.movies].filter(matchesFilter).sort((left, right) => {
+			if (sortKey === 'title') {
+				return displayTitle(left).localeCompare(displayTitle(right));
+			}
+			if (sortKey === 'year') {
+				return movieYear(right) - movieYear(left);
+			}
+			return queuedAt(right).localeCompare(queuedAt(left));
+		})
 	);
 
-	const tabs: { key: FilterTab; label: string }[] = [
+	const tabs: Array<{ key: FilterTab; label: string }> = [
 		{ key: 'all', label: 'All' },
 		{ key: 'downloading', label: 'Downloading' },
-		{ key: 'completed', label: 'Completed' },
-		{ key: 'failed', label: 'Failed' },
-		{ key: 'missing', label: 'Missing' }
+		{ key: 'missing', label: 'Missing' },
+		{ key: 'wanted', label: 'Wanted' }
 	];
 
-	const sorts: { key: SortKey; label: string }[] = [
-		{ key: 'date', label: 'Date added' },
-		{ key: 'title', label: 'Title (A–Z)' },
-		{ key: 'year', label: 'Year' },
-		{ key: 'resolution', label: 'Resolution' }
+	const sorts: Array<{ key: SortKey; label: string }> = [
+		{ key: 'date', label: 'Date Added' },
+		{ key: 'title', label: 'Title' },
+		{ key: 'year', label: 'Year' }
 	];
 </script>
 
-<h1 class="text-3xl font-bold tracking-tight">Movies</h1>
-<p class="text-muted-foreground mt-1 text-sm">
-	TMDB poster and rating appear when the daemon has a TMDB API key and metadata is available.
-</p>
-
-{#if data.error}
-	<Alert variant="destructive" class="mt-6">
-		<AlertTitle>API unavailable</AlertTitle>
-		<AlertDescription>{data.error}</AlertDescription>
-	</Alert>
-{:else if data.movies.length === 0}
-	<Card class="mt-6">
-		<CardContent class="pt-6">
-			<p class="text-muted-foreground text-sm">
-				No movie targets yet. Add a movie year in Config to start building your movie queue.
+<section class="space-y-6">
+	<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+		<div class="space-y-3">
+			<p class="text-primary font-mono text-xs font-semibold tracking-[0.28em] uppercase">
+				Movie Command Deck
 			</p>
-			<a
-				href="/config#movie-policy"
-				class="text-primary mt-3 inline-flex text-sm font-medium hover:underline"
-			>
-				Go to movie policy in Config
-			</a>
-		</CardContent>
-	</Card>
-{:else}
-	<!-- Filter tabs -->
-	<div class="border-border mt-6 flex gap-1 border-b" role="tablist">
-		{#each tabs as tab}
-			{@const count = tabCount(tab.key)}
-			<button
-				role="tab"
-				aria-selected={activeTab === tab.key}
-				class="border-b-2 px-3 pb-2 text-sm font-medium transition-colors {activeTab === tab.key
-					? 'border-primary text-foreground -mb-px'
-					: 'text-muted-foreground hover:text-foreground border-transparent'}"
-				onclick={() => (activeTab = tab.key)}
-			>
-				{tab.label}
-				<span class="text-muted-foreground ml-1 text-xs">({count})</span>
-			</button>
-		{/each}
+			<div class="space-y-2">
+				<h1 class="max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-balance">Movies</h1>
+				<p class="text-muted-foreground max-w-2xl text-sm leading-6">
+					Backdrop-first queue management with acquisition state, Plex library signals, and live
+					transfer telemetry.
+				</p>
+			</div>
+		</div>
+
+		<div class="flex flex-wrap gap-2">
+			{#each sorts as option}
+				<button
+					type="button"
+					class={`border-border bg-card/75 text-muted-foreground hover:border-primary/30 hover:text-foreground rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.18em] uppercase transition-colors ${
+						sortKey === option.key ? 'border-primary/45 bg-primary/12 text-primary' : ''
+					}`}
+					onclick={() => (sortKey = option.key)}
+				>
+					{option.label}
+				</button>
+			{/each}
+		</div>
 	</div>
 
-	<!-- Sort -->
-	<div class="mt-4 flex items-center gap-2">
-		<span class="text-muted-foreground text-sm">Sort:</span>
-		{#each sorts as sort, i}
-			<button
-				class="text-sm font-medium underline-offset-2 {sortKey === sort.key
-					? 'text-foreground underline'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => (sortKey = sort.key)}
-			>
-				{sort.label}
-			</button>
-			{#if i < sorts.length - 1}
-				<span class="text-muted-foreground text-xs">·</span>
-			{/if}
-		{/each}
-	</div>
-
-	{#if filteredMovies.length === 0}
-		<p class="text-muted-foreground mt-6 text-sm">No movies match the current filter.</p>
+	{#if data.error}
+		<Alert variant="destructive">
+			<AlertTitle>API unavailable</AlertTitle>
+			<AlertDescription>{data.error}</AlertDescription>
+		</Alert>
+	{:else if data.movies.length === 0}
+		<Card class="bg-card/75 rounded-[30px] border-white/10">
+			<CardContent class="space-y-4 pt-8">
+				<div class="space-y-2">
+					<p class="text-lg font-semibold">No movie targets yet.</p>
+					<p class="text-muted-foreground max-w-xl text-sm leading-6">
+						Add a movie policy target to start building the poster wall.
+					</p>
+				</div>
+				<Button href="/config" class="w-fit rounded-full px-5">Open Config</Button>
+			</CardContent>
+		</Card>
 	{:else}
-		<ul class="mt-6 list-none space-y-4">
+		<div class="flex flex-wrap gap-2" role="tablist" aria-label="Movie filters">
+			{#each tabs as tab}
+				<button
+					type="button"
+					role="tab"
+					aria-selected={activeTab === tab.key}
+					class={`rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.18em] uppercase transition-colors ${
+						activeTab === tab.key
+							? 'border-primary/45 bg-primary/12 text-primary'
+							: 'border-border bg-card/70 text-muted-foreground hover:border-primary/25 hover:text-foreground'
+					}`}
+					onclick={() => (activeTab = tab.key)}
+				>
+					{tab.label}
+					<span class="ml-1 text-[10px] opacity-80">({tabCount(tab.key)})</span>
+				</button>
+			{/each}
+		</div>
+
+		{#if filteredMovies.length === 0}
+			<Card class="bg-card/75 rounded-[30px] border-white/10">
+				<CardContent class="space-y-2 pt-8">
+					<p class="text-lg font-semibold">No movies match this filter.</p>
+					<p class="text-muted-foreground text-sm leading-6">
+						Try a different command-state view or add another movie target in Config.
+					</p>
+				</CardContent>
+			</Card>
+		{/if}
+
+		<ul class="grid list-none gap-5 md:grid-cols-2 xl:grid-cols-3">
 			{#each filteredMovies as movie (movie.identityKey)}
 				{@const live = liveTorrent(movie)}
-				{@const pct = live ? live.percentDone * 100 : (movie.transmissionPercentDone ?? 0) * 100}
-				{@const isDownloading = live ? live.status === 'downloading' : isMovieDownloading(movie)}
-				{@const showProgress = live !== undefined || pct > 0}
-				<li>
-					<Card>
-						<CardContent class="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
-							<div class="relative mx-auto shrink-0 sm:mx-0">
-								{#if movie.tmdb?.posterUrl}
-									<img
-										src={movie.tmdb.posterUrl}
-										alt={`Poster for ${movie.tmdb?.title ?? movie.normalizedTitle}${movie.year ? ` (${movie.year})` : ''}`}
-										class="h-48 w-32 rounded-md object-cover"
-										loading="lazy"
-									/>
-								{:else}
-									<div
-										class="bg-muted text-muted-foreground flex h-48 w-32 items-center justify-center rounded-md text-xs"
-									>
-										No poster
-									</div>
-								{/if}
-								<!-- Status chip overlay -->
-								<span
-									class="absolute bottom-1 left-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium {statusChipClass(
-										movie.status
-									)}"
+				{@const status = commandStatus(movie, live)}
+				{@const backdropUrl = safeImageUrl(movie.tmdb?.backdropUrl)}
+				{@const posterUrl = safeImageUrl(movie.tmdb?.posterUrl)}
+				{@const pct = progressPercent(movie, live)}
+
+				<li class="list-none">
+					<Card
+						class="group bg-card/70 relative h-full overflow-hidden rounded-[30px] border-white/10"
+					>
+						<div class="absolute inset-0">
+							{#if backdropUrl}
+								<img
+									src={backdropUrl}
+									alt=""
+									class="h-full w-full object-cover opacity-35 transition duration-500 group-hover:scale-[1.02]"
+									loading="lazy"
+								/>
+							{:else}
+								<div
+									class="h-full w-full bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.22),_transparent_48%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(15,23,42,0.72))]"
+								></div>
+							{/if}
+							<div
+								class="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.28),rgba(15,23,42,0.96)_52%,rgba(15,23,42,1))]"
+							></div>
+						</div>
+
+						<CardContent class="relative flex h-full flex-col gap-5 p-5">
+							<div class="flex items-start gap-4">
+								<div
+									class="bg-muted/70 border-border/70 flex h-40 w-28 shrink-0 overflow-hidden rounded-[20px] border"
 								>
-									{movie.status}
-								</span>
-							</div>
-							<div class="min-w-0 flex-1">
-								<div class="flex flex-wrap items-baseline gap-2">
-									<h2 class="text-lg font-semibold tracking-tight">
-										{movie.tmdb?.title ?? movie.normalizedTitle}
-									</h2>
-									{#if movie.year}
-										<span class="text-muted-foreground">({movie.year})</span>
-									{/if}
-									{#if movie.tmdb?.voteAverage !== undefined}
-										<Badge
-											variant="secondary"
-											aria-label="TMDB vote average: {formatRating(movie.tmdb.voteAverage)}"
+									{#if posterUrl}
+										<img
+											src={posterUrl}
+											alt={`Poster for ${displayTitle(movie)}${movie.year ? ` (${movie.year})` : ''}`}
+											class="h-full w-full object-cover"
+											loading="lazy"
+										/>
+									{:else}
+										<div
+											class="text-muted-foreground flex h-full w-full items-center justify-center"
 										>
-											★ {formatRating(movie.tmdb.voteAverage)}
-										</Badge>
+											<ClapperboardIcon class="size-6" />
+										</div>
 									{/if}
 								</div>
-								{#if movie.tmdb?.overview}
-									<p class="text-muted-foreground mt-2 text-sm leading-relaxed">
-										{movie.tmdb.overview}
-									</p>
-								{/if}
-								<dl class="text-muted-foreground mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-									{#if movie.resolution}
-										<div>
-											<dt class="inline">Resolution:</dt>
-											<dd class="text-foreground inline">{movie.resolution}</dd>
-										</div>
-									{/if}
-									{#if movie.codec}
-										<div>
-											<dt class="inline">Codec:</dt>
-											<dd class="text-foreground inline">{movie.codec}</dd>
-										</div>
-									{/if}
-									<div>
-										<dt class="inline">Plex:</dt>
-										<dd class="inline">
-											<Badge variant="secondary" class={plexChipClass(movie.plexStatus)}>
-												{plexStatusLabel(movie.plexStatus)}
-											</Badge>
-										</dd>
-									</div>
-									<div>
-										<dt class="inline">Watches:</dt>
-										<dd class="text-foreground inline">{movie.watchCount ?? '—'}</dd>
-									</div>
-									<div>
-										<dt class="inline">Last watched:</dt>
-										<dd class="text-foreground inline">{formatLastWatched(movie.lastWatchedAt)}</dd>
-									</div>
-								</dl>
-								<!-- Progress bar -->
-								{#if showProgress}
-									<div class="mt-3">
-										<div class="flex items-center gap-2">
-											<div class="bg-muted h-1.5 flex-1 rounded-full">
-												<div
-													class="h-1.5 rounded-full {isDownloading ? 'bg-cyan-500' : 'bg-primary'}"
-													style="width: {pct.toFixed(0)}%"
-												></div>
+
+								<div class="min-w-0 flex-1 space-y-3">
+									<div class="flex flex-wrap items-start justify-between gap-3">
+										<div class="space-y-2">
+											<div class="flex flex-wrap items-center gap-2">
+												<h2 class="text-xl font-semibold tracking-[-0.03em] text-balance">
+													{displayTitle(movie)}
+												</h2>
+												{#if movie.year}
+													<Badge variant="secondary" class="bg-white/8 text-slate-200">
+														{movie.year}
+													</Badge>
+												{/if}
 											</div>
-											<span class="text-muted-foreground shrink-0 text-xs">{pct.toFixed(0)}%</span>
+
+											<div class="flex flex-wrap items-center gap-2">
+												<StatusChip {status} />
+												{#if status === 'downloading'}
+													<span
+														class="text-primary text-xs font-semibold tracking-[0.18em] uppercase"
+													>
+														{pct}%
+													</span>
+												{/if}
+												{#if hasPlexChip(movie)}
+													<StatusChip status={movie.plexStatus} />
+												{/if}
+											</div>
 										</div>
-										{#if live && isDownloading}
-											<p class="text-muted-foreground mt-0.5 text-xs">
-												{formatSpeed(live.rateDownload)} · {formatEta(live.eta)}
-											</p>
+
+										{#if movie.tmdb?.voteAverage !== undefined}
+											<div
+												class="border-border bg-card/70 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold tracking-[0.18em] uppercase"
+												aria-label={`TMDB vote average: ${formatRating(movie.tmdb.voteAverage)}`}
+											>
+												<StarIcon class="text-primary size-3.5 fill-current" />
+												{formatRating(movie.tmdb.voteAverage)}
+											</div>
 										{/if}
 									</div>
-								{/if}
+
+									{#if movie.tmdb?.overview}
+										<p class="text-muted-foreground text-sm leading-6">
+											{movie.tmdb.overview}
+										</p>
+									{/if}
+
+									<div class="flex flex-wrap gap-2">
+										{#if movie.resolution}
+											<Badge variant="secondary" class="bg-white/8 text-slate-100">
+												{movie.resolution}
+											</Badge>
+										{/if}
+										{#if movie.codec}
+											<Badge variant="secondary" class="bg-white/8 text-slate-100">
+												{movie.codec}
+											</Badge>
+										{/if}
+										<Badge variant="secondary" class="bg-white/8 text-slate-100">
+											Queued {formatDate(movie.queuedAt)}
+										</Badge>
+										{#if hasPlexChip(movie) && movie.lastWatchedAt}
+											<Badge variant="secondary" class="bg-white/8 text-slate-100">
+												{formatLastWatched(movie.lastWatchedAt)}
+											</Badge>
+										{/if}
+									</div>
+								</div>
 							</div>
+
+							{#if status === 'downloading'}
+								<div class="space-y-2">
+									<div class="h-2 overflow-hidden rounded-full bg-white/8">
+										<div
+											class="bg-primary h-full rounded-full transition-[width]"
+											style={`width: ${pct}%`}
+										></div>
+									</div>
+									<div
+										class="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs"
+									>
+										<span>{pct}% acquired</span>
+										{#if live}
+											<span>{formatSpeed(live.rateDownload)}</span>
+										{/if}
+									</div>
+								</div>
+							{/if}
 						</CardContent>
 					</Card>
 				</li>
 			{/each}
+
+			<li class="list-none">
+				<Card class="bg-card/55 border-border/70 h-full rounded-[30px] border border-dashed">
+					<CardContent
+						class="flex h-full min-h-72 flex-col items-center justify-center gap-4 p-8 text-center"
+					>
+						<div
+							class="bg-primary/12 text-primary flex size-14 items-center justify-center rounded-full"
+						>
+							<PlusIcon class="size-6" />
+						</div>
+						<div class="space-y-2">
+							<h2 class="text-xl font-semibold tracking-[-0.03em]">Add New</h2>
+							<p class="text-muted-foreground text-sm leading-6">
+								Open Config to expand the movie policy and add more targets to the wall.
+							</p>
+						</div>
+						<Button href="/config" variant="outline" class="rounded-full px-5">Open Config</Button>
+					</CardContent>
+				</Card>
+			</li>
 		</ul>
 	{/if}
-{/if}
+</section>

@@ -14,7 +14,7 @@
 		active: 'ACTIVE',
 		completed: 'COMPLETED',
 		queued: 'QUEUED',
-		downloading: 'ACTIVE',
+		downloading: 'DOWNLOADING',
 		skipped_no_match: 'SKIPPED_NO_MATCH',
 		skipped_duplicate: 'SKIPPED_DUPLICATE',
 		failed: 'FAILED',

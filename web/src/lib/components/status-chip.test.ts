@@ -8,6 +8,11 @@ describe('StatusChip', () => {
 		expect(screen.getByText('SKIPPED_NO_MATCH')).toBeInTheDocument();
 	});
 
+	it('preserves the explicit downloading label', () => {
+		render(StatusChip, { status: 'downloading' });
+		expect(screen.getByText('DOWNLOADING')).toBeInTheDocument();
+	});
+
 	it('falls back to uppercase for unknown statuses', () => {
 		render(StatusChip, { status: 'custom_state' });
 		expect(screen.getByText('CUSTOM_STATE')).toBeInTheDocument();
