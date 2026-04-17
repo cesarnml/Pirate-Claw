@@ -483,6 +483,12 @@ Goal:
 - restructure navigation to a left sidebar; absorb Candidates and Unmatched into Dashboard
 - surface existing API data that the current UI leaves on the table (movie backdrops, Phase 18 Plex state)
 
+Current status:
+
+- implemented in the current delivery stack via `P19.01`-`P19.08`
+- shipped the Obsidian Tide visual system, responsive sidebar shell, redesigned Dashboard / TV Shows / TV Show Detail / Movies / Config routes, and dashboard consolidation of the old Candidates and Unmatched surfaces
+- one approved scope exception landed during `P19.05`: show-level TMDB network metadata, episode spec tags on `/api/shows`, and a write-authenticated TMDB refresh action for the show detail route
+
 Committed scope:
 
 - Obsidian Tide design tokens replacing current oklch vars in `web/src/app.css`
@@ -505,6 +511,7 @@ Explicitly deferred:
 Working notes:
 
 - `docs/01-product/phase-19-ui-redesign-razzle-dazzle.md`
+- `docs/02-delivery/phase-19/implementation-plan.md`
 
 ## Phase 20: v1.0.0 Release and Schema Versioning
 
@@ -536,8 +543,8 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 
 ## Current Planning Posture
 
-- product phases `01`–`18` are implemented on `main`; **Phase 18** is delivered via `P18.01`–`P18.04` stacked delivery
-- product phases `19`–`20` are defined in `docs/01-product/`; both remain product-definition-first until their tickets are approved and implemented
+- product phases `01`–`19` are implemented in the current delivery stack; **Phase 19** is delivered via `P19.01`–`P19.08`
+- product phase `20` remains product-definition-first until its tickets are approved and implemented
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
@@ -556,4 +563,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-15 (Phases 18–20 arc planned).
+Last verified against `README.md` and active delivery plans: 2026-04-17 (Phase 19 delivered; Phase 20 next).

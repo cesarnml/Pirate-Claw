@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–18** are implemented on `main`. **Phases 19–20** are in product-definition/planning mode under `docs/01-product/`.
+Phases **01–19** are implemented in the current delivery stack. **Phase 20** remains in product-definition/planning mode under `docs/01-product/`.
 
 It currently supports:
 
@@ -19,7 +19,7 @@ It currently supports:
 - daemon HTTP API with read endpoints and bounded config writes when `runtime.apiPort` is set
 - optional TMDB-backed posters, ratings, and metadata when a `tmdb` API key is configured
 - optional Plex-backed library status, watch counts, and last-watched timestamps when a `plex` server is configured
-- browser dashboard (`web/`) with unified config editing, in-context daemon controls, full feed and target management, live Transmission stats, skipped-no-match outcomes, and an unmatched candidates page
+- browser dashboard (`web/`) with Obsidian Tide styling, sidebar navigation, unified config editing, in-context daemon controls, poster-forward TV/movie views, live Transmission stats, and dashboard panels for active downlinks and unmatched events
 
 ## Commands
 
@@ -150,22 +150,23 @@ Set `runtime.apiPort` to start an HTTP JSON API alongside the daemon:
 
 ### Endpoints
 
-| Endpoint                         | Description                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------------- |
-| `GET /api/health`                | Uptime, start time, last run/reconcile snapshots                                |
-| `GET /api/status`                | Recent run summaries                                                            |
-| `GET /api/candidates`            | All tracked candidate state records                                             |
-| `GET /api/shows`                 | TV candidates grouped by show → season → episode, with Plex status/watch fields |
-| `GET /api/movies`                | Movie candidates sorted by title, with Plex status/watch fields                 |
-| `GET /api/feeds`                 | Feed config with poll state and `isDue`                                         |
-| `GET /api/config`                | Effective config (credentials redacted); returns `ETag`                         |
-| `PUT /api/config`                | Bounded runtime + tv.shows write (token + `If-Match` required)                  |
-| `PUT /api/config/feeds`          | Replace feeds array (token + `If-Match` required)                               |
-| `PUT /api/config/movies`         | Replace movie policy (token + `If-Match` required)                              |
-| `PUT /api/config/tv/defaults`    | Replace TV defaults (token + `If-Match` required)                               |
-| `GET /api/transmission/session`  | Transmission session stats                                                      |
-| `GET /api/transmission/torrents` | Pirate Claw-managed torrents with progress, speed, ETA                          |
-| `GET /api/outcomes`              | Feed item outcomes (`?status=skipped_no_match`)                                 |
+| Endpoint                             | Description                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------- |
+| `GET /api/health`                    | Uptime, start time, last run/reconcile snapshots                                |
+| `GET /api/status`                    | Recent run summaries                                                            |
+| `GET /api/candidates`                | All tracked candidate state records                                             |
+| `GET /api/shows`                     | TV candidates grouped by show → season → episode, with Plex status/watch fields |
+| `GET /api/movies`                    | Movie candidates sorted by title, with Plex status/watch fields                 |
+| `GET /api/feeds`                     | Feed config with poll state and `isDue`                                         |
+| `GET /api/config`                    | Effective config (credentials redacted); returns `ETag`                         |
+| `PUT /api/config`                    | Bounded runtime + tv.shows write (token + `If-Match` required)                  |
+| `PUT /api/config/feeds`              | Replace feeds array (token + `If-Match` required)                               |
+| `PUT /api/config/movies`             | Replace movie policy (token + `If-Match` required)                              |
+| `PUT /api/config/tv/defaults`        | Replace TV defaults (token + `If-Match` required)                               |
+| `POST /api/shows/:slug/tmdb/refresh` | Refresh TMDB metadata for one TV show (token required)                          |
+| `GET /api/transmission/session`      | Transmission session stats                                                      |
+| `GET /api/transmission/torrents`     | Pirate Claw-managed torrents with progress, speed, ETA                          |
+| `GET /api/outcomes`                  | Feed item outcomes (`?status=skipped_no_match`)                                 |
 
 Write rules: `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`) must be set; all writes require `Authorization: Bearer <token>` and `If-Match` from the latest `GET /api/config` ETag. Writes are atomic file updates.
 
@@ -198,9 +199,7 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 20 targets a polished, fully-featured v1.0.0 release.
 
-**Implemented (Phases 01–18):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, and optional read-only Plex Media Server enrichment.
-
-**Planned (Phase 19):** Full UI/UX redesign — Obsidian Tide design language, left sidebar navigation, poster-forward layouts, and consolidation of the Candidates and Unmatched views into a redesigned Dashboard.
+**Implemented (Phases 01–19):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional read-only Plex Media Server enrichment, and the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, and a TMDB refresh control on TV detail.
 
 **Planned (Phase 20):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release.
 

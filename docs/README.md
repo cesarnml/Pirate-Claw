@@ -83,6 +83,7 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `phase-16/implementation-plan.md`: config editing, hot reload, and daemon controls delivery plan (tickets P16.01–P16.09; delivered on `main`)
 - `phase-17/implementation-plan.md`: onboarding and empty-state delivery plan (tickets P17.01–P17.07; delivered on `main`)
 - `phase-18/implementation-plan.md`: Plex Media Server enrichment delivery plan (tickets P18.01–P18.04; delivered on `main`)
+- `phase-19/implementation-plan.md`: UI/UX redesign delivery plan (tickets P19.01–P19.08; delivered in the current stacked phase)
 
 ### `03-engineering`
 

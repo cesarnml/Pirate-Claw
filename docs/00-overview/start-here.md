@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 18** on `main` (product phases 01–18; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–18 live under [`docs/02-delivery/`](../02-delivery/). The Phase 18 product spec is now the contract reference for the latest shipped scope. Phase **19** is the next product-definition-only phase under [`docs/01-product/`](../01-product/).
+Pirate Claw is implemented through **Phase 19** in the current delivery stack (product phases 01–19; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–19 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec is now the contract reference for the latest delivered UI surface. Phase **20** is the next product-definition-only phase under [`docs/01-product/`](../01-product/).
 
 Current delivered surface:
 
@@ -29,7 +29,7 @@ Current delivered surface:
 - queue-time Transmission `movie` / `tv` labels with warning+retry fallback when labels are unsupported
 - per-media-type Transmission download directories via `transmission.downloadDirs`
 - SvelteKit dashboard in `web/` that consumes the daemon HTTP API, including bounded runtime Settings writes and full feed and target management (add/remove feeds, TV defaults, movie policy, TV show targets) through server-side actions
-- Phase 15 dashboard visibility: home overview (Transmission session strip, active downloads, recent outcomes, archive grid), TV and movie library views with live transfer stats where a `transmissionTorrentHash` joins to Transmission, skipped-no-match outcomes, and `/candidates/unmatched` — refresh on page reload only (no WebSocket/SSE push)
+- Phase 19 UI surface: Obsidian Tide design tokens, persistent left sidebar on desktop with mobile drawer fallback, 4 top-level routes (`/`, `/shows`, `/movies`, `/config`), Dashboard panels for active downlinks and unmatched events, poster-forward TV/movie views, show-detail TMDB refresh, and Plex chips/watch-state across supported library views
 - optional TMDB enrichment: `tmdb` config block and/or `PIRATE_CLAW_TMDB_API_KEY`, SQLite-backed cache, lazy enrichment on API reads, and an optional daemon background refresh cadence via `runtime.tmdbRefreshIntervalMinutes` (default 6 hours; set `0` to disable)
 - optional Plex enrichment: `plex` config block and/or `PIRATE_CLAW_PLEX_TOKEN`, SQLite-backed movie/show cache, background refresh sweeps, and read-only `plexStatus` / `watchCount` / `lastWatchedAt` fields on `/api/movies` and `/api/shows`
 - Phase 16 config editing: unified `/config` accordion cards, per-section toast feedback, post-save daemon restart affordance, Transmission ping, and read-only tooltips when write auth is absent
@@ -46,10 +46,10 @@ Current product boundary:
 - per-feed polling cadence with persistent poll state
 - shared runtime lock prevents overlapping cycles
 - machine-readable and human-readable cycle artifacts with bounded retention
-- read-only daemon HTTP API (`/api/health`, `/api/status`, `/api/candidates`, `/api/shows`, `/api/movies`, `/api/feeds`, `/api/config`, plus Phase 15 `/api/transmission/session`, `/api/transmission/torrents`, `/api/outcomes`) when `runtime.apiPort` is configured
+- daemon HTTP API with read endpoints plus bounded write controls (`/api/config*`, `/api/daemon/restart`, `/api/transmission/ping`, and the Phase 19 TV-detail TMDB refresh action) when `runtime.apiPort` is configured
 - TMDB metadata is display-only and does not gate RSS intake
 
-Still deferred (Phase 19 and beyond):
+Still deferred (Phase 20 and beyond):
 
 - v1.0.0 release and config/DB schema versioning (Phase 20)
 - remote feed capture
@@ -58,14 +58,14 @@ Still deferred (Phase 19 and beyond):
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and Phase 18 delivery artifacts: 2026-04-16.
+Last verified against `README.md` and Phase 19 delivery artifacts: 2026-04-17.
 
 Current planning focus:
 
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
-- Phase 19 UI redesign work is the next numbered product phase after the shipped Plex enrichment surface
+- Phase 20 release/versioning work is the next numbered product phase after the shipped UI redesign surface
 
 ## Read These Docs By Task Type
 
