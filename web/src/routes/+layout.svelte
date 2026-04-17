@@ -62,7 +62,7 @@
 </svelte:head>
 
 {#snippet sidebarContent()}
-	<div class="flex h-full flex-col">
+	<div class="flex h-full w-full flex-col">
 		<div class="border-border border-b px-4 py-5 md:px-3 lg:px-4">
 			<a
 				href="/"
@@ -102,7 +102,7 @@
 			</ul>
 		</nav>
 
-		<div class="border-border bg-card/55 mt-auto border-t p-3">
+		<div class="border-border bg-card/55 mt-auto border-t p-3 md:hidden lg:block">
 			<div class="rounded-2xl border border-white/8 bg-black/10 p-3 backdrop-blur-sm">
 				<div class="flex items-center justify-between gap-3">
 					<div class="min-w-0">
