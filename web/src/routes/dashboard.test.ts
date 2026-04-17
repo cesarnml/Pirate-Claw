@@ -52,8 +52,8 @@ const mockOutcome = (overrides: Partial<SkippedOutcomeRecord> = {}): SkippedOutc
 const mockCandidate = (overrides: Partial<CandidateStateRecord> = {}): CandidateStateRecord => ({
 	identityKey: 'test-key',
 	mediaType: 'tv',
-	status: 'completed',
-	lifecycleStatus: 'seeding',
+	status: 'queued',
+	lifecycleStatus: 'completed',
 	normalizedTitle: 'Breaking Bad',
 	rawTitle: 'Breaking.Bad.S01E01.720p',
 	ruleName: 'test-rule',
@@ -66,7 +66,8 @@ const mockCandidate = (overrides: Partial<CandidateStateRecord> = {}): Candidate
 	firstSeenRunId: 1,
 	lastSeenRunId: 1,
 	updatedAt: '2024-01-08T12:00:00Z',
-	transmissionDoneDate: '2024-01-08T12:00:00Z',
+		queuedAt: '2024-01-08T12:00:00Z',
+		transmissionDoneDate: '2024-01-08T12:00:00Z',
 	transmissionTorrentHash: 'abc123',
 	...overrides
 });
@@ -124,8 +125,8 @@ describe('/', () => {
 				transmissionTorrents: [mockTorrent()],
 				candidates: [
 					mockCandidate({
-						status: 'downloading',
-						lifecycleStatus: 'active',
+						status: 'queued',
+						lifecycleStatus: 'downloading',
 						transmissionDoneDate: undefined,
 						resolution: '1080p',
 						codec: 'x265',
@@ -135,9 +136,7 @@ describe('/', () => {
 			}
 		});
 
-		expect(
-			screen.getByRole('heading', { name: /Transmission pulls in flight/i })
-		).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: /Torrent Manager/i })).toBeInTheDocument();
 		expect(screen.getByText('1080p')).toBeInTheDocument();
 		expect(screen.getByText('x265')).toBeInTheDocument();
 		expect(screen.getByText('42%')).toBeInTheDocument();
@@ -156,7 +155,7 @@ describe('/', () => {
 			screen.getByRole('heading', { name: /Recent unmatched feed events/i })
 		).toBeInTheDocument();
 		expect(screen.getByText('Stranger.Things.S05E01.4K.WEB.x265-GROUP')).toBeInTheDocument();
-		expect(screen.getAllByText('SKIPPED_NO_MATCH')).toHaveLength(2);
+		expect(screen.getAllByText('SKIPPED')).toHaveLength(2);
 	});
 
 	it('shows unavailable copy when outcome and run summary fetches fail', () => {
@@ -179,6 +178,8 @@ describe('/', () => {
 				identityKey: `done${index}`,
 				mediaType: index % 2 === 0 ? 'tv' : 'movie',
 				normalizedTitle: `Movie ${index}`,
+				lifecycleStatus: 'completed',
+				queuedAt: `2024-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
 				transmissionDoneDate: `2024-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`
 			})
 		);

@@ -5,7 +5,7 @@ import StatusChip from './StatusChip.svelte';
 describe('StatusChip', () => {
 	it('renders the supported vocabulary in uppercase form', () => {
 		render(StatusChip, { status: 'skipped_no_match' });
-		expect(screen.getByText('SKIPPED_NO_MATCH')).toBeInTheDocument();
+		expect(screen.getByText('SKIPPED')).toBeInTheDocument();
 	});
 
 	it('preserves the explicit downloading label', () => {
