@@ -29,6 +29,8 @@ describe('dashboard page server load', () => {
 			})
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
+			.mockResolvedValueOnce({ runs: [] })
+			.mockResolvedValueOnce({ outcomes: [] })
 			.mockResolvedValueOnce(emptyConfig);
 
 		const result = await load({} as never);
@@ -53,6 +55,8 @@ describe('dashboard page server load', () => {
 			})
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
+			.mockResolvedValueOnce({ runs: [] })
+			.mockResolvedValueOnce({ outcomes: [] })
 			.mockResolvedValueOnce(feedOnlyConfig);
 
 		const result = await load({} as never);
@@ -77,6 +81,8 @@ describe('dashboard page server load', () => {
 			})
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
+			.mockResolvedValueOnce({ runs: [] })
+			.mockResolvedValueOnce({ outcomes: [] })
 			.mockResolvedValueOnce(emptyConfig);
 
 		const result = await load({} as never);
