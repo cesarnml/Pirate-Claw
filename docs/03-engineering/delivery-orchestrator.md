@@ -415,26 +415,34 @@ State is written under:
 
 ### State file and primary checkout (multi-worktree)
 
-The orchestrator writes `state.json` **only in the repo directory where you run `deliver`** (the current working directory). If you use a **ticket worktree** for day-to-day delivery and a **separate `main` clone** for `closeout-stack` or other commands, the `main` checkout’s `state.json` does **not** update automatically.
+The orchestrator writes `state.json` **only in the repo directory where you run `deliver`** (the current working directory). If you use **one ticket worktree per ticket** and a **separate `main` clone** for `closeout-stack` or other commands, the `main` checkout’s delivery tree does **not** update automatically.
 
-Fetched review artifacts under `reviews/` and generated handoff artifacts under `handoffs/` also stay in the worktree where `deliver` ran unless you mirror them yourself.
+Fetched review artifacts under `reviews/` and generated handoff artifacts under `handoffs/` are written under the **same** path relative to the worktree where each command ran. Across a stacked phase, that means files are often **spread across multiple ticket worktrees** — the final worktree is **not** guaranteed to contain every `reviews/<ticket>-*.json` or `handoffs/<ticket>-handoff.md` produced earlier.
 
-**Recommendation:** After each successful `advance` (ticket moves to `done`), copy the worktree’s `state.json`, `reviews/`, and `handoffs/` to the same relative paths in your **primary / `main` checkout** so that copy always reflects the latest stack (PR numbers, branch names, completed tickets) and the latest local delivery evidence. That keeps `closeout-stack` and any tooling you run from `main` aligned with reality.
+**Recommendation:**
 
-Example (adjust paths to your layout):
+- After each successful `advance`, refresh the **primary / `main` checkout** so tooling run from `main` stays aligned with reality.
+- Copy **`state.json`** from the worktree where that advance just ran (only that file carries the authoritative stack index: PR numbers, branch names, ticket statuses).
+- **Merge** **`reviews/`** and **`handoffs/`** from that same worktree into the primary checkout (per-ticket filenames normally do not collide). Periodically — and **always before `closeout-stack`** if you did not mirror after every ticket — walk **every** ticket worktree for the plan and copy any missing `reviews/*` and `handoffs/*` into primary so **all** local review and handoff evidence lives under the primary `.agents/delivery/<plan-key>/`, not stranded in an older worktree.
+
+Example (adjust paths and plan key; `final-wt` is the worktree that completed the last ticket):
 
 ```bash
-cp /path/to/ticket-worktree/.agents/delivery/<plan-key>/state.json \
+mkdir -p /path/to/main-clone/.agents/delivery/<plan-key>/reviews \
+         /path/to/main-clone/.agents/delivery/<plan-key>/handoffs
+
+cp /path/to/final-wt/.agents/delivery/<plan-key>/state.json \
    /path/to/main-clone/.agents/delivery/<plan-key>/state.json
-rm -rf /path/to/main-clone/.agents/delivery/<plan-key>/reviews \
-       /path/to/main-clone/.agents/delivery/<plan-key>/handoffs
-cp -R /path/to/ticket-worktree/.agents/delivery/<plan-key>/reviews \
-      /path/to/main-clone/.agents/delivery/<plan-key>/reviews
-cp -R /path/to/ticket-worktree/.agents/delivery/<plan-key>/handoffs \
-      /path/to/main-clone/.agents/delivery/<plan-key>/handoffs
+
+for wt in /path/to/phase-wt-01 /path/to/phase-wt-02 /path/to/phase-wt-NN; do
+  cp -R "$wt/.agents/delivery/<plan-key>/reviews/"* \
+        /path/to/main-clone/.agents/delivery/<plan-key>/reviews/ 2>/dev/null || true
+  cp -R "$wt/.agents/delivery/<plan-key>/handoffs/"* \
+        /path/to/main-clone/.agents/delivery/<plan-key>/handoffs/ 2>/dev/null || true
+done
 ```
 
-**Stance:** Treat the **active delivery worktree** as authoritative while you work; treat the **primary `main` copy** as the **mirror** you refresh after each advance. Until the orchestrator gains an explicit “mirror delivery artifacts to path” option, this manual copy is the reliable fix for stale delivery state on `main` and keeps local review/handoff evidence from drifting across worktrees.
+**Stance:** Treat each **ticket worktree** as authoritative for the commands you run inside it; treat the **primary `main` copy** as the **aggregate mirror** — especially for `reviews/` and `handoffs/`, which must be **reconciled across all worktrees**, not only copied from the latest one. Until the orchestrator gains an explicit “mirror delivery artifacts to path” option, this manual merge is the reliable fix for stale or incomplete delivery state on `main`.
 
 ## PR Body Maintenance
 

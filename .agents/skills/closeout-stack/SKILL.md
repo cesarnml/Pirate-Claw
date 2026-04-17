@@ -18,19 +18,29 @@ Processes each ticket in stack order via `git merge --squash` (3-way, robust aga
 
 ### Delivery artifact mirror (`state.json`, `reviews/`, `handoffs/`)
 
-Closeout reads `.agents/delivery/<plan-key>/state.json` from the repo you run the command in. The orchestrator only writes delivery artifacts in the worktree where you ran `deliver`. If you delivered from a ticket worktree, **copy** that worktree's `state.json`, `reviews/`, and `handoffs/` to the same relative paths in your `main` checkout before running `closeout-stack`, or the command may use stale PR numbers and the primary checkout will lose the latest local review/handoff evidence. See `docs/03-engineering/delivery-orchestrator.md` (State file and primary checkout).
+Closeout reads `.agents/delivery/<plan-key>/state.json` from the repo you run the command in. The orchestrator only writes delivery artifacts in the **current working directory** where you ran `deliver` — so across a stacked phase, `reviews/` and `handoffs/` files often land in **different ticket worktrees**, not only the last one.
 
-Example:
+Before `closeout-stack` (or any command you run from the primary checkout), mirror delivery artifacts into that checkout:
+
+- **`state.json`:** copy from the **ticket worktree where the final ticket was advanced to `done`** (or whichever worktree last wrote state). That file is the single control-plane index; earlier worktrees hold stale partial state.
+- **`reviews/` and `handoffs/`:** copy **from every ticket worktree** used during the phase into the primary tree’s `.agents/delivery/<plan-key>/`, **merging** into existing `reviews/` and `handoffs/` directories (per-ticket filenames normally do not collide). Goal: **all** review fetch/triage artifacts and **all** handoff markdown files exist on `main`, not only the set generated in the final worktree.
+
+If you skip this, `closeout-stack` may see wrong PR numbers, and the primary checkout loses local review and handoff evidence that never left an older worktree. See `docs/03-engineering/delivery-orchestrator.md` (State file and primary checkout).
+
+Example (adjust paths and plan key):
 
 ```bash
-mkdir -p .agents/delivery/<plan-key>
-cp /path/to/ticket-worktree/.agents/delivery/<plan-key>/state.json \
+mkdir -p .agents/delivery/<plan-key>/reviews .agents/delivery/<plan-key>/handoffs
+
+# Authoritative stack index — from the worktree that completed the last ticket
+cp /path/to/final-ticket-worktree/.agents/delivery/<plan-key>/state.json \
    .agents/delivery/<plan-key>/state.json
-rm -rf .agents/delivery/<plan-key>/reviews .agents/delivery/<plan-key>/handoffs
-cp -R /path/to/ticket-worktree/.agents/delivery/<plan-key>/reviews \
-   .agents/delivery/<plan-key>/reviews
-cp -R /path/to/ticket-worktree/.agents/delivery/<plan-key>/handoffs \
-   .agents/delivery/<plan-key>/handoffs
+
+# Merge every ticket worktree’s reviews and handoffs back to primary
+for wt in /path/to/phase-wt-01 /path/to/phase-wt-02 /path/to/phase-wt-NN; do
+  cp -R "$wt/.agents/delivery/<plan-key>/reviews/"* .agents/delivery/<plan-key>/reviews/ 2>/dev/null || true
+  cp -R "$wt/.agents/delivery/<plan-key>/handoffs/"* .agents/delivery/<plan-key>/handoffs/ 2>/dev/null || true
+done
 ```
 
 After success, clean up:
@@ -56,7 +66,7 @@ If closeout fails mid-flight, do not retry. Instead:
    gh pr close <number> --comment "Squash-merged manually" --delete-branch
    ```
 4. Confirm `origin/main` has expected squash commits in ticket order.
-5. Sync `state.json`, `reviews/`, and `handoffs/` from the active delivery worktree to `main` if needed.
+5. Sync delivery artifacts to the primary `main` checkout: copy **`state.json`** from the worktree that last advanced the stack; **merge** all **`reviews/`** and **`handoffs/`** files from **every** ticket worktree used in the phase so nothing stays stranded off `main`.
 6. Write `notes/public/<plan>-retrospective.md` if not already done.
 
 ## Key Rules
