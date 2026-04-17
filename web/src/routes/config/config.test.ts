@@ -121,6 +121,28 @@ describe('/config', () => {
 		);
 	});
 
+	it('seeds the editable watchlist from matchPattern when present', () => {
+		renderPage({
+			config: {
+				...mockConfig,
+				tv: [
+					{
+						name: 'hd-tv',
+						matchPattern: 'The Show',
+						resolutions: ['1080p'],
+						codecs: ['x265']
+					}
+				]
+			},
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
+		});
+
+		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toHaveValue('The Show');
+	});
+
 	it('does not render restart offer by default', () => {
 		renderPage({
 			config: mockConfig,

@@ -66,7 +66,7 @@
 	$effect(() => {
 		const c = data.config;
 		if (c) {
-			showRows = c.tv.map((rule) => rule.name);
+			showRows = c.tv.map((rule) => rule.matchPattern ?? rule.name);
 			tvResolutions = [...(c.tvDefaults?.resolutions ?? [])];
 			tvCodecs = [...(c.tvDefaults?.codecs ?? [])];
 			movieYears = [...c.movies.years];
@@ -156,8 +156,13 @@
 		}
 	}
 
-	function maskToken(active: boolean): string {
-		return active ? '••••••••' : 'not configured';
+	function transmissionAuthConfigured(): boolean {
+		if (!data.config) return false;
+		return !!(data.config.transmission.username || data.config.transmission.password);
+	}
+
+	function maskToken(configured: boolean): string {
+		return configured ? '••••••••' : 'not configured';
 	}
 
 	function formatUptime(value: number | undefined | null): string {
@@ -345,7 +350,7 @@
 							<p class="text-muted-foreground text-xs font-semibold tracking-[0.18em] uppercase">
 								Auth Token
 							</p>
-							<p class="mt-2 text-lg font-semibold">{maskToken(canWrite)}</p>
+							<p class="mt-2 text-lg font-semibold">{maskToken(transmissionAuthConfigured())}</p>
 						</div>
 					</div>
 
@@ -677,6 +682,7 @@
 								{#each ALL_RESOLUTIONS as resolution}
 									<button
 										type="button"
+										aria-pressed={tvResolutions.includes(resolution)}
 										class={`rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.16em] uppercase transition-colors ${pillClass(
 											tvResolutions.includes(resolution)
 										)}`}
@@ -698,6 +704,7 @@
 								{#each ALL_CODECS as codec}
 									<button
 										type="button"
+										aria-pressed={tvCodecs.includes(codec)}
 										class={`rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.16em] uppercase transition-colors ${pillClass(
 											tvCodecs.includes(codec)
 										)}`}
@@ -911,6 +918,7 @@
 								{#each ALL_RESOLUTIONS as resolution}
 									<button
 										type="button"
+										aria-pressed={movieResolutions.includes(resolution)}
 										class={`rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.16em] uppercase transition-colors ${pillClass(
 											movieResolutions.includes(resolution)
 										)}`}
@@ -928,6 +936,7 @@
 								{#each ALL_CODECS as codec}
 									<button
 										type="button"
+										aria-pressed={movieCodecs.includes(codec)}
 										class={`rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.16em] uppercase transition-colors ${pillClass(
 											movieCodecs.includes(codec)
 										)}`}
@@ -949,6 +958,7 @@
 								{#each ['prefer', 'require'] as policy}
 									<button
 										type="button"
+										aria-pressed={movieCodecPolicy === policy}
 										class={`rounded-2xl border px-4 py-3 text-sm font-semibold uppercase transition-colors ${
 											movieCodecPolicy === policy
 												? 'border-primary bg-primary/12 text-primary'
