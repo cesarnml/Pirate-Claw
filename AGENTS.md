@@ -9,6 +9,10 @@
 - Final merge of stacked PR slices requires developer approval. Close completed phases with `bun run closeout-stack --plan <plan-path>`.
 - PR titles: Conventional-Commit-style subject + active ticket suffix (e.g. `[P3.02]`) when the ticket is clear from branch/docs/diff. Apply even when the user did not type `pr`.
 
+## Tailwind CSS
+
+Prefer canonical scale classes over arbitrary values. Use `min-w-112.5` not `min-w-[450px]`. Bracket syntax only when no canonical equivalent exists.
+
 ## Pre-Commit
 
 Before committing: run `bun run format` for touched files (for `web/` also `bun run format:web`; or `bun run verify` covers both). Run `bun run spellcheck` when docs, Markdown, config examples, PR text, or user-facing copy changed.
