@@ -21,7 +21,7 @@ export default [
 	},
 	{
 		files: ['**/*.svelte'],
-		plugins: { svelte },
+		plugins: { '@typescript-eslint': ts, svelte },
 		languageOptions: {
 			parser: svelteParser,
 			parserOptions: { parser: tsParser },
@@ -30,7 +30,10 @@ export default [
 		rules: {
 			...svelte.configs.recommended.rules,
 			// ESLint compiles Svelte independently; shadcn `$props()` + rest triggers benign custom-element warnings
-			'svelte/valid-compile': ['error', { ignoreWarnings: true }]
+			'svelte/valid-compile': ['error', { ignoreWarnings: true }],
+			// base rule misidentifies TS interface param names as unused variables; TS-aware rule handles this correctly
+			'no-unused-vars': 'off',
+			'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }]
 		}
 	},
 	{
