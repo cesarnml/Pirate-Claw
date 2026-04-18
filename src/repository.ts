@@ -1157,7 +1157,8 @@ function mapCandidateStateRow(row: CandidateStateRow): CandidateStateRecord {
     mediaType: row.mediaType,
     status: row.status,
     queuedAt: row.queuedAt ?? undefined,
-    pirateClawDisposition: (row.pirateClawDisposition as PirateClawDisposition | null) ?? undefined,
+    pirateClawDisposition:
+      (row.pirateClawDisposition as PirateClawDisposition | null) ?? undefined,
     reconciledAt: row.reconciledAt ?? undefined,
     transmissionTorrentId: row.transmissionTorrentId ?? undefined,
     transmissionTorrentName: row.transmissionTorrentName ?? undefined,

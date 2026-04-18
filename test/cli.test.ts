@@ -981,9 +981,7 @@ describe('pirate-claw reconcile', () => {
     ).toMatchObject({
       reconciledAt: expect.any(String),
     });
-    expect(
-      repository.getCandidateState('movie:retry me|2024'),
-    ).toMatchObject({
+    expect(repository.getCandidateState('movie:retry me|2024')).toMatchObject({
       reconciledAt: expect.any(String),
     });
 

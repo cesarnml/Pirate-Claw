@@ -113,7 +113,12 @@ export async function reconcileCandidates(input: {
   const candidates = input.repository.listReconcilableCandidates();
 
   if (candidates.length === 0) {
-    return { trackedCount: 0, reconciledCount: 0, updatedCount: 0, missingCount: 0 };
+    return {
+      trackedCount: 0,
+      reconciledCount: 0,
+      updatedCount: 0,
+      missingCount: 0,
+    };
   }
 
   const lookup = await input.downloader.lookupTorrents({
