@@ -1031,6 +1031,9 @@ export function createApiFetch(
       path === '/api/transmission/torrent/dispose' &&
       request.method === 'POST'
     ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
       let body: unknown;
       try {
         body = await request.json();
@@ -1117,10 +1120,13 @@ export function createApiFetch(
         );
       }
 
-      repository.setPirateClawDisposition(
+      const written = repository.trySetPirateClawDispositionIfUnset(
         candidate.identityKey,
         disposition as 'removed' | 'deleted',
       );
+      if (!written) {
+        return Response.json({ ok: false, error: 'conflict' }, { status: 409 });
+      }
       return Response.json({ ok: true });
     }
 

@@ -31,6 +31,7 @@ function stubRepository(): Repository {
     listSkippedNoMatchOutcomes: () => [],
     listDistinctUnmatchedAndFailedOutcomes: () => [],
     setPirateClawDisposition: () => {},
+    trySetPirateClawDispositionIfUnset: () => true,
   };
 }
 

@@ -177,6 +177,10 @@ export type Repository = {
     identityKey: string,
     disposition: PirateClawDisposition,
   ): void;
+  trySetPirateClawDispositionIfUnset(
+    identityKey: string,
+    disposition: PirateClawDisposition,
+  ): boolean;
 };
 
 export const DEFAULT_DATABASE_PATH = 'pirate-claw.db';
@@ -504,6 +508,9 @@ export function createRepository(database: Database): Repository {
   );
   const setPirateClawDispositionStatement = database.query(
     `UPDATE candidate_state SET pirate_claw_disposition = ?2 WHERE identity_key = ?1`,
+  );
+  const trySetPirateClawDispositionIfUnsetStatement = database.query(
+    `UPDATE candidate_state SET pirate_claw_disposition = ?2 WHERE identity_key = ?1 AND pirate_claw_disposition IS NULL`,
   );
   const reconcileCandidateStateStatement = database.query(
     `UPDATE candidate_state
@@ -930,6 +937,17 @@ export function createRepository(database: Database): Repository {
       disposition: PirateClawDisposition,
     ): void {
       setPirateClawDispositionStatement.run(identityKey, disposition);
+    },
+
+    trySetPirateClawDispositionIfUnset(
+      identityKey: string,
+      disposition: PirateClawDisposition,
+    ): boolean {
+      const result = trySetPirateClawDispositionIfUnsetStatement.run(
+        identityKey,
+        disposition,
+      );
+      return (result as { changes: number }).changes === 1;
     },
 
     listSkippedNoMatchOutcomes(days: number): SkippedOutcomeRecord[] {

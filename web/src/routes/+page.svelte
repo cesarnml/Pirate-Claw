@@ -40,10 +40,13 @@
 		})
 	);
 
+	const transmissionLoaded = $derived(data.transmissionTorrents !== null);
 	const liveHashes = $derived(new Set(torrents.map((t) => t.hash)));
 
 	const missingCandidates = $derived(
-		candidates.filter((c) => torrentDisplayState(c, liveHashes) === 'missing')
+		!transmissionLoaded
+			? []
+			: candidates.filter((c) => torrentDisplayState(c, liveHashes) === 'missing')
 	);
 
 	const archiveItems = $derived(

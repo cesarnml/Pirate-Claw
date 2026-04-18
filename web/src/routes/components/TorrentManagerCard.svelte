@@ -30,6 +30,28 @@
 	let inflightDispose = $state<string | null>(null);
 	let disposeErrors = $state<Record<string, string>>({});
 
+	function enhanceDispose(hash: string) {
+		return () => {
+			inflightDispose = hash;
+			delete disposeErrors[hash];
+			return async ({
+				result,
+				update
+			}: {
+				result: { type: string; data?: unknown };
+				update: () => Promise<void>;
+			}) => {
+				inflightDispose = null;
+				if (result.type === 'failure') {
+					const data = result.data as { error?: string } | undefined;
+					disposeErrors[hash] = data?.error ?? 'Failed';
+				} else {
+					await update();
+				}
+			};
+		};
+	}
+
 	// Derive speeds from individual torrents — consistent with per-card values and avoids
 	// the session-stats / torrent-get snapshot skew.
 	const totalDownloadSpeed = $derived(
@@ -160,23 +182,7 @@
 								{/if}
 							</div>
 							<div class="flex shrink-0 gap-2">
-								<form
-									method="POST"
-									action="?/dispose"
-									use:enhance={() => {
-										inflightDispose = hash;
-										delete disposeErrors[hash];
-										return async ({ result, update }) => {
-											inflightDispose = null;
-											if (result.type === 'failure') {
-												const data = result.data as { error?: string } | undefined;
-												disposeErrors[hash] = data?.error ?? 'Failed';
-											} else {
-												await update();
-											}
-										};
-									}}
-								>
+								<form method="POST" action="?/dispose" use:enhance={enhanceDispose(hash)}>
 									<input type="hidden" name="hash" value={hash} />
 									<input type="hidden" name="disposition" value="removed" />
 									<button
@@ -187,23 +193,7 @@
 										Mark Removed
 									</button>
 								</form>
-								<form
-									method="POST"
-									action="?/dispose"
-									use:enhance={() => {
-										inflightDispose = hash;
-										delete disposeErrors[hash];
-										return async ({ result, update }) => {
-											inflightDispose = null;
-											if (result.type === 'failure') {
-												const data = result.data as { error?: string } | undefined;
-												disposeErrors[hash] = data?.error ?? 'Failed';
-											} else {
-												await update();
-											}
-										};
-									}}
-								>
+								<form method="POST" action="?/dispose" use:enhance={enhanceDispose(hash)}>
 									<input type="hidden" name="hash" value={hash} />
 									<input type="hidden" name="disposition" value="deleted" />
 									<button
