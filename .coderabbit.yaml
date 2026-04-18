@@ -7,3 +7,7 @@ reviews:
     auto_incremental_review: false
     base_branches:
       - '.*'
+    ignore_usernames:
+      - 'dependabot[bot]'
+      - 'renovate[bot]'
+      - 'github-actions[bot]'

@@ -52,7 +52,7 @@
     "negativeCacheTtlDays": 1
   },
   "plex": {
-    "url": "http://172.17.0.1:32400",
+    "url": "http://localhost:32400",
     "token": "YOUR_PLEX_TOKEN",
     "refreshIntervalMinutes": 30
   }

@@ -9,10 +9,12 @@ node_modules/
 .agents/analysis/
 .agents/ai-review/
 pirate-claw.config.json
-pirate-claw.db
+pirate-claw.*.db
 .pirate-claw/
 .env
 notes/private/
 .cursor/
 .claude/settings.local.json
 .claude/*.lock
+pirate-claw.config.minimal.json
+pirate-claw.db
