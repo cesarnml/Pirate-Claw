@@ -39,6 +39,9 @@ function stubRepository(overrides: Partial<Repository> = {}): Repository {
     listReconcilableCandidates: () => [],
     listRetryableCandidates: () => [],
     listSkippedNoMatchOutcomes: () => [],
+    listDistinctUnmatchedAndFailedOutcomes: () => [],
+    setPirateClawDisposition: () => {},
+    trySetPirateClawDispositionIfUnset: () => true,
     ...overrides,
   } as Repository;
 }
