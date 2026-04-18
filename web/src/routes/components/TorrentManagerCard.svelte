@@ -141,9 +141,7 @@
 		{/if}
 		{#if missingCandidates.length > 0}
 			<div class="border-border border-t pt-4">
-				<p
-					class="text-muted-foreground mb-3 text-[11px] font-semibold tracking-[0.24em] uppercase"
-				>
+				<p class="text-muted-foreground mb-3 text-[11px] font-semibold tracking-[0.24em] uppercase">
 					Missing from Transmission
 				</p>
 				<ul class="space-y-3">
