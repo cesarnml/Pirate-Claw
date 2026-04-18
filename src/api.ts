@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { renameSync, writeFileSync } from 'node:fs';
-import { fetchSessionInfo, fetchTorrentStats } from './transmission';
+import {
+  fetchSessionInfo,
+  fetchTorrentStats,
+  pauseTorrent,
+  resumeTorrent,
+} from './transmission';
 import type {
   AppConfig,
   CompactTvDefaults,
@@ -770,6 +775,126 @@ export function createApiFetch(
       return Response.json({ ok: true, version: result.session.version });
     }
 
+    if (
+      path === '/api/transmission/torrent/pause' &&
+      request.method === 'POST'
+    ) {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json(
+          { ok: false, error: 'invalid json body' },
+          { status: 400 },
+        );
+      }
+
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        !('hash' in body) ||
+        typeof (body as Record<string, unknown>).hash !== 'string'
+      ) {
+        return Response.json(
+          { ok: false, error: 'hash is required' },
+          { status: 400 },
+        );
+      }
+
+      const hash = (body as Record<string, string>).hash;
+      const candidates = repository.listCandidateStates();
+      const candidate = candidates.find(
+        (c) => c.transmissionTorrentHash === hash,
+      );
+
+      if (!candidate) {
+        return Response.json(
+          { ok: false, error: 'candidate not found' },
+          { status: 400 },
+        );
+      }
+
+      const displayState = deriveTorrentDisplayState(candidate);
+      if (displayState !== 'downloading') {
+        return Response.json(
+          {
+            ok: false,
+            error: `torrent is not in a pauseable state: ${displayState}`,
+          },
+          { status: 400 },
+        );
+      }
+
+      const result = await pauseTorrent(activeConfig.transmission, hash);
+      if (!result.ok) {
+        return Response.json(
+          { ok: false, error: result.message },
+          { status: 500 },
+        );
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (
+      path === '/api/transmission/torrent/resume' &&
+      request.method === 'POST'
+    ) {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json(
+          { ok: false, error: 'invalid json body' },
+          { status: 400 },
+        );
+      }
+
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        !('hash' in body) ||
+        typeof (body as Record<string, unknown>).hash !== 'string'
+      ) {
+        return Response.json(
+          { ok: false, error: 'hash is required' },
+          { status: 400 },
+        );
+      }
+
+      const hash = (body as Record<string, string>).hash;
+      const candidates = repository.listCandidateStates();
+      const candidate = candidates.find(
+        (c) => c.transmissionTorrentHash === hash,
+      );
+
+      if (!candidate) {
+        return Response.json(
+          { ok: false, error: 'candidate not found' },
+          { status: 400 },
+        );
+      }
+
+      const displayState = deriveTorrentDisplayState(candidate);
+      if (displayState !== 'paused') {
+        return Response.json(
+          {
+            ok: false,
+            error: `torrent is not in a resumable state: ${displayState}`,
+          },
+          { status: 400 },
+        );
+      }
+
+      const result = await resumeTorrent(activeConfig.transmission, hash);
+      if (!result.ok) {
+        return Response.json(
+          { ok: false, error: result.message },
+          { status: 500 },
+        );
+      }
+      return Response.json({ ok: true });
+    }
+
     if (path === '/api/daemon/restart' && request.method === 'POST') {
       const authError = checkWriteAuth(request, activeConfig);
       if (authError) return authError;
@@ -1066,6 +1191,16 @@ function mergeTvShowsPreservingDiskEntries(
     }
   }
   return next;
+}
+
+function deriveTorrentDisplayState(
+  candidate: CandidateStateRecord,
+): 'queued' | 'paused' | 'downloading' | 'completed' | 'removed' | 'deleted' {
+  if (candidate.pirateClawDisposition) return candidate.pirateClawDisposition;
+  if (!candidate.transmissionTorrentHash) return 'queued';
+  if (candidate.transmissionPercentDone === 1) return 'completed';
+  if (candidate.transmissionStatusCode === 0) return 'paused';
+  return 'downloading';
 }
 
 function expectRecord(input: unknown, label: string): Record<string, unknown> {

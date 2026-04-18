@@ -30,6 +30,8 @@ export type SubmissionFailure = {
 
 export type SubmissionResult = SubmissionSuccess | SubmissionFailure;
 
+export type TorrentActionResult = { ok: true } | SubmissionFailure;
+
 export type LookupTorrentsInput = {
   ids?: number[];
   hashes?: string[];
@@ -196,6 +198,90 @@ async function lookupTorrentsInTransmission(
   }
 
   return parseLookupTorrentsResult(parsed);
+}
+
+export async function pauseTorrent(
+  config: TransmissionConfig,
+  hash: string,
+): Promise<TorrentActionResult> {
+  return sendTorrentActionRpc(config, 'torrent-stop', hash);
+}
+
+export async function resumeTorrent(
+  config: TransmissionConfig,
+  hash: string,
+): Promise<TorrentActionResult> {
+  return sendTorrentActionRpc(config, 'torrent-start', hash);
+}
+
+async function sendTorrentActionRpc(
+  config: TransmissionConfig,
+  method: 'torrent-stop' | 'torrent-start',
+  hash: string,
+): Promise<TorrentActionResult> {
+  const body = { method, arguments: { ids: [hash] } };
+  const firstResponse = await sendRpcRequest(config, body);
+
+  if (!firstResponse.ok) {
+    return firstResponse.error;
+  }
+
+  let response = firstResponse.response;
+
+  if (response.status === 409) {
+    const sessionId = response.headers.get('x-transmission-session-id');
+    if (!sessionId) {
+      return {
+        ok: false,
+        code: 'session_error',
+        message:
+          'Transmission session negotiation failed: missing X-Transmission-Session-Id header.',
+      };
+    }
+    const retryResponse = await sendRpcRequest(config, body, sessionId);
+    if (!retryResponse.ok) {
+      return retryResponse.error;
+    }
+    response = retryResponse.response;
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code: 'http_error',
+      message: `Transmission RPC request failed with HTTP ${response.status}.`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message: 'Transmission RPC response was not valid JSON.',
+    };
+  }
+
+  if (!isTransmissionResponse(parsed)) {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message: 'Transmission RPC response was missing required fields.',
+    };
+  }
+
+  if (parsed.result !== 'success') {
+    return {
+      ok: false,
+      code: 'rpc_error',
+      message: `Transmission rejected torrent action: ${parsed.result}.`,
+      rpcResult: parsed.result,
+    };
+  }
+
+  return { ok: true };
 }
 
 export async function fetchTorrentStats(
