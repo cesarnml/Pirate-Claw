@@ -1097,10 +1097,9 @@ export function createApiFetch(
         );
       }
 
-      const statsResult = await fetchTorrentStats(
-        activeConfig.transmission,
-        [hash],
-      );
+      const statsResult = await fetchTorrentStats(activeConfig.transmission, [
+        hash,
+      ]);
       if (!statsResult.ok) {
         return Response.json(
           { ok: false, error: statsResult.message },
