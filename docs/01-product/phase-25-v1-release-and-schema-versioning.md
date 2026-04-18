@@ -1,6 +1,6 @@
-# Phase 20: v1.0.0 Release and Schema Versioning
+# Phase 25: v1.0.0 Release and Schema Versioning
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-20/` implementation plan until tickets are approved.
+**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-25/` implementation plan until tickets are approved.
 
 ## TL;DR
 
