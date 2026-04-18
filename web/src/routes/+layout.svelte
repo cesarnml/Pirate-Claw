@@ -86,13 +86,13 @@
 		</div>
 
 		<nav class="flex-1 px-3 py-4" aria-label="Main navigation">
-			<ul class="space-y-2">
+			<ul class="flex flex-col space-y-2">
 				{#each nav as link}
-					<li>
+					<li class="flex md:justify-center lg:justify-start">
 						<a
 							href={link.href}
 							onclick={closeMobileNav}
-							class="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+							class="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring flex flex-1 items-center gap-3 rounded-2xl px-3 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none"
 						>
 							<link.icon class="h-5 w-5 shrink-0" />
 							<span class="text-sm font-medium md:sr-only lg:not-sr-only">{link.label}</span>
