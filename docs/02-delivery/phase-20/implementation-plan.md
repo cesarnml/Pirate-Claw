@@ -49,3 +49,44 @@ P20.06 (queue button) — independent, parallel
 | P20.05 | Context menu UI                 | P20.04         |
 | P20.06 | Queue button (FeedEventLogCard) | P20.01         |
 | P20.07 | Docs + exit verification        | P20.05, P20.06 |
+
+## Ticket Order
+
+1. `P20.01 Data model clean break`
+2. `P20.02 Pause / Resume`
+3. `P20.03 Remove / Remove + Delete`
+4. `P20.04 Dispose (missing resolution)`
+5. `P20.05 Context menu UI`
+6. `P20.06 Queue button (FeedEventLogCard)`
+7. `P20.07 Docs + exit verification`
+
+## Ticket Files
+
+- `ticket-01-data-model-clean-break.md`
+- `ticket-02-pause-resume.md`
+- `ticket-03-remove.md`
+- `ticket-04-dispose.md`
+- `ticket-05-context-menu.md`
+- `ticket-06-queue-button.md`
+- `ticket-07-exit-verification.md`
+
+## Exit Condition
+
+All checks in P20.07 pass:
+
+- `grep -r "lifecycleStatus\|CandidateLifecycleStatus" src/ web/src/` returns zero matches
+- All six action endpoints smoke-test clean
+- UI context menu and Queue button verified in browser
+- `bun run typecheck` passes
+- Phase 20 retrospective written in product doc
+
+## Review Rules
+
+Review and merge in ticket order.
+
+Do not start the next ticket until:
+
+1. The current ticket's PR is merged to `main`
+2. The merged commit is green on CI (or typecheck passes locally if CI is not configured)
+
+P20.06 is independent of P20.02–P20.05 and may be developed in parallel, but must be merged before P20.07 begins.
