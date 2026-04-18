@@ -254,7 +254,6 @@
 				{@const backdropUrl = safeImageUrl(movie.tmdb?.backdropUrl)}
 				{@const posterUrl = safeImageUrl(movie.tmdb?.posterUrl)}
 				{@const pct = progressPercent(movie, live)}
-
 				<li class="list-none">
 					<Card
 						class="group bg-card/70 relative h-full overflow-hidden rounded-[30px] border-white/10"
@@ -314,13 +313,6 @@
 
 											<div class="flex flex-wrap items-center gap-2">
 												<StatusChip {status} />
-												{#if status === 'downloading' || (status === 'paused' && pct > 0)}
-													<span
-														class="text-primary text-xs font-semibold tracking-[0.18em] uppercase"
-													>
-														{pct}%
-													</span>
-												{/if}
 												{#if hasPlexChip(movie)}
 													<StatusChip status={movie.plexStatus} />
 												{/if}
