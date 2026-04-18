@@ -34,7 +34,7 @@
 	);
 </script>
 
-<Card class="bg-card/70 max-h-136 min-w-105 rounded-[30px] border-white/10">
+<Card class="bg-card/70 max-h-136 min-w-95 rounded-[30px] border-white/10">
 	<CardHeader class="pb-4">
 		<div class="flex items-start justify-between gap-4">
 			<div>
