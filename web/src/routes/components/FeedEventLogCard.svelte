@@ -38,8 +38,8 @@
 			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
 				<p class="text-sm font-medium">Recent outcome data is unavailable.</p>
 				<p class="text-muted-foreground mt-2 text-sm">
-					The dashboard could not load `/api/outcomes`, so unmatched feed events are not shown
-					right now.
+					The dashboard could not load `/api/outcomes`, so unmatched feed events are not shown right
+					now.
 				</p>
 			</div>
 		{:else if outcomes.length === 0}
@@ -90,9 +90,7 @@
 					onclick={() => setPage(page - 1)}
 					disabled={page === 0}>&larr; Prev</button
 				>
-				<span class="text-muted-foreground text-xs"
-					>Page {page + 1} of {pageCount()}</span
-				>
+				<span class="text-muted-foreground text-xs">Page {page + 1} of {pageCount()}</span>
 				<button
 					class="bg-muted/30 rounded px-2 py-1 text-xs font-semibold disabled:opacity-40"
 					onclick={() => setPage(page + 1)}

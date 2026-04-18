@@ -2,6 +2,17 @@ import type { CandidateStateRecord } from '$lib/types';
 
 // ── Date / time ──────────────────────────────────────────────────────────────
 
+export function formatUptime(ms: number | null): string {
+	if (ms === null) return 'Unavailable';
+	const totalSeconds = Math.floor(ms / 1000);
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+	if (minutes > 0) return `${minutes}m ${seconds}s`;
+	return `${seconds}s`;
+}
+
 export function formatDateParts(iso: string): { date: string; time: string; tz: string } {
 	const d = new Date(iso);
 	const date = d.toLocaleDateString(undefined, { dateStyle: 'medium' });
@@ -84,10 +95,7 @@ export function archiveHref(candidate: CandidateStateRecord): string {
 
 // ── Torrent display helpers ───────────────────────────────────────────────────
 
-export function getTorrentDisplayStatus(torrent: {
-	status: string;
-	percentDone: number;
-}): string {
+export function getTorrentDisplayStatus(torrent: { status: string; percentDone: number }): string {
 	if (torrent.status === 'error') return 'ERROR';
 	if (torrent.status === 'seeding') return 'SEEDING';
 	if (torrent.percentDone === 1) return 'COMPLETED';

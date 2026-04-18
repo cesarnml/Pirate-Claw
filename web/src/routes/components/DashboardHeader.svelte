@@ -25,9 +25,7 @@
 					<div
 						class="bg-card/65 flex max-w-xs min-w-45 flex-col justify-between rounded-3xl border border-[color-mix(in_srgb,var(--primary)_60%,#23293a_40%)] px-4 py-3 shadow-[0_2px_12px_0_rgba(0,0,0,0.04)] backdrop-blur-sm"
 					>
-						<p
-							class="text-muted-foreground text-[11px] font-semibold tracking-[0.22em] uppercase"
-						>
+						<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.22em] uppercase">
 							{card.label}
 						</p>
 						{#if card.value}

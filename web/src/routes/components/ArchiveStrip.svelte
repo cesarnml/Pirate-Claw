@@ -25,10 +25,7 @@
 				</p>
 			</div>
 		{:else}
-			<div
-				class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6"
-				data-testid="archive-grid"
-			>
+			<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6" data-testid="archive-grid">
 				{#each archiveItems as item}
 					{@const posterUrl = candidatePosterUrl(item)}
 					<a
