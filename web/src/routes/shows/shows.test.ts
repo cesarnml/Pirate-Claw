@@ -102,6 +102,7 @@ const liveTorrent: TorrentStatSnapshot = {
 	status: 'downloading',
 	percentDone: 0.42,
 	rateDownload: 1_048_576,
+	rateUpload: 0,
 	eta: 3600
 };
 

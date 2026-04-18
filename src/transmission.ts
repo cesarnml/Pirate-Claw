@@ -63,6 +63,7 @@ export type TorrentStatSnapshot = {
   status: 'downloading' | 'seeding' | 'stopped' | 'error';
   percentDone: number;
   rateDownload: number;
+  rateUpload: number;
   eta: number;
 };
 
@@ -212,6 +213,7 @@ export async function fetchTorrentStats(
         'status',
         'percentDone',
         'rateDownload',
+        'rateUpload',
         'eta',
       ],
     },
@@ -754,6 +756,7 @@ type TransmissionStatTorrent = {
   status?: number;
   percentDone?: number;
   rateDownload?: number;
+  rateUpload?: number;
   eta?: number;
 };
 
@@ -857,6 +860,8 @@ function parseTorrentStatsResult(parsed: unknown): FetchTorrentStatsResult {
         typeof torrent.percentDone === 'number' ? torrent.percentDone : 0,
       rateDownload:
         typeof torrent.rateDownload === 'number' ? torrent.rateDownload : 0,
+      rateUpload:
+        typeof torrent.rateUpload === 'number' ? torrent.rateUpload : 0,
       eta: typeof torrent.eta === 'number' ? torrent.eta : -1,
     });
   }

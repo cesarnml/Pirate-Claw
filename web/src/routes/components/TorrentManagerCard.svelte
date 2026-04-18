@@ -23,6 +23,15 @@
 		activeDownloads: ActiveDownload[];
 		transmissionSession: SessionInfo | null;
 	} = $props();
+
+	// Derive speeds from individual torrents — consistent with per-card values and avoids
+	// the session-stats / torrent-get snapshot skew.
+	const totalDownloadSpeed = $derived(
+		activeDownloads.reduce((sum, { torrent }) => sum + torrent.rateDownload, 0)
+	);
+	const totalUploadSpeed = $derived(
+		activeDownloads.reduce((sum, { torrent }) => sum + torrent.rateUpload, 0)
+	);
 </script>
 
 <Card class="bg-card/70 max-h-136 min-w-105 rounded-[30px] border-white/10">
@@ -42,11 +51,11 @@
 					<p class="mt-2 flex flex-col items-end gap-0.5 text-sm font-medium">
 						<span
 							><span class="text-muted-foreground">↓</span>
-							{formatSpeed(transmissionSession.downloadSpeed)}</span
+							{formatSpeed(totalDownloadSpeed)}</span
 						>
 						<span
 							><span class="text-muted-foreground">↑</span>
-							{formatSpeed(transmissionSession.uploadSpeed)}</span
+							{formatSpeed(totalUploadSpeed)}</span
 						>
 					</p>
 				</div>
@@ -97,22 +106,26 @@
 									</div>
 								</div>
 								<div class="text-right text-sm">
-									<p class="font-medium">{formatSpeed(torrent.rateDownload)}</p>
+									<p class="font-medium">
+										<span class="text-muted-foreground">↓</span>
+										{formatSpeed(torrent.rateDownload)}
+									</p>
 									<p class="text-muted-foreground mt-1">{formatEta(torrent.eta)}</p>
 								</div>
 							</div>
-
-							<div class="mt-4">
-								<div class="mb-2 flex items-center justify-end text-xs">
-									<p class="font-medium">{(torrent.percentDone * 100).toFixed(0)}%</p>
+							{#if torrent.percentDone !== 1}
+								<div class="mt-4">
+									<div class="mb-2 flex items-center justify-end text-xs">
+										<p class="font-medium">{(torrent.percentDone * 100).toFixed(0)}%</p>
+									</div>
+									<div class="bg-muted h-2 rounded-full">
+										<div
+											class="bg-primary h-2 rounded-full"
+											style="width: {(torrent.percentDone * 100).toFixed(0)}%"
+										></div>
+									</div>
 								</div>
-								<div class="bg-muted h-2 rounded-full">
-									<div
-										class="bg-primary h-2 rounded-full"
-										style="width: {(torrent.percentDone * 100).toFixed(0)}%"
-									></div>
-								</div>
-							</div>
+							{/if}
 						</div>
 					</li>
 				{/each}

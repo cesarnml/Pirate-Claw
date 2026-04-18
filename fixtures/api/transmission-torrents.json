@@ -6,6 +6,7 @@
       "status": "downloading",
       "percentDone": 0.42,
       "rateDownload": 1048576,
+      "rateUpload": 32768,
       "eta": 3600
     },
     {
@@ -14,6 +15,7 @@
       "status": "seeding",
       "percentDone": 1.0,
       "rateDownload": 0,
+      "rateUpload": 524288,
       "eta": -1
     }
   ]

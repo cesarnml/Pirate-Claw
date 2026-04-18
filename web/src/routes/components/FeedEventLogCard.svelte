@@ -15,8 +15,32 @@
 	const { outcomes }: { outcomes: SkippedOutcomeRecord[] | null } = $props();
 
 	let page = $state(0);
-	const PAGE_SIZE = 5;
-	const pageCount = $derived(() => (outcomes ? Math.ceil(outcomes.length / PAGE_SIZE) : 0));
+	const PAGE_SIZE = 6;
+
+	type StatusSort = 'asc' | 'desc' | null;
+	let statusSort = $state<StatusSort>(null);
+
+	function cycleStatusSort() {
+		statusSort = statusSort === null ? 'asc' : statusSort === 'asc' ? 'desc' : null;
+		page = 0;
+	}
+
+	const sortedOutcomes = $derived(() => {
+		if (!outcomes) return null;
+		if (statusSort === null) {
+			return [...outcomes].sort(
+				(a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
+			);
+		}
+		return [...outcomes].sort((a, b) => {
+			const cmp = a.status.localeCompare(b.status);
+			return statusSort === 'asc' ? cmp : -cmp;
+		});
+	});
+
+	const pageCount = $derived(() =>
+		sortedOutcomes() ? Math.ceil(sortedOutcomes()!.length / PAGE_SIZE) : 0
+	);
 
 	function setPage(n: number) {
 		if (!outcomes) return;
@@ -29,24 +53,25 @@
 <Card class="bg-card/70 max-h-136 rounded-[30px] border-white/10">
 	<CardHeader class="pb-4">
 		<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase">
-			Event log
+			Candidate outcomes
 		</p>
-		<h2 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">Recent unmatched feed events</h2>
+		<h2 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">Skipped & Failed Candidates</h2>
 	</CardHeader>
 	<CardContent>
 		{#if outcomes === null}
 			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
 				<p class="text-sm font-medium">Recent outcome data is unavailable.</p>
 				<p class="text-muted-foreground mt-2 text-sm">
-					The dashboard could not load `/api/outcomes`, so unmatched feed events are not shown right
-					now.
+					The dashboard could not load `/api/outcomes`, so skipped and failed candidates are not
+					shown right now.
 				</p>
 			</div>
 		{:else if outcomes.length === 0}
 			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
-				<p class="text-sm font-medium">No filtered or skipped feed events yet.</p>
+				<p class="text-sm font-medium">No skipped or failed candidates yet.</p>
 				<p class="text-muted-foreground mt-2 text-sm">
-					When items miss every rule, they will land here with their source feed and timestamp.
+					Items skipped by rules or that failed to reach Transmission will appear here for manual
+					review.
 				</p>
 			</div>
 		{:else}
@@ -55,12 +80,23 @@
 					<TableHeader>
 						<TableRow class="hover:bg-transparent">
 							<TableHead class="pl-4">Title</TableHead>
-							<TableHead class="w-26 whitespace-nowrap">Status</TableHead>
+							<TableHead class="w-26 whitespace-nowrap">
+								<button
+									type="button"
+									class="hover:text-foreground inline-flex cursor-pointer items-center gap-1 transition"
+									onclick={cycleStatusSort}
+								>
+									Status
+									<span class="text-[10px] leading-none">
+										{statusSort === 'asc' ? '▲' : statusSort === 'desc' ? '▼' : '⇅'}
+									</span>
+								</button>
+							</TableHead>
 							<TableHead class="w-20 text-right"></TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{#each outcomes.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) as outcome (outcome.id)}
+						{#each sortedOutcomes()!.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) as outcome (outcome.id)}
 							<TableRow>
 								<TableCell class="min-w-0 pl-4 text-sm font-medium">
 									<p class="truncate">{outcome.title ?? '—'}</p>

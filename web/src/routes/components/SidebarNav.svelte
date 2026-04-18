@@ -27,7 +27,7 @@
 					href={link.href}
 					{onclick}
 					class="focus-visible:ring-ring flex flex-1 items-center gap-3 rounded-2xl px-3 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none"
-					class:text-primary={isActive(link.href)}
+					class:text-accent={isActive(link.href)}
 					class:text-muted-foreground={!isActive(link.href)}
 					class:hover:text-foreground={!isActive(link.href)}
 					class:hover:bg-accent={!isActive(link.href)}

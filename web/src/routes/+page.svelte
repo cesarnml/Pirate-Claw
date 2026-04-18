@@ -86,19 +86,19 @@
 
 	const statusCards = $derived([
 		{
-			label: 'Total tracked',
+			label: 'Total',
 			value: totalTracked,
 			detail: `${candidates.filter((candidate) => candidate.lifecycleStatus === 'downloading').length} active torrents`,
 			icon: LibraryBigIcon
 		},
 		{
-			label: 'Weekly completed',
+			label: 'Weekly',
 			value: completedThisWeek,
 			detail: 'Finished during the last 7 days',
 			icon: ArrowDownToLineIcon
 		},
 		{
-			label: 'Critical failures',
+			label: 'Failures',
 			value: criticalFailures,
 			detail:
 				criticalFailures === null
@@ -107,7 +107,7 @@
 			icon: FlameIcon
 		},
 		{
-			label: 'Filtered / skipped',
+			label: 'Skipped',
 			value: filteredSkipped,
 			detail:
 				filteredSkipped === null

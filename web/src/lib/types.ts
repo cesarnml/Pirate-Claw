@@ -191,6 +191,7 @@ export type TorrentStatSnapshot = {
 	status: 'downloading' | 'seeding' | 'stopped' | 'error';
 	percentDone: number;
 	rateDownload: number;
+	rateUpload: number;
 	eta: number;
 };
 

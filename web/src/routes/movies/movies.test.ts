@@ -36,6 +36,7 @@ const mockTorrent = (overrides: Partial<TorrentStatSnapshot> = {}): TorrentStatS
 	status: 'downloading',
 	percentDone: 0.55,
 	rateDownload: 2_097_152,
+	rateUpload: 0,
 	eta: 7200,
 	...overrides
 });
