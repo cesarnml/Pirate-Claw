@@ -6,7 +6,6 @@ import type {
 	DaemonHealth,
 	OnboardingStatus,
 	RunSummaryRecord,
-	SessionInfo,
 	SkippedOutcomeRecord,
 	TorrentStatSnapshot
 } from '$lib/types';
@@ -17,13 +16,6 @@ const mockHealth: DaemonHealth = {
 	startedAt: '2024-01-01T00:00:00Z',
 	lastRunCycle: { status: 'completed', startedAt: '2024-01-01T01:00:00Z' },
 	lastReconcileCycle: { status: 'completed', startedAt: '2024-01-01T01:00:30Z' }
-};
-
-const mockSession: SessionInfo = {
-	version: '3.00 (bb6b5a062ef)',
-	downloadSpeed: 2097152,
-	uploadSpeed: 524288,
-	activeTorrentCount: 3
 };
 
 const mockRunSummary = (overrides: Partial<RunSummaryRecord> = {}): RunSummaryRecord => ({
@@ -86,7 +78,6 @@ const mockTorrent = (overrides: Partial<TorrentStatSnapshot> = {}): TorrentStatS
 
 const baseData = {
 	health: mockHealth,
-	transmissionSession: mockSession,
 	transmissionTorrents: [],
 	candidates: [],
 	runSummaries: [],

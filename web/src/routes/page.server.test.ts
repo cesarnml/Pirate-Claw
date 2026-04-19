@@ -21,12 +21,6 @@ describe('dashboard page server load', () => {
 
 		apiFetchMock
 			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
-			.mockResolvedValueOnce({
-				version: '3.0',
-				downloadSpeed: 0,
-				uploadSpeed: 0,
-				activeTorrentCount: 0
-			})
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
@@ -50,12 +44,6 @@ describe('dashboard page server load', () => {
 
 		apiFetchMock
 			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
-			.mockResolvedValueOnce({
-				version: '3.0',
-				downloadSpeed: 0,
-				uploadSpeed: 0,
-				activeTorrentCount: 0
-			})
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
@@ -76,12 +64,6 @@ describe('dashboard page server load', () => {
 
 		apiFetchMock
 			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
-			.mockResolvedValueOnce({
-				version: '3.0',
-				downloadSpeed: 0,
-				uploadSpeed: 0,
-				activeTorrentCount: 0
-			})
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })

@@ -9,7 +9,7 @@
 	} from '$lib/helpers';
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
+	import type { CandidateStateRecord, TorrentStatSnapshot } from '$lib/types';
 	import { deserialize, enhance } from '$app/forms';
 	import { base } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
@@ -26,15 +26,42 @@
 	const {
 		activeDownloads,
 		missingCandidates,
-		transmissionSession
+		transmissionLoaded
 	}: {
 		activeDownloads: ActiveDownload[];
 		missingCandidates: CandidateStateRecord[];
-		transmissionSession: SessionInfo | null;
+		transmissionLoaded: boolean;
 	} = $props();
 
 	let inflightDispose = $state<string | null>(null);
 	let disposeErrors = $state<Record<string, string>>({});
+
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let longPressTouchOrigin = { x: 0, y: 0 };
+
+	function onTouchStart(
+		e: TouchEvent,
+		hash: string,
+		torrent: TorrentStatSnapshot,
+		candidate: CandidateStateRecord | null
+	) {
+		const t = e.touches[0];
+		longPressTouchOrigin = { x: t.clientX, y: t.clientY };
+		longPressTimer = setTimeout(() => {
+			longPressTimer = null;
+			openMenu({ clientX: t.clientX, clientY: t.clientY } as MouseEvent, hash, torrent, candidate);
+		}, 500);
+	}
+
+	function cancelLongPress() {
+		if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
+	}
+
+	function onTouchMove(e: TouchEvent) {
+		if (longPressTimer === null) return;
+		const t = e.touches[0];
+		if (Math.abs(t.clientX - longPressTouchOrigin.x) > 8 || Math.abs(t.clientY - longPressTouchOrigin.y) > 8) cancelLongPress();
+	}
 
 	let menuState = $state<MenuState | null>(null);
 	let inflightAction = $state<string | null>(null);
@@ -182,7 +209,7 @@
 				</p>
 				<h2 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">Torrent Manager</h2>
 			</div>
-			{#if transmissionSession}
+			{#if transmissionLoaded}
 				<div class="text-right">
 					<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase">
 						Live throughput
@@ -223,6 +250,10 @@
 						class:opacity-60={inFlightRow}
 						class:cursor-wait={inFlightRow}
 						oncontextmenu={(e) => !inFlightRow && openMenu(e, torrent.hash, torrent, candidate)}
+						ontouchstart={(e) => !inFlightRow && onTouchStart(e, torrent.hash, torrent, candidate)}
+						ontouchend={cancelLongPress}
+						ontouchcancel={cancelLongPress}
+						ontouchmove={onTouchMove}
 					>
 						{#if posterUrl}
 							<img

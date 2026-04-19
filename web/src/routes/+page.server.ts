@@ -7,7 +7,6 @@ import type {
 	DaemonHealth,
 	OnboardingStatus,
 	RunSummaryRecord,
-	SessionInfo,
 	SkippedOutcomeRecord,
 	TorrentStatSnapshot
 } from '$lib/types';
@@ -18,7 +17,6 @@ export const load: PageServerLoad = async () => {
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 	const [
 		healthResult,
-		sessionResult,
 		torrentsResult,
 		candidatesResult,
 		statusResult,
@@ -26,7 +24,6 @@ export const load: PageServerLoad = async () => {
 		configResult
 	] = await Promise.allSettled([
 		apiFetch<DaemonHealth>('/api/health'),
-		apiFetch<SessionInfo>('/api/transmission/session'),
 		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents'),
 		apiFetch<{ candidates: CandidateStateRecord[] }>('/api/candidates'),
 		apiFetch<{ runs: RunSummaryRecord[] }>('/api/status'),
@@ -35,7 +32,6 @@ export const load: PageServerLoad = async () => {
 	]);
 
 	const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
-	const transmissionSession = sessionResult.status === 'fulfilled' ? sessionResult.value : null;
 	const transmissionTorrents =
 		torrentsResult.status === 'fulfilled' ? torrentsResult.value.torrents : null;
 	const candidates =
@@ -70,7 +66,6 @@ export const load: PageServerLoad = async () => {
 
 	return {
 		health,
-		transmissionSession,
 		transmissionTorrents,
 		candidates,
 		runSummaries,

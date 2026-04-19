@@ -4,6 +4,7 @@
 	import FlameIcon from '@lucide/svelte/icons/flame';
 	import LibraryBigIcon from '@lucide/svelte/icons/library-big';
 	import { browser } from '$app/environment';
+	import { invalidateAll } from '$app/navigation';
 	import { readOnboardingDismissed, writeOnboardingDismissed } from '$lib/onboarding';
 	import type { CandidateStateRecord, RunSummaryRecord } from '$lib/types';
 	import { torrentDisplayState } from '$lib/helpers';
@@ -83,6 +84,17 @@
 		onboardingDismissed = readOnboardingDismissed();
 	});
 
+	$effect(() => {
+		if (!browser) return;
+		let id: ReturnType<typeof setInterval> | null = null;
+		const start = () => { if (id === null) id = setInterval(() => invalidateAll(), 5000); };
+		const stop = () => { if (id !== null) { clearInterval(id); id = null; } };
+		const onVisibility = () => (document.visibilityState === 'hidden' ? stop() : start());
+		start();
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
+	});
+
 	function dismissOnboardingPrompt() {
 		if (!browser) return;
 		writeOnboardingDismissed(true);
@@ -156,7 +168,7 @@
 			<TorrentManagerCard
 				{activeDownloads}
 				{missingCandidates}
-				transmissionSession={data.transmissionSession}
+				transmissionLoaded={transmissionLoaded}
 			/>
 			<TransmissionFailuresCard {outcomes} />
 		</div>
