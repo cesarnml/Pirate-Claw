@@ -6,6 +6,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import { movieBackdropSrc } from '$lib/helpers';
 	import type { CandidateLifecycleStatus, MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -23,16 +24,6 @@
 
 	function displayTitle(movie: MovieBreakdown): string {
 		return movie.tmdb?.title ?? movie.normalizedTitle;
-	}
-
-	function safeImageUrl(value: string | undefined): string | null {
-		if (!value) return null;
-		try {
-			const url = new URL(value);
-			return url.protocol === 'https:' ? url.href : null;
-		} catch {
-			return null;
-		}
 	}
 
 	function liveTorrent(movie: MovieBreakdown): TorrentStatSnapshot | undefined {
@@ -254,25 +245,19 @@
 			{#each filteredMovies as movie (movie.identityKey)}
 				{@const live = liveTorrent(movie)}
 				{@const status = commandStatus(movie, live)}
-				{@const backdropUrl = safeImageUrl(movie.tmdb?.backdropUrl)}
+				{@const backdropUrl = movieBackdropSrc(movie.tmdb?.backdropUrl)}
 				{@const pct = progressPercent(movie, live)}
 				<li class="list-none">
 					<Card
 						class="group bg-card/70 relative h-full overflow-hidden rounded-[30px] border-white/10"
 					>
 						<div class="absolute inset-0">
-							{#if backdropUrl}
-								<img
-									src={backdropUrl}
-									alt=""
-									class="h-full w-full object-cover opacity-35 transition duration-500 group-hover:scale-[1.02]"
-									loading="lazy"
-								/>
-							{:else}
-								<div
-									class="h-full w-full bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.22),transparent_48%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(15,23,42,0.72))]"
-								></div>
-							{/if}
+							<img
+								src={backdropUrl}
+								alt=""
+								class="h-full w-full object-cover opacity-90 transition duration-500 group-hover:scale-[1.08]"
+								loading="lazy"
+							/>
 							<div
 								class="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.28),rgba(15,23,42,0.96)_52%,rgba(15,23,42,1))]"
 							></div>

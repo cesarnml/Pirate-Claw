@@ -4,6 +4,7 @@
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import { movieBackdropSrc } from '$lib/helpers';
 	import type { MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
 	import MovieProgressBar from './MovieProgressBar.svelte';
 
@@ -52,7 +53,7 @@
 		return movie.plexStatus === 'in_library' || movie.plexStatus === 'missing';
 	}
 
-	const backdropUrl = $derived(safeImageUrl(props.movie.tmdb?.backdropUrl));
+	const backdropUrl = $derived(movieBackdropSrc(props.movie.tmdb?.backdropUrl));
 	const posterUrl = $derived(safeImageUrl(props.movie.tmdb?.posterUrl));
 	const showProgress = $derived(
 		props.status === 'downloading' || (props.status === 'paused' && props.pct > 0)
@@ -61,18 +62,12 @@
 
 <Card class="group bg-card/70 relative h-full overflow-hidden rounded-[30px] border-white/10">
 	<div class="absolute inset-0">
-		{#if backdropUrl}
-			<img
-				src={backdropUrl}
-				alt=""
-				class="h-full w-full object-cover opacity-35 transition duration-500 group-hover:scale-[1.02]"
-				loading="lazy"
-			/>
-		{:else}
-			<div
-				class="h-full w-full bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.22),transparent_48%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(15,23,42,0.72))]"
-			></div>
-		{/if}
+		<img
+			src={backdropUrl}
+			alt=""
+			class="h-full w-full object-cover opacity-35 transition duration-500 group-hover:scale-[1.02]"
+			loading="lazy"
+		/>
 		<div
 			class="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.28),rgba(15,23,42,0.96)_52%,rgba(15,23,42,1))]"
 		></div>

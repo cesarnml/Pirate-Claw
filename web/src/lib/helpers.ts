@@ -93,6 +93,19 @@ export function archiveHref(candidate: CandidateStateRecord): string {
 	return candidate.mediaType === 'tv' ? `/shows/${slug}` : '/movies';
 }
 
+/** Served from `static/` in SvelteKit — used when TMDB backdrop is missing or not https. */
+export const MOVIE_BACKDROP_FALLBACK = '/movie-backdrop-fallback.jpeg';
+
+export function movieBackdropSrc(backdropUrl: string | undefined): string {
+	if (!backdropUrl) return MOVIE_BACKDROP_FALLBACK;
+	try {
+		const url = new URL(backdropUrl);
+		return url.protocol === 'https:' ? url.href : MOVIE_BACKDROP_FALLBACK;
+	} catch {
+		return MOVIE_BACKDROP_FALLBACK;
+	}
+}
+
 // ── Torrent display helpers ───────────────────────────────────────────────────
 
 export function getTorrentDisplayStatus(torrent: { status: string; percentDone: number }): string {
