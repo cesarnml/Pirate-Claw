@@ -46,6 +46,7 @@ const mockOutcome = (overrides: Partial<SkippedOutcomeRecord> = {}): SkippedOutc
 	recordedAt: '2026-04-10T12:00:00.000Z',
 	title: 'Stranger.Things.S05E01.4K.WEB.x265-GROUP',
 	feedName: 'main-tv',
+	identityKey: null,
 	...overrides
 });
 
