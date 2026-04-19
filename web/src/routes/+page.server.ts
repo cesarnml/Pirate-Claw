@@ -80,16 +80,30 @@ export const load: PageServerLoad = async () => {
 	};
 };
 
+function requireWriteToken(): string | ReturnType<typeof fail> {
+	const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+	if (!writeToken) {
+		return fail(500, { error: 'Server write token is not configured.' });
+	}
+	return writeToken;
+}
+
 async function torrentAction(
 	path: string,
 	request: Request
 ): Promise<ReturnType<typeof fail> | { ok: boolean }> {
+	const tokenOrFail = requireWriteToken();
+	if (typeof tokenOrFail !== 'string') return tokenOrFail;
+
 	const formData = await request.formData();
 	const hash = formData.get('hash');
 	if (typeof hash !== 'string') return fail(400, { error: 'hash is required' });
 	const res = await apiRequest(path, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${tokenOrFail}`
+		},
 		body: JSON.stringify({ hash })
 	});
 	if (!res.ok) {
@@ -107,6 +121,9 @@ async function torrentAction(
 
 export const actions: Actions = {
 	dispose: async ({ request }) => {
+		const tokenOrFail = requireWriteToken();
+		if (typeof tokenOrFail !== 'string') return tokenOrFail;
+
 		const formData = await request.formData();
 		const hash = formData.get('hash');
 		const disposition = formData.get('disposition');
@@ -117,7 +134,10 @@ export const actions: Actions = {
 
 		const res = await apiRequest('/api/transmission/torrent/dispose', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				authorization: `Bearer ${tokenOrFail}`
+			},
 			body: JSON.stringify({ hash, disposition })
 		});
 
@@ -142,11 +162,15 @@ export const actions: Actions = {
 		torrentAction('/api/transmission/torrent/remove-and-delete', request),
 
 	requeue: async ({ request }) => {
+		const tokenOrFail = requireWriteToken();
+		if (typeof tokenOrFail !== 'string') return tokenOrFail;
+
 		const formData = await request.formData();
 		const identityKey = formData.get('identityKey');
 		if (typeof identityKey !== 'string') return fail(400, { error: 'identityKey is required' });
 		const res = await apiRequest(`/api/candidates/${encodeURIComponent(identityKey)}/requeue`, {
-			method: 'POST'
+			method: 'POST',
+			headers: { authorization: `Bearer ${tokenOrFail}` }
 		});
 		if (!res.ok) {
 			let error = 'Request failed';

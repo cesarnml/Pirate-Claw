@@ -10,7 +10,8 @@
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
-	import { enhance } from '$app/forms';
+	import { deserialize, enhance } from '$app/forms';
+	import { base } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
 
 	type ActiveDownload = {
@@ -105,13 +106,40 @@
 		delete actionErrors[hash];
 		const formData = new FormData();
 		formData.append('hash', hash);
+		const actionHref = `${base}/?/${action}`;
 		try {
-			const res = await fetch(`?/${action}`, { method: 'POST', body: formData });
-			if (res.ok) {
+			const res = await fetch(actionHref, {
+				method: 'POST',
+				headers: {
+					accept: 'application/json',
+					'x-sveltekit-action': 'true'
+				},
+				body: formData,
+				cache: 'no-store'
+			});
+
+			const result = deserialize(await res.text());
+
+			if (result.type === 'error') {
+				actionErrors[hash] = typeof result.error === 'string' ? result.error : 'Request failed';
+				return;
+			}
+			if (result.type === 'failure') {
+				const data = result.data as { error?: string } | undefined;
+				actionErrors[hash] = data?.error ?? 'Request failed';
+				return;
+			}
+			if (result.type === 'redirect') {
+				return;
+			}
+
+			// Refresh load data; avoid applyAction(result) so a stale serialized snapshot cannot
+			// overwrite a newer invalidate (e.g. pause right after requeue finishes invalidating).
+			await invalidateAll();
+			// Follow-up load: Transmission can lag one torrent-get behind stop/remove RPCs.
+			if (action === 'pause' || action === 'remove' || action === 'removeAndDelete') {
+				await new Promise((r) => setTimeout(r, 150));
 				await invalidateAll();
-			} else {
-				const body = (await res.json().catch(() => ({}))) as { error?: string };
-				actionErrors[hash] = body.error ?? 'Request failed';
 			}
 		} catch {
 			actionErrors[hash] = 'Network error';
@@ -185,7 +213,7 @@
 			</div>
 		{:else}
 			<ul class="space-y-4">
-				{#each activeDownloads as { torrent, candidate }}
+				{#each activeDownloads as { torrent, candidate } (torrent.hash)}
 					{@const title = candidate ? candidateTitle(candidate) : torrent.name}
 					{@const posterUrl = candidate ? candidatePosterUrl(candidate) : null}
 					{@const inFlightRow = inflightAction === torrent.hash}
@@ -275,7 +303,7 @@
 								{/if}
 							</div>
 							<div class="flex shrink-0 gap-2">
-								<form method="POST" action="?/dispose" use:enhance={enhanceDispose(hash)}>
+								<form method="POST" action={`${base}/?/dispose`} use:enhance={enhanceDispose(hash)}>
 									<input type="hidden" name="hash" value={hash} />
 									<input type="hidden" name="disposition" value="removed" />
 									<button
@@ -286,7 +314,7 @@
 										Mark Removed
 									</button>
 								</form>
-								<form method="POST" action="?/dispose" use:enhance={enhanceDispose(hash)}>
+								<form method="POST" action={`${base}/?/dispose`} use:enhance={enhanceDispose(hash)}>
 									<input type="hidden" name="hash" value={hash} />
 									<input type="hidden" name="disposition" value="deleted" />
 									<button

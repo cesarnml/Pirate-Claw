@@ -31,6 +31,7 @@ function stubRepository(overrides: Partial<Repository> = {}): Repository {
     recordFeedItemOutcome: () => {},
     recordCandidateOutcome: () => ({}) as never,
     getCandidateState: () => undefined,
+    getCandidateStateByTransmissionHash: () => undefined,
     updateCandidateReconciliation: () => ({}) as never,
     retryCandidate: () => ({}) as never,
     listFeedItemOutcomes: () => [],
@@ -2078,20 +2079,20 @@ describe('GET /api/outcomes', () => {
       {
         id: 1,
         runId: 42,
-        status: 'skipped_no_match' as const,
+        status: 'failed' as const,
         recordedAt: '2026-04-10T12:00:00.000Z',
         title: 'Some.Show.S01E01.720p',
         feedName: 'main-tv',
-        identityKey: null,
+        identityKey: 'tv:some.show|s05e01',
       },
       {
         id: 2,
         runId: 42,
-        status: 'skipped_no_match' as const,
+        status: 'failed' as const,
         recordedAt: '2026-04-10T12:00:05.000Z',
         title: null,
         feedName: null,
-        identityKey: null,
+        identityKey: 'movie:broken|2025',
       },
     ];
 

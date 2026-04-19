@@ -113,11 +113,11 @@ export type RecordFeedItemOutcomeInput = {
 export type SkippedOutcomeRecord = {
   id: number;
   runId: number;
-  status: 'skipped_no_match' | 'failed';
+  status: 'failed';
   recordedAt: string;
   title: string | null;
   feedName: string | null;
-  identityKey: string | null;
+  identityKey: string;
 };
 
 export type RecordCandidateReconciliationInput = {
@@ -154,6 +154,10 @@ export type Repository = {
   failRun(runId: number, failedAt?: string): RunRecord;
   recordFeedItem(runId: number, item: RawFeedItem): FeedItemRecord;
   getCandidateState(identityKey: string): CandidateStateRecord | undefined;
+  /** First candidate row with this Transmission hash, if any. */
+  getCandidateStateByTransmissionHash(
+    hash: string,
+  ): CandidateStateRecord | undefined;
   isCandidateQueued(identityKey: string): boolean;
   recordCandidateOutcome(
     input: RecordCandidateOutcomeInput,
@@ -169,6 +173,11 @@ export type Repository = {
   listCandidateStates(limit?: number): CandidateStateRecord[];
   listReconcilableCandidates(limit?: number): CandidateStateRecord[];
   listRetryableCandidates(limit?: number): CandidateStateRecord[];
+  /**
+   * One row per matched `identity_key`: latest `failed` feed outcome while
+   * `candidate_state` is still failed (Transmission enqueue failure), within the
+   * day window.
+   */
   listSkippedNoMatchOutcomes(days: number): SkippedOutcomeRecord[];
   requeueCandidate(
     identityKey: string,
@@ -382,8 +391,7 @@ export function createRepository(database: Database): Repository {
     FROM feed_items
     WHERE id = ?1`,
   );
-  const selectCandidateState = database.query(
-    `SELECT
+  const candidateStateSelectColumns = `
       identity_key AS identityKey,
       media_type AS mediaType,
       status,
@@ -414,9 +422,17 @@ export function createRepository(database: Database): Repository {
       first_seen_run_id AS firstSeenRunId,
       last_seen_run_id AS lastSeenRunId,
       last_feed_item_id AS lastFeedItemId,
-      updated_at AS updatedAt
+      updated_at AS updatedAt`;
+  const selectCandidateState = database.query(
+    `SELECT ${candidateStateSelectColumns}
     FROM candidate_state
     WHERE identity_key = ?1`,
+  );
+  const selectCandidateStateByTransmissionHash = database.query(
+    `SELECT ${candidateStateSelectColumns}
+    FROM candidate_state
+    WHERE transmission_torrent_hash = ?1
+    LIMIT 1`,
   );
   const upsertCandidateState = database.query(
     `INSERT INTO candidate_state (
@@ -667,28 +683,40 @@ export function createRepository(database: Database): Repository {
     ORDER BY identity_key ASC
     LIMIT ?1`,
   );
+  /** Latest failed enqueue outcome per matched candidate for the dashboard. */
   const listSkippedNoMatchOutcomesStatement = database.prepare(
     `SELECT
-      fo.id,
-      fo.run_id AS runId,
-      fo.status,
-      fo.created_at AS recordedAt,
-      fi.raw_title AS title,
-      fi.feed_name AS feedName,
-      fo.identity_key AS identityKey
-    FROM feed_item_outcomes fo
-    LEFT JOIN feed_items fi ON fo.feed_item_id = fi.id
-    LEFT JOIN candidate_state cs ON cs.identity_key = fo.identity_key
-    WHERE (
-        fo.status = 'skipped_no_match'
-        OR (
-          fo.status = 'failed'
-          AND cs.status = 'failed'
-          AND cs.pirate_claw_disposition IS NULL
-        )
-      )
-      AND fo.created_at >= datetime('now', '-' || ?1 || ' days')
-    ORDER BY fo.created_at DESC`,
+      id,
+      runId,
+      status,
+      recordedAt,
+      title,
+      feedName,
+      identityKey
+    FROM (
+      SELECT
+        fo.id AS id,
+        fo.run_id AS runId,
+        fo.status AS status,
+        fo.created_at AS recordedAt,
+        fi.raw_title AS title,
+        fi.feed_name AS feedName,
+        fo.identity_key AS identityKey,
+        ROW_NUMBER() OVER (
+          PARTITION BY fo.identity_key
+          ORDER BY fo.created_at DESC, fo.id DESC
+        ) AS rn
+      FROM feed_item_outcomes fo
+      LEFT JOIN feed_items fi ON fo.feed_item_id = fi.id
+      LEFT JOIN candidate_state cs ON cs.identity_key = fo.identity_key
+      WHERE fo.identity_key IS NOT NULL
+        AND fo.created_at >= datetime('now', '-' || ?1 || ' days')
+        AND fo.status = 'failed'
+        AND cs.status = 'failed'
+        AND cs.pirate_claw_disposition IS NULL
+    ) ranked
+    WHERE rn = 1
+    ORDER BY recordedAt DESC`,
   );
   const requeueCandidateStatement = database.prepare(
     `UPDATE candidate_state
@@ -819,6 +847,16 @@ export function createRepository(database: Database): Repository {
 
     getCandidateState(identityKey: string): CandidateStateRecord | undefined {
       const row = selectCandidateState.get(identityKey) as
+        | CandidateStateRow
+        | null
+        | undefined;
+      return row ? mapCandidateStateRow(row) : undefined;
+    },
+
+    getCandidateStateByTransmissionHash(
+      hash: string,
+    ): CandidateStateRecord | undefined {
+      const row = selectCandidateStateByTransmissionHash.get(hash) as
         | CandidateStateRow
         | null
         | undefined;
@@ -984,11 +1022,11 @@ export function createRepository(database: Database): Repository {
       type Row = {
         id: number;
         runId: number;
-        status: 'skipped_no_match' | 'failed';
+        status: 'failed';
         recordedAt: string;
         title: string | null;
         feedName: string | null;
-        identityKey: string | null;
+        identityKey: string;
       };
       return (listSkippedNoMatchOutcomesStatement.all(days) as Row[]).map(
         (row) => ({
@@ -998,7 +1036,7 @@ export function createRepository(database: Database): Repository {
           recordedAt: row.recordedAt,
           title: row.title,
           feedName: row.feedName,
-          identityKey: row.identityKey ?? null,
+          identityKey: row.identityKey,
         }),
       );
     },

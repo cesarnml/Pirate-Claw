@@ -11,7 +11,7 @@
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import ArchiveStrip from './components/ArchiveStrip.svelte';
 	import DashboardHeader from './components/DashboardHeader.svelte';
-	import FeedEventLogCard from './components/FeedEventLogCard.svelte';
+	import TransmissionFailuresCard from './components/TransmissionFailuresCard.svelte';
 	import OnboardingBanner from './components/OnboardingBanner.svelte';
 	import StatusCardGrid from './components/StatusCardGrid.svelte';
 	import TorrentManagerCard from './components/TorrentManagerCard.svelte';
@@ -33,11 +33,13 @@
 	const outcomes = $derived(data.outcomes);
 
 	const activeDownloads = $derived(
-		torrents.map((torrent) => {
-			const candidate =
-				candidates.find((item) => item.transmissionTorrentHash === torrent.hash) ?? null;
-			return { torrent, candidate };
-		})
+		torrents
+			.map((torrent) => {
+				const candidate =
+					candidates.find((item) => item.transmissionTorrentHash === torrent.hash) ?? null;
+				return { torrent, candidate };
+			})
+			.filter(({ candidate }) => !candidate?.pirateClawDisposition)
 	);
 
 	const transmissionLoaded = $derived(data.transmissionTorrents !== null);
@@ -156,7 +158,7 @@
 				{missingCandidates}
 				transmissionSession={data.transmissionSession}
 			/>
-			<FeedEventLogCard {outcomes} />
+			<TransmissionFailuresCard {outcomes} />
 		</div>
 
 		<ArchiveStrip {archiveItems} />

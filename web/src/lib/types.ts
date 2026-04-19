@@ -118,11 +118,11 @@ export type MovieBreakdown = {
 export type SkippedOutcomeRecord = {
 	id: number;
 	runId: number;
-	status: 'skipped_no_match' | 'failed';
+	status: 'failed';
 	recordedAt: string;
 	title: string | null;
 	feedName: string | null;
-	identityKey: string | null;
+	identityKey: string;
 };
 
 export type FeedConfig = {

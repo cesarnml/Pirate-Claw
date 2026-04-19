@@ -4,9 +4,9 @@
 
 ## TL;DR
 
-**Goal:** Make the dashboard a functional proxy for the Transmission client. Add torrent lifecycle actions via a right-click context menu on TorrentManagerCard rows, wire up the Queue button in FeedEventLogCard, and clean up the data model by replacing the redundant `CandidateLifecycleStatus` with a derived state pattern and a new `pirateClawDisposition` field.
+**Goal:** Make the dashboard a functional proxy for the Transmission client. Add torrent lifecycle actions via a right-click context menu on TorrentManagerCard rows, wire the Queue control on the Transmission failures card (failed enqueue retries), and clean up the data model by replacing the redundant `CandidateLifecycleStatus` with a derived state pattern and a new `pirateClawDisposition` field.
 
-**Ships:** Pause, resume, remove, remove+delete torrent actions; missing-torrent disposition resolution; manual requeue of failed/skipped candidates; data model clean break.
+**Ships:** Pause, resume, remove, remove+delete torrent actions; missing-torrent disposition resolution; manual requeue for candidates still in `failed` after a Transmission enqueue failure; data model clean break.
 
 **Defers:** Router extraction (future Hono migration); multi-torrent bulk actions; audit log.
 
@@ -115,14 +115,14 @@ Following the existing session-negotiation pattern (409 retry):
 
 ---
 
-## FeedEventLogCard — Queue Button
+## TransmissionFailuresCard — Queue button
 
-The existing stub Queue button is wired to `POST /api/candidates/:id/requeue`.
+The dashboard lists **deduped** matched candidates whose latest feed outcome is `failed` while `candidate_state` is still `failed` (Transmission enqueue rejected or errored). Each row exposes **Queue**, wired to `POST /api/candidates/:id/requeue`.
 
-- Endpoint calls `downloader.submit(candidate.downloadUrl)` immediately (Option A: synchronous, not deferred to next daemon cycle)
-- On success: writes `transmissionTorrentId`, `transmissionTorrentHash` back to candidate record
-- UI: button disabled per-row while in flight; shows brief green "Queued" confirmation on success; inline red error on failure
-- Eligible candidates: `status === 'failed'` or `status === 'skipped_no_match'`
+- Endpoint calls `downloader.submit(candidate.downloadUrl)` immediately (Option A: synchronous, not deferred to next daemon cycle). The daemon’s embedded API must be constructed with the same Transmission **downloader** instance used for feed runs; otherwise the handler returns **503** (`requeue is not available`).
+- On success: writes `transmissionTorrentId`, `transmissionTorrentHash` back to the candidate record; the row disappears from this list on the next refresh once the candidate leaves the failed state.
+- UI: deserialize SvelteKit action results (HTTP 200 can still mean `failure`); show errors inline; brief green “Queued ✓” only on real success.
+- **Queue** is shown only for rows in that failed-enqueue list (not for `skipped_duplicate` or unmatched `skipped_no_match` noise on the home dashboard).
 
 ---
 

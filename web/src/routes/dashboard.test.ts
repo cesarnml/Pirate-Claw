@@ -42,11 +42,11 @@ const mockRunSummary = (overrides: Partial<RunSummaryRecord> = {}): RunSummaryRe
 const mockOutcome = (overrides: Partial<SkippedOutcomeRecord> = {}): SkippedOutcomeRecord => ({
 	id: 1,
 	runId: 42,
-	status: 'skipped_no_match',
+	status: 'failed',
 	recordedAt: '2026-04-10T12:00:00.000Z',
 	title: 'Stranger.Things.S05E01.4K.WEB.x265-GROUP',
 	feedName: 'main-tv',
-	identityKey: null,
+	identityKey: 'tv:stranger.things|s05e01',
 	...overrides
 });
 
@@ -150,19 +150,44 @@ describe('/', () => {
 		expect(screen.getAllByText('1.0 MB/s').length).toBeGreaterThan(0);
 	});
 
-	it('renders the event log from unmatched outcomes', () => {
+	it('renders Transmission failure rows from matched enqueue failures', () => {
 		render(Page, {
 			data: {
 				...baseData,
-				outcomes: [mockOutcome(), mockOutcome({ id: 2, title: 'The.Brutalist.2025.2160p.WEB-DL' })]
+				outcomes: [
+					mockOutcome(),
+					mockOutcome({
+						id: 2,
+						title: 'The.Brutalist.2025.2160p.WEB-DL',
+						identityKey: 'movie:the.brutalist|2025'
+					})
+				]
 			}
 		});
 
-		expect(
-			screen.getByRole('heading', { name: /Skipped\/Failed Candidates/i })
-		).toBeInTheDocument();
+		expect(screen.getByText(/Transmission failures/i)).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: /Failed candidates/i })).toBeInTheDocument();
 		expect(screen.getByText('Stranger.Things.S05E01.4K.WEB.x265-GROUP')).toBeInTheDocument();
-		expect(screen.getAllByText('SKIPPED')).toHaveLength(2);
+		expect(screen.getAllByText('FAILED')).toHaveLength(2);
+		expect(screen.getAllByRole('button', { name: 'Queue' })).toHaveLength(2);
+	});
+
+	it('shows a Queue control for each failed enqueue row', () => {
+		render(Page, {
+			data: {
+				...baseData,
+				outcomes: [
+					mockOutcome({ id: 1, title: 'Alpha.2025.1080p', identityKey: 'movie:alpha|2025' }),
+					mockOutcome({
+						id: 2,
+						title: 'Broken.Release.2025',
+						identityKey: 'movie:broken|2025'
+					})
+				]
+			}
+		});
+
+		expect(screen.getAllByRole('button', { name: 'Queue' })).toHaveLength(2);
 	});
 
 	it('shows unavailable copy when outcome and run summary fetches fail', () => {
@@ -176,7 +201,7 @@ describe('/', () => {
 
 		expect(screen.getByText('Failures').parentElement).toHaveTextContent('—');
 		expect(screen.getByText('Skipped').parentElement).toHaveTextContent('—');
-		expect(screen.getByText('Recent outcome data is unavailable.')).toBeInTheDocument();
+		expect(screen.getByText('Transmission failure data is unavailable.')).toBeInTheDocument();
 	});
 
 	it('renders the archive strip with links for completed items', () => {

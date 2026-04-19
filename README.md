@@ -19,7 +19,7 @@ It currently supports:
 - daemon HTTP API with read endpoints and bounded config writes when `runtime.apiPort` is set
 - optional TMDB-backed posters, ratings, and metadata when a `tmdb` API key is configured
 - optional Plex-backed library status, watch counts, and last-watched timestamps when a `plex` server is configured
-- browser dashboard (`web/`) with Obsidian Tide styling, sidebar navigation, unified config editing, in-context daemon controls, poster-forward TV/movie views, live Transmission stats, and dashboard panels for active downlinks and unmatched events
+- browser dashboard (`web/`) with Obsidian Tide styling, sidebar navigation, unified config editing, in-context daemon controls, poster-forward TV/movie views, live Transmission stats, Torrent Manager (context-menu pause, resume, remove, and remove-with-delete), and a Transmission failures panel (deduped matched candidates whose enqueue to Transmission failed and are still retryable)
 
 ## Commands
 
@@ -151,25 +151,31 @@ Set `runtime.apiPort` to start an HTTP JSON API alongside the daemon:
 
 ### Endpoints
 
-| Endpoint                             | Description                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------- |
-| `GET /api/health`                    | Uptime, start time, last run/reconcile snapshots                                |
-| `GET /api/status`                    | Recent run summaries                                                            |
-| `GET /api/candidates`                | All tracked candidate state records                                             |
-| `GET /api/shows`                     | TV candidates grouped by show → season → episode, with Plex status/watch fields |
-| `GET /api/movies`                    | Movie candidates sorted by title, with Plex status/watch fields                 |
-| `GET /api/feeds`                     | Feed config with poll state and `isDue`                                         |
-| `GET /api/config`                    | Effective config (credentials redacted); returns `ETag`                         |
-| `PUT /api/config`                    | Bounded runtime + tv.shows write (token + `If-Match` required)                  |
-| `PUT /api/config/feeds`              | Replace feeds array (token + `If-Match` required)                               |
-| `PUT /api/config/movies`             | Replace movie policy (token + `If-Match` required)                              |
-| `PUT /api/config/tv/defaults`        | Replace TV defaults (token + `If-Match` required)                               |
-| `POST /api/shows/:slug/tmdb/refresh` | Refresh TMDB metadata for one TV show (token required)                          |
-| `GET /api/transmission/session`      | Transmission session stats                                                      |
-| `GET /api/transmission/torrents`     | Pirate Claw-managed torrents with progress, speed, ETA                          |
-| `GET /api/outcomes`                  | Feed item outcomes (`?status=skipped_no_match`)                                 |
+| Endpoint                                           | Description                                                                                                                                              |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                  | Uptime, start time, last run/reconcile snapshots                                                                                                         |
+| `GET /api/status`                                  | Recent run summaries                                                                                                                                     |
+| `GET /api/candidates`                              | All tracked candidate state records                                                                                                                      |
+| `GET /api/shows`                                   | TV candidates grouped by show → season → episode, with Plex status/watch fields                                                                          |
+| `GET /api/movies`                                  | Movie candidates sorted by title, with Plex status/watch fields                                                                                          |
+| `GET /api/feeds`                                   | Feed config with poll state and `isDue`                                                                                                                  |
+| `GET /api/config`                                  | Effective config (credentials redacted); returns `ETag`                                                                                                  |
+| `PUT /api/config`                                  | Bounded runtime + tv.shows write (token + `If-Match` required)                                                                                           |
+| `PUT /api/config/feeds`                            | Replace feeds array (token + `If-Match` required)                                                                                                        |
+| `PUT /api/config/movies`                           | Replace movie policy (token + `If-Match` required)                                                                                                       |
+| `PUT /api/config/tv/defaults`                      | Replace TV defaults (token + `If-Match` required)                                                                                                        |
+| `POST /api/shows/:slug/tmdb/refresh`               | Refresh TMDB metadata for one TV show (token required)                                                                                                   |
+| `GET /api/transmission/session`                    | Transmission session stats                                                                                                                               |
+| `GET /api/transmission/torrents`                   | Live stats for torrents referenced by tracked candidates (progress, speed, ETA)                                                                          |
+| `GET /api/outcomes`                                | Dashboard enqueue failures (`?status=skipped_no_match`): deduped rows per matched candidate still in `failed` state (historical query param name)        |
+| `POST /api/transmission/torrent/pause`             | Pause a managed torrent (`{ "hash": "<transmission hash>" }`, bearer token)                                                                              |
+| `POST /api/transmission/torrent/resume`            | Resume a managed torrent (JSON body + bearer token)                                                                                                      |
+| `POST /api/transmission/torrent/remove`            | Remove torrent from Transmission (JSON body + bearer token)                                                                                              |
+| `POST /api/transmission/torrent/remove-and-delete` | Remove torrent and delete local data (JSON + bearer)                                                                                                     |
+| `POST /api/transmission/torrent/dispose`           | Mark a missing torrent as removed or deleted (`hash`, `disposition`, bearer)                                                                             |
+| `POST /api/candidates/:id/requeue`                 | Re-submit a failed candidate’s download URL to Transmission (bearer token); requires daemon API to be started with an in-process Transmission downloader |
 
-Write rules: `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`) must be set; all writes require `Authorization: Bearer <token>` and `If-Match` from the latest `GET /api/config` ETag. Writes are atomic file updates.
+Write rules: `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`) must be set; all writes require `Authorization: Bearer <token>` and `If-Match` from the latest `GET /api/config` ETag. Writes are atomic file updates. Torrent lifecycle and requeue actions use the bearer token only (no config ETag).
 
 ## SvelteKit Dashboard (`web/`)
 

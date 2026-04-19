@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { deserialize } from '$app/forms';
+	import { base } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
 	import { formatDate } from '$lib/helpers';
 	import StatusChip from '$lib/components/StatusChip.svelte';
@@ -22,24 +24,56 @@
 	let queuedKeys = $state<Record<string, true>>({});
 	let requeueErrors = $state<Record<string, string>>({});
 
+	function actionFailureMessage(data: unknown): string {
+		if (data && typeof data === 'object' && 'error' in data) {
+			const err = (data as { error: unknown }).error;
+			if (typeof err === 'string') return err;
+		}
+		return 'Request failed';
+	}
+
 	async function requeue(identityKey: string) {
 		if (inflightRequeue) return;
 		inflightRequeue = identityKey;
 		delete requeueErrors[identityKey];
 		const formData = new FormData();
 		formData.append('identityKey', identityKey);
+		const actionHref = `${base}/?/requeue`;
 		try {
-			const res = await fetch('?/requeue', { method: 'POST', body: formData });
-			if (res.ok) {
-				queuedKeys[identityKey] = true;
-				await invalidateAll();
-				setTimeout(() => {
-					delete queuedKeys[identityKey];
-				}, 2000);
-			} else {
-				const body = (await res.json().catch(() => ({}))) as { error?: string };
-				requeueErrors[identityKey] = body.error ?? 'Request failed';
+			const res = await fetch(actionHref, {
+				method: 'POST',
+				headers: {
+					accept: 'application/json',
+					'x-sveltekit-action': 'true'
+				},
+				body: formData,
+				cache: 'no-store'
+			});
+
+			const result = deserialize(await res.text());
+
+			if (result.type === 'error') {
+				requeueErrors[identityKey] =
+					typeof result.error === 'string' ? result.error : 'Request failed';
+				return;
 			}
+			if (result.type === 'failure') {
+				requeueErrors[identityKey] = actionFailureMessage(result.data);
+				return;
+			}
+			if (result.type === 'redirect') {
+				return;
+			}
+
+			queuedKeys[identityKey] = true;
+			await invalidateAll();
+			await new Promise((r) => setTimeout(r, 150));
+			await invalidateAll();
+			// Do not call applyAction(result): it can merge a stale action snapshot after a later
+			// invalidate (e.g. user pauses the new torrent immediately) and revert the UI.
+			setTimeout(() => {
+				delete queuedKeys[identityKey];
+			}, 2000);
 		} catch {
 			requeueErrors[identityKey] = 'Network error';
 		} finally {
@@ -47,25 +81,11 @@
 		}
 	}
 
-	type StatusSort = 'asc' | 'desc' | null;
-	let statusSort = $state<StatusSort>(null);
-
-	function cycleStatusSort() {
-		statusSort = statusSort === null ? 'asc' : statusSort === 'asc' ? 'desc' : null;
-		page = 0;
-	}
-
 	const sortedOutcomes = $derived(() => {
 		if (!outcomes) return null;
-		if (statusSort === null) {
-			return [...outcomes].sort(
-				(a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
-			);
-		}
-		return [...outcomes].sort((a, b) => {
-			const cmp = a.status.localeCompare(b.status);
-			return statusSort === 'asc' ? cmp : -cmp;
-		});
+		return [...outcomes].sort(
+			(a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
+		);
 	});
 
 	const pageCount = $derived(() =>
@@ -83,25 +103,25 @@
 <Card class="bg-card/70 max-h-136 rounded-[30px] border-white/10">
 	<CardHeader class="pb-4">
 		<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase">
-			Candidate outcomes
+			Transmission failures
 		</p>
-		<h2 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">Skipped/Failed Candidates</h2>
+		<h2 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">Failed candidates</h2>
 	</CardHeader>
 	<CardContent>
 		{#if outcomes === null}
 			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
-				<p class="text-sm font-medium">Recent outcome data is unavailable.</p>
+				<p class="text-sm font-medium">Transmission failure data is unavailable.</p>
 				<p class="text-muted-foreground mt-2 text-sm">
-					The dashboard could not load `/api/outcomes`, so skipped and failed candidates are not
+					The dashboard could not load `/api/outcomes`, so nothing from the “failed enqueue” list is
 					shown right now.
 				</p>
 			</div>
 		{:else if outcomes.length === 0}
 			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
-				<p class="text-sm font-medium">No skipped or failed candidates yet.</p>
+				<p class="text-sm font-medium">All quiet on the Transmission front.</p>
 				<p class="text-muted-foreground mt-2 text-sm">
-					Items skipped by rules or that failed to reach Transmission will appear here for manual
-					review.
+					No enqueue rejects in the last window — either the daemon is behaving, or it’s plotting
+					something for the next run.
 				</p>
 			</div>
 		{:else}
@@ -110,33 +130,22 @@
 					<TableHeader>
 						<TableRow class="hover:bg-transparent">
 							<TableHead class="pl-4">Title</TableHead>
-							<TableHead class="w-26 whitespace-nowrap">
-								<button
-									type="button"
-									class="hover:text-foreground inline-flex cursor-pointer items-center gap-1 transition"
-									onclick={cycleStatusSort}
-								>
-									Status
-									<span class="text-[10px] leading-none">
-										{statusSort === 'asc' ? '▲' : statusSort === 'desc' ? '▼' : '⇅'}
-									</span>
-								</button>
-							</TableHead>
+							<TableHead class="w-26 whitespace-nowrap">Status</TableHead>
 							<TableHead class="w-20 text-right"></TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{#each sortedOutcomes()!.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) as outcome (outcome.id)}
-							{@const canRequeue = outcome.identityKey !== null && outcome.status === 'failed'}
+							{@const canRequeue = outcome.status === 'failed'}
 							{@const isInflight = inflightRequeue === outcome.identityKey}
-							{@const isQueued = outcome.identityKey !== null && queuedKeys[outcome.identityKey]}
+							{@const isQueued = !!queuedKeys[outcome.identityKey]}
 							<TableRow>
 								<TableCell class="min-w-0 pl-4 text-sm font-medium">
 									<p class="truncate">{outcome.title ?? '—'}</p>
 									<p class="text-muted-foreground mt-0.5 text-[11px] font-normal">
 										{formatDate(outcome.recordedAt)}
 									</p>
-									{#if outcome.identityKey && requeueErrors[outcome.identityKey]}
+									{#if requeueErrors[outcome.identityKey]}
 										<p class="mt-0.5 text-[11px] text-red-400">
 											{requeueErrors[outcome.identityKey]}
 										</p>
@@ -148,14 +157,14 @@
 								<TableCell class="pr-4 text-right">
 									{#if isQueued}
 										<span class="text-[11px] font-medium text-green-400">Queued ✓</span>
-									{:else}
+									{:else if canRequeue}
 										<button
 											type="button"
-											disabled={!canRequeue || !!inflightRequeue}
-											onclick={() => outcome.identityKey && requeue(outcome.identityKey)}
+											disabled={!!inflightRequeue && inflightRequeue !== outcome.identityKey}
+											onclick={() => requeue(outcome.identityKey)}
 											class="bg-primary/15 text-primary border-primary/30 hover:bg-primary/22 inline-flex h-6 cursor-pointer items-center rounded-md border px-2 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
 										>
-											{isInflight ? '…' : 'Queue'}
+											{isInflight ? 'Loading' : 'Queue'}
 										</button>
 									{/if}
 								</TableCell>
