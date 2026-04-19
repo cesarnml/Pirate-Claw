@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import type { CandidateLifecycleStatus, MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
 	import type { PageData } from './$types';
 	import MovieAddCard from './components/MovieAddCard.svelte';
@@ -85,10 +85,7 @@
 	<MovieDeckHeader {sortKey} onSortChange={(key) => (sortKey = key)} />
 
 	{#if data.error}
-		<Alert variant="destructive">
-			<AlertTitle>API unavailable</AlertTitle>
-			<AlertDescription>{data.error}</AlertDescription>
-		</Alert>
+		<ApiUnavailableAlert message={data.error} />
 	{:else if data.movies.length === 0}
 		<MovieEmptyState variant="no-targets" />
 	{:else}

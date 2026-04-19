@@ -1,15 +1,15 @@
 <script lang="ts">
+	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
+	import StatusChip from '$lib/components/StatusChip.svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import type { ShowBreakdown, ShowEpisode, ShowSeason, TorrentStatSnapshot } from '$lib/types';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import StarIcon from '@lucide/svelte/icons/star';
-	import StatusChip from '$lib/components/StatusChip.svelte';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import type { ShowBreakdown, ShowEpisode, ShowSeason, TorrentStatSnapshot } from '$lib/types';
 	import type { PageData } from './$types';
 
 	const props = $props<{ data: PageData }>();
@@ -214,10 +214,7 @@
 	</div>
 
 	{#if data.error}
-		<Alert variant="destructive">
-			<AlertTitle>API unavailable</AlertTitle>
-			<AlertDescription>{data.error}</AlertDescription>
-		</Alert>
+		<ApiUnavailableAlert message={data.error} />
 	{:else if data.shows.length === 0}
 		<Card class="bg-card/75 rounded-[30px] border-white/10">
 			<CardContent class="space-y-4 pt-8">

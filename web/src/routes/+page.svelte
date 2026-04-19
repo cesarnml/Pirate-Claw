@@ -1,13 +1,13 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
+	import { readOnboardingDismissed, writeOnboardingDismissed } from '$lib/onboarding';
+	import type { CandidateStateRecord, RunSummaryRecord } from '$lib/types';
 	import ArrowDownToLineIcon from '@lucide/svelte/icons/arrow-down-to-line';
 	import FilterIcon from '@lucide/svelte/icons/filter';
 	import FlameIcon from '@lucide/svelte/icons/flame';
 	import LibraryBigIcon from '@lucide/svelte/icons/library-big';
-	import { browser } from '$app/environment';
-	import { readOnboardingDismissed, writeOnboardingDismissed } from '$lib/onboarding';
-	import type { CandidateStateRecord, RunSummaryRecord } from '$lib/types';
 	import type { PageData } from './$types';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import ArchiveStrip from './components/ArchiveStrip.svelte';
 	import DashboardHeader from './components/DashboardHeader.svelte';
 	import FeedEventLogCard from './components/FeedEventLogCard.svelte';
@@ -134,10 +134,7 @@
 	{/if}
 
 	{#if data.error}
-		<Alert variant="destructive" role="alert">
-			<AlertTitle>API unavailable</AlertTitle>
-			<AlertDescription>{data.error}</AlertDescription>
-		</Alert>
+		<ApiUnavailableAlert message={data.error} />
 	{:else}
 		<StatusCardGrid {statusCards} />
 

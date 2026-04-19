@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import {
 		readOnboardingPath,
 		writeOnboardingDismissed,
 		writeOnboardingPath
 	} from '$lib/onboarding';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import type { ActionData, PageData } from './$types';
 
 	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
@@ -144,14 +145,10 @@
 </section>
 
 {#if data.error}
-	<Alert
-		variant="destructive"
+	<ApiUnavailableAlert
+		message={data.error}
 		class="border-border/80 bg-card/85 mt-6 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
-		role="alert"
-	>
-		<AlertTitle>API unavailable</AlertTitle>
-		<AlertDescription>{data.error}</AlertDescription>
-	</Alert>
+	/>
 {:else if data.onboarding?.state === 'writes_disabled'}
 	<Alert
 		class="border-border/80 bg-card/85 mt-6 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"

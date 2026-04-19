@@ -1,18 +1,19 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import { toast } from '$lib/toast';
+	import type { FeedConfig, RunSummaryRecord } from '$lib/types';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import CableIcon from '@lucide/svelte/icons/cable';
 	import Clock3Icon from '@lucide/svelte/icons/clock-3';
 	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
 	import RadarIcon from '@lucide/svelte/icons/radar';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { toast } from '$lib/toast';
 	import type { ActionData, PageData } from './$types';
-	import type { FeedConfig, RunSummaryRecord } from '$lib/types';
 
 	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
 	const ALL_CODECS = ['x264', 'x265'];
@@ -298,10 +299,7 @@
 	{/if}
 
 	{#if data.error}
-		<Alert variant="destructive">
-			<AlertTitle>API unavailable</AlertTitle>
-			<AlertDescription>{data.error}</AlertDescription>
-		</Alert>
+		<ApiUnavailableAlert message={data.error} />
 	{:else if data.config}
 		{@const config = data.config}
 

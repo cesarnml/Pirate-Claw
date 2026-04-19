@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import LayersIcon from '@lucide/svelte/icons/layers-3';
-	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
-	import StarIcon from '@lucide/svelte/icons/star';
+	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import type { ShowEpisode, TorrentStatSnapshot } from '$lib/types';
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import LayersIcon from '@lucide/svelte/icons/layers-3';
+	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
+	import StarIcon from '@lucide/svelte/icons/star';
 	import type { ActionData, PageData } from './$types';
 
 	const props = $props<{ data: PageData; form?: ActionData }>();
@@ -116,10 +117,7 @@
 </script>
 
 {#if data.error}
-	<Alert variant="destructive">
-		<AlertTitle>API unavailable</AlertTitle>
-		<AlertDescription>{data.error}</AlertDescription>
-	</Alert>
+	<ApiUnavailableAlert message={data.error} />
 {:else if !data.show}
 	<Card class="bg-card/72 rounded-[30px] border-white/10">
 		<CardContent class="space-y-4 pt-8">
