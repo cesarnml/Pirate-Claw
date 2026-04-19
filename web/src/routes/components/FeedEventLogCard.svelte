@@ -43,7 +43,7 @@
 					setTimeout(() => {
 						delete queuedKeys[identityKey];
 						queueClearTimers.delete(identityKey);
-					}, 2000),
+					}, 2000)
 				);
 			} else if (result.type === 'failure') {
 				const data = result.data as { error?: string } | undefined;
