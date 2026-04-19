@@ -263,7 +263,7 @@ export function ensureSchema(database: Database): void {
     );
   }
 
-  ensureDropCandidateStateColumn(database, 'lifecycle_status');
+  migrateAndDropLifecycleStatus(database);
   ensureCandidateStateColumn(database, 'pirate_claw_disposition', 'TEXT');
   ensureCandidateStateColumn(database, 'reconciled_at', 'TEXT');
   ensureCandidateStateColumn(database, 'transmission_torrent_id', 'INTEGER');
@@ -503,7 +503,7 @@ export function createRepository(database: Database): Repository {
     SET reconciled_at = ?2,
         transmission_torrent_name = COALESCE(?3, transmission_torrent_name),
         transmission_status_code = ?4,
-        transmission_percent_done = ?5,
+        transmission_percent_done = COALESCE(?5, transmission_percent_done),
         transmission_done_date = ?6,
         transmission_download_dir = ?7
     WHERE identity_key = ?1`,
@@ -1087,6 +1087,25 @@ function ensureCandidateStateColumn(
       `ALTER TABLE candidate_state ADD COLUMN ${columnName} ${columnType}`,
     );
   }
+}
+
+function migrateAndDropLifecycleStatus(database: Database): void {
+  const hasColumn =
+    (database
+      .query(
+        `SELECT 1 FROM pragma_table_info('candidate_state') WHERE name = ?1`,
+      )
+      .get('lifecycle_status') as { 1: number } | null | undefined) !== null;
+
+  if (!hasColumn) return;
+
+  database.run(
+    `UPDATE candidate_state
+     SET transmission_percent_done = 1
+     WHERE lifecycle_status = 'completed'
+       AND transmission_percent_done IS NULL`,
+  );
+  database.run(`ALTER TABLE candidate_state DROP COLUMN lifecycle_status`);
 }
 
 function ensureDropCandidateStateColumn(
