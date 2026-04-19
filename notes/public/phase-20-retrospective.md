@@ -6,7 +6,7 @@ _Phase 20: Dashboard Torrent Actions — P20.01–P20.07_
 
 ## Scope delivered
 
-Phase 20 shipped across stacked PRs [#181](https://github.com/cesarnml/pirate_claw/pull/181) through [#187](https://github.com/cesarnml/pirate_claw/pull/187) on branches `agents/p20-01-data-model-clean-break` through `agents/p20-07-docs-exit-verification`. Delivered scope: data model clean break (drop `CandidateLifecycleStatus`, add `pirateClawDisposition` terminal field, `torrentDisplayState()` derived function, startup migration, reconciler skip guard); pause/resume torrent RPC endpoints; remove/remove+delete endpoints with disposition writes; dispose endpoint for missing-candidate resolution; right-click context menu UI for torrent row actions; Queue button in FeedEventLogCard for manual candidate requeue; and this exit verification pass.
+Phase 20 shipped across stacked PRs [#181](https://github.com/cesarnml/Pirate-Claw/pull/181) through [#187](https://github.com/cesarnml/Pirate-Claw/pull/187) on branches `agents/p20-01-data-model-clean-break` through `agents/p20-07-docs-exit-verification`. Delivered scope: data model clean break (drop `CandidateLifecycleStatus`, add `pirateClawDisposition` terminal field, `torrentDisplayState()` derived function, startup migration, reconciler skip guard); pause/resume torrent RPC endpoints; remove/remove+delete endpoints with disposition writes; dispose endpoint for missing-candidate resolution; right-click context menu UI for torrent row actions; Queue button in FeedEventLogCard for manual candidate requeue; and this exit verification pass.
 
 ---
 

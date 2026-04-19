@@ -1,6 +1,6 @@
 # Phase 19: UI/UX Redesign ("Razzle-Dazzle")
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-19/` implementation plan until tickets are approved.
+**Delivery status:** Delivered in the current stack via `P19.01`–`P19.08` (see [`docs/02-delivery/phase-19/implementation-plan.md`](../02-delivery/phase-19/implementation-plan.md)). This file stays the product-facing design contract; ticket evidence and execution notes live under `docs/02-delivery/phase-19/`.
 
 ## TL;DR
 
@@ -8,11 +8,11 @@
 
 **Ships:** Obsidian Tide design tokens; left sidebar layout with mobile drawer; redesigned Dashboard, TV Shows, TV Show Detail, Movies, and Config views; consolidated navigation (4 top-level routes); movie backdrops surfaced from existing API.
 
-**Defers:** New daemon API endpoints; new intake behavior; new config surface beyond what Phases 13–18 delivered.
+**Defers:** New daemon API endpoints beyond the approved `P19.05` show-detail TMDB refresh; new intake behavior; new config surface beyond what Phases 13–18 delivered.
 
 ---
 
-Phase 19 is the v1 UI/UX milestone. It makes Pirate Claw look as good as it works. No new daemon surface — every visual improvement draws from data the API already returns.
+Phase 19 is the v1 UI/UX milestone. It makes Pirate Claw look as good as it works. Visual work draws from data the API already returns; the **only** approved new write path on the daemon for this phase is the authenticated TMDB refresh on TV show detail (`P19.05`).
 
 ## Design Contract
 

@@ -62,8 +62,7 @@ Same pattern as P20.02:
 
 ## Exit Condition
 
-- `POST /api/transmission/torrent/remove` on a `downloading` candidate: torrent removed from Transmission, `pirateClawDisposition = 'removed'` written
-- `POST /api/transmission/torrent/remove` on a `completed` candidate: torrent removed, no disposition written
+- `POST /api/transmission/torrent/remove` on a `downloading`, `paused`, or `completed` candidate: torrent removed from Transmission, `pirateClawDisposition = 'removed'` written
 - `POST /api/transmission/torrent/remove-and-delete` on any active candidate: torrent and data removed, `pirateClawDisposition = 'deleted'` written
 - `POST /api/transmission/torrent/remove` on a `missing` candidate: returns `400`
 - `bun run typecheck` passes

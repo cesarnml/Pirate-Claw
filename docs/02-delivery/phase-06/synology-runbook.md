@@ -895,7 +895,7 @@ Expected: a line reading `api listening on port 5555`. Since pirate-claw runs on
 
 Phase 15 added three additional read endpoints:
 
-- `GET /api/outcomes?status=failed_enqueue` (preferred) or `?status=skipped_no_match` (legacy alias) — recent `feed_item_outcomes` rows (`skipped_no_match` or matched `failed` enqueue failures)
+- `GET /api/outcomes?status=failed_enqueue` (preferred) or `?status=skipped_no_match` (legacy alias) — deduped Transmission enqueue failures for matched candidates still in `failed` state
 - `GET /api/transmission/torrents` — live torrent stats for pirate-claw-managed torrents (proxied from Transmission RPC)
 - `GET /api/transmission/session` — Transmission session metadata including download/upload speed limits (proxied from Transmission RPC; returns 502 if Transmission is unreachable)
 

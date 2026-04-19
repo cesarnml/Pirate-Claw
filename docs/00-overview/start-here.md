@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 19** in the current delivery stack (product phases 01–19; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–19 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec is now the contract reference for the latest delivered UI surface. Phase **20** is the next product-definition-only phase under [`docs/01-product/`](../01-product/).
+Pirate Claw is implemented through **Phase 19** in the current delivery stack (product phases 01–19; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–19 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec is the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI. **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) is the dashboard-as-Transmission-proxy product contract; that scope is **shipped on `main`**. **Phase 25** ([`phase-25-v1-release-and-schema-versioning.md`](../01-product/phase-25-v1-release-and-schema-versioning.md)) is the v1.0.0 / schema-versioning release ceremony (product definition only until tickets land).
 
 Current delivered surface:
 
@@ -29,7 +29,8 @@ Current delivered surface:
 - queue-time Transmission `movie` / `tv` labels with warning+retry fallback when labels are unsupported
 - per-media-type Transmission download directories via `transmission.downloadDirs`
 - SvelteKit dashboard in `web/` that consumes the daemon HTTP API, including bounded runtime Settings writes and full feed and target management (add/remove feeds, TV defaults, movie policy, TV show targets) through server-side actions
-- Phase 19 UI surface: Obsidian Tide design tokens, persistent left sidebar on desktop with mobile drawer fallback, 4 top-level routes (`/`, `/shows`, `/movies`, `/config`), Dashboard panels for active downlinks and unmatched events, poster-forward TV/movie views, show-detail TMDB refresh, and Plex chips/watch-state across supported library views
+- Phase 19 UI surface: Obsidian Tide design tokens, persistent left sidebar on desktop with mobile drawer fallback, four top-level routes (`/`, `/shows`, `/movies`, `/config`), poster-forward TV/movie views, show-detail TMDB refresh, and Plex chips/watch-state across supported library views
+- Phase 20 dashboard torrent proxy (shipped on `main`, see product doc above): Torrent Manager with live Transmission rows and context-menu pause, resume, remove, and remove-with-delete; Transmission failures card listing deduped enqueue failures with Queue-to-retry; daemon API and downloader wiring that support those flows
 - optional TMDB enrichment: `tmdb` config block and/or `PIRATE_CLAW_TMDB_API_KEY`, SQLite-backed cache, lazy enrichment on API reads, and an optional daemon background refresh cadence via `runtime.tmdbRefreshIntervalMinutes` (default 6 hours; set `0` to disable)
 - optional Plex enrichment: `plex` config block and/or `PIRATE_CLAW_PLEX_TOKEN`, SQLite-backed movie/show cache, background refresh sweeps, and read-only `plexStatus` / `watchCount` / `lastWatchedAt` fields on `/api/movies` and `/api/shows`
 - Phase 16 config editing: unified `/config` accordion cards, per-section toast feedback, post-save daemon restart affordance, Transmission ping, and read-only tooltips when write auth is absent
@@ -46,26 +47,26 @@ Current product boundary:
 - per-feed polling cadence with persistent poll state
 - shared runtime lock prevents overlapping cycles
 - machine-readable and human-readable cycle artifacts with bounded retention
-- daemon HTTP API with read endpoints plus bounded write controls (`/api/config*`, `/api/daemon/restart`, `/api/transmission/ping`, and the Phase 19 TV-detail TMDB refresh action) when `runtime.apiPort` is configured
+- daemon HTTP API with read endpoints plus bounded write controls (`/api/config*`, `/api/daemon/restart`, `/api/transmission/ping`, and Phase 19 TV-detail TMDB refresh) when `runtime.apiPort` is configured; **Phase 20** (shipped) adds Transmission torrent lifecycle JSON actions, missing-torrent dispose, and `POST /api/candidates/:id/requeue` on the same port — requeue requires the daemon process to host the Transmission downloader alongside the API
 - TMDB metadata is display-only and does not gate RSS intake
 
-Still deferred (Phase 20 and beyond):
+Still deferred (Phase 25+ and later):
 
-- v1.0.0 release and config/DB schema versioning (Phase 20)
+- v1.0.0 release and config/DB schema versioning (Phase 25)
 - remote feed capture
 - hosted persistence
 - download renaming or organization rules
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md` and Phase 19 delivery artifacts: 2026-04-17.
+Last verified against `README.md` and Phase 19 delivery artifacts: 2026-04-19.
 
 Current planning focus:
 
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
-- Phase 20 release/versioning work is the next numbered product phase after the shipped UI redesign surface
+- Phase 25 (`schemaVersion`, tagged v1, `VERSIONING.md`, changelog) is the remaining numbered release exit; keep Phase 20 dashboard torrent work in [`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md), not under the Phase 19 contract
 
 ## Read These Docs By Task Type
 

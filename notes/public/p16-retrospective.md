@@ -6,7 +6,7 @@ _Phase 16: Config Editing, Hot Reload, and Daemon Controls — P16.01–P16.09_
 
 ## Scope delivered
 
-Phase 16 shipped across stacked PRs [#133](https://github.com/cesarnml/pirate_claw/pull/133) through [#141](https://github.com/cesarnml/pirate_claw/pull/141). Delivered scope: `POST /api/daemon/restart`, `POST /api/transmission/ping`, `tvDefaults` in `GET /api/config`, toast-based save feedback, Transmission card enhancements, TV defaults pre-population fix, runtime/TV-shows form split, collapsible config cards, read-only audit, and phase-exit docs/runbook updates. The product outcome landed: `/config` is now the unified editable surface the Phase 16 product doc described.
+Phase 16 shipped across stacked PRs [#133](https://github.com/cesarnml/Pirate-Claw/pull/133) through [#141](https://github.com/cesarnml/Pirate-Claw/pull/141). Delivered scope: `POST /api/daemon/restart`, `POST /api/transmission/ping`, `tvDefaults` in `GET /api/config`, toast-based save feedback, Transmission card enhancements, TV defaults pre-population fix, runtime/TV-shows form split, collapsible config cards, read-only audit, and phase-exit docs/runbook updates. The product outcome landed: `/config` is now the unified editable surface the Phase 16 product doc described.
 
 ---
 
@@ -53,8 +53,8 @@ Phase 16 achieved its stated product goal. The browser config surface is now mea
 
 ## Follow-up
 
-- **Standalone tooling fix:** make docs-only PRs advertise the skip path immediately in `open-pr` output rather than the generic 6/12-minute review window. Opened as [#142](https://github.com/cesarnml/pirate_claw/pull/142).
-- **Standalone tooling fix:** enforce a Conventional-Commit fallback in PR-title generation so malformed upstream subjects cannot leak bare ticket titles into PRs. Opened as [#143](https://github.com/cesarnml/pirate_claw/pull/143).
+- **Standalone tooling fix:** make docs-only PRs advertise the skip path immediately in `open-pr` output rather than the generic 6/12-minute review window. Opened as [#142](https://github.com/cesarnml/Pirate-Claw/pull/142).
+- **Standalone tooling fix:** enforce a Conventional-Commit fallback in PR-title generation so malformed upstream subjects cannot leak bare ticket titles into PRs. Opened as [#143](https://github.com/cesarnml/Pirate-Claw/pull/143).
 - **Planning/process follow-up:** when a ticket is intentionally “infrastructure only,” restate the out-of-scope boundaries aggressively in the implementation prompt so the first implementation PR does not absorb adjacent ticket scope.
 - **Delivery-state follow-up:** resolve why authoritative delivery-plan docs can be absent from the ticket worktree lineage during docs-exit tickets, because that adds unnecessary operator/tool friction at exactly the point where the phase should be simplest.
 

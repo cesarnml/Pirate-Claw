@@ -49,7 +49,8 @@ Phase-level product definitions.
 - `phase-17-onboarding-and-empty-state.md`: first-time setup wizard and per-section empty states (implemented)
 - `phase-18-plex-media-server-enrichment.md`: Plex read-only enrichment — library status, watch state, background refresh (implemented)
 - `phase-19-ui-redesign-razzle-dazzle.md`: Obsidian Tide UI/UX redesign — left sidebar, poster-forward layouts, view consolidation (product definition)
-- `phase-20-v1-release-and-schema-versioning.md`: v1.0.0 release, config schemaVersion, SQLite PRAGMA user_version (product definition)
+- `phase-20-dashboard-torrent-actions.md`: dashboard as Transmission proxy — torrent lifecycle actions, requeue, data model clean break (product definition)
+- `phase-25-v1-release-and-schema-versioning.md`: v1.0.0 release, config `schemaVersion`, SQLite `PRAGMA user_version` (product definition; renumbered from the former “Phase 20 v1-only” slot)
 
 ### `02-delivery`
 

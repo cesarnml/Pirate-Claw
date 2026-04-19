@@ -19,7 +19,7 @@ It currently supports:
 - daemon HTTP API with read endpoints and bounded config writes when `runtime.apiPort` is set
 - optional TMDB-backed posters, ratings, and metadata when a `tmdb` API key is configured
 - optional Plex-backed library status, watch counts, and last-watched timestamps when a `plex` server is configured
-- browser dashboard (`web/`) with Obsidian Tide styling, sidebar navigation, unified config editing, in-context daemon controls, poster-forward TV/movie views, live Transmission stats, dashboard panels for active downlinks and feed outcomes, Torrent Manager context actions (pause/resume/remove/remove-with-delete), and the failed-enqueue event log with **Queue** retries
+- browser dashboard (`web/`) with Obsidian Tide styling, sidebar navigation, unified config editing, in-context daemon controls, poster-forward TV/movie views, live Transmission stats, dashboard panels for active downlinks and feed outcomes, Torrent Manager context actions (pause/resume/remove/remove-with-delete), missing-torrent disposition, and the failed-enqueue event log with **Queue** retries (deduped matched candidates whose Transmission enqueue failed and are still retryable)
 
 ## Commands
 
@@ -151,23 +151,29 @@ Set `runtime.apiPort` to start an HTTP JSON API alongside the daemon:
 
 ### Endpoints
 
-| Endpoint                             | Description                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------- |
-| `GET /api/health`                    | Uptime, start time, last run/reconcile snapshots                                |
-| `GET /api/status`                    | Recent run summaries                                                            |
-| `GET /api/candidates`                | All tracked candidate state records                                             |
-| `GET /api/shows`                     | TV candidates grouped by show → season → episode, with Plex status/watch fields |
-| `GET /api/movies`                    | Movie candidates sorted by title, with Plex status/watch fields                 |
-| `GET /api/feeds`                     | Feed config with poll state and `isDue`                                         |
-| `GET /api/config`                    | Effective config (credentials redacted); returns `ETag`                         |
-| `PUT /api/config`                    | Bounded runtime + tv.shows write (token + `If-Match` required)                  |
-| `PUT /api/config/feeds`              | Replace feeds array (token + `If-Match` required)                               |
-| `PUT /api/config/movies`             | Replace movie policy (token + `If-Match` required)                              |
-| `PUT /api/config/tv/defaults`        | Replace TV defaults (token + `If-Match` required)                               |
-| `POST /api/shows/:slug/tmdb/refresh` | Refresh TMDB metadata for one TV show (token required)                          |
-| `GET /api/transmission/session`      | Transmission session stats                                                      |
-| `GET /api/transmission/torrents`     | Pirate Claw-managed torrents with progress, speed, ETA                          |
-| `GET /api/outcomes`                  | Feed item outcomes (`?status=failed_enqueue`; legacy alias `skipped_no_match`)  |
+| Endpoint                                           | Description                                                                                                                                              |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                  | Uptime, start time, last run/reconcile snapshots                                                                                                         |
+| `GET /api/status`                                  | Recent run summaries                                                                                                                                     |
+| `GET /api/candidates`                              | All tracked candidate state records                                                                                                                      |
+| `GET /api/shows`                                   | TV candidates grouped by show → season → episode, with Plex status/watch fields                                                                          |
+| `GET /api/movies`                                  | Movie candidates sorted by title, with Plex status/watch fields                                                                                          |
+| `GET /api/feeds`                                   | Feed config with poll state and `isDue`                                                                                                                  |
+| `GET /api/config`                                  | Effective config (credentials redacted); returns `ETag`                                                                                                  |
+| `PUT /api/config`                                  | Bounded runtime + tv.shows write (token + `If-Match` required)                                                                                           |
+| `PUT /api/config/feeds`                            | Replace feeds array (token + `If-Match` required)                                                                                                        |
+| `PUT /api/config/movies`                           | Replace movie policy (token + `If-Match` required)                                                                                                       |
+| `PUT /api/config/tv/defaults`                      | Replace TV defaults (token + `If-Match` required)                                                                                                        |
+| `POST /api/shows/:slug/tmdb/refresh`               | Refresh TMDB metadata for one TV show (token required)                                                                                                   |
+| `GET /api/transmission/session`                    | Transmission session stats                                                                                                                               |
+| `GET /api/transmission/torrents`                   | Live stats for torrents referenced by tracked candidates (progress, speed, ETA)                                                                          |
+| `GET /api/outcomes`                                | Dashboard enqueue failures (`?status=failed_enqueue`; legacy alias `skipped_no_match`): deduped rows per matched candidate still in `failed` state       |
+| `POST /api/transmission/torrent/pause`             | Pause a managed torrent (`{ "hash": "<transmission hash>" }`, bearer token)                                                                              |
+| `POST /api/transmission/torrent/resume`            | Resume a managed torrent (JSON body + bearer token)                                                                                                      |
+| `POST /api/transmission/torrent/remove`            | Remove torrent from Transmission (JSON body + bearer token)                                                                                              |
+| `POST /api/transmission/torrent/remove-and-delete` | Remove torrent and delete local data (JSON + bearer)                                                                                                     |
+| `POST /api/transmission/torrent/dispose`           | Mark a missing torrent as removed or deleted (`hash`, `disposition`, bearer)                                                                             |
+| `POST /api/candidates/:id/requeue`                 | Re-submit a failed candidate’s download URL to Transmission (bearer token); requires daemon API to be started with an in-process Transmission downloader |
 
 Write rules: set `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`). Every mutating request uses `Authorization: Bearer <token>`. Config file updates (`PUT /api/config`, `PUT /api/config/feeds`, `PUT /api/config/movies`, `PUT /api/config/tv/defaults`) also require an `If-Match` header equal to the latest `GET /api/config` `ETag`; those writes are atomic file updates. Torrent lifecycle actions, candidate requeue, TMDB refresh, Transmission ping, and daemon restart use the bearer token only (no config `If-Match`).
 
@@ -202,7 +208,9 @@ Pirate Claw is a local operator tool for a personal NAS. The roadmap targets **P
 
 **Implemented (Phases 01–20):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional read-only Plex Media Server enrichment, the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, and a TMDB refresh control on TV detail, **plus Phase 20** dashboard Transmission controls (Torrent Manager context actions, missing-torrent disposition, Feed Event Log / failed-enqueue list with **Queue** requeue).
 
-**Planned (Phase 25):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release.
+**Implemented (Phase 20):** Dashboard Torrent Manager actions (pause, resume, remove, remove-with-delete), missing-torrent disposition, Transmission failures / requeue, related daemon JSON endpoints, and the `pirateClawDisposition` + derived display-state model (see `docs/01-product/phase-20-dashboard-torrent-actions.md`).
+
+**Planned (Phase 25):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release (see `docs/01-product/phase-25-v1-release-and-schema-versioning.md`).
 
 Not in scope through v1:
 

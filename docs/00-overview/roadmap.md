@@ -513,18 +513,30 @@ Working notes:
 - `docs/01-product/phase-19-ui-redesign-razzle-dazzle.md`
 - `docs/02-delivery/phase-19/implementation-plan.md`
 
-## Phase 20: v1.0.0 Release and Schema Versioning
+## Phase 20: Dashboard Torrent Actions
 
 Goal:
 
-- `package.json` bumped to `1.0.0`; tagged release with CHANGELOG covering Phases 13–20
+- make the dashboard a functional proxy for the Transmission client (pause, resume, remove, remove-with-delete, missing disposition, failed-candidate requeue)
+- replace redundant lifecycle columns with derived `torrentDisplayState()` plus optional `pirateClawDisposition` terminal writes
+
+Current status:
+
+- shipped on `main`; product contract: [`docs/01-product/phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)
+- delivery record: [`docs/02-delivery/phase-20/implementation-plan.md`](../02-delivery/phase-20/implementation-plan.md)
+
+## Phase 25: v1.0.0 Release and Schema Versioning
+
+Goal:
+
+- `package.json` bumped to `1.0.0`; tagged release with CHANGELOG summarizing shipped product work
 - config file stamped with `schemaVersion: 1` on next write; absent = v1 (silent)
 - SQLite DB stamped with `PRAGMA user_version = 1` on first startup
 - `VERSIONING.md` documents breaking change policy: major version = config/db schema pair
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-20-v1-release-and-schema-versioning.md`](../01-product/phase-20-v1-release-and-schema-versioning.md)
+- product definition only; see [`docs/01-product/phase-25-v1-release-and-schema-versioning.md`](../01-product/phase-25-v1-release-and-schema-versioning.md)
 
 ## Future Deferrals
 
@@ -539,12 +551,13 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 - **Config editor via web UI** — Phase 13 (runtime subset); Phase 14 (feeds, movies, TV defaults); Phase 16 (unified UX)
 - **Visual polish / design system iteration** — Phase 12 (baseline); Phase 19 (full Obsidian Tide redesign)
 - **Plex Media Server enrichment** — Phase 18
-- **v1.0.0 release** — Phase 20
+- **v1.0.0 release / schema versioning** — Phase 25
+- **Dashboard Transmission proxy** — Phase 20
 
 ## Current Planning Posture
 
 - product phases `01`–`19` are implemented in the current delivery stack; **Phase 19** is delivered via `P19.01`–`P19.08`
-- product phase `20` remains product-definition-first until its tickets are approved and implemented
+- **Phase 20** (dashboard torrent proxy) is **shipped** on `main`; **Phase 25** (v1.0.0 / schema versioning) remains product-definition-first until its tickets are approved and implemented
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
@@ -563,4 +576,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-17 (Phase 19 delivered; Phase 20 next).
+Last verified against `README.md` and active delivery plans: 2026-04-19 (Phase 19 and Phase 20 delivered on `main`; Phase 25 v1 release is the next numbered product bucket).

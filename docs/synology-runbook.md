@@ -358,8 +358,10 @@ Expected checks:
 
 ## Deploying new daemon and web images (from a dev machine)
 
-Use this when you have a fresh checkout on your laptop and want the same
-`pirate-claw.config.json`, repo-root `.env`, and `web/.env` on the NAS.
+Use this when you want to ship a new `main` tree to the NAS and **rebuild
+container images only**. Keep the operator files already on the NAS under
+`/volume1/pirate-claw/config/` (`.env`, `pirate-claw.config.json`, `web.env`) —
+do not overwrite them from the repo when redeploying.
 
 ### 1. Copy source to the NAS (tar over SSH)
 
@@ -385,30 +387,24 @@ tar czf - \
   . | ssh -p "$SSH_PORT" "$DEST" "cd \"$BUILD_DIR\" && tar xzf -"
 ```
 
-### 2. Copy secrets and config (repo `.env`, `pirate-claw.config.json`, `web/.env`)
+### 2. NAS config (leave unchanged on upgrades)
 
-Files under `/volume1/pirate-claw/config/` are often owned by `root`, so use
-`sudo tee` from stdin:
+The running stack reads secrets and web env from the host paths described in
+**Config And Secrets Contract** (typically `.env`, `pirate-claw.config.json`,
+and `web.env` under `/volume1/pirate-claw/config/`). For routine image upgrades,
+**do not replace those files** from a developer laptop.
 
-```sh
-ssh -p "$SSH_PORT" "$DEST" "sudo -n tee /volume1/pirate-claw/config/.env > /dev/null" < .env
-ssh -p "$SSH_PORT" "$DEST" "sudo -n tee /volume1/pirate-claw/config/pirate-claw.config.json > /dev/null" < pirate-claw.config.json
-ssh -p "$SSH_PORT" "$DEST" "sudo -n tee /volume1/pirate-claw/config/web.env > /dev/null" < web/.env
-```
+Bootstrap only (new host or missing `web.env`): create the files on the NAS
+once, then continue with the build steps. `web.env` is the env-file passed to
+`pirate-claw-web` (`--env-file`; Docker format: `KEY=value` lines only).
 
-`web/.env` is stored as `**web.env**` on the NAS so the web container can use
-`--env-file` (Docker env-file format: `KEY=value` lines only).
-
-Ensure `**ORIGIN**` is set for SvelteKit `adapter-node` (add if missing):
+If `web.env` exists but is missing `ORIGIN`, append it once (adjust the URL if
+your browser-facing origin differs):
 
 ```sh
 ssh -p "$SSH_PORT" "$DEST" \
   'grep -q "^ORIGIN=" /volume1/pirate-claw/config/web.env || echo "ORIGIN=http://100.108.117.42:3001" | sudo -n tee -a /volume1/pirate-claw/config/web.env >/dev/null'
 ```
-
-Optional daemon secrets (same `/config/.env` as today):
-
-- `PIRATE_CLAW_PLEX_TOKEN` — omit `plex.token` from JSON if you set this
 
 ### 3. Build `pirate-claw:latest` on the NAS
 

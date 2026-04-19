@@ -1,7 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { renameSync, writeFileSync } from 'node:fs';
-import { fetchSessionInfo, fetchTorrentStats } from './transmission';
-import type { Downloader } from './transmission';
+import {
+  fetchSessionInfo,
+  fetchTorrentStats,
+  pauseTorrent,
+  removeTorrent,
+  resumeTorrent,
+} from './transmission';
+import type { Downloader, TorrentStatSnapshot } from './transmission';
 import type {
   AppConfig,
   CompactTvDefaults,
@@ -29,7 +35,11 @@ export type {
 } from './tv-api-types';
 import { isDueFeed } from './poll-state';
 import type { PollState } from './poll-state';
-import type { CandidateStateRecord, Repository } from './repository';
+import type {
+  CandidateStateRecord,
+  PirateClawDisposition,
+  Repository,
+} from './repository';
 import type { CycleResult } from './runtime-artifacts';
 import type { TmdbCache } from './tmdb/cache';
 import { enrichCandidatesFromCache } from './tmdb/candidate-cache-enrich';
@@ -139,6 +149,168 @@ function jsonMethodNotAllowed(allow: string): Response {
   );
 }
 
+/** Repository default is 20; HTTP dashboards need a full slice for joins and torrent polling. */
+const API_CANDIDATE_LIST_LIMIT = 50_000;
+
+type ManagedTorrentRowState =
+  | 'missing'
+  | 'downloading'
+  | 'paused'
+  | 'completed';
+
+function managedTorrentRowState(
+  torrent: TorrentStatSnapshot | undefined,
+): ManagedTorrentRowState {
+  if (!torrent) return 'missing';
+  if (torrent.percentDone >= 1) return 'completed';
+  if (torrent.status === 'downloading') return 'downloading';
+  return 'paused';
+}
+
+async function parseJsonTorrentHash(
+  request: Request,
+): Promise<{ ok: true; hash: string } | { ok: false; response: Response }> {
+  let parsed: unknown;
+  try {
+    parsed = await request.json();
+  } catch {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'request body must be valid JSON' },
+        { status: 400 },
+      ),
+    };
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    typeof (parsed as { hash?: unknown }).hash !== 'string'
+  ) {
+    return {
+      ok: false,
+      response: Response.json({ error: 'hash is required' }, { status: 400 }),
+    };
+  }
+  const hash = (parsed as { hash: string }).hash.trim();
+  if (!hash) {
+    return {
+      ok: false,
+      response: Response.json({ error: 'hash is required' }, { status: 400 }),
+    };
+  }
+  return { ok: true, hash };
+}
+
+async function resolveManagedTorrentAction(
+  repository: Repository,
+  transmissionConfig: AppConfig['transmission'],
+  hash: string,
+): Promise<
+  | {
+      ok: true;
+      candidate: CandidateStateRecord;
+      rowState: ManagedTorrentRowState;
+    }
+  | { ok: false; response: Response }
+> {
+  const candidate = repository.getCandidateStateByTransmissionHash(hash);
+  if (!candidate?.transmissionTorrentHash) {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'no candidate matches this torrent hash' },
+        { status: 404 },
+      ),
+    };
+  }
+  if (
+    candidate.pirateClawDisposition === 'removed' ||
+    candidate.pirateClawDisposition === 'deleted'
+  ) {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'candidate is already in a terminal disposition' },
+        { status: 400 },
+      ),
+    };
+  }
+  const statsResult = await fetchTorrentStats(transmissionConfig, [
+    candidate.transmissionTorrentHash,
+  ]);
+  if (!statsResult.ok) {
+    return {
+      ok: false,
+      response: Response.json({ error: statsResult.message }, { status: 502 }),
+    };
+  }
+  const torrent = statsResult.torrents.find(
+    (t) => t.hash === candidate.transmissionTorrentHash,
+  );
+  return {
+    ok: true,
+    candidate,
+    rowState: managedTorrentRowState(torrent),
+  };
+}
+
+async function parseJsonDisposeBody(
+  request: Request,
+): Promise<
+  | { ok: true; hash: string; disposition: PirateClawDisposition }
+  | { ok: false; response: Response }
+> {
+  let parsed: unknown;
+  try {
+    parsed = await request.json();
+  } catch {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'request body must be valid JSON' },
+        { status: 400 },
+      ),
+    };
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    typeof (parsed as { hash?: unknown }).hash !== 'string' ||
+    typeof (parsed as { disposition?: unknown }).disposition !== 'string'
+  ) {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'hash and disposition are required' },
+        { status: 400 },
+      ),
+    };
+  }
+  const dispositionRaw = (parsed as { disposition: string }).disposition;
+  if (dispositionRaw !== 'removed' && dispositionRaw !== 'deleted') {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'invalid disposition' },
+        { status: 400 },
+      ),
+    };
+  }
+  const hash = (parsed as { hash: string }).hash.trim();
+  if (!hash) {
+    return {
+      ok: false,
+      response: Response.json({ error: 'hash is required' }, { status: 400 }),
+    };
+  }
+  return {
+    ok: true,
+    hash,
+    disposition: dispositionRaw as PirateClawDisposition,
+  };
+}
+
 function safeJson<T>(body: () => T): Response {
   try {
     return Response.json(body());
@@ -191,7 +363,7 @@ export function createApiFetch(
 
     if (path === '/api/candidates') {
       try {
-        const list = repository.listCandidateStates();
+        const list = repository.listCandidateStates(API_CANDIDATE_LIST_LIMIT);
         const candidates = tmdbCache
           ? enrichCandidatesFromCache(
               list,
@@ -754,6 +926,7 @@ export function createApiFetch(
     if (path === '/api/outcomes' && request.method === 'GET') {
       const status = new URL(request.url).searchParams.get('status');
       // Preferred: failed_enqueue. Legacy: skipped_no_match (Phase 15 query-param name).
+      // Payload: deduped Transmission enqueue failures for matched candidates still in `failed` state.
       if (status !== 'failed_enqueue' && status !== 'skipped_no_match') {
         return Response.json(
           { error: 'unsupported status filter' },
@@ -765,10 +938,16 @@ export function createApiFetch(
     }
 
     if (path === '/api/transmission/torrents' && request.method === 'GET') {
-      const candidates = repository.listCandidateStates();
+      const candidates = repository.listCandidateStates(
+        API_CANDIDATE_LIST_LIMIT,
+      );
       const hashes = candidates
-        .map((c) => c.transmissionTorrentHash)
-        .filter((h): h is string => h !== undefined);
+        .filter(
+          (c) =>
+            c.transmissionTorrentHash !== undefined &&
+            c.pirateClawDisposition === undefined,
+        )
+        .map((c) => c.transmissionTorrentHash as string);
 
       if (hashes.length === 0) {
         return Response.json({ torrents: [] });
@@ -799,6 +978,186 @@ export function createApiFetch(
       }
 
       return Response.json(result.session);
+    }
+
+    if (
+      path === '/api/transmission/torrent/pause' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const body = await parseJsonTorrentHash(request);
+      if (!body.ok) return body.response;
+
+      const ctx = await resolveManagedTorrentAction(
+        repository,
+        activeConfig.transmission,
+        body.hash,
+      );
+      if (!ctx.ok) return ctx.response;
+      if (ctx.rowState !== 'downloading') {
+        return Response.json(
+          { error: 'torrent is not in a state that can be paused' },
+          { status: 400 },
+        );
+      }
+
+      const rpc = await pauseTorrent(activeConfig.transmission, body.hash);
+      if (!rpc.ok) {
+        return Response.json({ error: rpc.message }, { status: 502 });
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (
+      path === '/api/transmission/torrent/resume' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const body = await parseJsonTorrentHash(request);
+      if (!body.ok) return body.response;
+
+      const ctx = await resolveManagedTorrentAction(
+        repository,
+        activeConfig.transmission,
+        body.hash,
+      );
+      if (!ctx.ok) return ctx.response;
+      if (ctx.rowState !== 'paused') {
+        return Response.json(
+          { error: 'torrent is not in a state that can be resumed' },
+          { status: 400 },
+        );
+      }
+
+      const rpc = await resumeTorrent(activeConfig.transmission, body.hash);
+      if (!rpc.ok) {
+        return Response.json({ error: rpc.message }, { status: 502 });
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (
+      path === '/api/transmission/torrent/remove' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const body = await parseJsonTorrentHash(request);
+      if (!body.ok) return body.response;
+
+      const ctx = await resolveManagedTorrentAction(
+        repository,
+        activeConfig.transmission,
+        body.hash,
+      );
+      if (!ctx.ok) return ctx.response;
+      if (ctx.rowState === 'missing') {
+        return Response.json(
+          {
+            error: 'torrent is missing from Transmission; use dispose instead',
+          },
+          { status: 400 },
+        );
+      }
+
+      const rpc = await removeTorrent(
+        activeConfig.transmission,
+        body.hash,
+        false,
+      );
+      if (!rpc.ok) {
+        return Response.json({ error: rpc.message }, { status: 502 });
+      }
+
+      if (
+        ctx.rowState === 'downloading' ||
+        ctx.rowState === 'paused' ||
+        ctx.rowState === 'completed'
+      ) {
+        repository.setPirateClawDisposition(
+          ctx.candidate.identityKey,
+          'removed',
+        );
+      }
+
+      return Response.json({ ok: true });
+    }
+
+    if (
+      path === '/api/transmission/torrent/remove-and-delete' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const body = await parseJsonTorrentHash(request);
+      if (!body.ok) return body.response;
+
+      const ctx = await resolveManagedTorrentAction(
+        repository,
+        activeConfig.transmission,
+        body.hash,
+      );
+      if (!ctx.ok) return ctx.response;
+      if (ctx.rowState === 'missing') {
+        return Response.json(
+          {
+            error: 'torrent is missing from Transmission; use dispose instead',
+          },
+          { status: 400 },
+        );
+      }
+
+      const rpc = await removeTorrent(
+        activeConfig.transmission,
+        body.hash,
+        true,
+      );
+      if (!rpc.ok) {
+        return Response.json({ error: rpc.message }, { status: 502 });
+      }
+
+      repository.setPirateClawDisposition(ctx.candidate.identityKey, 'deleted');
+
+      return Response.json({ ok: true });
+    }
+
+    if (
+      path === '/api/transmission/torrent/dispose' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const body = await parseJsonDisposeBody(request);
+      if (!body.ok) return body.response;
+
+      const ctx = await resolveManagedTorrentAction(
+        repository,
+        activeConfig.transmission,
+        body.hash,
+      );
+      if (!ctx.ok) return ctx.response;
+      if (ctx.rowState !== 'missing') {
+        return Response.json(
+          {
+            error:
+              'dispose is only valid when the torrent is missing from Transmission',
+          },
+          { status: 400 },
+        );
+      }
+
+      repository.setPirateClawDisposition(
+        ctx.candidate.identityKey,
+        body.disposition,
+      );
+      return Response.json({ ok: true });
     }
 
     if (path === '/api/transmission/ping' && request.method === 'POST') {
