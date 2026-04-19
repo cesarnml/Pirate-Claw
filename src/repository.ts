@@ -1108,21 +1108,6 @@ function migrateAndDropLifecycleStatus(database: Database): void {
   database.run(`ALTER TABLE candidate_state DROP COLUMN lifecycle_status`);
 }
 
-function ensureDropCandidateStateColumn(
-  database: Database,
-  columnName: string,
-): void {
-  const hasColumn =
-    (database
-      .query(
-        `SELECT 1 FROM pragma_table_info('candidate_state') WHERE name = ?1`,
-      )
-      .get(columnName) as { 1: number } | null | undefined) !== null;
-
-  if (hasColumn) {
-    database.run(`ALTER TABLE candidate_state DROP COLUMN ${columnName}`);
-  }
-}
 
 function requireRow<T>(row: T | null | undefined, label: string): T {
   if (!row) {
