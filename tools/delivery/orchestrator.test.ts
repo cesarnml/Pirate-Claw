@@ -1010,7 +1010,7 @@ describe('delivery orchestrator', () => {
       {
         githubRepo: {
           owner: 'cesarnml',
-          name: 'pirate_claw',
+          name: 'Pirate-Claw',
           defaultBranch: 'main',
         },
       },
@@ -1025,10 +1025,10 @@ describe('delivery orchestrator', () => {
     expect(body).toContain('### Self-Audit Patch Commits');
     expect(body).toContain('### Codex Preflight Patch Commits');
     expect(body).toContain(
-      '[`aaaaaaaaaaaa`](https://github.com/cesarnml/pirate_claw/commit/aaaaaaaaaaaa1111111111111111111111111111) fix: clarify PR body review state [self-audit]',
+      '[`aaaaaaaaaaaa`](https://github.com/cesarnml/Pirate-Claw/commit/aaaaaaaaaaaa1111111111111111111111111111) fix: clarify PR body review state [self-audit]',
     );
     expect(body).toContain(
-      '[`bbbbbbbbbbbb`](https://github.com/cesarnml/pirate_claw/commit/bbbbbbbbbbbb2222222222222222222222222222) fix: surface codex preflight patch commits [codexPreflight]',
+      '[`bbbbbbbbbbbb`](https://github.com/cesarnml/Pirate-Claw/commit/bbbbbbbbbbbb2222222222222222222222222222) fix: surface codex preflight patch commits [codexPreflight]',
     );
   });
 

@@ -10,12 +10,12 @@ Six stacked PRs delivering two backend write endpoints, three UI sections with s
 
 | Ticket                                      | PR                                                       | CI               | Review outcome |
 | ------------------------------------------- | -------------------------------------------------------- | ---------------- | -------------- |
-| P14.01 TV Defaults + Movie Policy Endpoints | [#117](https://github.com/cesarnml/pirate_claw/pull/117) | fail (inherited) | clean          |
-| P14.02 Feeds Write Endpoint                 | [#118](https://github.com/cesarnml/pirate_claw/pull/118) | fail (inherited) | clean          |
-| P14.03 TV Section UI                        | [#119](https://github.com/cesarnml/pirate_claw/pull/119) | fail (inherited) | clean          |
-| P14.04 Movies Policy UI                     | [#120](https://github.com/cesarnml/pirate_claw/pull/120) | pass             | clean          |
-| P14.05 Feeds UI                             | [#121](https://github.com/cesarnml/pirate_claw/pull/121) | pass             | patched        |
-| P14.06 Docs and Phase Exit                  | [#122](https://github.com/cesarnml/pirate_claw/pull/122) | pass             | clean          |
+| P14.01 TV Defaults + Movie Policy Endpoints | [#117](https://github.com/cesarnml/Pirate-Claw/pull/117) | fail (inherited) | clean          |
+| P14.02 Feeds Write Endpoint                 | [#118](https://github.com/cesarnml/Pirate-Claw/pull/118) | fail (inherited) | clean          |
+| P14.03 TV Section UI                        | [#119](https://github.com/cesarnml/Pirate-Claw/pull/119) | fail (inherited) | clean          |
+| P14.04 Movies Policy UI                     | [#120](https://github.com/cesarnml/Pirate-Claw/pull/120) | pass             | clean          |
+| P14.05 Feeds UI                             | [#121](https://github.com/cesarnml/Pirate-Claw/pull/121) | pass             | patched        |
+| P14.06 Docs and Phase Exit                  | [#122](https://github.com/cesarnml/Pirate-Claw/pull/122) | pass             | clean          |
 
 "fail (inherited)" = pre-existing test regressions from Phase 13 code, fixed in P14.04. The `closeout-stack` squash sequence lands all fixes on `main` in order.
 

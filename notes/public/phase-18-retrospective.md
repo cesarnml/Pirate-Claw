@@ -1,6 +1,6 @@
 ## Scope delivered
 
-Phase 18 shipped through PRs [#164](https://github.com/cesarnml/pirate_claw/pull/164), [#165](https://github.com/cesarnml/pirate_claw/pull/165), and [#166](https://github.com/cesarnml/pirate_claw/pull/166) on the stacked `agents/p18-*` branches. Delivered scope: optional `plex` config and secret handling, Plex HTTP client plus SQLite cache tables, daemon background refresh for movies and shows, read-only `plexStatus` / `watchCount` / `lastWatchedAt` fields on `/api/movies` and `/api/shows`, minimal movie/show dashboard affordances, doc updates, and review-driven resilience follow-up for independent movie/show sweep failures.
+Phase 18 shipped through PRs [#164](https://github.com/cesarnml/Pirate-Claw/pull/164), [#165](https://github.com/cesarnml/Pirate-Claw/pull/165), and [#166](https://github.com/cesarnml/Pirate-Claw/pull/166) on the stacked `agents/p18-*` branches. Delivered scope: optional `plex` config and secret handling, Plex HTTP client plus SQLite cache tables, daemon background refresh for movies and shows, read-only `plexStatus` / `watchCount` / `lastWatchedAt` fields on `/api/movies` and `/api/shows`, minimal movie/show dashboard affordances, doc updates, and review-driven resilience follow-up for independent movie/show sweep failures.
 
 ## What went well
 

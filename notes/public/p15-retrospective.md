@@ -10,13 +10,13 @@ Seven stacked PRs across two sessions. P15.01–P15.06 completed in one session;
 
 | Ticket                                      | PR                                                       | Review outcome |
 | ------------------------------------------- | -------------------------------------------------------- | -------------- |
-| P15.01 GET /api/outcomes Endpoint           | [#125](https://github.com/cesarnml/pirate_claw/pull/125) | clean          |
-| P15.02 Transmission Proxy Endpoints         | [#126](https://github.com/cesarnml/pirate_claw/pull/126) | clean          |
-| P15.03 Dashboard Overview Enhancement       | [#127](https://github.com/cesarnml/pirate_claw/pull/127) | patched        |
-| P15.04 TV Shows View — Progress and Sort    | [#128](https://github.com/cesarnml/pirate_claw/pull/128) | patched        |
-| P15.05 Movies View — Filter, Sort, Progress | [#129](https://github.com/cesarnml/pirate_claw/pull/129) | patched        |
-| P15.06 Unmatched Candidates View            | [#130](https://github.com/cesarnml/pirate_claw/pull/130) | clean          |
-| P15.07 Docs and Phase Exit                  | [#131](https://github.com/cesarnml/pirate_claw/pull/131) | clean          |
+| P15.01 GET /api/outcomes Endpoint           | [#125](https://github.com/cesarnml/Pirate-Claw/pull/125) | clean          |
+| P15.02 Transmission Proxy Endpoints         | [#126](https://github.com/cesarnml/Pirate-Claw/pull/126) | clean          |
+| P15.03 Dashboard Overview Enhancement       | [#127](https://github.com/cesarnml/Pirate-Claw/pull/127) | patched        |
+| P15.04 TV Shows View — Progress and Sort    | [#128](https://github.com/cesarnml/Pirate-Claw/pull/128) | patched        |
+| P15.05 Movies View — Filter, Sort, Progress | [#129](https://github.com/cesarnml/Pirate-Claw/pull/129) | patched        |
+| P15.06 Unmatched Candidates View            | [#130](https://github.com/cesarnml/Pirate-Claw/pull/130) | clean          |
+| P15.07 Docs and Phase Exit                  | [#131](https://github.com/cesarnml/Pirate-Claw/pull/131) | clean          |
 
 What shipped: `GET /api/outcomes?status=skipped_no_match`; Transmission RPC proxy endpoints (`/api/transmission/torrents`, `/api/transmission/session`); dashboard active downloads section; TV shows per-episode progress bars and sort; movies filter tabs, sort, and progress; unmatched candidates view with title search.
 
