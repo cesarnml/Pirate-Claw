@@ -10,12 +10,17 @@
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
-	import { enhance } from '$app/forms';
+	import { deserialize, enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 
 	type ActiveDownload = {
 		torrent: TorrentStatSnapshot;
 		candidate: CandidateStateRecord | null;
 	};
+
+	type MenuAction = 'pause' | 'resume' | 'remove' | 'removeAndDelete';
+	type MenuItem = { label: string; action: MenuAction; destructive?: boolean };
+	type MenuState = { hash: string; x: number; y: number; items: MenuItem[] };
 
 	const {
 		activeDownloads,
@@ -29,6 +34,10 @@
 
 	let inflightDispose = $state<string | null>(null);
 	let disposeErrors = $state<Record<string, string>>({});
+
+	let menuState = $state<MenuState | null>(null);
+	let inflightAction = $state<string | null>(null);
+	let actionErrors = $state<Record<string, string>>({});
 
 	function enhanceDispose(hash: string) {
 		return () => {
@@ -51,6 +60,89 @@
 			};
 		};
 	}
+
+	function rowDisplayState(
+		torrent: TorrentStatSnapshot,
+		candidate: CandidateStateRecord | null
+	): 'downloading' | 'paused' | 'completed' | 'removed' | 'deleted' {
+		if (candidate?.pirateClawDisposition) return candidate.pirateClawDisposition;
+		if (torrent.percentDone === 1) return 'completed';
+		if (torrent.status === 'stopped') return 'paused';
+		return 'downloading';
+	}
+
+	function menuItemsForState(state: ReturnType<typeof rowDisplayState>): MenuItem[] {
+		const destructiveItems: MenuItem[] = [
+			{ label: 'Remove', action: 'remove', destructive: true },
+			{ label: 'Remove + Delete Data', action: 'removeAndDelete', destructive: true }
+		];
+		if (state === 'downloading') return [{ label: 'Pause', action: 'pause' }, ...destructiveItems];
+		if (state === 'paused') return [{ label: 'Resume', action: 'resume' }, ...destructiveItems];
+		if (state === 'completed') return destructiveItems;
+		return [];
+	}
+
+	function openMenu(
+		event: MouseEvent,
+		hash: string,
+		torrent: TorrentStatSnapshot,
+		candidate: CandidateStateRecord | null
+	) {
+		event.preventDefault();
+		const items = menuItemsForState(rowDisplayState(torrent, candidate));
+		if (items.length === 0) return;
+		menuState = { hash, x: event.clientX, y: event.clientY, items };
+	}
+
+	function closeMenu() {
+		menuState = null;
+	}
+
+	async function executeAction(action: MenuAction, hash: string) {
+		if (inflightAction) return;
+		if (
+			action === 'removeAndDelete' &&
+			!confirm('Remove this torrent and delete its downloaded data? This cannot be undone.')
+		) {
+			return;
+		}
+		menuState = null;
+		inflightAction = hash;
+		delete actionErrors[hash];
+		const formData = new FormData();
+		formData.append('hash', hash);
+		try {
+			const res = await fetch(`?/${action}`, { method: 'POST', body: formData });
+			const result = deserialize(await res.text());
+			if (result.type === 'success') {
+				await invalidateAll();
+			} else if (result.type === 'failure') {
+				const data = result.data as { error?: string } | undefined;
+				actionErrors[hash] = data?.error ?? 'Request failed';
+			} else {
+				actionErrors[hash] = 'Request failed';
+			}
+		} catch {
+			actionErrors[hash] = 'Network error';
+		} finally {
+			if (inflightAction === hash) inflightAction = null;
+		}
+	}
+
+	$effect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (e.key === 'Escape') closeMenu();
+		}
+		function onPointerDown(e: PointerEvent) {
+			if (menuState && !(e.target as Element).closest('[data-context-menu]')) closeMenu();
+		}
+		document.addEventListener('keydown', onKeyDown);
+		document.addEventListener('pointerdown', onPointerDown);
+		return () => {
+			document.removeEventListener('keydown', onKeyDown);
+			document.removeEventListener('pointerdown', onPointerDown);
+		};
+	});
 
 	// Derive speeds from individual torrents — consistent with per-card values and avoids
 	// the session-stats / torrent-get snapshot skew.
@@ -105,7 +197,14 @@
 				{#each activeDownloads as { torrent, candidate }}
 					{@const title = candidate ? candidateTitle(candidate) : torrent.name}
 					{@const posterUrl = candidate ? candidatePosterUrl(candidate) : null}
-					<li class="border-border bg-background/45 flex gap-4 rounded-[26px] border p-4">
+					{@const inFlightRow = inflightAction === torrent.hash}
+					{@const rowError = actionErrors[torrent.hash]}
+					<li
+						class="border-border bg-background/45 flex gap-4 rounded-[26px] border p-4"
+						class:opacity-60={inFlightRow}
+						class:cursor-wait={inFlightRow}
+						oncontextmenu={(e) => !inFlightRow && openMenu(e, torrent.hash, torrent, candidate)}
+					>
 						{#if posterUrl}
 							<img
 								src={posterUrl}
@@ -155,6 +254,9 @@
 										></div>
 									</div>
 								</div>
+							{/if}
+							{#if rowError}
+								<p class="text-destructive mt-2 text-xs">{rowError}</p>
 							{/if}
 						</div>
 					</li>
@@ -212,3 +314,25 @@
 		{/if}
 	</CardContent>
 </Card>
+
+{#if menuState}
+	<ul
+		data-context-menu
+		role="menu"
+		class="bg-popover border-border fixed z-50 min-w-44 rounded-xl border py-1 text-sm shadow-lg"
+		style="left: {menuState.x}px; top: {menuState.y}px;"
+	>
+		{#each menuState.items as item}
+			<li role="none">
+				<button
+					role="menuitem"
+					class="hover:bg-accent w-full px-3 py-2 text-left transition-colors"
+					class:text-destructive={item.destructive}
+					onclick={() => executeAction(item.action, menuState!.hash)}
+				>
+					{item.label}
+				</button>
+			</li>
+		{/each}
+	</ul>
+{/if}

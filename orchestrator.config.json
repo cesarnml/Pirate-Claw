@@ -5,8 +5,8 @@
   "packageManager": "bun",
   "ticketBoundaryMode": "cook",
   "reviewPolicy": {
-    "selfAudit": "disabled",
+    "selfAudit": "skip_doc_only",
     "codexPreflight": "disabled",
-    "externalReview": "disabled"
+    "externalReview": "skip_doc_only"
   }
 }

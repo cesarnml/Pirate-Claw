@@ -80,6 +80,31 @@ export const load: PageServerLoad = async () => {
 	};
 };
 
+async function torrentAction(
+	path: string,
+	request: Request
+): Promise<ReturnType<typeof fail> | { ok: boolean }> {
+	const formData = await request.formData();
+	const hash = formData.get('hash');
+	if (typeof hash !== 'string') return fail(400, { error: 'hash is required' });
+	const res = await apiRequest(path, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ hash })
+	});
+	if (!res.ok) {
+		let error = 'Request failed';
+		try {
+			const body = (await res.json()) as { error?: string };
+			if (body.error) error = body.error;
+		} catch {
+			// ignore parse error
+		}
+		return fail(res.status, { error });
+	}
+	return { ok: true };
+}
+
 export const actions: Actions = {
 	dispose: async ({ request }) => {
 		const formData = await request.formData();
@@ -108,5 +133,11 @@ export const actions: Actions = {
 		}
 
 		return { ok: true };
-	}
+	},
+
+	pause: async ({ request }) => torrentAction('/api/transmission/torrent/pause', request),
+	resume: async ({ request }) => torrentAction('/api/transmission/torrent/resume', request),
+	remove: async ({ request }) => torrentAction('/api/transmission/torrent/remove', request),
+	removeAndDelete: async ({ request }) =>
+		torrentAction('/api/transmission/torrent/remove-and-delete', request)
 };
