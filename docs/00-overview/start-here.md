@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 19** in the current delivery stack (product phases 01–19; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–19 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec is the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI. **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) owns the dashboard-as-Transmission-proxy work; parts of that product definition already run on `main` while the Phase 20 **versioning / v1.0.0 release** slice remains planned.
+Pirate Claw is implemented through **Phase 19** in the current delivery stack (product phases 01–19; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–19 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec is the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI. **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) owns the dashboard-as-Transmission-proxy work; parts of that product definition already run on `main`. **Phase 25** ([`phase-25-v1-release-and-schema-versioning.md`](../01-product/phase-25-v1-release-and-schema-versioning.md)) is the v1.0.0 / schema-versioning release ceremony (product definition only until tickets land).
 
 Current delivered surface:
 
@@ -50,9 +50,9 @@ Current product boundary:
 - daemon HTTP API with read endpoints plus bounded write controls (`/api/config*`, `/api/daemon/restart`, `/api/transmission/ping`, and Phase 19 TV-detail TMDB refresh) when `runtime.apiPort` is configured; **Phase 20** adds Transmission torrent lifecycle JSON actions, missing-torrent dispose, and `POST /api/candidates/:id/requeue` on the same port — requeue requires the daemon process to host the Transmission downloader alongside the API
 - TMDB metadata is display-only and does not gate RSS intake
 
-Still deferred (Phase 20 and beyond):
+Still deferred (Phase 25+ and later):
 
-- v1.0.0 release and config/DB schema versioning (Phase 20)
+- v1.0.0 release and config/DB schema versioning (Phase 25)
 - remote feed capture
 - hosted persistence
 - download renaming or organization rules
@@ -66,7 +66,7 @@ Current planning focus:
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
-- Phase 20 release/versioning (`schemaVersion`, tagged v1, changelog) is the remaining numbered exit after the shipped Phase 19 redesign; keep Phase 20 dashboard torrent work in the Phase 20 product doc, not under the Phase 19 contract
+- Phase 25 (`schemaVersion`, tagged v1, `VERSIONING.md`, changelog) is the remaining numbered release exit; keep Phase 20 dashboard torrent work in [`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md), not under the Phase 19 contract
 
 ## Read These Docs By Task Type
 

@@ -204,11 +204,11 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 ## Current Scope
 
-Pirate Claw is a local operator tool for a personal NAS. The roadmap through Phase 20 targets a polished, fully-featured v1.0.0 release.
+Pirate Claw is a local operator tool for a personal NAS. The roadmap targets Phase 20 (dashboard Transmission proxy) and Phase 25 (v1.0.0 / schema versioning) as the next numbered product milestones after the shipped Phase 19 UI work.
 
 **Implemented (Phases 01–19):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional read-only Plex Media Server enrichment, and the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, and a TMDB refresh control on TV detail.
 
-**Planned (Phase 20):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release.
+**Planned (Phase 25):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release (see `docs/01-product/phase-25-v1-release-and-schema-versioning.md`).
 
 Not in scope through v1:
 

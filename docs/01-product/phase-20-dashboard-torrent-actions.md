@@ -2,6 +2,8 @@
 
 **Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-20/` implementation plan until tickets are approved.
 
+**Numbering note:** The v1.0.0 / schema-versioning milestone that previously occupied the “Phase 20” planning slot is now **[Phase 25: v1.0.0 release and schema versioning](./phase-25-v1-release-and-schema-versioning.md)**. This document keeps **Phase 20** exclusively for the dashboard-as-Transmission-proxy work below.
+
 ## TL;DR
 
 **Goal:** Make the dashboard a functional proxy for the Transmission client. Add torrent lifecycle actions via a right-click context menu on TorrentManagerCard rows, wire the Queue control on the Transmission failures card (failed enqueue retries), and clean up the data model by replacing the redundant `CandidateLifecycleStatus` with a derived state pattern and a new `pirateClawDisposition` field.
