@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
 import type { PageData } from './$types';
@@ -154,14 +154,19 @@ describe('/movies', () => {
 			mockMovie({ identityKey: 'a', normalizedTitle: 'Alpha', tmdb: undefined })
 		];
 
-		render(Page, { data: { ...sharedLayoutData, movies, torrents: null, error: null } });
+		const { container } = render(Page, {
+			data: { ...sharedLayoutData, movies, torrents: null, error: null }
+		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Title' }));
 
-		const headings = screen
+		const grid = container.querySelector('section ul');
+		expect(grid).not.toBeNull();
+		const movieTitles = within(grid as HTMLElement)
 			.getAllByRole('heading', { level: 2 })
-			.map((heading) => heading.textContent?.trim());
-		expect(headings.slice(0, 2)).toEqual(['Alpha', 'Zulu']);
+			.map((heading) => heading.textContent?.trim())
+			.filter((text) => text && text !== 'Add New');
+		expect(movieTitles).toEqual(['Alpha', 'Zulu']);
 	});
 
 	it('renders empty and error states', () => {

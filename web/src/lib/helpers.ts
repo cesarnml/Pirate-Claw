@@ -1,4 +1,4 @@
-import type { CandidateStateRecord } from '$lib/types';
+import type { CandidateStateRecord, MovieBreakdown } from '$lib/types';
 
 // ── Date / time ──────────────────────────────────────────────────────────────
 
@@ -91,6 +91,56 @@ export function initialBox(title: string): string {
 export function archiveHref(candidate: CandidateStateRecord): string {
 	const slug = encodeURIComponent(candidate.normalizedTitle);
 	return candidate.mediaType === 'tv' ? `/shows/${slug}` : '/movies';
+}
+
+// ── Movie display helpers ─────────────────────────────────────────────────────
+
+export function movieDisplayTitle(movie: MovieBreakdown): string {
+	return movie.tmdb?.title ?? movie.normalizedTitle;
+}
+
+export function formatRating(value: number): string {
+	return value.toFixed(1);
+}
+
+/**
+ * Short date for movie "Queued" badges: "18 Apr 26".
+ * Distinct from formatShortDate (uses UTC locale, different shape).
+ */
+export function formatMovieQueuedDate(value: string | undefined): string {
+	if (!value) return 'Unknown';
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return 'Unknown';
+	const day = date.getDate().toString().padStart(2, '0');
+	const month = date.toLocaleString('en-US', { month: 'short' });
+	const year = date.getFullYear().toString().slice(-2);
+	return `${day} ${month} ${year}`;
+}
+
+export function formatLastWatched(value: string | null): string {
+	if (!value) return 'No Plex activity';
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return 'No Plex activity';
+	return `Last watched ${date.toLocaleDateString()}`;
+}
+
+/** Returns true when a Plex status badge should be shown (library hit or confirmed miss). */
+export function hasPlexChip(plexStatus: string | undefined | null): boolean {
+	return plexStatus === 'in_library' || plexStatus === 'missing';
+}
+
+/**
+ * Validates an image URL is https-only. Returns null for missing, non-https, or malformed URLs.
+ * Use `movieBackdropSrc` for backdrop images that should fall back to the static default.
+ */
+export function safeHttpsUrl(value: string | undefined): string | null {
+	if (!value) return null;
+	try {
+		const url = new URL(value);
+		return url.protocol === 'https:' ? url.href : null;
+	} catch {
+		return null;
+	}
 }
 
 /** Served from `static/` in SvelteKit — used when TMDB backdrop is missing or not https. */

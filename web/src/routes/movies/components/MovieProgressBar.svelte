@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatSpeed } from '$lib/helpers';
 	import type { TorrentStatSnapshot } from '$lib/types';
 
 	const props = $props<{
@@ -6,11 +7,6 @@
 		live: TorrentStatSnapshot | undefined;
 		status: string;
 	}>();
-
-	function formatSpeed(bytesPerSecond: number): string {
-		if (bytesPerSecond >= 1_048_576) return `${(bytesPerSecond / 1_048_576).toFixed(1)} MB/s`;
-		return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
-	}
 </script>
 
 <div class="space-y-2">
