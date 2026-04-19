@@ -17,6 +17,13 @@ function envWithoutProcessWriteToken(): Record<string, string | undefined> {
   return copy;
 }
 
+/** Avoid coupling tests to a developer's `PIRATE_CLAW_PLEX_TOKEN` in the environment. */
+function envWithoutProcessPlexToken(): Record<string, string | undefined> {
+  const copy = { ...process.env } as Record<string, string | undefined>;
+  delete copy.PIRATE_CLAW_PLEX_TOKEN;
+  return copy;
+}
+
 describe('validateConfig', () => {
   it('loads compact tv defaults and show names into normalized tv rules', () => {
     const config = validateConfig({
@@ -906,12 +913,16 @@ describe('validateConfig', () => {
 
   it('fails when plex block is present without any token source', () => {
     expect(() =>
-      validateConfig({
-        ...createMinimalConfig(),
-        plex: {
-          url: 'http://plex.local:32400',
+      validateConfig(
+        {
+          ...createMinimalConfig(),
+          plex: {
+            url: 'http://plex.local:32400',
+          },
         },
-      }),
+        'config',
+        envWithoutProcessPlexToken(),
+      ),
     ).toThrow(
       new ConfigError(
         'Config file "config plex token" must be a non-empty string.',

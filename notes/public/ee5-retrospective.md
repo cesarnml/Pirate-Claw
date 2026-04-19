@@ -81,7 +81,7 @@ All three were genuine issues worth the external review gate.
 
 **The SonarQube cognitive complexity warnings (orchestrator.ts: 19, ticket-flow.ts: 16) are genuine.** Both are one level above the 15-allowed threshold after EE5 additions. The `runDeliveryOrchestrator` function grew with the doc-only skip path; `buildTicketHandoff` grew with the `modifiedSectionsNote` conditional block. Neither is immediately problematic, but they're candidates for helper extraction in a future engineering epic if the functions continue growing.
 
-**Consider a `bun run verify:quiet` pre-push hook variant.** The current pre-push hook runs `bun run verify`. If that's noisy in a hook context, `verify:quiet` would suppress passing output there too. Not urgent (hooks don't add to session context), but consistent with the principle.
+**Pre-push now runs `bun run ci:quiet`.** The hook matches CI (`bun run ci`: verify + root tests + web tests) with the same “silent on success, failure lines only” behavior as `verify:quiet`. Install hooks once with `bun run hooks:install` (`core.hooksPath=.githooks`).
 
 ---
 

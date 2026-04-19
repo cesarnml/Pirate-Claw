@@ -218,7 +218,9 @@ Not in scope through v1:
 bun test
 bun run test:coverage
 bun run verify          # root + web/ format, lint, svelte-check
-bun run ci
+bun run ci              # verify + test + test:web (same as GitHub Actions)
+bun run ci:quiet        # same as ci; quiet on success (pre-push hook uses this)
+bun run hooks:install   # once per clone: use .githooks so pre-push runs ci:quiet
 ```
 
 Delivery commands (for contributors working the stacked PR workflow):

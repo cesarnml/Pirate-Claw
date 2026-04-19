@@ -9,13 +9,14 @@ These are candidate workflow improvements to review before phase 02 planning. Th
 - work is ticketed in small vertical slices
 - plans are created when needed, then implementation follows
 - PR and squash titles carry ticket linkage when clear; normal commits stay clean
-- CI runs `verify` (including `web/` checks), `test`, and `test:web`
+- CI runs `bun run ci` (`verify`, then `test`, then `test:web`)
+- pre-push (when `core.hooksPath` is `.githooks` via `bun run hooks:install`) runs `bun run ci:quiet` — same workload as CI, silent on success, failure lines only on error
 - AI review comments are advisory, not authoritative
 - engineering lessons are documented once instead of rediscovered per ticket
 
 ## High-Value Improvements To Consider
 
-- Add a small pre-push gate that runs the same checks as CI: `bun run verify` and `bun run test`.
+- **Implemented:** `.githooks/pre-push` runs `bun run ci:quiet` (same workload as `bun run ci`, quiet on success).
 - Keep short runtime portability notes for each active stack so future tickets do not repeat known environment mistakes.
 - Add a minimal PR checklist template:
   - red-first behavior

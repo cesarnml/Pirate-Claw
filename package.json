@@ -11,6 +11,7 @@
     "bootstrap:web": "bun install --cwd web --frozen-lockfile",
     "check:web": "bun run bootstrap:web && bun run --cwd web check",
     "ci": "bun run verify && bun run test && bun run test:web",
+    "ci:quiet": "bun run ./scripts/ci-quiet.ts",
     "deliver": "bun run ./scripts/deliver.ts",
     "daemon:dev": "bun --watch ./src/cli.ts daemon",
     "format": "prettier --write . --ignore-path .prettierignore.root",

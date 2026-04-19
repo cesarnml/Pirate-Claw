@@ -22,4 +22,4 @@ if [ -z "$BUN_BIN" ]; then
   exit 1
 fi
 
-exec "$BUN_BIN" run verify
+exec "$BUN_BIN" run ci:quiet

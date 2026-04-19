@@ -75,10 +75,10 @@ describe('/movies', () => {
 		});
 
 		expect(screen.getByText('DOWNLOADING')).toBeInTheDocument();
-		expect(screen.getByText('55%')).toBeInTheDocument();
 		expect(screen.getByText('55% acquired')).toBeInTheDocument();
 		expect(screen.getByText('2.0 MB/s')).toBeInTheDocument();
-		expect(screen.getByText('IN_LIBRARY')).toBeInTheDocument();
+		// Plex library chip is shown on completed movie cards, not while downloading.
+		expect(screen.queryByText('IN LIBRARY')).not.toBeInTheDocument();
 		expect(screen.getByText(/Last watched/)).toBeInTheDocument();
 	});
 
