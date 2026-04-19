@@ -119,9 +119,9 @@ describe('/', () => {
 			}
 		});
 
-		expect(screen.getByText('Total tracked').parentElement).toHaveTextContent('3');
-		expect(screen.getByText('Critical failures').parentElement).toHaveTextContent('3');
-		expect(screen.getByText('Filtered / skipped').parentElement).toHaveTextContent('8');
+		expect(screen.getByText('Total').parentElement).toHaveTextContent('3');
+		expect(screen.getByText('Failures').parentElement).toHaveTextContent('3');
+		expect(screen.getByText('Skipped').parentElement).toHaveTextContent('8');
 	});
 
 	it('renders active downlink cards with progress and transport details', () => {
@@ -146,7 +146,7 @@ describe('/', () => {
 		expect(screen.getByText('1080p')).toBeInTheDocument();
 		expect(screen.getByText('x265')).toBeInTheDocument();
 		expect(screen.getByText('42%')).toBeInTheDocument();
-		expect(screen.getByText('1.0 MB/s')).toBeInTheDocument();
+		expect(screen.getAllByText('1.0 MB/s').length).toBeGreaterThan(0);
 	});
 
 	it('renders the event log from unmatched outcomes', () => {
@@ -158,7 +158,7 @@ describe('/', () => {
 		});
 
 		expect(
-			screen.getByRole('heading', { name: /Recent unmatched feed events/i })
+			screen.getByRole('heading', { name: /Skipped\/Failed Candidates/i })
 		).toBeInTheDocument();
 		expect(screen.getByText('Stranger.Things.S05E01.4K.WEB.x265-GROUP')).toBeInTheDocument();
 		expect(screen.getAllByText('SKIPPED')).toHaveLength(2);
@@ -173,8 +173,8 @@ describe('/', () => {
 			}
 		});
 
-		expect(screen.getByText('Critical failures').parentElement).toHaveTextContent('—');
-		expect(screen.getByText('Filtered / skipped').parentElement).toHaveTextContent('—');
+		expect(screen.getByText('Failures').parentElement).toHaveTextContent('—');
+		expect(screen.getByText('Skipped').parentElement).toHaveTextContent('—');
 		expect(screen.getByText('Recent outcome data is unavailable.')).toBeInTheDocument();
 	});
 
