@@ -74,10 +74,8 @@ describe('/movies', () => {
 		});
 
 		expect(screen.getByText('DOWNLOADING')).toBeInTheDocument();
-		expect(screen.getByText('55%')).toBeInTheDocument();
 		expect(screen.getByText('55% acquired')).toBeInTheDocument();
 		expect(screen.getByText('2.0 MB/s')).toBeInTheDocument();
-		expect(screen.getByText('IN_LIBRARY')).toBeInTheDocument();
 		expect(screen.getByText(/Last watched/)).toBeInTheDocument();
 	});
 

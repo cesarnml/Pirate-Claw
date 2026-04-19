@@ -91,7 +91,7 @@ describe('/shows/[slug]', () => {
 		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The Show');
 		expect(screen.getByText('HBO')).toBeInTheDocument();
 		expect(screen.getByText('PLEX PLAYS 2')).toBeInTheDocument();
-		expect(screen.getByText('IN_LIBRARY')).toBeInTheDocument();
+		expect(screen.getByText('IN LIBRARY')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Refresh TMDB/i })).toBeInTheDocument();
 	});
 
