@@ -160,7 +160,8 @@
 									{:else if canRequeue}
 										<button
 											type="button"
-											disabled={!!inflightRequeue && inflightRequeue !== outcome.identityKey}
+											disabled={(!!inflightRequeue && inflightRequeue !== outcome.identityKey) ||
+												isInflight}
 											onclick={() => requeue(outcome.identityKey)}
 											class="bg-primary/15 text-primary border-primary/30 hover:bg-primary/22 inline-flex h-6 cursor-pointer items-center rounded-md border px-2 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
 										>
