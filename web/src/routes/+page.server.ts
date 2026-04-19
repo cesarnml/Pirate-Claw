@@ -145,10 +145,9 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const identityKey = formData.get('identityKey');
 		if (typeof identityKey !== 'string') return fail(400, { error: 'identityKey is required' });
-		const res = await apiRequest(
-			`/api/candidates/${encodeURIComponent(identityKey)}/requeue`,
-			{ method: 'POST' }
-		);
+		const res = await apiRequest(`/api/candidates/${encodeURIComponent(identityKey)}/requeue`, {
+			method: 'POST'
+		});
 		if (!res.ok) {
 			let error = 'Request failed';
 			try {
