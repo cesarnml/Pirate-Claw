@@ -98,14 +98,14 @@ In-flight: menu disabled while request is in flight. On failure: inline error di
 
 All new endpoints are flat `if (path === ... && request.method === 'POST')` blocks in `createApiFetch`. Request body is JSON. All transmission action endpoints accept `{ hash: string }`.
 
-| Endpoint                                           | Transmission RPC                             | DB Write                                                      |
-| -------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------- |
-| `POST /api/transmission/torrent/pause`             | `torrent-stop`                               | none                                                          |
-| `POST /api/transmission/torrent/resume`            | `torrent-start`                              | none                                                          |
-| `POST /api/transmission/torrent/remove`            | `torrent-remove`                             | `pirateClawDisposition = 'removed'` (if not completed)        |
-| `POST /api/transmission/torrent/remove-and-delete` | `torrent-remove` + `delete-local-data: true` | `pirateClawDisposition = 'deleted'`                           |
-| `POST /api/transmission/torrent/dispose`           | none                                         | `pirateClawDisposition = body.disposition` (resolves missing) |
-| `POST /api/candidates/:id/requeue`                 | none (calls `downloader.submit` directly)    | writes `transmissionTorrentId/Hash` on success                |
+| Endpoint                                           | Transmission RPC                             | DB Write                                                             |
+| -------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| `POST /api/transmission/torrent/pause`             | `torrent-stop`                               | none                                                                 |
+| `POST /api/transmission/torrent/resume`            | `torrent-start`                              | none                                                                 |
+| `POST /api/transmission/torrent/remove`            | `torrent-remove`                             | `pirateClawDisposition = 'removed'` (downloading, paused, completed) |
+| `POST /api/transmission/torrent/remove-and-delete` | `torrent-remove` + `delete-local-data: true` | `pirateClawDisposition = 'deleted'`                                  |
+| `POST /api/transmission/torrent/dispose`           | none                                         | `pirateClawDisposition = body.disposition` (resolves missing)        |
+| `POST /api/candidates/:id/requeue`                 | none (calls `downloader.submit` directly)    | writes `transmissionTorrentId/Hash` on success                       |
 
 ### New Transmission Service Functions (in `src/transmission.ts`)
 

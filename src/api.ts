@@ -1073,7 +1073,11 @@ export function createApiFetch(
         return Response.json({ error: rpc.message }, { status: 502 });
       }
 
-      if (ctx.rowState === 'downloading' || ctx.rowState === 'paused') {
+      if (
+        ctx.rowState === 'downloading' ||
+        ctx.rowState === 'paused' ||
+        ctx.rowState === 'completed'
+      ) {
         repository.setPirateClawDisposition(
           ctx.candidate.identityKey,
           'removed',

@@ -25,14 +25,14 @@ Must return zero matches.
 
 ### 3. Endpoint smoke tests (manual)
 
-| Endpoint                                           | Test                                                                                        |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `POST /api/transmission/torrent/pause`             | Valid downloading hash → 200; non-downloading hash → 400                                    |
-| `POST /api/transmission/torrent/resume`            | Valid paused hash → 200; non-paused hash → 400                                              |
-| `POST /api/transmission/torrent/remove`            | Downloading candidate → 200, disposition written; completed candidate → 200, no disposition |
-| `POST /api/transmission/torrent/remove-and-delete` | Any active candidate → 200, disposition = deleted                                           |
-| `POST /api/transmission/torrent/dispose`           | Missing candidate + valid disposition → 200; non-missing → 400                              |
-| `POST /api/candidates/:id/requeue`                 | Failed candidate → 200, torrent fields written; non-eligible → 400                          |
+| Endpoint                                           | Test                                                                             |
+| -------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `POST /api/transmission/torrent/pause`             | Valid downloading hash → 200; non-downloading hash → 400                         |
+| `POST /api/transmission/torrent/resume`            | Valid paused hash → 200; non-paused hash → 400                                   |
+| `POST /api/transmission/torrent/remove`            | Downloading, paused, or completed candidate → 200, `removed` disposition written |
+| `POST /api/transmission/torrent/remove-and-delete` | Any active candidate → 200, disposition = deleted                                |
+| `POST /api/transmission/torrent/dispose`           | Missing candidate + valid disposition → 200; non-missing → 400                   |
+| `POST /api/candidates/:id/requeue`                 | Failed candidate → 200, torrent fields written; non-eligible → 400               |
 
 ### 4. UI verification
 
