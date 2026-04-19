@@ -906,12 +906,16 @@ describe('validateConfig', () => {
 
   it('fails when plex block is present without any token source', () => {
     expect(() =>
-      validateConfig({
-        ...createMinimalConfig(),
-        plex: {
-          url: 'http://plex.local:32400',
+      validateConfig(
+        {
+          ...createMinimalConfig(),
+          plex: {
+            url: 'http://plex.local:32400',
+          },
         },
-      }),
+        'config',
+        {},
+      ),
     ).toThrow(
       new ConfigError(
         'Config file "config plex token" must be a non-empty string.',

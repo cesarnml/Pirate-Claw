@@ -115,8 +115,8 @@ export function torrentDisplayState(
 ): TorrentDisplayState {
 	if (candidate.pirateClawDisposition) return candidate.pirateClawDisposition;
 	if (!candidate.transmissionTorrentHash) return 'queued';
-	if (!liveHashes.has(candidate.transmissionTorrentHash)) return 'missing';
 	if (candidate.transmissionPercentDone === 1) return 'completed';
+	if (!liveHashes.has(candidate.transmissionTorrentHash)) return 'missing';
 	if (candidate.transmissionStatusCode === 0) return 'paused';
 	return 'downloading';
 }

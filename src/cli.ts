@@ -606,6 +606,16 @@ function formatRecentRuns(runs: RunSummaryRecord[]): string[] {
   );
 }
 
+function deriveCandidateDisplayStatus(candidate: CandidateStateRecord): string {
+  if (candidate.pirateClawDisposition) return candidate.pirateClawDisposition;
+  if (!candidate.transmissionTorrentHash) return candidate.status;
+  if (candidate.reconciledAt && candidate.transmissionStatusCode === undefined)
+    return candidate.status;
+  if (candidate.transmissionPercentDone === 1) return 'completed';
+  if (candidate.transmissionStatusCode === 0) return 'paused';
+  return 'downloading';
+}
+
 function formatCandidateStates(candidates: CandidateStateRecord[]): string[] {
   if (candidates.length === 0) {
     return ['No candidate states recorded.'];
@@ -613,7 +623,7 @@ function formatCandidateStates(candidates: CandidateStateRecord[]): string[] {
 
   return sortCandidatesForStatus(candidates).map((candidate) =>
     [
-      `${candidate.identityKey} | status=${candidate.pirateClawDisposition ?? candidate.status} | rule=${candidate.ruleName} | title=${candidate.normalizedTitle}`,
+      `${candidate.identityKey} | status=${deriveCandidateDisplayStatus(candidate)} | rule=${candidate.ruleName} | title=${candidate.normalizedTitle}`,
       formatCandidateMetadata(candidate),
       `updated=${candidate.updatedAt} | queued=${candidate.queuedAt ?? '-'} | reconciled=${candidate.reconciledAt ?? '-'}`,
     ].join('\n'),
