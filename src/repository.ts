@@ -332,7 +332,7 @@ export function createRepository(database: Database): Repository {
     FROM feed_item_outcomes fo
     LEFT JOIN feed_items fi ON fo.feed_item_id = fi.id
     WHERE (fo.status = 'skipped_no_match' OR fo.status = 'failed')
-      AND fo.created_at >= datetime('now', '-' || ?1 || ' days')
+      AND datetime(fo.created_at) >= datetime('now', '-' || ?1 || ' days')
     GROUP BY fi.guid_or_link, fi.raw_title
     ORDER BY fo.created_at DESC`,
   );
@@ -687,7 +687,7 @@ export function createRepository(database: Database): Repository {
           AND cs.pirate_claw_disposition IS NULL
         )
       )
-      AND fo.created_at >= datetime('now', '-' || ?1 || ' days')
+      AND datetime(fo.created_at) >= datetime('now', '-' || ?1 || ' days')
     ORDER BY fo.created_at DESC`,
   );
   const requeueCandidateStatement = database.prepare(
@@ -1082,7 +1082,7 @@ function buildDistinctOutcomesFilteredSql(
       fi.guid_or_link AS guidOrLink
     FROM feed_item_outcomes fo
     LEFT JOIN feed_items fi ON fo.feed_item_id = fi.id
-    WHERE fo.created_at >= datetime('now', '-' || ?1 || ' days')
+    WHERE datetime(fo.created_at) >= datetime('now', '-' || ?1 || ' days')
       AND (
         fo.status = 'failed'
         OR (

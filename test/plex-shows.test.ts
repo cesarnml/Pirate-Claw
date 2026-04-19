@@ -20,7 +20,6 @@ function stubRepository(): Repository {
     failRun: () => ({ id: 1, startedAt: '', status: 'failed' }),
     recordFeedItem: () => ({}) as never,
     getCandidateState: () => undefined,
-    getCandidateStateByTransmissionHash: () => undefined,
     isCandidateQueued: () => false,
     recordCandidateOutcome: () => ({}) as never,
     recordCandidateReconciliation: () => ({}) as never,
