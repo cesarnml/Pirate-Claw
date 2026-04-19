@@ -10,7 +10,7 @@
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
-	import { enhance } from '$app/forms';
+	import { deserialize, enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 
 	type ActiveDownload = {
@@ -100,6 +100,12 @@
 
 	async function executeAction(action: MenuAction, hash: string) {
 		if (inflightAction) return;
+		if (
+			action === 'removeAndDelete' &&
+			!confirm('Remove this torrent and delete its downloaded data? This cannot be undone.')
+		) {
+			return;
+		}
 		menuState = null;
 		inflightAction = hash;
 		delete actionErrors[hash];
@@ -107,11 +113,14 @@
 		formData.append('hash', hash);
 		try {
 			const res = await fetch(`?/${action}`, { method: 'POST', body: formData });
-			if (res.ok) {
+			const result = deserialize(await res.text());
+			if (result.type === 'success') {
 				await invalidateAll();
+			} else if (result.type === 'failure') {
+				const data = result.data as { error?: string } | undefined;
+				actionErrors[hash] = data?.error ?? 'Request failed';
 			} else {
-				const body = (await res.json().catch(() => ({}))) as { error?: string };
-				actionErrors[hash] = body.error ?? 'Request failed';
+				actionErrors[hash] = 'Request failed';
 			}
 		} catch {
 			actionErrors[hash] = 'Network error';

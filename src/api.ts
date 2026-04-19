@@ -701,8 +701,9 @@ export function createApiFetch(
           { status: 400 },
         );
       }
-      const outcomes = repository.listSkippedNoMatchOutcomes(30);
-      return safeJson(() => ({ outcomes }));
+      return safeJson(() => ({
+        outcomes: repository.listSkippedNoMatchOutcomes(30),
+      }));
     }
 
     if (path === '/api/transmission/torrents' && request.method === 'GET') {
