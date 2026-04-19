@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import { showDisplayTitle } from '$lib/helpers';
-	import type { ShowBreakdown, ShowSeason } from '$lib/types';
+	import type { ShowBreakdown } from '$lib/types';
 	import type { PageData } from './$types';
 	import ShowCard from './components/ShowCard.svelte';
 	import ShowsDeckHeader from './components/ShowsDeckHeader.svelte';
@@ -13,11 +13,6 @@
 	type SortKey = 'title' | 'rating' | 'progress' | 'recent';
 
 	let sortKey = $state<SortKey>('title');
-	let expandedShow = $state<string | null>(null);
-	let hasInitializedExpandedShow = $state(false);
-	let selectedSeasonByShow = $state<Record<string, number>>({});
-
-	const torrents = $derived(data.torrents ?? []);
 
 	function completionPct(show: ShowBreakdown): number | null {
 		const totalEpisodes = show.seasons.reduce((sum, s) => sum + s.episodes.length, 0);
@@ -38,30 +33,6 @@
 			return latest;
 		}, 0);
 	}
-
-	function activeSeason(show: ShowBreakdown): ShowSeason | null {
-		if (show.seasons.length === 0) return null;
-		const selected = selectedSeasonByShow[show.normalizedTitle];
-		return show.seasons.find((s) => s.season === selected) ?? show.seasons[0] ?? null;
-	}
-
-	function openShow(show: ShowBreakdown): void {
-		if (expandedShow === show.normalizedTitle) {
-			expandedShow = null;
-			return;
-		}
-		expandedShow = show.normalizedTitle;
-		selectedSeasonByShow = {
-			...selectedSeasonByShow,
-			[show.normalizedTitle]: show.seasons[0]?.season ?? 1
-		};
-	}
-
-	$effect(() => {
-		if (hasInitializedExpandedShow || data.shows.length === 0) return;
-		expandedShow = data.shows[0].normalizedTitle;
-		hasInitializedExpandedShow = true;
-	});
 
 	const sortedShows = $derived(
 		[...data.shows].sort((left, right) => {
@@ -90,16 +61,7 @@
 		<ul class="grid list-none gap-5 lg:grid-cols-2 xl:grid-cols-3">
 			{#each sortedShows as show (show.normalizedTitle)}
 				<li class="min-w-0">
-					<ShowCard
-						{show}
-						{torrents}
-						expanded={expandedShow === show.normalizedTitle}
-						selectedSeason={activeSeason(show)}
-						onToggleExpand={() => openShow(show)}
-						onSelectSeason={(season) => {
-							selectedSeasonByShow = { ...selectedSeasonByShow, [show.normalizedTitle]: season };
-						}}
-					/>
+					<ShowCard {show} />
 				</li>
 			{/each}
 		</ul>

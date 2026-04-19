@@ -1,21 +1,14 @@
 <script lang="ts">
-	import ClapperboardIcon from '@lucide/svelte/icons/clapperboard';
-	import StarIcon from '@lucide/svelte/icons/star';
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { movieBackdropSrc } from '$lib/helpers';
-	import type { MovieBreakdown, TorrentStatSnapshot } from '$lib/types';
+	import type { MovieBreakdown } from '$lib/types';
+	import ClapperboardIcon from '@lucide/svelte/icons/clapperboard';
+	import StarIcon from '@lucide/svelte/icons/star';
 	import MovieProgressBar from './MovieProgressBar.svelte';
 
-	type DeckStatus = 'queued' | 'downloading' | 'paused' | 'completed' | 'missing' | 'error';
-
-	const props = $props<{
-		movie: MovieBreakdown;
-		live: TorrentStatSnapshot | undefined;
-		status: DeckStatus;
-		pct: number;
-	}>();
+	const props = $props();
 
 	function displayTitle(movie: MovieBreakdown): string {
 		return movie.tmdb?.title ?? movie.normalizedTitle;
@@ -65,7 +58,7 @@
 		<img
 			src={backdropUrl}
 			alt=""
-			class="h-full w-full object-cover opacity-35 transition duration-500 group-hover:scale-[1.02]"
+			class="h-full w-full object-cover opacity-70 transition duration-500 group-hover:scale-[1.05]"
 			loading="lazy"
 		/>
 		<div

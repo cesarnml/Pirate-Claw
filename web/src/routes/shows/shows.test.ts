@@ -126,41 +126,23 @@ describe('/shows', () => {
 		expect(screen.getByText('8.1')).toBeInTheDocument();
 	});
 
-	it('expands the selected show inline and switches season tabs', async () => {
+	it('links each show card to its detail page', () => {
 		render(Page, {
 			data: {
 				...sharedLayoutData,
-				shows: [exampleShow],
+				shows: [exampleShow, archiveShow],
 				torrents: [liveTorrent],
 				error: null
 			}
 		});
 
-		expect(screen.getByText('Inline episode state')).toBeInTheDocument();
-		expect(screen.getByText('Pilot')).toBeInTheDocument();
-
-		await fireEvent.click(screen.getByRole('button', { name: 'Season 2' }));
-
-		expect(screen.getByText('Season Premiere')).toBeInTheDocument();
-		expect(screen.queryByText('Pilot')).not.toBeInTheDocument();
-	});
-
-	it('keeps all shows collapsed after the active card is manually closed', async () => {
-		render(Page, {
-			data: {
-				...sharedLayoutData,
-				shows: [exampleShow],
-				torrents: [liveTorrent],
-				error: null
-			}
+		const exampleLink = screen.getByRole('link', {
+			name: /Open show details for The Example Show/i
 		});
+		expect(exampleLink).toHaveAttribute('href', '/shows/the%20example%20show');
 
-		expect(screen.getByText('Inline episode state')).toBeInTheDocument();
-
-		await fireEvent.click(screen.getByRole('button', { name: /Hide season drill-down/i }));
-
-		expect(screen.queryByText('Inline episode state')).not.toBeInTheDocument();
-		expect(screen.queryByText('42%')).not.toBeInTheDocument();
+		const archiveLink = screen.getByRole('link', { name: /Open show details for Archive Unit/i });
+		expect(archiveLink).toHaveAttribute('href', '/shows/archive%20unit');
 	});
 
 	it('supports rating, progress, and recently added sorts', async () => {
@@ -189,7 +171,7 @@ describe('/shows', () => {
 		expect(headings[0]).toHaveTextContent('The Example Show');
 	});
 
-	it('renders live transfer progress and detail links inside the expanded state', () => {
+	it('exposes a single primary link on each card to the show detail route', () => {
 		render(Page, {
 			data: {
 				...sharedLayoutData,
@@ -199,15 +181,11 @@ describe('/shows', () => {
 			}
 		});
 
-		expect(screen.getByText('42%')).toBeInTheDocument();
-		expect(screen.getAllByText('1.0 MB/s')[0]).toBeInTheDocument();
-		expect(
-			screen.getByRole('link', { name: /Open The Example Show detail page/i })
-		).toHaveAttribute('href', '/shows/the%20example%20show');
-		expect(screen.getByRole('link', { name: /Open full show detail/i })).toHaveAttribute(
-			'href',
-			'/shows/the%20example%20show'
-		);
+		const links = screen.getAllByRole('link', {
+			name: /Open show details for The Example Show/i
+		});
+		expect(links).toHaveLength(1);
+		expect(links[0]).toHaveAttribute('href', '/shows/the%20example%20show');
 	});
 
 	it('renders empty and error states', () => {
