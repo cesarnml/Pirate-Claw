@@ -1,14 +1,14 @@
 # Phase 20: Dashboard Torrent Actions
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-20/` implementation plan until tickets are approved.
+**Delivery status:** **Shipped on `main`.** Dashboard Transmission proxy, daemon JSON actions, `pirateClawDisposition` + derived `torrentDisplayState()`, and Transmission failures / requeue are live. Ticket stack and verification notes: [`docs/02-delivery/phase-20/implementation-plan.md`](../02-delivery/phase-20/implementation-plan.md); retrospective: [`notes/public/phase-20-retrospective.md`](../../notes/public/phase-20-retrospective.md).
 
 **Numbering note:** The v1.0.0 / schema-versioning milestone that previously occupied the “Phase 20” planning slot is now **[Phase 25: v1.0.0 release and schema versioning](./phase-25-v1-release-and-schema-versioning.md)**. This document keeps **Phase 20** exclusively for the dashboard-as-Transmission-proxy work below.
 
 ## TL;DR
 
-**Goal:** Make the dashboard a functional proxy for the Transmission client. Add torrent lifecycle actions via a right-click context menu on TorrentManagerCard rows, wire the Queue control on the Transmission failures card (failed enqueue retries), and clean up the data model by replacing the redundant `CandidateLifecycleStatus` with a derived state pattern and a new `pirateClawDisposition` field.
+**Goal (met on `main`):** The dashboard acts as a functional proxy for the Transmission client: torrent lifecycle actions from a right-click context menu on Torrent Manager rows, a **Queue** control on the Transmission failures card for failed enqueue retries, and a data-model clean break replacing redundant `CandidateLifecycleStatus` with derived display state plus `pirateClawDisposition`.
 
-**Ships:** Pause, resume, remove, remove+delete torrent actions; missing-torrent disposition resolution; manual requeue for candidates still in `failed` after a Transmission enqueue failure; data model clean break.
+**Ships (on `main`):** Pause, resume, remove, remove-with-delete torrent actions; missing-torrent disposition resolution; manual requeue for candidates still in `failed` after a Transmission enqueue failure; startup migration dropping `lifecycle_status` and adding `pirate_claw_disposition`; reconciler guard for terminal dispositions.
 
 **Defers:** Router extraction (future Hono migration); multi-torrent bulk actions; audit log.
 
@@ -141,6 +141,8 @@ The dashboard lists **deduped** matched candidates whose latest feed outcome is 
 ## Exit Condition
 
 A user can pause, resume, remove, and requeue torrents entirely from the Pirate Claw dashboard without opening the Transmission web UI. Missing torrents can be resolved to a terminal state. The data model has a single source of truth for torrent state. The DB carries no `lifecycle_status` column.
+
+**Status:** This exit condition is satisfied on `main` (see delivery plan and retrospective above).
 
 ## Retrospective
 
