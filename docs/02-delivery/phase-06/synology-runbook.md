@@ -1149,11 +1149,16 @@ Validated on the same baseline (`DS918+`, DSM `7.1.1-42962 Update 9`, Docker 20.
 
 ### Outcome summary
 
+**Update (2026-04-19):** Current NAS operations are described in
+**`docs/synology-runbook.md`**. Routine image upgrades **do not** copy repo
+`pirate-claw.config.json`, `.env`, or `web/.env` to the NAS; config is owned on
+the NAS and updated via the **Web UI** (or rare NAS-side edits). The bullets
+below record only the **2026-04-09** parity snapshot.
+
 - `pirate-claw:latest` rebuilt from local repo `main` and redeployed.
 - `pirate-claw-web:latest` built from `web/Dockerfile` and deployed.
-- `/volume1/pirate-claw/config/.env` now matches local repo `.env`.
-- `/volume1/pirate-claw/config/web/.env` now matches local repo `web/.env`.
-- `/volume1/pirate-claw/config/pirate-claw.config.json` is parity with local config except the NAS keeps its larger `tv.shows` list.
+- During that parity pass, host `.env` / `web.env` / JSON were aligned with a
+  developer checkout; **do not** treat that as an ongoing deploy requirement.
 - Bun `.env` caveat remains enforced: mount `.env` at `/config/.env`, never `/app/.env`.
 
 ### Phase 11 parity deployment commands

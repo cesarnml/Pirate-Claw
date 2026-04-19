@@ -361,7 +361,14 @@ Expected checks:
 Use this when you want to ship a new `main` tree to the NAS and **rebuild
 container images only**. Keep the operator files already on the NAS under
 `/volume1/pirate-claw/config/` (`.env`, `pirate-claw.config.json`, `web.env`) —
-do not overwrite them from the repo when redeploying.
+**never** replace them from a developer laptop during routine upgrades.
+
+**Source of truth:** after initial bootstrap, `pirate-claw.config.json` and the
+bounded config surfaces are maintained **on the NAS** via the **Web UI**
+(`PUT /api/config`, feeds, movies, TV defaults) or rare **NAS-side** edits (for
+fields the UI does not expose yet). Do **not** treat the git repo’s local
+`pirate-claw.config.json` / `.env` / `web/.env` as something to `scp` or
+`tee` onto the NAS when redeploying images.
 
 ### 1. Copy source to the NAS (tar over SSH)
 
@@ -392,11 +399,29 @@ tar czf - \
 The running stack reads secrets and web env from the host paths described in
 **Config And Secrets Contract** (typically `.env`, `pirate-claw.config.json`,
 and `web.env` under `/volume1/pirate-claw/config/`). For routine image upgrades,
-**do not replace those files** from a developer laptop.
+**do not replace those files** from a developer laptop — there is **no** deploy
+step that copies repo-root `pirate-claw.config.json`, `.env`, or `web/.env` to
+the NAS.
 
-Bootstrap only (new host or missing `web.env`): create the files on the NAS
-once, then continue with the build steps. `web.env` is the env-file passed to
-`pirate-claw-web` (`--env-file`; Docker format: `KEY=value` lines only).
+Bootstrap only (new host or missing `web.env`): create the files **on the NAS**
+once (editor, `vi`, or one-time `tee` from a trusted machine), then continue
+with the build steps. After that, prefer the **Web UI** for ongoing JSON
+changes. `web.env` is the env-file passed to `pirate-claw-web` (`--env-file`;
+Docker format: `KEY=value` lines only).
+
+#### `transmission.downloadDirs` on the NAS
+
+`transmission.downloadDirs.movie` and `transmission.downloadDirs.tv` must point
+at directories **Transmission can actually write** (paths inside the
+Transmission container, or a host path shared into both containers the same
+way). Example layout used on the live NAS (adjust if your volume layout
+differs):
+
+- `movie`: `/downloads/complete/movies`
+- `tv`: `/downloads/complete/tv`
+
+After editing `pirate-claw.config.json` on the host, restart the daemon
+container: `sudo -n /usr/local/bin/docker restart pirate-claw`.
 
 If `web.env` exists but is missing `ORIGIN`, append it once (adjust the URL if
 your browser-facing origin differs):
