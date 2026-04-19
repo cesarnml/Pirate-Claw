@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { formatDate } from '$lib/helpers';
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
@@ -16,6 +17,35 @@
 
 	let page = $state(0);
 	const PAGE_SIZE = 6;
+
+	let inflightRequeue = $state<string | null>(null);
+	let queuedKeys = $state<Record<string, true>>({});
+	let requeueErrors = $state<Record<string, string>>({});
+
+	async function requeue(identityKey: string) {
+		if (inflightRequeue) return;
+		inflightRequeue = identityKey;
+		delete requeueErrors[identityKey];
+		const formData = new FormData();
+		formData.append('identityKey', identityKey);
+		try {
+			const res = await fetch('?/requeue', { method: 'POST', body: formData });
+			if (res.ok) {
+				queuedKeys[identityKey] = true;
+				await invalidateAll();
+				setTimeout(() => {
+					delete queuedKeys[identityKey];
+				}, 2000);
+			} else {
+				const body = (await res.json().catch(() => ({}))) as { error?: string };
+				requeueErrors[identityKey] = body.error ?? 'Request failed';
+			}
+		} catch {
+			requeueErrors[identityKey] = 'Network error';
+		} finally {
+			if (inflightRequeue === identityKey) inflightRequeue = null;
+		}
+	}
 
 	type StatusSort = 'asc' | 'desc' | null;
 	let statusSort = $state<StatusSort>(null);
@@ -97,23 +127,37 @@
 					</TableHeader>
 					<TableBody>
 						{#each sortedOutcomes()!.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) as outcome (outcome.id)}
+							{@const canRequeue = outcome.identityKey !== null && outcome.status === 'failed'}
+							{@const isInflight = inflightRequeue === outcome.identityKey}
+							{@const isQueued = outcome.identityKey !== null && queuedKeys[outcome.identityKey]}
 							<TableRow>
 								<TableCell class="min-w-0 pl-4 text-sm font-medium">
 									<p class="truncate">{outcome.title ?? '—'}</p>
 									<p class="text-muted-foreground mt-0.5 text-[11px] font-normal">
 										{formatDate(outcome.recordedAt)}
 									</p>
+									{#if outcome.identityKey && requeueErrors[outcome.identityKey]}
+										<p class="mt-0.5 text-[11px] text-red-400">
+											{requeueErrors[outcome.identityKey]}
+										</p>
+									{/if}
 								</TableCell>
 								<TableCell class="whitespace-nowrap"
 									><StatusChip status={outcome.status} /></TableCell
 								>
 								<TableCell class="pr-4 text-right">
-									<button
-										type="button"
-										class="bg-primary/15 text-primary border-primary/30 hover:bg-primary/22 inline-flex h-6 cursor-pointer items-center rounded-md border px-2 text-[11px] font-medium transition"
-									>
-										Queue
-									</button>
+									{#if isQueued}
+										<span class="text-[11px] font-medium text-green-400">Queued ✓</span>
+									{:else}
+										<button
+											type="button"
+											disabled={!canRequeue || !!inflightRequeue}
+											onclick={() => outcome.identityKey && requeue(outcome.identityKey)}
+											class="bg-primary/15 text-primary border-primary/30 hover:bg-primary/22 inline-flex h-6 cursor-pointer items-center rounded-md border px-2 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+										>
+											{isInflight ? '…' : 'Queue'}
+										</button>
+									{/if}
 								</TableCell>
 							</TableRow>
 						{/each}

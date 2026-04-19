@@ -590,7 +590,7 @@ describe('SQLite repository', () => {
   });
 
   describe('listSkippedNoMatchOutcomes', () => {
-    it('returns only skipped_no_match outcomes', async () => {
+    it('returns skipped_no_match and failed outcomes, excluding queued', async () => {
       const repository = createTestRepository(await createDatabasePath());
       const run = repository.startRun('2026-04-01T00:00:00.000Z');
       const feedItem = repository.recordFeedItem(run.id, {
@@ -615,17 +615,27 @@ describe('SQLite repository', () => {
       repository.recordFeedItemOutcome({
         runId: run.id,
         status: 'failed',
+        identityKey: 'some-key',
         createdAt: '2026-04-01T00:03:00.000Z',
       });
 
       const results = repository.listSkippedNoMatchOutcomes(30);
 
-      expect(results).toHaveLength(1);
-      expect(results[0].status).toBe('skipped_no_match');
-      expect(results[0].runId).toBe(run.id);
-      expect(results[0].title).toBe('Some.Show.S01E01.720p');
-      expect(results[0].feedName).toBe('main-tv');
-      expect(results[0].recordedAt).toBe('2026-04-01T00:01:00.000Z');
+      expect(results).toHaveLength(2);
+      const statuses = results.map((r) => r.status);
+      expect(statuses).toContain('skipped_no_match');
+      expect(statuses).toContain('failed');
+      expect(statuses).not.toContain('queued');
+
+      const skipped = results.find((r) => r.status === 'skipped_no_match')!;
+      expect(skipped.runId).toBe(run.id);
+      expect(skipped.title).toBe('Some.Show.S01E01.720p');
+      expect(skipped.feedName).toBe('main-tv');
+      expect(skipped.recordedAt).toBe('2026-04-01T00:01:00.000Z');
+      expect(skipped.identityKey).toBeNull();
+
+      const failed = results.find((r) => r.status === 'failed')!;
+      expect(failed.identityKey).toBe('some-key');
     });
 
     it('returns null title and feedName when feed_item_id is null', async () => {

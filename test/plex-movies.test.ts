@@ -32,6 +32,7 @@ function stubRepository(): Repository {
     listDistinctUnmatchedAndFailedOutcomes: () => [],
     setPirateClawDisposition: () => {},
     trySetPirateClawDispositionIfUnset: () => true,
+    requeueCandidate: () => {},
   };
 }
 

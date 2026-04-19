@@ -478,6 +478,7 @@ export async function runCli(argv: string[]): Promise<number> {
                         err instanceof Error ? err.message : String(err)
                       }`,
                     ),
+                  downloader,
                 })
               : undefined,
         });

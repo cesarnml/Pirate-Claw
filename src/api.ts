@@ -7,6 +7,7 @@ import {
   removeTorrent,
   resumeTorrent,
 } from './transmission';
+import type { Downloader } from './transmission';
 import type {
   AppConfig,
   CompactTvDefaults,
@@ -119,6 +120,8 @@ export type ApiFetchDeps = {
     error: unknown,
     candidate: CandidateStateRecord,
   ) => void;
+  /** When set, POST /api/candidates/:id/requeue is available. */
+  downloader?: Downloader;
 };
 
 function json500(): Response {
@@ -171,6 +174,7 @@ export function createApiFetch(
     tmdbShows,
     tmdbCache,
     onCandidateTmdbCacheError,
+    downloader,
   } = deps;
   let activeConfig = configHolder?.current ?? config;
 
@@ -205,6 +209,57 @@ export function createApiFetch(
       } catch {
         return json500();
       }
+    }
+
+    const requeueMatch = path.match(/^\/api\/candidates\/([^/]+)\/requeue$/);
+    if (requeueMatch && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!downloader) {
+        return Response.json(
+          { ok: false, error: 'requeue is not available' },
+          { status: 503 },
+        );
+      }
+
+      const identityKey = decodeURIComponent(requeueMatch[1]);
+      const candidate = repository.getCandidateState(identityKey);
+      if (!candidate) {
+        return Response.json(
+          { ok: false, error: 'candidate not found' },
+          { status: 404 },
+        );
+      }
+      if (candidate.status !== 'failed') {
+        return Response.json(
+          {
+            ok: false,
+            error: `candidate is not eligible for requeue: ${candidate.status}`,
+          },
+          { status: 400 },
+        );
+      }
+
+      const result = await downloader.submit({
+        downloadUrl: candidate.downloadUrl,
+      });
+      if (!result.ok) {
+        return Response.json({ ok: false, error: result.message }, { status: 500 });
+      }
+
+      repository.requeueCandidate(identityKey, {
+        torrentId: result.torrentId,
+        torrentHash: result.torrentHash,
+        torrentName: result.torrentName,
+      });
+
+      return Response.json({
+        ok: true,
+        torrentHash: result.torrentHash ?? null,
+        torrentId: result.torrentId ?? null,
+        torrentName: result.torrentName ?? null,
+      });
     }
 
     if (path === '/api/shows') {

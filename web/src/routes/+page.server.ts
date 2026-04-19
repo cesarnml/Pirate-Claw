@@ -139,5 +139,26 @@ export const actions: Actions = {
 	resume: async ({ request }) => torrentAction('/api/transmission/torrent/resume', request),
 	remove: async ({ request }) => torrentAction('/api/transmission/torrent/remove', request),
 	removeAndDelete: async ({ request }) =>
-		torrentAction('/api/transmission/torrent/remove-and-delete', request)
+		torrentAction('/api/transmission/torrent/remove-and-delete', request),
+
+	requeue: async ({ request }) => {
+		const formData = await request.formData();
+		const identityKey = formData.get('identityKey');
+		if (typeof identityKey !== 'string') return fail(400, { error: 'identityKey is required' });
+		const res = await apiRequest(
+			`/api/candidates/${encodeURIComponent(identityKey)}/requeue`,
+			{ method: 'POST' }
+		);
+		if (!res.ok) {
+			let error = 'Request failed';
+			try {
+				const body = (await res.json()) as { error?: string };
+				if (body.error) error = body.error;
+			} catch {
+				// ignore parse error
+			}
+			return fail(res.status, { error });
+		}
+		return { ok: true };
+	}
 };
