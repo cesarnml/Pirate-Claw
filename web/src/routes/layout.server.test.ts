@@ -37,17 +37,22 @@ describe('layout server load', () => {
 	});
 
 	it('tolerates unavailable shared endpoints and returns nulls', async () => {
-		const { load } = await import('./+layout.server');
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const { load } = await import('./+layout.server');
 
-		apiFetchMock
-			.mockRejectedValueOnce(new Error('health down'))
-			.mockRejectedValueOnce(new Error('tx down'));
+			apiFetchMock
+				.mockRejectedValueOnce(new Error('health down'))
+				.mockRejectedValueOnce(new Error('tx down'));
 
-		const result = await load({} as never);
+			const result = await load({} as never);
 
-		expect(result).toEqual({
-			health: null,
-			transmissionSession: null
-		});
+			expect(result).toEqual({
+				health: null,
+				transmissionSession: null
+			});
+		} finally {
+			errorSpy.mockRestore();
+		}
 	});
 });
