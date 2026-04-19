@@ -122,6 +122,7 @@ export type SkippedOutcomeRecord = {
 	recordedAt: string;
 	title: string | null;
 	feedName: string | null;
+	identityKey: string | null;
 };
 
 export type FeedConfig = {

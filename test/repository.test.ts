@@ -590,7 +590,7 @@ describe('SQLite repository', () => {
   });
 
   describe('listSkippedNoMatchOutcomes', () => {
-    it('returns only skipped_no_match outcomes', async () => {
+    it('returns skipped_no_match and failed-candidate outcomes, excluding queued and post-requeue failed', async () => {
       const repository = createTestRepository(await createDatabasePath());
       const run = repository.startRun('2026-04-01T00:00:00.000Z');
       const feedItem = repository.recordFeedItem(run.id, {
@@ -601,31 +601,69 @@ describe('SQLite repository', () => {
         downloadUrl: 'https://example.test/item1.torrent',
       });
 
+      // skipped_no_match row — no candidate, no identity_key
       repository.recordFeedItemOutcome({
         runId: run.id,
         feedItemId: feedItem.id,
         status: 'skipped_no_match',
         createdAt: '2026-04-01T00:01:00.000Z',
       });
+
+      // queued row — should NOT appear
       repository.recordFeedItemOutcome({
         runId: run.id,
         status: 'queued',
         createdAt: '2026-04-01T00:02:00.000Z',
       });
+
+      // failed feed item outcome with a matching failed candidate_state
+      const failedFeedItem = repository.recordFeedItem(run.id, {
+        feedName: 'main-tv',
+        guidOrLink: 'https://example.test/movie-2024-1080p-x265',
+        rawTitle: 'Movie 2024 1080p x265',
+        publishedAt: '2026-04-01T00:03:00.000Z',
+        downloadUrl: 'https://example.test/movie.torrent',
+      });
+      const failedMatch = requireMovieMatch(failedFeedItem.rawTitle);
+      repository.recordCandidateOutcome({
+        runId: run.id,
+        feedItemId: failedFeedItem.id,
+        feedItem: failedFeedItem,
+        match: failedMatch,
+        status: 'failed',
+        updatedAt: '2026-04-01T00:03:10.000Z',
+      });
       repository.recordFeedItemOutcome({
         runId: run.id,
+        feedItemId: failedFeedItem.id,
         status: 'failed',
+        identityKey: failedMatch.identityKey,
         createdAt: '2026-04-01T00:03:00.000Z',
       });
 
       const results = repository.listSkippedNoMatchOutcomes(30);
 
-      expect(results).toHaveLength(1);
-      expect(results[0].status).toBe('skipped_no_match');
-      expect(results[0].runId).toBe(run.id);
-      expect(results[0].title).toBe('Some.Show.S01E01.720p');
-      expect(results[0].feedName).toBe('main-tv');
-      expect(results[0].recordedAt).toBe('2026-04-01T00:01:00.000Z');
+      expect(results).toHaveLength(2);
+      const statuses = results.map((r) => r.status);
+      expect(statuses).toContain('skipped_no_match');
+      expect(statuses).toContain('failed');
+      expect(statuses).not.toContain('queued');
+
+      const skipped = results.find((r) => r.status === 'skipped_no_match')!;
+      expect(skipped.runId).toBe(run.id);
+      expect(skipped.title).toBe('Some.Show.S01E01.720p');
+      expect(skipped.feedName).toBe('main-tv');
+      expect(skipped.recordedAt).toBe('2026-04-01T00:01:00.000Z');
+      expect(skipped.identityKey).toBeNull();
+
+      const failed = results.find((r) => r.status === 'failed')!;
+      expect(failed.identityKey).toBe(failedMatch.identityKey);
+
+      // After requeue, the failed outcome should disappear because cs.status = 'queued'
+      repository.requeueCandidate(failedMatch.identityKey, {});
+      const afterRequeue = repository.listSkippedNoMatchOutcomes(30);
+      expect(afterRequeue).toHaveLength(1);
+      expect(afterRequeue[0].status).toBe('skipped_no_match');
     });
 
     it('returns null title and feedName when feed_item_id is null', async () => {

@@ -113,10 +113,11 @@ export type RecordFeedItemOutcomeInput = {
 export type SkippedOutcomeRecord = {
   id: number;
   runId: number;
-  status: 'skipped_no_match';
+  status: 'skipped_no_match' | 'failed';
   recordedAt: string;
   title: string | null;
   feedName: string | null;
+  identityKey: string | null;
 };
 
 export type RecordCandidateReconciliationInput = {
@@ -169,6 +170,16 @@ export type Repository = {
   listReconcilableCandidates(limit?: number): CandidateStateRecord[];
   listRetryableCandidates(limit?: number): CandidateStateRecord[];
   listSkippedNoMatchOutcomes(days: number): SkippedOutcomeRecord[];
+  requeueCandidate(
+    identityKey: string,
+    params: {
+      torrentId?: number;
+      torrentHash?: string;
+      torrentName?: string;
+      queuedAt?: string;
+      updatedAt?: string;
+    },
+  ): void;
   listDistinctUnmatchedAndFailedOutcomes(
     days: number,
     filters?: DistinctOutcomeFilters,
@@ -663,12 +674,36 @@ export function createRepository(database: Database): Repository {
       fo.status,
       fo.created_at AS recordedAt,
       fi.raw_title AS title,
-      fi.feed_name AS feedName
+      fi.feed_name AS feedName,
+      fo.identity_key AS identityKey
     FROM feed_item_outcomes fo
     LEFT JOIN feed_items fi ON fo.feed_item_id = fi.id
-    WHERE fo.status = 'skipped_no_match'
+    LEFT JOIN candidate_state cs ON cs.identity_key = fo.identity_key
+    WHERE (
+        fo.status = 'skipped_no_match'
+        OR (
+          fo.status = 'failed'
+          AND cs.status = 'failed'
+          AND cs.pirate_claw_disposition IS NULL
+        )
+      )
       AND fo.created_at >= datetime('now', '-' || ?1 || ' days')
     ORDER BY fo.created_at DESC`,
+  );
+  const requeueCandidateStatement = database.prepare(
+    `UPDATE candidate_state
+    SET status = 'queued',
+        queued_at = ?2,
+        transmission_torrent_id = ?3,
+        transmission_torrent_hash = ?4,
+        transmission_torrent_name = ?5,
+        transmission_status_code = NULL,
+        transmission_percent_done = NULL,
+        transmission_done_date = NULL,
+        transmission_download_dir = NULL,
+        reconciled_at = NULL,
+        updated_at = ?6
+    WHERE identity_key = ?1`,
   );
 
   const listRetryableCandidatesStatement = database.query(
@@ -954,10 +989,11 @@ export function createRepository(database: Database): Repository {
       type Row = {
         id: number;
         runId: number;
-        status: 'skipped_no_match';
+        status: 'skipped_no_match' | 'failed';
         recordedAt: string;
         title: string | null;
         feedName: string | null;
+        identityKey: string | null;
       };
       return (listSkippedNoMatchOutcomesStatement.all(days) as Row[]).map(
         (row) => ({
@@ -967,7 +1003,29 @@ export function createRepository(database: Database): Repository {
           recordedAt: row.recordedAt,
           title: row.title,
           feedName: row.feedName,
+          identityKey: row.identityKey ?? null,
         }),
+      );
+    },
+
+    requeueCandidate(
+      identityKey: string,
+      params: {
+        torrentId?: number;
+        torrentHash?: string;
+        torrentName?: string;
+        queuedAt?: string;
+        updatedAt?: string;
+      },
+    ): void {
+      const now = new Date().toISOString();
+      requeueCandidateStatement.run(
+        identityKey,
+        params.queuedAt ?? now,
+        params.torrentId ?? null,
+        params.torrentHash ?? null,
+        params.torrentName ?? null,
+        params.updatedAt ?? now,
       );
     },
   };

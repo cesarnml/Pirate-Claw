@@ -46,6 +46,7 @@ const mockOutcome = (overrides: Partial<SkippedOutcomeRecord> = {}): SkippedOutc
 	recordedAt: '2026-04-10T12:00:00.000Z',
 	title: 'Stranger.Things.S05E01.4K.WEB.x265-GROUP',
 	feedName: 'main-tv',
+	identityKey: null,
 	...overrides
 });
 
@@ -146,7 +147,7 @@ describe('/', () => {
 		expect(screen.getByText('1080p')).toBeInTheDocument();
 		expect(screen.getByText('x265')).toBeInTheDocument();
 		expect(screen.getByText('42%')).toBeInTheDocument();
-		expect(screen.getAllByText('1.0 MB/s').length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByText('1.0 MB/s').length).toBeGreaterThan(0);
 	});
 
 	it('renders the event log from unmatched outcomes', () => {
