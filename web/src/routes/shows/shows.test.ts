@@ -120,7 +120,7 @@ describe('/shows', () => {
 		expect(screen.getByRole('heading', { name: 'Shows' })).toBeInTheDocument();
 		expect(screen.getByText('The Example Show')).toBeInTheDocument();
 		expect(screen.getByText('HBO')).toBeInTheDocument();
-		expect(screen.getByText('IN_LIBRARY')).toBeInTheDocument();
+		expect(screen.getByText('IN LIBRARY')).toBeInTheDocument();
 		expect(screen.getByText('7')).toBeInTheDocument();
 		expect(screen.getByText(/Watched/)).toBeInTheDocument();
 		expect(screen.getByText('8.1')).toBeInTheDocument();

@@ -700,28 +700,14 @@ export function createApiFetch(
     }
 
     if (path === '/api/outcomes' && request.method === 'GET') {
-      const movieYears = (activeConfig.movies?.years ?? []).map(Number);
-      const tvResolutions = [
-        ...new Set(activeConfig.tv.flatMap((rule) => rule.resolutions)),
-      ];
-      const tvCodecs = [
-        ...new Set(activeConfig.tv.flatMap((rule) => rule.codecs)),
-      ];
-      const feedMediaTypes: Record<string, 'movie' | 'tv'> = {};
-      for (const feed of activeConfig.feeds || []) {
-        if (
-          feed.name &&
-          (feed.mediaType === 'movie' || feed.mediaType === 'tv')
-        ) {
-          feedMediaTypes[feed.name] = feed.mediaType;
-        }
+      const status = new URL(request.url).searchParams.get('status');
+      if (status !== 'skipped_no_match') {
+        return Response.json(
+          { error: 'unsupported status filter' },
+          { status: 400 },
+        );
       }
-      const outcomes = repository.listDistinctUnmatchedAndFailedOutcomes(30, {
-        movieYears,
-        tvResolutions,
-        tvCodecs,
-        feedMediaTypes,
-      });
+      const outcomes = repository.listSkippedNoMatchOutcomes(30);
       return safeJson(() => ({ outcomes }));
     }
 
