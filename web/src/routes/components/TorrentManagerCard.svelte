@@ -102,8 +102,9 @@
 	function rowDisplayState(
 		torrent: TorrentStatSnapshot,
 		candidate: CandidateStateRecord | null
-	): 'downloading' | 'paused' | 'completed' | 'removed' | 'deleted' {
+	): 'downloading' | 'seeding' | 'paused' | 'completed' | 'removed' | 'deleted' {
 		if (candidate?.pirateClawDisposition) return candidate.pirateClawDisposition;
+		if (torrent.status === 'seeding') return 'seeding';
 		if (torrent.percentDone === 1) return 'completed';
 		if (torrent.status === 'stopped') return 'paused';
 		return 'downloading';
@@ -114,7 +115,8 @@
 			{ label: 'Remove', action: 'remove', destructive: true },
 			{ label: 'Remove + Delete Data', action: 'removeAndDelete', destructive: true }
 		];
-		if (state === 'downloading') return [{ label: 'Pause', action: 'pause' }, ...destructiveItems];
+		if (state === 'downloading' || state === 'seeding')
+			return [{ label: 'Pause', action: 'pause' }, ...destructiveItems];
 		if (state === 'paused') return [{ label: 'Resume', action: 'resume' }, ...destructiveItems];
 		if (state === 'completed') return destructiveItems;
 		return [];
@@ -257,7 +259,8 @@
 					{@const posterUrl = candidate ? candidatePosterUrl(candidate) : null}
 					{@const inFlightRow = inflightAction === torrent.hash}
 					{@const rowState = rowDisplayState(torrent, candidate)}
-					{@const showUpload = rowState === 'completed' || rowState === 'paused'}
+					{@const showUpload =
+						rowState === 'completed' || rowState === 'seeding' || rowState === 'paused'}
 					<li
 						class="border-border bg-background/45 flex gap-4 rounded-[26px] border p-4"
 						class:opacity-60={inFlightRow}

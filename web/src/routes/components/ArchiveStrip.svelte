@@ -49,7 +49,7 @@
 
 						<div class="space-y-2 p-3">
 							<p class="truncate text-sm font-medium">{candidateTitle(item)}</p>
-							<div class="flex items-center justify-between gap-3">
+							<div class="flex flex-wrap items-center justify-between gap-1">
 								<StatusChip status="completed" />
 								<p class="text-muted-foreground text-xs">{formatShortDate(item.queuedAt)}</p>
 							</div>

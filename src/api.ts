@@ -155,6 +155,7 @@ const API_CANDIDATE_LIST_LIMIT = 50_000;
 type ManagedTorrentRowState =
   | 'missing'
   | 'downloading'
+  | 'seeding'
   | 'paused'
   | 'completed';
 
@@ -162,6 +163,7 @@ function managedTorrentRowState(
   torrent: TorrentStatSnapshot | undefined,
 ): ManagedTorrentRowState {
   if (!torrent) return 'missing';
+  if (torrent.status === 'seeding') return 'seeding';
   if (torrent.percentDone >= 1) return 'completed';
   if (torrent.status === 'downloading') return 'downloading';
   return 'paused';
@@ -997,7 +999,7 @@ export function createApiFetch(
         body.hash,
       );
       if (!ctx.ok) return ctx.response;
-      if (ctx.rowState !== 'downloading') {
+      if (ctx.rowState !== 'downloading' && ctx.rowState !== 'seeding') {
         return Response.json(
           { error: 'torrent is not in a state that can be paused' },
           { status: 400 },
@@ -1077,6 +1079,7 @@ export function createApiFetch(
 
       if (
         ctx.rowState === 'downloading' ||
+        ctx.rowState === 'seeding' ||
         ctx.rowState === 'paused' ||
         ctx.rowState === 'completed'
       ) {
