@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Database } from 'bun:sqlite';
 
 import { createApiFetch, createHealthState, recordCycleInHealth } from './api';
+import { ensureStarterConfig } from './bootstrap';
 import {
   type AppConfig,
   ConfigError,
@@ -349,6 +350,7 @@ export async function runCli(argv: string[]): Promise<number> {
     if (command === 'daemon') {
       const configPath = parseConfigPath(rest);
       const resolvedConfigPath = resolveConfigPath(configPath);
+      await ensureStarterConfig(resolvedConfigPath);
       const config = await loadConfig(resolvedConfigPath);
       const database = openDatabase();
       const log = console.log;
