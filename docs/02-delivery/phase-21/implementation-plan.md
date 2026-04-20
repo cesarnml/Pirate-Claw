@@ -40,6 +40,7 @@ Follow the shared guidance in [`docs/02-delivery/phase-implementation-guidance.m
 2. `P21.02 GET /api/setup/state Endpoint`
 3. `P21.03 Web App Starter Mode UI`
 4. `P21.04 README: Plex Version Prereq and First-Boot Operator Contract`
+5. `P21.05 Phase 21 Retrospective and Doc Update`
 
 ## Ticket Files
 
@@ -47,6 +48,7 @@ Follow the shared guidance in [`docs/02-delivery/phase-implementation-guidance.m
 - `ticket-02-setup-state-endpoint.md`
 - `ticket-03-web-starter-mode-ui.md`
 - `ticket-04-readme-first-boot-contract.md`
+- `ticket-05-retrospective.md`
 
 ## Exit Condition
 
