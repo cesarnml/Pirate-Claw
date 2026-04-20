@@ -1,6 +1,8 @@
 {
   "version": "0.2",
-  "ignorePaths": ["web/"],
+  "ignorePaths": [
+    "web/"
+  ],
   "dictionaryDefinitions": [],
   "dictionaries": [],
   "words": [
@@ -35,6 +37,7 @@
     "parsererror",
     "PGID",
     "precedented",
+    "Prereq",
     "println",
     "PUID",
     "qodo",
