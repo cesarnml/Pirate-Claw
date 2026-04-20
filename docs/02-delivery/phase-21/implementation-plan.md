@@ -85,4 +85,4 @@ Pause for review if:
 
 ## Delivery status
 
-Planning/decomposition only. Implementation has not started.
+Complete. P21.01–P21.05 delivered and PRs opened. Stack ready for closeout.
