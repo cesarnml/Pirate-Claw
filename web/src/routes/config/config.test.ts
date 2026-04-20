@@ -72,7 +72,7 @@ describe('/config', () => {
 		expect(screen.getByText('Write Access: Active')).toBeInTheDocument();
 		expect(screen.getByText('TestFeed')).toBeInTheDocument();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Save shows' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Save shows' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeInTheDocument();
 		expect(screen.getByText('Storage Pool')).toBeInTheDocument();
 		expect(screen.getByText('Transfer Rate')).toBeInTheDocument();
@@ -226,7 +226,7 @@ describe('/config', () => {
 		expect(screen.getByRole('button', { name: 'Save feeds' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Save TV defaults' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Save movies policy' })).toBeDisabled();
-		expect(screen.getByRole('button', { name: 'Save shows' })).toBeDisabled();
+		expect(screen.queryByRole('button', { name: 'Save shows' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeDisabled();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeDisabled();

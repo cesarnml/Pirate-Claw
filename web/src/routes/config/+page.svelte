@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { tick } from 'svelte';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
@@ -13,6 +14,7 @@
 	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
 	import RadarIcon from '@lucide/svelte/icons/radar';
+	import XIcon from '@lucide/svelte/icons/x';
 	import type { ActionData, PageData } from './$types';
 
 	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
@@ -45,6 +47,19 @@
 	let newFeedMediaType = $state<'tv' | 'movie'>('tv');
 	let feedsSubmitting = $state(false);
 	let testingConnection = $state(false);
+	let showsSubmitting = $state(false);
+	let pendingShowIntent = $state<
+		| { type: 'add'; name: string }
+		| { type: 'edit'; name: string }
+		| { type: 'delete'; name: string }
+		| null
+	>(null);
+	let showsFormEl = $state<HTMLFormElement | null>(null);
+	let showsSubmitButtonEl = $state<HTMLButtonElement | null>(null);
+	let showDeleteConfirm = $state<{ index: number; name: string } | null>(null);
+	let showAddDraftActive = $state(false);
+	let showAddDraftName = $state('');
+	let showAddDraftInputEl = $state<HTMLInputElement | null>(null);
 
 	let showRestartOffer = $state(false);
 	let restarting = $state(false);
@@ -57,6 +72,11 @@
 			showRestartOffer = false;
 		}, 10000);
 	}
+
+	$effect(() => {
+		if (!showAddDraftActive) return;
+		tick().then(() => showAddDraftInputEl?.focus());
+	});
 
 	$effect(() => {
 		return () => {
@@ -78,13 +98,71 @@
 		}
 	});
 
-	function addShow() {
-		showRows = [...showRows, ''];
+	function startAddShowDraft() {
+		if (!canWrite || showsSubmitting) return;
+		showAddDraftActive = true;
+		showAddDraftName = '';
+	}
+
+	function submitShows(
+		intent:
+			| { type: 'add'; name: string }
+			| { type: 'edit'; name: string }
+			| { type: 'delete'; name: string }
+	) {
+		if (!canWrite || !currentEtag || showsSubmitting || !showsFormEl || !showsSubmitButtonEl)
+			return;
+		pendingShowIntent = intent;
+		showsFormEl.requestSubmit(showsSubmitButtonEl);
+	}
+
+	function handleShowEnter(index: number) {
+		const name = showRows[index]?.trim() ?? '';
+		if (!name) return;
+		submitShows({ type: 'edit', name });
+	}
+
+	async function submitAddShowDraft() {
+		const name = showAddDraftName.trim();
+		if (!name) return;
+		showRows = [...showRows, name];
+		showAddDraftActive = false;
+		showAddDraftName = '';
+		await tick();
+		submitShows({ type: 'add', name });
+	}
+
+	function cancelAddShowDraft() {
+		showAddDraftActive = false;
+		showAddDraftName = '';
 	}
 
 	function removeShow(index: number) {
 		if (showRows.length <= 1) return;
+		const deletedName = showRows[index]?.trim() ?? '';
+		if (!deletedName) return;
+		showDeleteConfirm = { index, name: deletedName };
+	}
+
+	function cancelDeleteShow() {
+		showDeleteConfirm = null;
+	}
+
+	function handleDeleteModalKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape' && showDeleteConfirm) {
+			event.preventDefault();
+			cancelDeleteShow();
+		}
+	}
+
+	async function confirmDeleteShow() {
+		if (!showDeleteConfirm) return;
+		const { index, name } = showDeleteConfirm;
 		showRows = showRows.filter((_, i) => i !== index);
+		showDeleteConfirm = null;
+		// Ensure removed input is gone from the DOM before serializing form data.
+		await tick();
+		submitShows({ type: 'delete', name });
 	}
 
 	function updateShowName(index: number, value: string) {
@@ -245,6 +323,7 @@
 	]);
 </script>
 
+<svelte:window onkeydown={handleDeleteModalKeydown} />
 <section class="space-y-6">
 	<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 		<div class="space-y-3">
@@ -726,13 +805,22 @@
 					</form>
 
 					<form
+						bind:this={showsFormEl}
 						method="POST"
 						action="?/saveShows"
 						class="space-y-4 border-t border-white/8 pt-5"
 						use:enhance={() => {
+							showsSubmitting = true;
 							return async ({ result, update }) => {
+								showsSubmitting = false;
 								if (result.type === 'success') {
-									toast('TV shows saved.', 'success');
+									if (pendingShowIntent?.type === 'add') {
+										toast(`TV show added: ${pendingShowIntent.name}`, 'success');
+									} else if (pendingShowIntent?.type === 'edit') {
+										toast(`TV show edited: ${pendingShowIntent.name}`, 'success');
+									} else if (pendingShowIntent?.type === 'delete') {
+										toast(`TV show deleted: ${pendingShowIntent.name}`, 'success');
+									}
 								} else if (result.type === 'failure') {
 									if (result.status === 409) {
 										toast('Config changed elsewhere — reload and try again', 'error');
@@ -740,7 +828,8 @@
 										toast('Save failed — see errors above', 'error');
 									}
 								}
-								await update();
+								pendingShowIntent = null;
+								await update({ reset: false });
 							};
 						}}
 					>
@@ -748,13 +837,13 @@
 
 						<div class="space-y-2">
 							<p class="text-muted-foreground text-sm font-medium">Active watchlist</p>
-							<div class="flex flex-wrap gap-2">
+							<div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
 								{#if showRows.length === 0}
 									<p class="text-muted-foreground text-sm">No tracked shows configured yet.</p>
 								{:else}
 									{#each showRows as name, index}
 										<div
-											class="border-border bg-background/50 flex items-center gap-2 rounded-full border pr-2 pl-4"
+											class="border-border bg-background/50 focus-within:border-primary/70 focus-within:ring-primary/30 flex w-full items-center gap-3 rounded-full px-4 transition-colors focus-within:ring-2"
 										>
 											<input
 												name="showName"
@@ -764,18 +853,24 @@
 												aria-label={`TV show ${index + 1}`}
 												disabled={!canWrite}
 												title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
-												class="min-w-[10rem] bg-transparent py-2 text-sm outline-none disabled:opacity-50"
+												class="min-w-0 flex-1 bg-transparent py-2 text-sm text-ellipsis whitespace-nowrap outline-none disabled:opacity-50"
 												oninput={(event) => updateShowName(index, event.currentTarget.value)}
+												onkeydown={(event) => {
+													if (event.key === 'Enter') {
+														event.preventDefault();
+														handleShowEnter(index);
+													}
+												}}
 											/>
 											<button
 												type="button"
-												class="text-muted-foreground hover:bg-muted inline-flex size-7 items-center justify-center rounded-full disabled:opacity-50"
+												class="border-border text-muted-foreground hover:border-primary/60 hover:text-primary hover:bg-muted inline-flex size-5 items-center justify-center rounded-full border text-xs transition-colors disabled:opacity-50"
 												disabled={!canWrite || showRows.length <= 1}
 												title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
 												aria-label="Remove show"
 												onclick={() => removeShow(index)}
 											>
-												×
+												<XIcon class="size-2.5" />
 											</button>
 										</div>
 									{/each}
@@ -784,24 +879,55 @@
 						</div>
 
 						<div class="flex flex-wrap items-center gap-3">
-							<Button
-								type="button"
-								variant="outline"
-								class="rounded-full px-5"
-								disabled={!canWrite}
-								title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
-								onclick={addShow}
-							>
-								Add show
-							</Button>
-							<Button
+							{#if showAddDraftActive}
+								<div
+									class="border-border bg-background/50 focus-within:border-primary/70 focus-within:ring-primary/30 flex items-center gap-3 rounded-full border px-4 transition-colors focus-within:ring-2"
+								>
+									<input
+										bind:this={showAddDraftInputEl}
+										type="text"
+										placeholder="New show name"
+										autocomplete="off"
+										class="w-auto min-w-[12ch] bg-transparent py-2 text-sm outline-none"
+										bind:value={showAddDraftName}
+										onkeydown={(event) => {
+											if (event.key === 'Escape') {
+												event.preventDefault();
+												cancelAddShowDraft();
+											} else if (event.key === 'Enter') {
+												event.preventDefault();
+												void submitAddShowDraft();
+											}
+										}}
+									/>
+									<button
+										type="button"
+										class="border-border text-muted-foreground hover:border-primary/60 hover:text-primary hover:bg-muted inline-flex size-7 items-center justify-center rounded-full border transition-colors"
+										aria-label="Cancel add show"
+										onclick={cancelAddShowDraft}
+									>
+										<XIcon class="size-4" />
+									</button>
+								</div>
+							{:else}
+								<Button
+									type="button"
+									variant="outline"
+									class="rounded-full px-5"
+									disabled={!canWrite}
+									title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+									onclick={startAddShowDraft}
+								>
+									Add show
+								</Button>
+							{/if}
+							<button
+								bind:this={showsSubmitButtonEl}
 								type="submit"
-								class="rounded-full px-5"
-								disabled={!canWrite || !currentEtag}
-								title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
-							>
-								Save shows
-							</Button>
+								class="hidden"
+								tabindex="-1"
+								aria-hidden="true"
+							></button>
 						</div>
 
 						{#if form?.showsMessage}
@@ -1050,6 +1176,42 @@
 					</Button>
 				</div>
 			</form>
+		{/if}
+
+		{#if showDeleteConfirm}
+			<div class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+				<button
+					type="button"
+					class="absolute inset-0 bg-black/60 backdrop-blur-[1px]"
+					aria-label="Close delete confirmation"
+					onclick={cancelDeleteShow}
+				></button>
+				<div
+					class="bg-card border-border relative z-[121] w-full max-w-md rounded-2xl border p-5 shadow-2xl"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="delete-show-title"
+				>
+					<h3 id="delete-show-title" class="text-lg font-semibold">Delete TV show?</h3>
+					<p class="text-muted-foreground mt-2 text-sm">
+						This removes <span class="text-foreground font-medium">{showDeleteConfirm.name}</span> from
+						the active watchlist.
+					</p>
+					<div class="mt-5 flex items-center justify-end gap-3">
+						<Button
+							type="button"
+							variant="outline"
+							class="rounded-full px-5"
+							onclick={cancelDeleteShow}
+						>
+							Cancel
+						</Button>
+						<Button type="button" class="rounded-full px-5" onclick={confirmDeleteShow}>
+							Delete show
+						</Button>
+					</div>
+				</div>
+			</div>
 		{/if}
 	{/if}
 </section>
