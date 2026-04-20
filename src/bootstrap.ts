@@ -17,7 +17,7 @@ export async function ensureStarterConfig(path: string): Promise<void> {
     plex: {
       url: 'http://localhost:32400',
       token: '',
-      refreshIntervalMinutes: 30,
+      refreshIntervalMinutes: 0,
     },
     movies: {
       years: [year - 1, year],
