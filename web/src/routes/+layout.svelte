@@ -122,7 +122,8 @@
 					/>
 					<h1 class="text-foreground text-2xl font-semibold">Pirate Claw is not yet configured</h1>
 					<p class="text-muted-foreground max-w-sm text-sm">
-						Use the setup wizard to connect Transmission, Plex, and configure your media preferences.
+						Use the setup wizard to connect Transmission, Plex, and configure your media
+						preferences.
 					</p>
 				</div>
 			{:else}
