@@ -17,13 +17,16 @@
 		version: string;
 		authToken: string;
 		url: string;
-		downloadTarget: string;
+		downloadTargets: Array<{ label: string; value: string }>;
 		runtime: RuntimeConfig;
 		showRows: string[];
 		testingConnection: boolean;
+		restarting: boolean;
+		runtimeChangesPending: boolean;
 		runtimeMessage?: string;
 		enhanceTestConnection: SubmitFunction;
 		enhanceSaveRuntime: SubmitFunction;
+		enhanceRestartDaemon: SubmitFunction;
 	}
 
 	const {
@@ -36,13 +39,16 @@
 		version,
 		authToken,
 		url,
-		downloadTarget,
+		downloadTargets,
 		runtime,
 		showRows,
 		testingConnection,
+		restarting,
+		runtimeChangesPending,
 		runtimeMessage,
 		enhanceTestConnection,
-		enhanceSaveRuntime
+		enhanceSaveRuntime,
+		enhanceRestartDaemon
 	}: Props = $props();
 </script>
 
@@ -95,7 +101,14 @@
 			</div>
 			<div>
 				<p class="text-muted-foreground">Download target</p>
-				<p class="mt-1 break-all">{downloadTarget}</p>
+				<div class="mt-1 space-y-1">
+					{#each downloadTargets as target}
+						<p class="break-all">
+							<span class="text-muted-foreground">{target.label}:</span>
+							<span class="ml-1">{target.value}</span>
+						</p>
+					{/each}
+				</div>
 			</div>
 		</div>
 
@@ -127,9 +140,7 @@
 				>
 					Runtime Controls
 				</p>
-				<p class="text-muted-foreground text-sm">
-					Daemon timers and the API listen port still require a restart after save.
-				</p>
+				<p class="text-muted-foreground text-sm">Runtime changes apply after daemon restart.</p>
 			</div>
 
 			<div class="grid gap-3 sm:grid-cols-2">
@@ -207,6 +218,34 @@
 					Revision <code>{currentEtag ?? 'missing'}</code>
 				</p>
 			</div>
+		</form>
+
+		<form
+			method="POST"
+			action="?/restartDaemon"
+			class="flex flex-wrap items-center gap-3 border-t border-white/8 pt-4"
+			use:enhance={enhanceRestartDaemon}
+		>
+			<Button
+				type="submit"
+				variant="outline"
+				class="rounded-full px-5"
+				disabled={!canWrite || restarting || !runtimeChangesPending}
+				title={!canWrite ? writeDisabledTooltip : undefined}
+			>
+				{#if restarting}
+					Restarting…
+				{:else}
+					Restart Daemon
+				{/if}
+			</Button>
+			<p class="text-muted-foreground text-xs">
+				{#if runtimeChangesPending}
+					Runtime changes are saved and waiting for restart.
+				{:else}
+					Restart stays disabled until runtime settings change.
+				{/if}
+			</p>
 		</form>
 	</CardContent>
 </Card>

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import SelectablePillGroup from './SelectablePillGroup.svelte';
@@ -14,6 +13,8 @@
 		currentEtag: string | null;
 		writeDisabledTooltip: string;
 		enhanceSaveTvDefaults: SubmitFunction;
+		setTvFormEl: (element: HTMLFormElement | null) => void;
+		setTvSubmitButtonEl: (element: HTMLButtonElement | null) => void;
 		onToggleResolution: (value: string) => void;
 		onToggleCodec: (value: string) => void;
 	}
@@ -27,9 +28,22 @@
 		currentEtag,
 		writeDisabledTooltip,
 		enhanceSaveTvDefaults,
+		setTvFormEl,
+		setTvSubmitButtonEl,
 		onToggleResolution,
 		onToggleCodec
 	}: Props = $props();
+
+	let formEl = $state<HTMLFormElement | null>(null);
+	let submitButtonEl = $state<HTMLButtonElement | null>(null);
+
+	$effect(() => {
+		setTvFormEl(formEl);
+	});
+
+	$effect(() => {
+		setTvSubmitButtonEl(submitButtonEl);
+	});
 </script>
 
 <Card class="bg-card/75 rounded-[30px] border-white/10">
@@ -41,6 +55,7 @@
 	</CardHeader>
 	<CardContent class="space-y-6">
 		<form
+			bind:this={formEl}
 			method="POST"
 			action="?/saveTvDefaults"
 			class="space-y-4"
@@ -71,15 +86,14 @@
 				title={!canWrite ? writeDisabledTooltip : undefined}
 				onToggle={onToggleCodec}
 			/>
-
-			<Button
+			<button
+				bind:this={submitButtonEl}
 				type="submit"
-				class="rounded-full px-5"
-				disabled={!canWrite || !currentEtag}
-				title={!canWrite ? writeDisabledTooltip : undefined}
+				class="hidden"
+				tabindex="-1"
+				aria-hidden="true"
 			>
-				Save TV defaults
-			</Button>
+			</button>
 		</form>
 	</CardContent>
 </Card>

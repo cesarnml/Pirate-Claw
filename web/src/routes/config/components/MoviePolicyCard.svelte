@@ -17,8 +17,9 @@
 		canWrite: boolean;
 		currentEtag: string | null;
 		writeDisabledTooltip: string;
-		moviesMessage?: string;
 		enhanceSaveMovies: SubmitFunction;
+		setMoviesFormEl: (element: HTMLFormElement | null) => void;
+		setMoviesSubmitButtonEl: (element: HTMLButtonElement | null) => void;
 		onRemoveMovieYear: (year: number) => void;
 		onMovieYearInputChange: (value: string) => void;
 		onAddMovieYear: () => void;
@@ -38,8 +39,9 @@
 		canWrite,
 		currentEtag,
 		writeDisabledTooltip,
-		moviesMessage,
 		enhanceSaveMovies,
+		setMoviesFormEl,
+		setMoviesSubmitButtonEl,
 		onRemoveMovieYear,
 		onMovieYearInputChange,
 		onAddMovieYear,
@@ -47,6 +49,17 @@
 		onToggleMovieCodec,
 		onMovieCodecPolicyChange
 	}: Props = $props();
+
+	let formEl = $state<HTMLFormElement | null>(null);
+	let submitButtonEl = $state<HTMLButtonElement | null>(null);
+
+	$effect(() => {
+		setMoviesFormEl(formEl);
+	});
+
+	$effect(() => {
+		setMoviesSubmitButtonEl(submitButtonEl);
+	});
 </script>
 
 <Card id="movie-policy" class="bg-card/75 rounded-[30px] border-white/10">
@@ -57,7 +70,13 @@
 		<h2 class="text-2xl font-semibold tracking-[-0.03em]">Movie Policy</h2>
 	</CardHeader>
 	<CardContent>
-		<form method="POST" action="?/saveMovies" class="space-y-5" use:enhance={enhanceSaveMovies}>
+		<form
+			bind:this={formEl}
+			method="POST"
+			action="?/saveMovies"
+			class="space-y-5"
+			use:enhance={enhanceSaveMovies}
+		>
 			<input type="hidden" name="moviesIfMatch" value={currentEtag ?? ''} />
 			{#each movieYears as year}
 				<input type="hidden" name="movieYear" value={year} />
@@ -149,20 +168,14 @@
 				title={!canWrite ? writeDisabledTooltip : undefined}
 				onChange={(value) => onMovieCodecPolicyChange(value as 'prefer' | 'require')}
 			/>
-
-			<div class="flex flex-wrap items-center gap-3">
-				<Button
-					type="submit"
-					class="rounded-full px-5"
-					disabled={!canWrite || !currentEtag}
-					title={!canWrite ? writeDisabledTooltip : undefined}
-				>
-					Save movies policy
-				</Button>
-				{#if moviesMessage}
-					<p class="text-destructive text-xs">{moviesMessage}</p>
-				{/if}
-			</div>
+			<button
+				bind:this={submitButtonEl}
+				type="submit"
+				class="hidden"
+				tabindex="-1"
+				aria-hidden="true"
+			>
+			</button>
 		</form>
 	</CardContent>
 </Card>

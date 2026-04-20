@@ -2,27 +2,16 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { tick } from 'svelte';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
-	import {
-		formatCycleLoad,
-		formatTransferRate,
-		maskConfiguredValue,
-		parseHostPortFromUrl,
-		totalRunItems
-	} from '$lib/helpers';
+	import { Button } from '$lib/components/ui/button';
+	import { maskConfiguredValue, parseHostPortFromUrl } from '$lib/helpers';
 	import { toast } from '$lib/toast';
 	import type { FeedConfig } from '$lib/types';
-	import Clock3Icon from '@lucide/svelte/icons/clock-3';
-	import CpuIcon from '@lucide/svelte/icons/cpu';
-	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
-	import RadarIcon from '@lucide/svelte/icons/radar';
-	import type { Component } from 'svelte';
 	import type { ActionData, PageData } from './$types';
-	import ConfigMetricsGrid from './components/ConfigMetricsGrid.svelte';
 	import ConfigPageHeader from './components/ConfigPageHeader.svelte';
 	import DeleteShowModal from './components/DeleteShowModal.svelte';
 	import FeedsCard from './components/FeedsCard.svelte';
 	import MoviePolicyCard from './components/MoviePolicyCard.svelte';
-	import RestartDaemonBanner from './components/RestartDaemonBanner.svelte';
+	import RemoveMovieYearModal from './components/RemoveMovieYearModal.svelte';
 	import ShowWatchlistEditor from './components/ShowWatchlistEditor.svelte';
 	import TransmissionCard from './components/TransmissionCard.svelte';
 	import TvConfigCard from './components/TvConfigCard.svelte';
@@ -35,13 +24,6 @@
 		| { type: 'add'; name: string }
 		| { type: 'edit'; name: string }
 		| { type: 'delete'; name: string };
-
-	type Metric = {
-		label: string;
-		value: string;
-		detail: string;
-		icon: Component;
-	};
 
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 	const currentEtag = $derived(
@@ -58,11 +40,20 @@
 	let showRows = $state<string[]>([]);
 	let tvResolutions = $state<string[]>([]);
 	let tvCodecs = $state<string[]>([]);
+	let tvSubmitting = $state(false);
+	let tvSaveQueued = $state(false);
+	let tvFormEl = $state<HTMLFormElement | null>(null);
+	let tvSubmitButtonEl = $state<HTMLButtonElement | null>(null);
 	let movieYears = $state<number[]>([]);
 	let movieResolutions = $state<string[]>([]);
 	let movieCodecs = $state<string[]>([]);
 	let movieCodecPolicy = $state<'prefer' | 'require'>('prefer');
 	let movieYearInput = $state('');
+	let moviesSubmitting = $state(false);
+	let moviesSaveQueued = $state(false);
+	let moviesFormEl = $state<HTMLFormElement | null>(null);
+	let moviesSubmitButtonEl = $state<HTMLButtonElement | null>(null);
+	let movieYearDeleteConfirm = $state<number | null>(null);
 	let feedsList = $state<FeedConfig[]>([]);
 	let newFeedName = $state('');
 	let newFeedUrl = $state('');
@@ -77,27 +68,12 @@
 	let showAddDraftActive = $state(false);
 	let showAddDraftName = $state('');
 	let showAddDraftInputEl = $state<HTMLInputElement | null>(null);
-	let showRestartOffer = $state(false);
+	let runtimeChangesPending = $state(false);
 	let restarting = $state(false);
-	let restartOfferId = $state<ReturnType<typeof setTimeout> | null>(null);
-
-	function offerRestart() {
-		showRestartOffer = true;
-		if (restartOfferId) clearTimeout(restartOfferId);
-		restartOfferId = setTimeout(() => {
-			showRestartOffer = false;
-		}, 10000);
-	}
 
 	$effect(() => {
 		if (!showAddDraftActive) return;
 		tick().then(() => showAddDraftInputEl?.focus());
-	});
-
-	$effect(() => {
-		return () => {
-			if (restartOfferId) clearTimeout(restartOfferId);
-		};
 	});
 
 	$effect(() => {
@@ -162,6 +138,9 @@
 		if (event.key === 'Escape' && showDeleteConfirm) {
 			event.preventDefault();
 			cancelDeleteShow();
+		} else if (event.key === 'Escape' && movieYearDeleteConfirm !== null) {
+			event.preventDefault();
+			cancelDeleteMovieYear();
 		}
 	}
 
@@ -182,12 +161,28 @@
 		return values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value];
 	}
 
+	function submitTvDefaults() {
+		if (!canWrite || !currentEtag || !tvFormEl || !tvSubmitButtonEl) return;
+		if (tvSubmitting) {
+			tvSaveQueued = true;
+			return;
+		}
+		tvFormEl.requestSubmit(tvSubmitButtonEl);
+	}
+
+	async function saveTvDefaultsSoon() {
+		await tick();
+		submitTvDefaults();
+	}
+
 	function toggleResolution(resolution: string) {
 		tvResolutions = toggleSelection(tvResolutions, resolution);
+		void saveTvDefaultsSoon();
 	}
 
 	function toggleCodec(codec: string) {
 		tvCodecs = toggleSelection(tvCodecs, codec);
+		void saveTvDefaultsSoon();
 	}
 
 	function addMovieYear() {
@@ -195,19 +190,54 @@
 		if (Number.isInteger(value) && value >= 1900 && value <= 2100 && !movieYears.includes(value)) {
 			movieYears = [...movieYears, value].sort((left, right) => left - right);
 			movieYearInput = '';
+			void saveMoviesSoon();
 		}
 	}
 
 	function removeMovieYear(year: number) {
-		movieYears = movieYears.filter((value) => value !== year);
+		if (!canWrite || moviesSubmitting) return;
+		movieYearDeleteConfirm = year;
 	}
 
 	function toggleMovieResolution(resolution: string) {
 		movieResolutions = toggleSelection(movieResolutions, resolution);
+		void saveMoviesSoon();
 	}
 
 	function toggleMovieCodec(codec: string) {
 		movieCodecs = toggleSelection(movieCodecs, codec);
+		void saveMoviesSoon();
+	}
+
+	function submitMovies() {
+		if (!canWrite || !currentEtag || !moviesFormEl || !moviesSubmitButtonEl) return;
+		if (moviesSubmitting) {
+			moviesSaveQueued = true;
+			return;
+		}
+		moviesFormEl.requestSubmit(moviesSubmitButtonEl);
+	}
+
+	async function saveMoviesSoon() {
+		await tick();
+		submitMovies();
+	}
+
+	function updateMovieCodecPolicy(value: 'prefer' | 'require') {
+		movieCodecPolicy = value;
+		void saveMoviesSoon();
+	}
+
+	function cancelDeleteMovieYear() {
+		movieYearDeleteConfirm = null;
+	}
+
+	async function confirmDeleteMovieYear() {
+		if (movieYearDeleteConfirm === null) return;
+		movieYears = movieYears.filter((value) => value !== movieYearDeleteConfirm);
+		movieYearDeleteConfirm = null;
+		await tick();
+		submitMovies();
 	}
 
 	function removeFeed(index: number) {
@@ -219,24 +249,27 @@
 		return !!(data.config.transmission.username || data.config.transmission.password);
 	}
 
-	function storagePoolLabel(): string {
-		if (!data.config) return 'Unavailable';
-		return (
-			data.config.transmission.downloadDirs?.movie ??
-			data.config.transmission.downloadDir ??
-			data.config.runtime.artifactDir
-		);
-	}
-
-	function formatDaemonUptime(value: number | undefined | null): string {
-		if (typeof value !== 'number' || value <= 0) return 'Unavailable';
-		const totalMinutes = Math.floor(value / 60_000);
-		const days = Math.floor(totalMinutes / 1440);
-		const hours = Math.floor((totalMinutes % 1440) / 60);
-		const minutes = totalMinutes % 60;
-		if (days > 0) return `${days}d ${hours}h`;
-		if (hours > 0) return `${hours}h ${minutes}m`;
-		return `${minutes}m`;
+	function storagePoolTargets(): Array<{ label: string; value: string }> {
+		if (!data.config) return [{ label: 'Download', value: 'Unavailable' }];
+		const { downloadDirs, downloadDir } = data.config.transmission;
+		if (downloadDirs?.movie || downloadDirs?.tv) {
+			return [
+				{
+					label: 'Movie',
+					value: downloadDirs.movie ?? downloadDir ?? data.config.runtime.artifactDir
+				},
+				{
+					label: 'TV',
+					value: downloadDirs.tv ?? downloadDir ?? data.config.runtime.artifactDir
+				}
+			];
+		}
+		return [
+			{
+				label: 'Download',
+				value: downloadDir ?? data.config.runtime.artifactDir
+			}
+		];
 	}
 
 	const transmissionEndpoint = $derived(
@@ -244,41 +277,6 @@
 			? parseHostPortFromUrl(data.config.transmission.url)
 			: { host: 'Unavailable', port: '—' }
 	);
-	const latestRunSummary = $derived(data.runSummaries?.[0] ?? null);
-	const metrics = $derived<Metric[]>([
-		{
-			label: 'Storage Pool',
-			value: storagePoolLabel(),
-			detail: 'Active transfer target',
-			icon: HardDriveIcon
-		},
-		{
-			label: 'Transfer Rate',
-			value: formatTransferRate(data.transmissionSession?.downloadSpeed),
-			detail:
-				typeof data.transmissionSession?.uploadSpeed === 'number'
-					? `Upload ${formatTransferRate(data.transmissionSession.uploadSpeed)}`
-					: 'Download telemetry',
-			icon: RadarIcon
-		},
-		{
-			label: 'CPU Load',
-			value: formatCycleLoad(data.health?.lastRunCycle?.durationMs),
-			detail:
-				totalRunItems(latestRunSummary) !== null
-					? `${totalRunItems(latestRunSummary)} items in last run`
-					: 'Last automation cycle',
-			icon: CpuIcon
-		},
-		{
-			label: 'Uptime',
-			value: formatDaemonUptime(data.health?.uptime),
-			detail: data.health?.startedAt
-				? `Started ${new Date(data.health.startedAt).toLocaleString()}`
-				: 'Daemon availability',
-			icon: Clock3Icon
-		}
-	]);
 
 	const enhanceTestConnection: SubmitFunction = () => {
 		testingConnection = true;
@@ -298,8 +296,8 @@
 	const enhanceSaveRuntime: SubmitFunction = () => {
 		return async ({ result, update }) => {
 			if (result.type === 'success') {
-				toast('Saved — restart the daemon for this change to take effect', 'success');
-				offerRestart();
+				runtimeChangesPending = true;
+				toast('Saved — restart daemon to apply runtime changes.', 'success');
 			} else if (result.type === 'failure') {
 				if (result.status === 409) {
 					toast('Config changed elsewhere — reload and try again', 'error');
@@ -332,7 +330,9 @@
 	};
 
 	const enhanceSaveTvDefaults: SubmitFunction = () => {
+		tvSubmitting = true;
 		return async ({ result, update }) => {
+			tvSubmitting = false;
 			if (result.type === 'success') {
 				toast('Saved', 'success');
 			} else if (result.type === 'failure') {
@@ -343,6 +343,11 @@
 				}
 			}
 			await update();
+			if (tvSaveQueued) {
+				tvSaveQueued = false;
+				await tick();
+				submitTvDefaults();
+			}
 		};
 	};
 
@@ -371,7 +376,9 @@
 	};
 
 	const enhanceSaveMovies: SubmitFunction = () => {
+		moviesSubmitting = true;
 		return async ({ result, update }) => {
+			moviesSubmitting = false;
 			if (result.type === 'success') {
 				toast('Saved', 'success');
 			} else if (result.type === 'failure') {
@@ -384,15 +391,20 @@
 				}
 			}
 			await update();
+			if (moviesSaveQueued) {
+				moviesSaveQueued = false;
+				await tick();
+				submitMovies();
+			}
 		};
 	};
 
 	const enhanceRestartDaemon: SubmitFunction = () => {
 		restarting = true;
 		return async ({ result, update }) => {
-			showRestartOffer = false;
 			restarting = false;
 			if (result.type === 'success') {
+				runtimeChangesPending = false;
 				toast('Restarting… the page may become temporarily unavailable', 'success');
 			} else {
 				toast('Restart failed — try again or restart manually', 'error');
@@ -421,13 +433,16 @@
 				version={data.transmissionSession?.version ?? 'Unavailable'}
 				authToken={maskConfiguredValue(transmissionAuthConfigured())}
 				url={data.config.transmission.url}
-				downloadTarget={storagePoolLabel()}
+				downloadTargets={storagePoolTargets()}
 				runtime={data.config.runtime}
 				{showRows}
 				{testingConnection}
+				{restarting}
+				{runtimeChangesPending}
 				runtimeMessage={form?.runtimeMessage}
 				{enhanceTestConnection}
 				{enhanceSaveRuntime}
+				{enhanceRestartDaemon}
 			/>
 
 			<FeedsCard
@@ -458,19 +473,66 @@
 					{currentEtag}
 					writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
 					{enhanceSaveTvDefaults}
+					setTvFormEl={(element) => (tvFormEl = element)}
+					setTvSubmitButtonEl={(element) => (tvSubmitButtonEl = element)}
 					onToggleResolution={toggleResolution}
 					onToggleCodec={toggleCodec}
 				/>
 
 				<div class="bg-card/75 rounded-[30px] border border-white/10 p-6">
-					<p class="text-primary font-mono text-xs font-semibold tracking-[0.2em] uppercase">
-						03B · Active Watchlist
-					</p>
-					<h3 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">Tracked Shows</h3>
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div>
+							<p class="text-primary font-mono text-xs font-semibold tracking-[0.2em] uppercase">
+								03B · Active Watchlist
+							</p>
+							<h3 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">Tracked Shows</h3>
+						</div>
+						{#if showAddDraftActive}
+							<div
+								class="border-border bg-background/50 focus-within:border-primary/70 focus-within:ring-primary/30 flex items-center gap-3 rounded-full border px-4 transition-colors focus-within:ring-2"
+							>
+								<input
+									bind:this={showAddDraftInputEl}
+									type="text"
+									placeholder="New show name"
+									autocomplete="off"
+									class="w-auto min-w-[12ch] bg-transparent py-2 text-sm outline-none"
+									value={showAddDraftName}
+									oninput={(event) => (showAddDraftName = event.currentTarget.value)}
+									onkeydown={(event) => {
+										if (event.key === 'Escape') {
+											event.preventDefault();
+											cancelAddShowDraft();
+										} else if (event.key === 'Enter') {
+											event.preventDefault();
+											void submitAddShowDraft();
+										}
+									}}
+								/>
+								<button
+									type="button"
+									class="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors"
+									aria-label="Cancel add show"
+									onclick={cancelAddShowDraft}
+								>
+									Cancel
+								</button>
+							</div>
+						{:else}
+							<Button
+								type="button"
+								variant="outline"
+								class="rounded-full px-5"
+								disabled={!canWrite}
+								title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+								onclick={startAddShowDraft}
+							>
+								Add show
+							</Button>
+						{/if}
+					</div>
 					<ShowWatchlistEditor
 						{showRows}
-						{showAddDraftActive}
-						{showAddDraftName}
 						{canWrite}
 						{currentEtag}
 						showsMessage={form?.showsMessage}
@@ -478,14 +540,9 @@
 						{enhanceSaveShows}
 						setShowsFormEl={(element) => (showsFormEl = element)}
 						setShowsSubmitButtonEl={(element) => (showsSubmitButtonEl = element)}
-						setShowAddDraftInputEl={(element) => (showAddDraftInputEl = element)}
 						onUpdateShowName={updateShowName}
 						onHandleShowEnter={handleShowEnter}
-						onStartAddShowDraft={startAddShowDraft}
-						onCancelAddShowDraft={cancelAddShowDraft}
-						onSubmitAddShowDraft={submitAddShowDraft}
 						onRemoveShow={removeShow}
-						onShowAddDraftNameChange={(value) => (showAddDraftName = value)}
 					/>
 				</div>
 			</div>
@@ -501,32 +558,28 @@
 				{canWrite}
 				{currentEtag}
 				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
-				moviesMessage={form?.moviesMessage}
 				{enhanceSaveMovies}
+				setMoviesFormEl={(element) => (moviesFormEl = element)}
+				setMoviesSubmitButtonEl={(element) => (moviesSubmitButtonEl = element)}
 				onRemoveMovieYear={removeMovieYear}
 				onMovieYearInputChange={(value) => (movieYearInput = value)}
 				onAddMovieYear={addMovieYear}
 				onToggleMovieResolution={toggleMovieResolution}
 				onToggleMovieCodec={toggleMovieCodec}
-				onMovieCodecPolicyChange={(value) => (movieCodecPolicy = value)}
+				onMovieCodecPolicyChange={updateMovieCodecPolicy}
 			/>
 		</div>
-
-		<ConfigMetricsGrid {metrics} />
-
-		<RestartDaemonBanner
-			show={showRestartOffer}
-			{canWrite}
-			{restarting}
-			writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
-			{enhanceRestartDaemon}
-		/>
-
 		<DeleteShowModal
 			open={!!showDeleteConfirm}
 			name={showDeleteConfirm?.name}
 			onCancel={cancelDeleteShow}
 			onConfirm={confirmDeleteShow}
+		/>
+		<RemoveMovieYearModal
+			open={movieYearDeleteConfirm !== null}
+			year={movieYearDeleteConfirm}
+			onCancel={cancelDeleteMovieYear}
+			onConfirm={confirmDeleteMovieYear}
 		/>
 	{/if}
 </section>

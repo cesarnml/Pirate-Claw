@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 import type { AppConfig } from '$lib/types';
 
@@ -73,9 +73,36 @@ describe('/config', () => {
 		expect(screen.getByText('TestFeed')).toBeInTheDocument();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Save shows' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Save TV defaults' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Save movies policy' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeInTheDocument();
-		expect(screen.getByText('Storage Pool')).toBeInTheDocument();
-		expect(screen.getByText('Transfer Rate')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
+		expect(screen.queryByText('Storage Pool')).not.toBeInTheDocument();
+		expect(screen.queryByText('Transfer Rate')).not.toBeInTheDocument();
+	});
+
+	it('renders labeled movie and tv download targets when downloadDirs are configured', () => {
+		renderPage({
+			config: {
+				...mockConfig,
+				transmission: {
+					...mockConfig.transmission,
+					downloadDirs: {
+						movie: '/Users/cesar/Downloads/completed-movies',
+						tv: '/Users/cesar/Downloads/completed-tv'
+					}
+				}
+			},
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
+		});
+
+		expect(screen.getByText('Movie:')).toBeInTheDocument();
+		expect(screen.getByText('/Users/cesar/Downloads/completed-movies')).toBeInTheDocument();
+		expect(screen.getByText('TV:')).toBeInTheDocument();
+		expect(screen.getByText('/Users/cesar/Downloads/completed-tv')).toBeInTheDocument();
 	});
 
 	it('renders error state when API is unreachable', () => {
@@ -99,6 +126,22 @@ describe('/config', () => {
 		});
 		expect(screen.getByText(/No feeds configured yet/)).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeInTheDocument();
+	});
+
+	it('opens the add-show draft from the card header and labels the dismiss action as Cancel', async () => {
+		renderPage({
+			config: mockConfig,
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Add show' }));
+
+		expect(screen.getByPlaceholderText('New show name')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Cancel add show' })).toHaveTextContent('Cancel');
+		expect(screen.queryByRole('button', { name: 'Add show' })).not.toBeInTheDocument();
 	});
 
 	it('renders TV defaults chips pre-populated from config.tvDefaults', () => {
@@ -143,7 +186,7 @@ describe('/config', () => {
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toHaveValue('The Show');
 	});
 
-	it('does not render restart offer by default', () => {
+	it('confirms before removing a movie year', async () => {
 		renderPage({
 			config: mockConfig,
 			error: null,
@@ -151,7 +194,57 @@ describe('/config', () => {
 			canWrite: true,
 			onboarding: null
 		});
-		expect(screen.queryByRole('button', { name: /restart daemon/i })).not.toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Remove year 2024' }));
+
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+		expect(screen.getByText('Remove movie year?')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Remove year' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+	});
+
+	it('hides the remove button while a watchlist input is focused', async () => {
+		renderPage({
+			config: {
+				...mockConfig,
+				tv: [
+					{
+						name: 'preset',
+						matchPattern: 'Monarch Legacy of Monsters',
+						resolutions: ['1080p'],
+						codecs: ['x265']
+					}
+				]
+			},
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
+		});
+
+		const input = screen.getByRole('textbox', { name: 'TV show 1' });
+		const pill = input.closest('[data-focused]');
+		const removeButton = screen.getByRole('button', { name: 'Remove show' });
+
+		expect(pill).toHaveAttribute('data-focused', 'false');
+		expect(removeButton).toHaveClass('opacity-100');
+
+		await fireEvent.focus(input);
+
+		expect(pill).toHaveAttribute('data-focused', 'true');
+		expect(input.getAttribute('style')).toBeNull();
+		expect(removeButton).toHaveClass('opacity-0');
+	});
+
+	it('renders restart button disabled by default', () => {
+		renderPage({
+			config: mockConfig,
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
+		});
+		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
 	});
 
 	it('renders resume onboarding banner for partial setup', () => {
@@ -224,11 +317,13 @@ describe('/config', () => {
 
 		expect(screen.getByText('Write Access: Restricted')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save feeds' })).toBeDisabled();
-		expect(screen.getByRole('button', { name: 'Save TV defaults' })).toBeDisabled();
-		expect(screen.getByRole('button', { name: 'Save movies policy' })).toBeDisabled();
+		expect(screen.queryByRole('button', { name: 'Save TV defaults' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Save movies policy' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Save shows' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Add year' })).toBeDisabled();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeDisabled();
 		expect(screen.getByRole('spinbutton', { name: 'Run interval (minutes)' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Test Connection' })).toBeEnabled();
