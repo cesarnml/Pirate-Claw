@@ -1,0 +1,24 @@
+{
+  "_starter": true,
+  "transmission": {
+    "url": "http://localhost:9091/transmission/rpc",
+    "username": "admin",
+    "password": "admin"
+  },
+  "plex": {
+    "url": "http://localhost:32400",
+    "token": "",
+    "refreshIntervalMinutes": 0
+  },
+  "movies": {
+    "years": [2024, 2025],
+    "resolutions": ["1080p"],
+    "codecs": ["x264"],
+    "codecPolicy": "prefer"
+  },
+  "tv": {
+    "defaults": { "resolutions": ["1080p"], "codecs": ["x264"] },
+    "shows": []
+  },
+  "feeds": []
+}

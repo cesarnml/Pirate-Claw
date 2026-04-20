@@ -1,0 +1,24 @@
+{
+  "transmission": {
+    "url": "http://192.168.1.100:9091/transmission/rpc",
+    "username": "operator",
+    "password": "secret"
+  },
+  "movies": {
+    "years": [2024, 2025],
+    "resolutions": ["1080p"],
+    "codecs": ["x264"],
+    "codecPolicy": "prefer"
+  },
+  "tv": {
+    "defaults": { "resolutions": ["1080p"], "codecs": ["x264"] },
+    "shows": ["Breaking Bad"]
+  },
+  "feeds": [
+    {
+      "name": "Example Feed",
+      "url": "https://example.com/rss",
+      "mediaType": "tv"
+    }
+  ]
+}

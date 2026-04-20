@@ -1,0 +1,18 @@
+{
+  "transmission": {
+    "url": "http://localhost:9091/transmission/rpc",
+    "username": "admin",
+    "password": "admin"
+  },
+  "movies": {
+    "years": [2024, 2025],
+    "resolutions": ["1080p"],
+    "codecs": ["x264"],
+    "codecPolicy": "prefer"
+  },
+  "tv": {
+    "defaults": { "resolutions": ["1080p"], "codecs": ["x264"] },
+    "shows": []
+  },
+  "feeds": []
+}

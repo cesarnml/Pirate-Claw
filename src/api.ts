@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { getSetupState } from './bootstrap';
 import { renameSync, writeFileSync } from 'node:fs';
 import {
   fetchSessionInfo,
@@ -357,6 +358,15 @@ export function createApiFetch(
         lastRunCycle: health.lastRunCycle,
         lastReconcileCycle: health.lastReconcileCycle,
       });
+    }
+
+    if (path === '/api/setup/state' && request.method === 'GET') {
+      try {
+        const state = await getSetupState(configPath);
+        return Response.json({ state });
+      } catch {
+        return json500();
+      }
     }
 
     if (path === '/api/status') {

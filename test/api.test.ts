@@ -155,6 +155,97 @@ describe('createApiFetch', () => {
   });
 });
 
+describe('GET /api/setup/state', () => {
+  it('returns "starter" state for a starter config file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-api-test-'));
+    const configPath = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        _starter: true,
+        transmission: { url: 'http://localhost:9091/transmission/rpc' },
+        feeds: [],
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: [],
+        },
+      }),
+    );
+
+    const deps = { ...createDeps(), configPath };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/state'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ state: 'starter' });
+  });
+
+  it('returns "partially_configured" state when _starter absent but not ready', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-api-test-'));
+    const configPath = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        transmission: { url: 'http://localhost:9091/transmission/rpc' },
+        feeds: [],
+        tv: [],
+      }),
+    );
+
+    const deps = { ...createDeps(), configPath };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/state'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ state: 'partially_configured' });
+  });
+
+  it('returns "ready" state when fully configured', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-api-test-'));
+    const configPath = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        transmission: {
+          url: 'http://192.168.1.100:9091/transmission/rpc',
+          username: 'op',
+          password: 'secret',
+        },
+        tv: [
+          { name: 'Breaking Bad', resolutions: ['1080p'], codecs: ['x264'] },
+        ],
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'tv' },
+        ],
+      }),
+    );
+
+    const deps = { ...createDeps(), configPath };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/state'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ state: 'ready' });
+  });
+
+  it('requires no auth', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/state'),
+    );
+
+    expect(response.status).not.toBe(401);
+    expect(response.status).not.toBe(403);
+  });
+});
+
 describe('GET /api/health', () => {
   it('returns uptime and startedAt', async () => {
     const deps = createDeps();

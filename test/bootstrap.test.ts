@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ensureStarterConfig } from '../src/bootstrap';
+import { ensureStarterConfig, getSetupState } from '../src/bootstrap';
 import { validateConfig } from '../src/config';
 
 let dir: string;
@@ -78,5 +78,72 @@ describe('ensureStarterConfig', () => {
     };
 
     expect(() => validateConfig(config, 'test', {})).not.toThrow();
+  });
+});
+
+const FIXTURE_DIR = join(import.meta.dir, 'fixtures/setup-state');
+
+describe('getSetupState', () => {
+  it('returns "starter" when file does not exist', async () => {
+    const path = join(dir, 'missing.json');
+    expect(await getSetupState(path)).toBe('starter');
+  });
+
+  it('returns "starter" for starter fixture (_starter: true)', async () => {
+    const path = join(dir, 'starter.json');
+    await copyFile(join(FIXTURE_DIR, 'starter.json'), path);
+    expect(await getSetupState(path)).toBe('starter');
+  });
+
+  it('returns "partially_configured" for partially-configured fixture', async () => {
+    const path = join(dir, 'partial.json');
+    await copyFile(join(FIXTURE_DIR, 'partially-configured.json'), path);
+    expect(await getSetupState(path)).toBe('partially_configured');
+  });
+
+  it('returns "ready" for ready fixture', async () => {
+    const path = join(dir, 'ready.json');
+    await copyFile(join(FIXTURE_DIR, 'ready.json'), path);
+    expect(await getSetupState(path)).toBe('ready');
+  });
+
+  it('returns "partially_configured" when _starter absent but feeds empty', async () => {
+    const path = join(dir, 'no-feeds.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://mybox:9091/transmission/rpc' },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: ['Breaking Bad'],
+        },
+        feeds: [],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('partially_configured');
+  });
+
+  it('returns "partially_configured" when tv is empty', async () => {
+    const path = join(dir, 'no-tv.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://mybox:9091/transmission/rpc' },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: [],
+        },
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'tv' },
+        ],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('partially_configured');
+  });
+
+  it('returns "partially_configured" for invalid JSON', async () => {
+    const path = join(dir, 'bad.json');
+    await Bun.write(path, 'not json');
+    expect(await getSetupState(path)).toBe('partially_configured');
   });
 });
