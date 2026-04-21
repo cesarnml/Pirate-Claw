@@ -236,6 +236,41 @@ describe('runPipeline', () => {
     ]);
   });
 
+  it('skips movie items without throwing when config.movies is absent', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const configWithoutMovies = createConfig({
+      feeds: [
+        {
+          name: 'Movie Feed',
+          url: 'https://example.test/movie.rss',
+          mediaType: 'movie',
+        },
+      ],
+      tv: [],
+    });
+    delete (configWithoutMovies as Record<string, unknown>).movies;
+
+    const result = await runPipeline({
+      config: configWithoutMovies,
+      repository,
+      downloader: {
+        submit: async () => ({ ok: true as const, status: 'queued' as const }),
+      },
+      fetchFeed: async () => [
+        {
+          feedName: 'Movie Feed',
+          guidOrLink: 'https://example.test/releases/some-movie',
+          rawTitle: 'Some.Movie.2024.1080p.WEB.x265-GROUP',
+          publishedAt: '2026-03-30T00:00:00.000Z',
+          downloadUrl: 'https://example.test/downloads/some-movie.torrent',
+        },
+      ],
+    });
+
+    expect(result.counts.queued).toBe(0);
+    expect(result.counts.skipped_no_match).toBe(1);
+  });
+
   it('passes per-media-type downloadDir to downloader submit', async () => {
     const repository = createTestRepository(await createDatabasePath());
     const submissions: SubmitDownloadInput[] = [];

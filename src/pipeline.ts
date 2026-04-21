@@ -185,6 +185,10 @@ function matchFeedItem(
     return matchTvItem(normalized, config.tv)[0];
   }
 
+  if (!config.movies) {
+    return undefined;
+  }
+
   return matchMovieItem(normalized, config.movies);
 }
 
@@ -192,7 +196,7 @@ function getFeedItemNoMatchReason(
   normalized: NormalizedFeedItem,
   config: AppConfig,
 ): string | undefined {
-  if (normalized.mediaType === 'movie') {
+  if (normalized.mediaType === 'movie' && config.movies) {
     return getMovieNoMatchReason(normalized, config.movies);
   }
 

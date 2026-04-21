@@ -171,9 +171,9 @@ describe('validateConfig', () => {
 
     expect(config.tv[0]?.resolutions).toEqual(['1080p']);
     expect(config.tv[0]?.codecs).toEqual(['x265', 'x264']);
-    expect(config.movies.resolutions).toEqual(['2160p', '1080p']);
-    expect(config.movies.codecs).toEqual(['x265']);
-    expect(config.movies.codecPolicy).toBe('prefer');
+    expect(config.movies?.resolutions).toEqual(['2160p', '1080p']);
+    expect(config.movies?.codecs).toEqual(['x265']);
+    expect(config.movies?.codecPolicy).toBe('prefer');
   });
 
   it('parses movies.codecPolicy when set to require', () => {
@@ -187,7 +187,14 @@ describe('validateConfig', () => {
       },
     });
 
-    expect(config.movies.codecPolicy).toBe('require');
+    expect(config.movies?.codecPolicy).toBe('require');
+  });
+
+  it('accepts config without movies key; config.movies is undefined', () => {
+    const base = createMinimalConfig() as Record<string, unknown>;
+    delete base.movies;
+    const config = validateConfig(base);
+    expect(config.movies).toBeUndefined();
   });
 
   it('fails with a precise movies.codecPolicy path when the value is unsupported', () => {

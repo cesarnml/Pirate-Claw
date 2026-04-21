@@ -56,8 +56,6 @@ export async function ensureStarterConfig(path: string): Promise<void> {
     return;
   }
 
-  const year = new Date().getFullYear();
-
   const starter = {
     _starter: true,
     transmission: {
@@ -69,12 +67,6 @@ export async function ensureStarterConfig(path: string): Promise<void> {
       url: 'http://localhost:32400',
       token: '',
       refreshIntervalMinutes: 0,
-    },
-    movies: {
-      years: [year - 1, year],
-      resolutions: ['1080p'],
-      codecs: ['x264'],
-      codecPolicy: 'prefer',
     },
     tv: {
       defaults: { resolutions: ['1080p'], codecs: ['x264'] },
