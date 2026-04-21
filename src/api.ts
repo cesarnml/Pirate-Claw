@@ -903,12 +903,19 @@ export function createApiFetch(
         if (tvDir !== undefined) downloadDirs.tv = tvDir;
         if (movieDir !== undefined) downloadDirs.movie = movieDir;
 
+        const nextTransmission = {
+          ...existingTransmission,
+          ...(Object.keys(downloadDirs).length > 0
+            ? { downloadDirs }
+            : { downloadDirs: undefined }),
+        };
+        if (nextTransmission.downloadDirs === undefined) {
+          delete nextTransmission.downloadDirs;
+        }
+
         const merged = {
           ...baseOnDisk,
-          transmission: {
-            ...existingTransmission,
-            ...(Object.keys(downloadDirs).length > 0 ? { downloadDirs } : {}),
-          },
+          transmission: nextTransmission,
         };
 
         const validated = validateConfig(

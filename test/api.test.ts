@@ -1776,6 +1776,88 @@ describe('PUT /api/config/movies', () => {
   });
 });
 
+describe('PUT /api/config/transmission/download-dirs', () => {
+  async function makeDownloadDirsHandler() {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    const directory = await mkdtemp(
+      join(tmpdir(), 'pirate-claw-download-dirs-'),
+    );
+    const configPath = join(directory, 'pirate-claw.config.json');
+    await writeCompactTvConfigFile(configPath);
+    const loaded = await loadConfig(configPath);
+    const holder = {
+      current: {
+        ...loaded,
+        transmission: {
+          ...loaded.transmission,
+          downloadDirs: { tv: '/downloads/tv', movie: '/downloads/movies' },
+        },
+        runtime: { ...loaded.runtime, apiWriteToken: 'write-token' },
+      },
+    };
+    await Bun.write(
+      configPath,
+      JSON.stringify(
+        {
+          feeds: loaded.feeds,
+          tv: {
+            defaults: loaded.tvDefaults,
+            shows: ['Example Show'],
+          },
+          movies: loaded.movies,
+          transmission: {
+            ...loaded.transmission,
+            downloadDirs: { tv: '/downloads/tv', movie: '/downloads/movies' },
+          },
+          runtime: {
+            ...loaded.runtime,
+            apiWriteToken: 'write-token',
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    const deps = createDeps();
+    deps.config = holder.current;
+    deps.configHolder = holder;
+    deps.configPath = configPath;
+    const handler = createApiFetch(deps);
+    const get = await handler(new Request('http://localhost/api/config'));
+    const etag = get.headers.get('etag')!;
+    return { handler, holder, configPath, etag, prevWrite };
+  }
+
+  it('removes transmission.downloadDirs when both values are cleared', async () => {
+    const { handler, holder, configPath, etag, prevWrite } =
+      await makeDownloadDirsHandler();
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/config/transmission/download-dirs', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({}),
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      expect(holder.current.transmission.downloadDirs).toBeUndefined();
+
+      const disk = await Bun.file(configPath).json();
+      expect(disk.transmission.downloadDirs).toBeUndefined();
+    } finally {
+      if (prevWrite !== undefined)
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      else delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    }
+  });
+});
+
 describe('buildShowBreakdowns', () => {
   it('sorts shows by title and seasons/episodes by number', () => {
     const candidates = [

@@ -332,7 +332,7 @@ export const actions: Actions = {
 
 	testTransmission: async () => {
 		try {
-			const response = await apiRequest('/api/transmission/ping', { method: 'POST' });
+			const response = await apiRequest('/api/transmission/session');
 			const reachable = response.ok;
 			return { transmissionReachable: reachable };
 		} catch {
