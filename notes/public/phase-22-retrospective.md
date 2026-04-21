@@ -72,4 +72,14 @@ The two `Body is unusable` incidents were avoidable with earlier awareness of th
 
 ---
 
+## Code Review Patch Notes
+
+- **P22.01 / PR #200:** Reviewed against `main`. No code patch was needed; the optional-`movies` schema change, starter-config cleanup, and pipeline guard were all consistent with ticket scope.
+- **P22.02 / PR #201:** Reviewed against `agents/p22-01-starter-config-cleanup-and-movies-optional-schema`. No code patch was needed; the media-type-aware `getSetupState` rewrite matched the ticket and test coverage was sufficient.
+- **P22.03 / PR #202:** Added a follow-up code patch after review. The onboarding Transmission test was calling the write-auth-only `POST /api/transmission/ping`, which breaks the wizard's Step 1 before the write-access step is complete. The patch switched onboarding to the existing read-only Transmission probe, added regression coverage for that action, and added backend/test coverage so submitting blank media-directory values actually clears `transmission.downloadDirs` instead of silently preserving stale paths.
+- **P22.04 / PR #203:** Carried the P22.03 review patch forward into the readiness branch so the stack stays consistent. No additional P22.04-specific code patch was needed after review.
+- **P22.05 / PR #204:** Carried the review patch forward again, but adapted the onboarding Transmission test to use the new read-only `GET /api/setup/transmission/status` endpoint introduced in this ticket so the compatibility badge flow stays intact without depending on write auth. No additional P22.05-specific patch was needed after review.
+
+---
+
 _Created: 2026-04-21. PR stack #200–#204._
