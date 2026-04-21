@@ -258,9 +258,9 @@ function requireCompactTvShows(
   input: unknown,
   path: string,
 ): CompactTvShowEntry[] {
-  if (!Array.isArray(input) || input.length === 0) {
+  if (!Array.isArray(input)) {
     throw new ConfigError(
-      `Config file "${path} tv shows" must be a non-empty array like ["Example Show"] or [{ "name": "Example Show" }].`,
+      `Config file "${path} tv shows" must be an array like ["Example Show"] or [{ "name": "Example Show" }].`,
     );
   }
 
@@ -796,8 +796,10 @@ function resolveSecretFromInlineOrEnv(
   envValue: string | undefined,
   path: string,
 ): string {
-  if (typeof inlineValue === 'string' && inlineValue.length > 0) {
-    return inlineValue;
+  if (typeof inlineValue === 'string') {
+    if (inlineValue.length > 0) return inlineValue;
+    // Explicit empty string: env override wins, otherwise accept empty (starter mode)
+    return typeof envValue === 'string' && envValue.length > 0 ? envValue : '';
   }
 
   if (typeof envValue === 'string' && envValue.length > 0) {
