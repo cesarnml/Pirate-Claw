@@ -66,10 +66,10 @@ Do not start the next ticket until:
 
 ## Explicit Deferrals
 
-- Corrupt/malformed config recovery (P22)
-- Browser-only onboarding flow (P22)
+- Corrupt/malformed config recovery (deferred past P22; not yet addressed)
+- Browser-only onboarding flow (**resolved in P22**)
 - Synology and Mac supervisor/auto-restart wiring (P23)
-- Plex connectivity version check surfaced in the browser (P22)
+- Plex connectivity version check surfaced in the browser (deferred to P22.5; Transmission compatibility status delivered in P22.05)
 
 ## Stop Conditions
 

@@ -1,6 +1,6 @@
 # Phase 22: Browser-Only Setup and Installer Flow
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-22/` implementation plan until tickets are approved.
+**Delivery status:** Complete. P22.01–P22.06 delivered. See [phase-22-retrospective.md](../../notes/public/phase-22-retrospective.md).
 
 Phase 22 turns the Phase 21 bootstrap contract into a complete browser-only setup flow. The operator should be able to move from a valid starter state to a working daemon configuration entirely through the web UI.
 

@@ -98,4 +98,4 @@ Pause for review if:
 
 ## Delivery status
 
-Not started.
+Complete. P22.01–P22.06 delivered and PRs opened (#200–#204). See [phase-22-retrospective.md](../../../notes/public/phase-22-retrospective.md).
