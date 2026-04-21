@@ -220,7 +220,7 @@ That inference is intentionally conservative. It reconstructs enough state to re
 
 ## Post-verify self-audit (ticket stacks)
 
-After **build mode** (implementation and automated verification, for example `bun run verify:quiet` and any scoped tests the ticket implies), the agent switches to **self-audit mode**: a deliberate pass over the diff and ticket acceptance before publishing the branch for external AI code review. Stay in the same implementation session—this is a mode switch, not a handoff.
+After **build mode** (implementation and automated verification, for example `bun run format:quiet`, `bun run format:web:quiet` when `web/` changed, `bun run verify:quiet`, and any scoped tests the ticket implies), the agent switches to **self-audit mode**: a deliberate pass over the diff and ticket acceptance before publishing the branch for external AI code review. Stay in the same implementation session—this is a mode switch, not a handoff.
 
 The `post-verify-self-audit` command **records** that self-audit mode completed (ticket status, outcome, and timestamp in local delivery state). It does **not** run checks or read the diff; the agent performs verification in build mode and the diff review in self-audit mode, then invokes this command.
 

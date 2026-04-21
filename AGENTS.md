@@ -16,7 +16,7 @@ Prefer canonical scale classes over arbitrary values. Use `min-w-112.5` not `min
 
 ## Pre-Commit
 
-Before committing: run `bun run format` for touched files (for `web/` also `bun run format:web`; or `bun run verify` covers both). Run `bun run spellcheck` when docs, Markdown, config examples, PR text, or user-facing copy changed.
+Before committing: prefer `bun run format:quiet` for touched files (for `web/` also `bun run format:web:quiet`; the noisy `format` variants remain available for human interactive use). `bun run verify` still covers both format checks. Run `bun run spellcheck` when docs, Markdown, config examples, PR text, or user-facing copy changed.
 
 ## Ticket Completion Checklist
 

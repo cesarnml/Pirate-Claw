@@ -4,6 +4,7 @@
  * Silent on success. Passes through the verify exit code.
  *
  * Filter: lines matching error|warn|\[warn\]|FAIL|✗|exit code
+ * When formatting is the only blocker, point agents at format:quiet / format:web:quiet.
  */
 import { spawnSync } from 'node:child_process';
 
@@ -20,6 +21,11 @@ const combined = [stdout, stderr].filter(Boolean).join('\n');
 const exitCode = result.status ?? 1;
 
 if (exitCode !== 0) {
+  if (/Code style issues found|prettier --check/i.test(combined)) {
+    console.error(
+      'hint: run bun run format:quiet and, for web changes, bun run format:web:quiet',
+    );
+  }
   const FAILURE_PATTERN = /error|warn|\[warn\]|FAIL|✗|exit code/i;
   const failureLines = combined
     .split('\n')
