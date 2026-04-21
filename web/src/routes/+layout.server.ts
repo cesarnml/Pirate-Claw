@@ -4,6 +4,12 @@ import type { LayoutServerLoad } from './$types';
 
 type SetupStateResponse = { state: 'starter' | 'partially_configured' | 'ready' };
 
+function normalizeSetupState(state: unknown): SetupStateResponse['state'] {
+	return state === 'starter' || state === 'partially_configured' || state === 'ready'
+		? state
+		: 'partially_configured';
+}
+
 export const load: LayoutServerLoad = async () => {
 	const [healthResult, sessionResult, configResult, setupStateResult] = await Promise.allSettled([
 		apiFetch<DaemonHealth>('/api/health'),
@@ -34,7 +40,7 @@ export const load: LayoutServerLoad = async () => {
 		plexConfigured: configResult.status === 'fulfilled' && configResult.value.plex !== undefined,
 		setupState:
 			setupStateResult.status === 'fulfilled'
-				? setupStateResult.value.state
+				? normalizeSetupState(setupStateResult.value.state)
 				: 'partially_configured'
 	};
 };

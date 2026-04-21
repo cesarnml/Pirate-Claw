@@ -39,9 +39,10 @@
 	const daemonUptime = $derived(formatUptime(data.health?.uptime ?? null));
 	const transmissionConnected = $derived(data.transmissionSession !== null);
 	const plexConfigured = $derived(data.plexConfigured === true);
-	const showSidebar = $derived($page.url.pathname !== '/onboarding');
+	const isOnboarding = $derived($page.url.pathname === '/onboarding');
+	const showSidebar = $derived(!isOnboarding);
 	const setupState = $derived(data.setupState ?? 'partially_configured');
-	const isStarter = $derived(setupState === 'starter');
+	const isStarter = $derived(setupState === 'starter' && !isOnboarding);
 	const isPartiallyConfigured = $derived(setupState === 'partially_configured');
 </script>
 
@@ -125,6 +126,12 @@
 						Use the setup wizard to connect Transmission, Plex, and configure your media
 						preferences.
 					</p>
+					<a
+						href="/onboarding"
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium"
+					>
+						Open setup wizard
+					</a>
 				</div>
 			{:else}
 				{#if isPartiallyConfigured}
