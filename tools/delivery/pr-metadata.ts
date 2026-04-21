@@ -973,6 +973,11 @@ export function buildPullRequestBody(
       review.threadResolutions ?? ticket.reviewThreadResolutions,
     vendors: review.vendors ?? ticket.reviewVendors,
   };
+  const shouldRenderExternalAiReviewSection =
+    effectiveReview.outcome === 'clean' ||
+    effectiveReview.outcome === 'patched' ||
+    ticket.status === 'needs_patch' ||
+    ticket.status === 'operator_input_needed';
   assertPatchedStageHasCommitEvidence({
     outcome: ticket.selfAuditOutcome,
     patchCommits: ticket.selfAuditPatchCommits,
@@ -1048,11 +1053,7 @@ export function buildPullRequestBody(
     );
   }
 
-  if (
-    effectiveReview.outcome ||
-    ticket.status === 'needs_patch' ||
-    ticket.status === 'operator_input_needed'
-  ) {
+  if (shouldRenderExternalAiReviewSection) {
     lines.push(
       '',
       buildExternalAiReviewSection(

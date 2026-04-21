@@ -1127,6 +1127,33 @@ describe('delivery orchestrator', () => {
     expect(body).not.toContain('## Verification');
   });
 
+  it('omits the external ai review section when review outcome is skipped', () => {
+    const body = buildPullRequestBody(
+      {
+        planKey: 'phase-03',
+        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        statePath: '.agents/delivery/phase-03/state.json',
+        reviewsDirPath: '.agents/delivery/phase-03/reviews',
+        handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+        reviewPollIntervalMinutes: 6,
+        reviewPollMaxWaitMinutes: 12,
+        tickets: [],
+      },
+      {
+        id: 'P3.01',
+        title: 'Persist Transmission Identity For Queued Torrents',
+        ticketFile:
+          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+        baseBranch: 'main',
+        status: 'reviewed',
+        reviewOutcome: 'skipped',
+        reviewNote: 'external AI review disabled by policy',
+      },
+    );
+
+    expect(body).not.toContain('## External AI Review');
+  });
+
   it('renders no-action rationale when non-action summary exists on clean outcome', () => {
     const body = buildStandaloneAiReviewSection({
       outcome: 'clean',
