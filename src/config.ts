@@ -87,7 +87,7 @@ export type AppConfig = {
   tv: TvRule[];
   /** Present when the config file uses compact tv format with explicit defaults. */
   tvDefaults?: CompactTvDefaults;
-  movies: MoviePolicy;
+  movies?: MoviePolicy;
   transmission: TransmissionConfig;
   runtime: RuntimeConfig;
   tmdb?: TmdbConfig;
@@ -142,14 +142,13 @@ export function validateConfig(
   }
 
   const feeds = requireArray(input, 'feeds', path);
-  const movies = requireRecord(input, 'movies', path);
   const transmission = requireRecord(input, 'transmission', path);
 
   return {
     feeds: feeds.map((entry, index) => validateFeed(entry, path, index)),
     tv: validateTvConfig(input.tv, path),
     tvDefaults: extractTvDefaults(input.tv, path),
-    movies: validateMoviePolicy(movies, path),
+    movies: validateOptionalMoviePolicy(input.movies, path),
     transmission: validateTransmission(transmission, path, env),
     runtime: validateRuntime(input.runtime, path, env),
     tmdb: validateOptionalTmdb(input.tmdb, path),
@@ -352,6 +351,17 @@ export function validateMoviePolicy(
     ),
     codecPolicy: requireMovieCodecPolicy(rule, `${path} movies codecPolicy`),
   };
+}
+
+function validateOptionalMoviePolicy(
+  input: unknown,
+  path: string,
+): MoviePolicy | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  return validateMoviePolicy(expectRecord(input, `${path} movies`), path);
 }
 
 function requireMovieCodecPolicy(

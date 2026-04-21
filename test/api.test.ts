@@ -1762,8 +1762,8 @@ describe('PUT /api/config/movies', () => {
       const newEtag = res.headers.get('etag');
       expect(newEtag).not.toBe(etag);
 
-      expect(holder.current.movies.years).toEqual([2023, 2024]);
-      expect(holder.current.movies.codecPolicy).toBe('require');
+      expect(holder.current.movies?.years).toEqual([2023, 2024]);
+      expect(holder.current.movies?.codecPolicy).toBe('require');
 
       const disk = await Bun.file(configPath).json();
       expect(disk.movies.codecPolicy).toBe('require');

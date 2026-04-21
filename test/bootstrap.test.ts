@@ -34,8 +34,7 @@ describe('ensureStarterConfig', () => {
     expect(Array.isArray(written.tv.shows)).toBe(true);
     expect(written.tv.shows.length).toBe(0);
 
-    const year = new Date().getFullYear();
-    expect(written.movies.years).toEqual([year - 1, year]);
+    expect(written.movies).toBeUndefined();
   });
 
   it('does nothing when the file already exists', async () => {
@@ -67,12 +66,6 @@ describe('ensureStarterConfig', () => {
         password: 'admin',
       },
       plex: { url: 'http://localhost:32400', token: '' },
-      movies: {
-        years: [2024, 2025],
-        resolutions: ['1080p'],
-        codecs: ['x264'],
-        codecPolicy: 'prefer',
-      },
       tv: { defaults: { resolutions: ['1080p'], codecs: ['x264'] }, shows: [] },
       feeds: [],
     };
