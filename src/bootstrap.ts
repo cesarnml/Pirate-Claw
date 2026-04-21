@@ -1,7 +1,5 @@
 export type SetupState = 'starter' | 'partially_configured' | 'ready';
 
-const DEFAULT_TRANSMISSION_URL = 'http://localhost:9091/transmission/rpc';
-
 export async function getSetupState(path: string): Promise<SetupState> {
   const file = Bun.file(path);
 
@@ -33,17 +31,29 @@ export async function getSetupState(path: string): Promise<SetupState> {
     | undefined;
 
   const feedsNonEmpty = Array.isArray(feeds) && feeds.length > 0;
-  const tvNonEmpty = Array.isArray(tv)
-    ? tv.length > 0
-    : typeof tv === 'object' &&
-      tv !== null &&
-      Array.isArray((tv as Record<string, unknown>).shows) &&
-      ((tv as Record<string, unknown>).shows as unknown[]).length > 0;
-  const transmissionCustom =
-    typeof transmission?.url === 'string' &&
-    transmission.url !== DEFAULT_TRANSMISSION_URL;
+  const transmissionUrlSet =
+    typeof transmission?.url === 'string' && transmission.url.length > 0;
 
-  if (feedsNonEmpty && tvNonEmpty && transmissionCustom) {
+  if (!feedsNonEmpty || !transmissionUrlSet) {
+    return 'partially_configured';
+  }
+
+  const mediaTypes = new Set(
+    (feeds as Array<Record<string, unknown>>).map((f) => f.mediaType),
+  );
+
+  const tvComplete =
+    !mediaTypes.has('tv') ||
+    (Array.isArray(tv)
+      ? tv.length > 0
+      : typeof tv === 'object' &&
+        tv !== null &&
+        Array.isArray((tv as Record<string, unknown>).shows) &&
+        ((tv as Record<string, unknown>).shows as unknown[]).length > 0);
+
+  const movieComplete = !mediaTypes.has('movie') || config.movies !== undefined;
+
+  if (tvComplete && movieComplete) {
     return 'ready';
   }
 

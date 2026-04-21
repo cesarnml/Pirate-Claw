@@ -138,4 +138,131 @@ describe('getSetupState', () => {
     await Bun.write(path, 'not json');
     expect(await getSetupState(path)).toBe('partially_configured');
   });
+
+  it('returns "ready" for TV-only feeds with tv.shows non-empty and any transmission URL', async () => {
+    const path = join(dir, 'tv-only-ready.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://mybox:9091/transmission/rpc' },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: ['Breaking Bad'],
+        },
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'tv' },
+        ],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('ready');
+  });
+
+  it('returns "ready" for movie-only feeds with movies present and any transmission URL', async () => {
+    const path = join(dir, 'movie-only-ready.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://mybox:9091/transmission/rpc' },
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x264'],
+          codecPolicy: 'prefer',
+        },
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'movie' },
+        ],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('ready');
+  });
+
+  it('returns "ready" for mixed feeds with both targets configured', async () => {
+    const path = join(dir, 'mixed-ready.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://mybox:9091/transmission/rpc' },
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x264'],
+          codecPolicy: 'prefer',
+        },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: ['Breaking Bad'],
+        },
+        feeds: [
+          { name: 'tv', url: 'https://example.com/tv', mediaType: 'tv' },
+          {
+            name: 'movies',
+            url: 'https://example.com/movies',
+            mediaType: 'movie',
+          },
+        ],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('ready');
+  });
+
+  it('returns "ready" for bundled deployment at default transmission URL', async () => {
+    const path = join(dir, 'default-url-ready.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://localhost:9091/transmission/rpc' },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: ['Breaking Bad'],
+        },
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'tv' },
+        ],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('ready');
+  });
+
+  it('returns "partially_configured" for TV feeds when tv.shows empty', async () => {
+    const path = join(dir, 'tv-empty-shows.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://mybox:9091/transmission/rpc' },
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x264'],
+          codecPolicy: 'prefer',
+        },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: [],
+        },
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'tv' },
+        ],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('partially_configured');
+  });
+
+  it('returns "partially_configured" for movie feeds when movies absent', async () => {
+    const path = join(dir, 'movie-no-config.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        transmission: { url: 'http://mybox:9091/transmission/rpc' },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: ['Breaking Bad'],
+        },
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'movie' },
+        ],
+      }),
+    );
+    expect(await getSetupState(path)).toBe('partially_configured');
+  });
 });
