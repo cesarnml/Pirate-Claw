@@ -7,6 +7,7 @@
 		writeOnboardingDismissed,
 		writeOnboardingPath
 	} from '$lib/onboarding';
+	import type { ReadinessState } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
 	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
@@ -87,6 +88,38 @@
 			!!(form as { movieTargetSuccess?: boolean } | undefined)?.movieTargetSuccess
 	);
 	const showDoneStep = $derived(showPreStepsDone && minimumComplete && !showMovieTargetStep);
+
+	let readinessState = $state<ReadinessState>('not_ready');
+	let readinessInterval: ReturnType<typeof setInterval> | undefined;
+
+	$effect(() => {
+		if (!showDoneStep) return;
+		if (data.readinessState) readinessState = data.readinessState as ReadinessState;
+		if (!browser || readinessState === 'ready') return;
+		async function pollReadiness() {
+			try {
+				const res = await fetch('/api/setup/readiness');
+				if (res.ok) {
+					const json = (await res.json()) as { state: ReadinessState };
+					readinessState = json.state;
+					if (json.state === 'ready' && readinessInterval !== undefined) {
+						clearInterval(readinessInterval);
+						readinessInterval = undefined;
+					}
+				}
+			} catch {
+				// ignore transient errors
+			}
+		}
+		pollReadiness();
+		readinessInterval = setInterval(pollReadiness, 3000);
+		return () => {
+			if (readinessInterval !== undefined) {
+				clearInterval(readinessInterval);
+				readinessInterval = undefined;
+			}
+		};
+	});
 	const configuredFeedCount = $derived(data.config?.feeds.length ?? 0);
 	const firstFeedLabel = $derived(
 		configuredFeedCount > 0
@@ -842,10 +875,10 @@
 						<dt class="text-muted-foreground">Movie target</dt>
 						<dd class="font-medium">{hasMovieSummary ? 'Added' : 'Not added'}</dd>
 					</div>
-					{#if data.setupState}
+					{#if readinessState}
 						<div class="space-y-1">
-							<dt class="text-muted-foreground">Setup state</dt>
-							<dd class="font-medium">{data.setupState}</dd>
+							<dt class="text-muted-foreground">Readiness</dt>
+							<dd class="font-medium">{readinessState}</dd>
 						</div>
 					{/if}
 				</dl>
@@ -853,11 +886,11 @@
 				<div class="flex flex-wrap items-center gap-3">
 					<a
 						href="/"
-						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 items-center rounded-xl px-5 text-sm font-semibold shadow-[0_12px_30px_rgb(20_184_166_/_0.18)] {data.setupState !==
+						class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 items-center rounded-xl px-5 text-sm font-semibold shadow-[0_12px_30px_rgb(20_184_166_/_0.18)] {readinessState !==
 						'ready'
 							? 'pointer-events-none opacity-50'
 							: ''}"
-						aria-disabled={data.setupState !== 'ready'}
+						aria-disabled={readinessState !== 'ready'}
 					>
 						Go to Dashboard
 					</a>

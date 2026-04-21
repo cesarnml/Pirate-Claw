@@ -246,6 +246,113 @@ describe('GET /api/setup/state', () => {
   });
 });
 
+describe('GET /api/setup/readiness', () => {
+  it('returns not_ready when configState is partially_configured', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-api-test-'));
+    const configPath = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        transmission: { url: 'http://localhost:9091/transmission/rpc' },
+        feeds: [],
+        tv: [],
+      }),
+    );
+
+    const deps = { ...createDeps(), configPath };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/readiness'),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state).toBe('not_ready');
+    expect(body.configState).toBe('partially_configured');
+    expect(body.daemonLive).toBe(true);
+  });
+
+  it('returns not_ready when configState is starter', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-api-test-'));
+    const configPath = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        _starter: true,
+        transmission: { url: '' },
+        feeds: [],
+        tv: [],
+      }),
+    );
+
+    const deps = { ...createDeps(), configPath };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/readiness'),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state).toBe('not_ready');
+    expect(body.configState).toBe('starter');
+  });
+
+  it('returns ready_pending_restart when config is ready but transmission unreachable', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-api-test-'));
+    const configPath = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        transmission: {
+          url: 'http://192.168.1.100:9091/transmission/rpc',
+          username: 'op',
+          password: 'x',
+        },
+        tv: [
+          { name: 'Breaking Bad', resolutions: ['1080p'], codecs: ['x264'] },
+        ],
+        feeds: [
+          { name: 'rss', url: 'https://example.com/rss', mediaType: 'tv' },
+        ],
+      }),
+    );
+
+    const deps = {
+      ...createDeps(),
+      configPath,
+      config: {
+        ...createDeps().config,
+        transmission: {
+          url: 'http://127.0.0.1:1/transmission/rpc',
+          username: 'u',
+          password: 'p',
+        },
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/readiness'),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.state).toBe('ready_pending_restart');
+    expect(body.configState).toBe('ready');
+    expect(body.transmissionReachable).toBe(false);
+    expect(body.daemonLive).toBe(true);
+  });
+
+  it('requires no auth', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/readiness'),
+    );
+    expect(response.status).not.toBe(401);
+    expect(response.status).not.toBe(403);
+  });
+});
+
 describe('GET /api/health', () => {
   it('returns uptime and startedAt', async () => {
     const deps = createDeps();

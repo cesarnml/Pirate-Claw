@@ -68,7 +68,8 @@ describe('+layout.svelte', () => {
 					health: mockHealth,
 					transmissionSession: mockSession,
 					plexConfigured: true,
-					setupState: 'ready' as const
+					setupState: 'ready' as const,
+					readinessState: 'ready' as const
 				}
 			}
 		});
@@ -106,7 +107,8 @@ describe('+layout.svelte', () => {
 					health: null,
 					transmissionSession: null,
 					plexConfigured: false,
-					setupState: 'partially_configured' as const
+					setupState: 'partially_configured' as const,
+					readinessState: 'not_ready' as const
 				}
 			}
 		});
@@ -130,7 +132,8 @@ describe('+layout.svelte', () => {
 					health: null,
 					transmissionSession: null,
 					plexConfigured: false,
-					setupState: 'starter' as const
+					setupState: 'starter' as const,
+					readinessState: 'not_ready' as const
 				}
 			}
 		});
@@ -155,7 +158,8 @@ describe('+layout.svelte', () => {
 					health: null,
 					transmissionSession: null,
 					plexConfigured: false,
-					setupState: 'starter' as const
+					setupState: 'starter' as const,
+					readinessState: 'not_ready' as const
 				}
 			}
 		});
@@ -175,12 +179,34 @@ describe('+layout.svelte', () => {
 					health: mockHealth,
 					transmissionSession: mockSession,
 					plexConfigured: true,
-					setupState: 'partially_configured' as const
+					setupState: 'partially_configured' as const,
+					readinessState: 'not_ready' as const
 				}
 			}
 		});
 
 		expect(screen.getByTestId('partial-config-banner')).toBeInTheDocument();
+		expect(screen.queryByTestId('starter-mode-splash')).not.toBeInTheDocument();
+	});
+
+	it('renders ready-pending-restart banner when readinessState is ready_pending_restart', () => {
+		setPathname('/');
+
+		render(Layout, {
+			props: {
+				children: (() => {}) as unknown as import('svelte').Snippet,
+				data: {
+					health: mockHealth,
+					transmissionSession: mockSession,
+					plexConfigured: true,
+					setupState: 'ready' as const,
+					readinessState: 'ready_pending_restart' as const
+				}
+			}
+		});
+
+		expect(screen.getByTestId('ready-pending-restart-banner')).toBeInTheDocument();
+		expect(screen.queryByTestId('partial-config-banner')).not.toBeInTheDocument();
 		expect(screen.queryByTestId('starter-mode-splash')).not.toBeInTheDocument();
 	});
 
@@ -194,12 +220,14 @@ describe('+layout.svelte', () => {
 					health: mockHealth,
 					transmissionSession: mockSession,
 					plexConfigured: true,
-					setupState: 'ready' as const
+					setupState: 'ready' as const,
+					readinessState: 'ready' as const
 				}
 			}
 		});
 
 		expect(screen.queryByTestId('starter-mode-splash')).not.toBeInTheDocument();
 		expect(screen.queryByTestId('partial-config-banner')).not.toBeInTheDocument();
+		expect(screen.queryByTestId('ready-pending-restart-banner')).not.toBeInTheDocument();
 	});
 });

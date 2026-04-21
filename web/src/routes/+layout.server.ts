@@ -1,21 +1,25 @@
 import { apiFetch } from '$lib/server/api';
-import type { AppConfig, DaemonHealth, SessionInfo } from '$lib/types';
+import type {
+	AppConfig,
+	DaemonHealth,
+	ReadinessResponse,
+	SessionInfo,
+	SetupState
+} from '$lib/types';
 import type { LayoutServerLoad } from './$types';
 
-type SetupStateResponse = { state: 'starter' | 'partially_configured' | 'ready' };
-
-function normalizeSetupState(state: unknown): SetupStateResponse['state'] {
+function normalizeSetupState(state: unknown): SetupState {
 	return state === 'starter' || state === 'partially_configured' || state === 'ready'
 		? state
 		: 'partially_configured';
 }
 
 export const load: LayoutServerLoad = async () => {
-	const [healthResult, sessionResult, configResult, setupStateResult] = await Promise.allSettled([
+	const [healthResult, sessionResult, configResult, readinessResult] = await Promise.allSettled([
 		apiFetch<DaemonHealth>('/api/health'),
 		apiFetch<SessionInfo>('/api/transmission/session'),
 		apiFetch<AppConfig>('/api/config'),
-		apiFetch<SetupStateResponse>('/api/setup/state')
+		apiFetch<ReadinessResponse>('/api/setup/readiness')
 	]);
 
 	if (healthResult.status === 'rejected') {
@@ -30,17 +34,17 @@ export const load: LayoutServerLoad = async () => {
 		console.error('[layout] failed to load /api/config:', configResult.reason);
 	}
 
-	if (setupStateResult.status === 'rejected') {
-		console.error('[layout] failed to load /api/setup/state:', setupStateResult.reason);
+	if (readinessResult.status === 'rejected') {
+		console.error('[layout] failed to load /api/setup/readiness:', readinessResult.reason);
 	}
+
+	const readiness = readinessResult.status === 'fulfilled' ? readinessResult.value : null;
 
 	return {
 		health: healthResult.status === 'fulfilled' ? healthResult.value : null,
 		transmissionSession: sessionResult.status === 'fulfilled' ? sessionResult.value : null,
 		plexConfigured: configResult.status === 'fulfilled' && configResult.value.plex !== undefined,
-		setupState:
-			setupStateResult.status === 'fulfilled'
-				? normalizeSetupState(setupStateResult.value.state)
-				: 'partially_configured'
+		setupState: normalizeSetupState(readiness?.configState),
+		readinessState: readiness?.state ?? 'not_ready'
 	};
 };

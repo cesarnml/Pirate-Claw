@@ -237,3 +237,13 @@ export type DaemonHealth = {
 	lastRunCycle?: CycleSnapshot;
 	lastReconcileCycle?: CycleSnapshot;
 };
+
+export type SetupState = 'starter' | 'partially_configured' | 'ready';
+export type ReadinessState = 'not_ready' | 'ready_pending_restart' | 'ready';
+
+export type ReadinessResponse = {
+	state: ReadinessState;
+	configState: SetupState;
+	transmissionReachable: boolean;
+	daemonLive: boolean;
+};

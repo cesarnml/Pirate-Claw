@@ -18,7 +18,8 @@ const sharedLayoutData = {
 	health: null,
 	transmissionSession: null,
 	plexConfigured: false,
-	setupState: 'ready' as const
+	setupState: 'ready' as const,
+	readinessState: 'ready' as const
 };
 
 function renderPage(data: Record<string, unknown>) {

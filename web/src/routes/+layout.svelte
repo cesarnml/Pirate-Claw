@@ -42,8 +42,12 @@
 	const isOnboarding = $derived($page.url.pathname === '/onboarding');
 	const showSidebar = $derived(!isOnboarding);
 	const setupState = $derived(data.setupState ?? 'partially_configured');
+	const readinessState = $derived(data.readinessState ?? 'not_ready');
 	const isStarter = $derived(setupState === 'starter' && !isOnboarding);
 	const isPartiallyConfigured = $derived(setupState === 'partially_configured');
+	const isReadyPendingRestart = $derived(
+		readinessState === 'ready_pending_restart' && !isOnboarding
+	);
 </script>
 
 <svelte:head>
@@ -140,6 +144,13 @@
 						data-testid="partial-config-banner"
 					>
 						Setup incomplete — some services may be unavailable until configuration is complete.
+					</div>
+				{:else if isReadyPendingRestart}
+					<div
+						class="bg-warning/10 border-warning/30 text-warning mb-4 rounded-lg border px-4 py-2 text-sm"
+						data-testid="ready-pending-restart-banner"
+					>
+						Restart daemon to apply config changes.
 					</div>
 				{/if}
 				{@render children()}

@@ -1,0 +1,6 @@
+{
+  "state": "ready_pending_restart",
+  "configState": "ready",
+  "transmissionReachable": false,
+  "daemonLive": true
+}

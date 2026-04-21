@@ -20,8 +20,18 @@ describe('onboarding page server', () => {
 			}));
 			const { load } = await import('./+page.server');
 			apiRequestMock.mockImplementation((url: string) =>
-				url === '/api/setup/state'
-					? Promise.resolve(new Response(JSON.stringify({ state: 'starter' }), { status: 200 }))
+				url === '/api/setup/readiness'
+					? Promise.resolve(
+							new Response(
+								JSON.stringify({
+									state: 'not_ready',
+									configState: 'starter',
+									transmissionReachable: false,
+									daemonLive: true
+								}),
+								{ status: 200 }
+							)
+						)
 					: Promise.resolve(new Response(JSON.stringify(emptyConfig), { status: 200 }))
 			);
 
@@ -37,8 +47,18 @@ describe('onboarding page server', () => {
 			}));
 			const { load } = await import('./+page.server');
 			apiRequestMock.mockImplementation((url: string) =>
-				url === '/api/setup/state'
-					? Promise.resolve(new Response(JSON.stringify({ state: 'starter' }), { status: 200 }))
+				url === '/api/setup/readiness'
+					? Promise.resolve(
+							new Response(
+								JSON.stringify({
+									state: 'not_ready',
+									configState: 'starter',
+									transmissionReachable: false,
+									daemonLive: true
+								}),
+								{ status: 200 }
+							)
+						)
 					: Promise.resolve(
 							new Response(JSON.stringify(emptyConfig), {
 								status: 200,
@@ -59,9 +79,17 @@ describe('onboarding page server', () => {
 			}));
 			const { load } = await import('./+page.server');
 			apiRequestMock.mockImplementation((url: string) =>
-				url === '/api/setup/state'
+				url === '/api/setup/readiness'
 					? Promise.resolve(
-							new Response(JSON.stringify({ state: 'partially_configured' }), { status: 200 })
+							new Response(
+								JSON.stringify({
+									state: 'not_ready',
+									configState: 'partially_configured',
+									transmissionReachable: false,
+									daemonLive: true
+								}),
+								{ status: 200 }
+							)
 						)
 					: Promise.resolve(
 							new Response(JSON.stringify(feedOnlyConfig), {

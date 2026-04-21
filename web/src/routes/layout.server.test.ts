@@ -33,7 +33,12 @@ describe('layout server load', () => {
 					refreshIntervalMinutes: 30
 				}
 			})
-			.mockResolvedValueOnce({ state: 'ready' });
+			.mockResolvedValueOnce({
+				state: 'ready',
+				configState: 'ready',
+				transmissionReachable: true,
+				daemonLive: true
+			});
 
 		const result = await load({} as never);
 
@@ -50,11 +55,12 @@ describe('layout server load', () => {
 				currentUploadedBytes: 0
 			},
 			plexConfigured: true,
-			setupState: 'ready'
+			setupState: 'ready',
+			readinessState: 'ready'
 		});
 	});
 
-	it('returns setupState=starter when setup/state reports starter', async () => {
+	it('returns setupState=starter when readiness reports starter configState', async () => {
 		const { load } = await import('./+layout.server');
 
 		apiFetchMock
@@ -68,13 +74,19 @@ describe('layout server load', () => {
 			.mockResolvedValueOnce({
 				plex: { url: 'http://localhost:32400', token: '', refreshIntervalMinutes: 30 }
 			})
-			.mockResolvedValueOnce({ state: 'starter' });
+			.mockResolvedValueOnce({
+				state: 'not_ready',
+				configState: 'starter',
+				transmissionReachable: false,
+				daemonLive: true
+			});
 
-		const result = (await load({} as never)) as { setupState: string };
+		const result = (await load({} as never)) as { setupState: string; readinessState: string };
 		expect(result.setupState).toBe('starter');
+		expect(result.readinessState).toBe('not_ready');
 	});
 
-	it('normalizes unknown setup state values to partially_configured', async () => {
+	it('normalizes unknown configState values to partially_configured', async () => {
 		const { load } = await import('./+layout.server');
 
 		apiFetchMock
@@ -88,7 +100,12 @@ describe('layout server load', () => {
 			.mockResolvedValueOnce({
 				plex: { url: 'http://localhost:32400', token: '', refreshIntervalMinutes: 30 }
 			})
-			.mockResolvedValueOnce({ state: 'mystery' });
+			.mockResolvedValueOnce({
+				state: 'not_ready',
+				configState: 'mystery',
+				transmissionReachable: false,
+				daemonLive: true
+			});
 
 		const result = (await load({} as never)) as { setupState: string };
 		expect(result.setupState).toBe('partially_configured');
@@ -103,7 +120,7 @@ describe('layout server load', () => {
 				.mockRejectedValueOnce(new Error('health down'))
 				.mockRejectedValueOnce(new Error('tx down'))
 				.mockRejectedValueOnce(new Error('config down'))
-				.mockRejectedValueOnce(new Error('setup down'));
+				.mockRejectedValueOnce(new Error('readiness down'));
 
 			const result = await load({} as never);
 
@@ -111,7 +128,8 @@ describe('layout server load', () => {
 				health: null,
 				transmissionSession: null,
 				plexConfigured: false,
-				setupState: 'partially_configured'
+				setupState: 'partially_configured',
+				readinessState: 'not_ready'
 			});
 		} finally {
 			errorSpy.mockRestore();
