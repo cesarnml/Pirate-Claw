@@ -81,6 +81,7 @@ const baseData = {
 	transmissionSession: null,
 	plexConfigured: false,
 	setupState: 'ready' as const,
+	readinessState: 'ready' as const,
 	transmissionTorrents: [],
 	candidates: [],
 	runSummaries: [],

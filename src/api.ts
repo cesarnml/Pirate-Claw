@@ -369,6 +369,34 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/setup/readiness' && request.method === 'GET') {
+      try {
+        const configState = await getSetupState(configPath);
+        const daemonLive = true;
+        let transmissionReachable = false;
+        if (configState === 'ready') {
+          const pingResult = await fetchSessionInfo(activeConfig.transmission);
+          transmissionReachable = pingResult.ok === true;
+        }
+        let state: 'not_ready' | 'ready_pending_restart' | 'ready';
+        if (configState !== 'ready') {
+          state = 'not_ready';
+        } else if (!daemonLive || !transmissionReachable) {
+          state = 'ready_pending_restart';
+        } else {
+          state = 'ready';
+        }
+        return Response.json({
+          state,
+          configState,
+          transmissionReachable,
+          daemonLive,
+        });
+      } catch {
+        return json500();
+      }
+    }
+
     if (path === '/api/status') {
       return safeJson(() => ({ runs: repository.listRecentRunSummaries() }));
     }

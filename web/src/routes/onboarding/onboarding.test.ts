@@ -18,7 +18,8 @@ const sharedLayoutData = {
 	health: null,
 	transmissionSession: null,
 	plexConfigured: false,
-	setupState: 'ready' as const
+	setupState: 'ready' as const,
+	readinessState: 'ready' as const
 };
 
 function renderPage(data: Record<string, unknown>) {
@@ -352,5 +353,31 @@ describe('/onboarding', () => {
 		expect(screen.getByText('Done')).toBeInTheDocument();
 		expect(screen.getByText('Movie target')).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Go to Dashboard' })).toHaveAttribute('href', '/');
+	});
+
+	it('keeps the dashboard action unfocusable until readiness is ready', () => {
+		renderPage({
+			config: {
+				...configWithMoviesFixture,
+				feeds: [{ name: 'TV Feed', url: 'https://example.com/tv.rss', mediaType: 'tv' }],
+				movies: { years: [], resolutions: [], codecs: [], codecPolicy: 'prefer' }
+			},
+			etag: '"rev-3"',
+			canWrite: true,
+			onboarding: {
+				state: 'ready',
+				hasFeeds: true,
+				hasTvTargets: true,
+				hasMovieTargets: false,
+				minimumComplete: true
+			},
+			readinessState: 'ready_pending_restart',
+			error: null
+		});
+
+		const dashboardLink = screen.getByText('Go to Dashboard');
+		expect(dashboardLink).not.toHaveAttribute('href');
+		expect(dashboardLink).toHaveAttribute('tabindex', '-1');
+		expect(dashboardLink).toHaveAttribute('aria-disabled', 'true');
 	});
 });

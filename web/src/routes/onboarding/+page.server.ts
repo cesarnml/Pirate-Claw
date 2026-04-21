@@ -2,16 +2,16 @@ import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { deriveOnboardingStatus } from '$lib/onboarding';
 import { apiRequest } from '$lib/server/api';
-import type { AppConfig, FeedConfig, MoviePolicy } from '$lib/types';
+import type { AppConfig, FeedConfig, MoviePolicy, ReadinessResponse } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 
 	try {
-		const [configResponse, setupStateResponse] = await Promise.all([
+		const [configResponse, readinessResponse] = await Promise.all([
 			apiRequest('/api/config'),
-			apiRequest('/api/setup/state')
+			apiRequest('/api/setup/readiness')
 		]);
 
 		if (!configResponse.ok) {
@@ -21,15 +21,15 @@ export const load: PageServerLoad = async () => {
 				etag: null,
 				canWrite,
 				onboarding: null,
-				setupState: null,
+				readinessState: null,
 				error: 'Could not reach the API.'
 			};
 		}
 
 		const config = (await configResponse.json()) as AppConfig;
 		const etag = configResponse.headers.get('etag');
-		const setupState = setupStateResponse.ok
-			? ((await setupStateResponse.json()) as { state: string }).state
+		const readinessState = readinessResponse.ok
+			? ((await readinessResponse.json()) as ReadinessResponse).state
 			: null;
 
 		return {
@@ -37,7 +37,7 @@ export const load: PageServerLoad = async () => {
 			etag,
 			canWrite,
 			onboarding: deriveOnboardingStatus(config, canWrite),
-			setupState,
+			readinessState,
 			error: null
 		};
 	} catch (error) {
@@ -47,7 +47,7 @@ export const load: PageServerLoad = async () => {
 			etag: null,
 			canWrite,
 			onboarding: null,
-			setupState: null,
+			readinessState: null,
 			error: 'Could not reach the API.'
 		};
 	}

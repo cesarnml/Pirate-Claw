@@ -1,0 +1,6 @@
+{
+  "state": "not_ready",
+  "configState": "partially_configured",
+  "transmissionReachable": false,
+  "daemonLive": true
+}

@@ -6,12 +6,13 @@ import type { PageData } from './$types';
 
 const sharedLayoutData: Pick<
 	PageData,
-	'health' | 'transmissionSession' | 'plexConfigured' | 'setupState'
+	'health' | 'transmissionSession' | 'plexConfigured' | 'setupState' | 'readinessState'
 > = {
 	health: null,
 	transmissionSession: null,
 	plexConfigured: false,
-	setupState: 'ready' as const
+	setupState: 'ready' as const,
+	readinessState: 'ready' as const
 };
 
 const detailShow: ShowBreakdown = {
