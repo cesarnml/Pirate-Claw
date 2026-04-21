@@ -2,7 +2,14 @@ import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { deriveOnboardingStatus } from '$lib/onboarding';
 import { apiRequest } from '$lib/server/api';
-import type { AppConfig, FeedConfig, MoviePolicy, ReadinessResponse } from '$lib/types';
+import type {
+	AppConfig,
+	FeedConfig,
+	MoviePolicy,
+	ReadinessResponse,
+	TransmissionCompatibility,
+	TransmissionStatusResponse
+} from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
@@ -332,11 +339,27 @@ export const actions: Actions = {
 
 	testTransmission: async () => {
 		try {
-			const response = await apiRequest('/api/transmission/ping', { method: 'POST' });
-			const reachable = response.ok;
-			return { transmissionReachable: reachable };
+			const [pingResponse, statusResponse] = await Promise.all([
+				apiRequest('/api/transmission/ping', { method: 'POST' }),
+				apiRequest('/api/setup/transmission/status')
+			]);
+			const reachable = pingResponse.ok;
+			const status = statusResponse.ok
+				? ((await statusResponse.json()) as TransmissionStatusResponse)
+				: null;
+			const compatibility: TransmissionCompatibility = status?.compatibility ?? 'not_reachable';
+			const advisory = status?.advisory;
+			return {
+				transmissionReachable: reachable,
+				transmissionCompatibility: compatibility,
+				transmissionAdvisory: advisory ?? null
+			};
 		} catch {
-			return { transmissionReachable: false };
+			return {
+				transmissionReachable: false,
+				transmissionCompatibility: 'not_reachable' as TransmissionCompatibility,
+				transmissionAdvisory: null
+			};
 		}
 	},
 

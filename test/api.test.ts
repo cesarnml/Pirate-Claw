@@ -9,6 +9,7 @@ import {
   buildFeedStatuses,
   buildMovieBreakdowns,
   buildShowBreakdowns,
+  classifyTransmissionUrl,
   createApiFetch,
   createHealthState,
   recordCycleInHealth,
@@ -347,6 +348,78 @@ describe('GET /api/setup/readiness', () => {
     const handler = createApiFetch(deps);
     const response = await handler(
       new Request('http://localhost/api/setup/readiness'),
+    );
+    expect(response.status).not.toBe(401);
+    expect(response.status).not.toBe(403);
+  });
+});
+
+describe('classifyTransmissionUrl', () => {
+  it('returns recommended for the bundled default URL', () => {
+    expect(
+      classifyTransmissionUrl('http://localhost:9091/transmission/rpc', true),
+    ).toBe('recommended');
+  });
+
+  it('returns compatible for a non-bundled URL on standard port and path', () => {
+    expect(
+      classifyTransmissionUrl(
+        'http://192.168.1.50:9091/transmission/rpc',
+        true,
+      ),
+    ).toBe('compatible');
+  });
+
+  it('returns compatible_custom for a non-standard port', () => {
+    expect(
+      classifyTransmissionUrl(
+        'http://192.168.1.50:9092/transmission/rpc',
+        true,
+      ),
+    ).toBe('compatible_custom');
+  });
+
+  it('returns compatible_custom for a non-standard path', () => {
+    expect(
+      classifyTransmissionUrl('http://192.168.1.50:9091/custom-rpc', true),
+    ).toBe('compatible_custom');
+  });
+
+  it('returns not_reachable when reachable is false', () => {
+    expect(
+      classifyTransmissionUrl('http://localhost:9091/transmission/rpc', false),
+    ).toBe('not_reachable');
+  });
+});
+
+describe('GET /api/setup/transmission/status', () => {
+  it('returns not_reachable when transmission is down', async () => {
+    const deps = {
+      ...createDeps(),
+      config: {
+        ...createDeps().config,
+        transmission: {
+          url: 'http://127.0.0.1:1/transmission/rpc',
+          username: 'u',
+          password: 'p',
+        },
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/transmission/status'),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.compatibility).toBe('not_reachable');
+    expect(body.reachable).toBe(false);
+  });
+
+  it('requires no auth', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/setup/transmission/status'),
     );
     expect(response.status).not.toBe(401);
     expect(response.status).not.toBe(403);

@@ -7,7 +7,8 @@
 		writeOnboardingDismissed,
 		writeOnboardingPath
 	} from '$lib/onboarding';
-	import type { ReadinessState } from '$lib/types';
+	import TransmissionCompatibilityBadge from '$lib/components/TransmissionCompatibilityBadge.svelte';
+	import type { ReadinessState, TransmissionCompatibility } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
 	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
@@ -28,6 +29,13 @@
 	);
 	const transmissionTested = $derived(
 		(form as { transmissionReachable?: boolean } | undefined)?.transmissionReachable !== undefined
+	);
+	const transmissionCompatibility = $derived(
+		(form as { transmissionCompatibility?: TransmissionCompatibility } | undefined)
+			?.transmissionCompatibility ?? null
+	);
+	const transmissionAdvisory = $derived(
+		(form as { transmissionAdvisory?: string | null } | undefined)?.transmissionAdvisory ?? null
 	);
 
 	const hasTvFeed = $derived((data.config?.feeds ?? []).some((feed) => feed.mediaType === 'tv'));
@@ -251,15 +259,14 @@
 						Test connection
 					</button>
 				</form>
-				{#if transmissionTested}
-					<p
-						class={transmissionReachable
-							? 'text-sm text-emerald-400'
-							: 'text-muted-foreground text-sm'}
-					>
-						{transmissionReachable
-							? 'Transmission is reachable.'
-							: 'Transmission is not reachable. Update your config and reload.'}
+				{#if transmissionTested && transmissionCompatibility}
+					<TransmissionCompatibilityBadge
+						compatibility={transmissionCompatibility}
+						advisory={transmissionAdvisory ?? undefined}
+					/>
+				{:else if transmissionTested && !transmissionReachable}
+					<p class="text-muted-foreground text-sm">
+						Transmission is not reachable. Update your config and reload.
 					</p>
 				{/if}
 			</div>

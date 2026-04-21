@@ -397,6 +397,22 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/setup/transmission/status' && request.method === 'GET') {
+      try {
+        const url = activeConfig.transmission.url;
+        const pingResult = await fetchSessionInfo(activeConfig.transmission);
+        const reachable = pingResult.ok === true;
+        const compatibility = classifyTransmissionUrl(url, reachable);
+        const advisory =
+          compatibility === 'compatible_custom'
+            ? 'Non-standard Transmission configuration detected. Setup will proceed but verify your URL and port.'
+            : undefined;
+        return Response.json({ compatibility, url, reachable, advisory });
+      } catch {
+        return json500();
+      }
+    }
+
     if (path === '/api/status') {
       return safeJson(() => ({ runs: repository.listRecentRunSummaries() }));
     }
@@ -1643,4 +1659,28 @@ function requireRecord(
   label: string,
 ): Record<string, unknown> {
   return expectRecord(input[key], `${label} ${key}`);
+}
+
+const BUNDLED_TRANSMISSION_URL = 'http://localhost:9091/transmission/rpc';
+const STANDARD_TRANSMISSION_PORT = '9091';
+const STANDARD_TRANSMISSION_PATH = '/transmission/rpc';
+
+export function classifyTransmissionUrl(
+  url: string,
+  reachable: boolean,
+): 'recommended' | 'compatible' | 'compatible_custom' | 'not_reachable' {
+  if (!reachable) return 'not_reachable';
+  if (url === BUNDLED_TRANSMISSION_URL) return 'recommended';
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.port === STANDARD_TRANSMISSION_PORT &&
+      parsed.pathname === STANDARD_TRANSMISSION_PATH
+    ) {
+      return 'compatible';
+    }
+  } catch {
+    return 'compatible_custom';
+  }
+  return 'compatible_custom';
 }

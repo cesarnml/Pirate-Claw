@@ -247,3 +247,16 @@ export type ReadinessResponse = {
 	transmissionReachable: boolean;
 	daemonLive: boolean;
 };
+
+export type TransmissionCompatibility =
+	| 'recommended'
+	| 'compatible'
+	| 'compatible_custom'
+	| 'not_reachable';
+
+export type TransmissionStatusResponse = {
+	compatibility: TransmissionCompatibility;
+	url: string;
+	reachable: boolean;
+	advisory?: string;
+};

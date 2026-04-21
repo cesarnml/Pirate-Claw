@@ -3,7 +3,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { formatTransferSize } from '$lib/helpers';
-	import type { RuntimeConfig } from '$lib/types';
+	import TransmissionCompatibilityBadge from '$lib/components/TransmissionCompatibilityBadge.svelte';
+	import type { RuntimeConfig, TransmissionCompatibility } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import CableIcon from '@lucide/svelte/icons/cable';
@@ -29,6 +30,8 @@
 		restarting: boolean;
 		runtimeChangesPending: boolean;
 		runtimeMessage?: string;
+		compatibility?: TransmissionCompatibility | null;
+		transmissionAdvisory?: string | null;
 		enhanceTestConnection: SubmitFunction;
 		enhanceSaveRuntime: SubmitFunction;
 		enhanceRestartDaemon: SubmitFunction;
@@ -55,6 +58,8 @@
 		restarting,
 		runtimeChangesPending,
 		runtimeMessage,
+		compatibility = null,
+		transmissionAdvisory = null,
 		enhanceTestConnection,
 		enhanceSaveRuntime,
 		enhanceRestartDaemon
@@ -141,16 +146,24 @@
 			</div>
 		</div>
 
-		<form method="POST" action="?/testConnection" use:enhance={enhanceTestConnection}>
-			<Button type="submit" variant="outline" class="rounded-full" disabled={testingConnection}>
-				<CableIcon class="size-4" />
-				{#if testingConnection}
-					Checking…
-				{:else}
-					Test Connection
-				{/if}
-			</Button>
-		</form>
+		<div class="flex flex-wrap items-center gap-4">
+			<form method="POST" action="?/testConnection" use:enhance={enhanceTestConnection}>
+				<Button type="submit" variant="outline" class="rounded-full" disabled={testingConnection}>
+					<CableIcon class="size-4" />
+					{#if testingConnection}
+						Checking…
+					{:else}
+						Test Connection
+					{/if}
+				</Button>
+			</form>
+			{#if compatibility}
+				<TransmissionCompatibilityBadge
+					{compatibility}
+					advisory={transmissionAdvisory ?? undefined}
+				/>
+			{/if}
+		</div>
 
 		<form
 			method="POST"

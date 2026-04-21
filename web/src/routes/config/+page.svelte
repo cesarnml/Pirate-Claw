@@ -60,6 +60,10 @@
 	let newFeedMediaType = $state<'tv' | 'movie'>('tv');
 	let feedsSubmitting = $state(false);
 	let testingConnection = $state(false);
+	let transmissionCompatibility = $state<import('$lib/types').TransmissionCompatibility | null>(
+		null
+	);
+	let transmissionAdvisory = $state<string | null>(null);
 	let showsSubmitting = $state(false);
 	let pendingShowIntent = $state<ShowIntent | null>(null);
 	let showsFormEl = $state<HTMLFormElement | null>(null);
@@ -284,9 +288,19 @@
 			testingConnection = false;
 			if (result.type === 'success') {
 				const version = (result.data as { version?: string })?.version ?? '';
+				transmissionCompatibility =
+					(result.data as { compatibility?: import('$lib/types').TransmissionCompatibility })
+						?.compatibility ?? null;
+				transmissionAdvisory =
+					(result.data as { transmissionAdvisory?: string | null })?.transmissionAdvisory ?? null;
 				toast(`Transmission reachable — version ${version}`, 'success');
 			} else if (result.type === 'failure') {
 				const pingError = (result.data as { pingError?: string })?.pingError;
+				transmissionCompatibility =
+					(result.data as { compatibility?: import('$lib/types').TransmissionCompatibility })
+						?.compatibility ?? 'not_reachable';
+				transmissionAdvisory =
+					(result.data as { transmissionAdvisory?: string | null })?.transmissionAdvisory ?? null;
 				toast(pingError ?? 'Transmission unreachable — check .env credentials and host', 'error');
 			}
 			await update({ reset: false });
@@ -444,6 +458,8 @@
 				{restarting}
 				{runtimeChangesPending}
 				runtimeMessage={form?.runtimeMessage}
+				compatibility={transmissionCompatibility}
+				{transmissionAdvisory}
 				{enhanceTestConnection}
 				{enhanceSaveRuntime}
 				{enhanceRestartDaemon}

@@ -2,7 +2,13 @@ import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { deriveOnboardingStatus } from '$lib/onboarding';
 import { apiRequest } from '$lib/server/api';
-import type { AppConfig, OnboardingStatus, RunSummaryRecord, SessionInfo } from '$lib/types';
+import type {
+	AppConfig,
+	OnboardingStatus,
+	RunSummaryRecord,
+	SessionInfo,
+	TransmissionStatusResponse
+} from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
@@ -384,24 +390,40 @@ export const actions: Actions = {
 		}
 
 		try {
-			const response = await apiRequest('/api/transmission/ping', {
-				method: 'POST',
-				headers: { authorization: `Bearer ${writeToken}` }
-			});
+			const [pingResponse, statusResponse] = await Promise.all([
+				apiRequest('/api/transmission/ping', {
+					method: 'POST',
+					headers: { authorization: `Bearer ${writeToken}` }
+				}),
+				apiRequest('/api/setup/transmission/status')
+			]);
 
-			if (!response.ok) {
-				let pingError = `Ping failed (${response.status}).`;
+			const status = statusResponse.ok
+				? ((await statusResponse.json()) as TransmissionStatusResponse)
+				: null;
+
+			if (!pingResponse.ok) {
+				let pingError = `Ping failed (${pingResponse.status}).`;
 				try {
-					const body = (await response.json()) as { error?: string };
+					const body = (await pingResponse.json()) as { error?: string };
 					if (body.error) pingError = body.error;
 				} catch {
 					// keep fallback
 				}
-				return fail(502, { pingError });
+				return fail(502, {
+					pingError,
+					compatibility: status?.compatibility ?? 'not_reachable',
+					transmissionAdvisory: status?.advisory ?? null
+				});
 			}
 
-			const data = (await response.json()) as { version: string };
-			return { pingOk: true, version: data.version };
+			const data = (await pingResponse.json()) as { version: string };
+			return {
+				pingOk: true,
+				version: data.version,
+				compatibility: status?.compatibility ?? 'compatible',
+				transmissionAdvisory: status?.advisory ?? null
+			};
 		} catch (error) {
 			console.error('[config] testConnection failed:', error);
 			return fail(502, { pingError: 'Could not reach the API.' });
