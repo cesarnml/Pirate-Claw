@@ -376,8 +376,8 @@ describe('/onboarding', () => {
 		});
 
 		const dashboardLink = screen.getByText('Go to Dashboard');
-		expect(dashboardLink).not.toHaveAttribute('href');
-		expect(dashboardLink).toHaveAttribute('tabindex', '-1');
+		expect(dashboardLink).toHaveAttribute('href', '/');
 		expect(dashboardLink).toHaveAttribute('aria-disabled', 'true');
+		expect(dashboardLink).toHaveClass('pointer-events-none');
 	});
 });
