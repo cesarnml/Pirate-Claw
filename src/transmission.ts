@@ -78,6 +78,10 @@ export type SessionInfo = {
   downloadSpeed: number;
   uploadSpeed: number;
   activeTorrentCount: number;
+  cumulativeDownloadedBytes: number;
+  cumulativeUploadedBytes: number;
+  currentDownloadedBytes: number;
+  currentUploadedBytes: number;
 };
 
 export type FetchSessionInfoResult =
@@ -933,14 +937,34 @@ type TransmissionSessionGetResponse = {
   };
 };
 
+type TransmissionTransferStats = {
+  downloadedBytes?: number;
+  uploadedBytes?: number;
+  'downloaded-bytes'?: number;
+  'uploaded-bytes'?: number;
+};
+
 type TransmissionSessionStatsResponse = {
   result: string;
   arguments: {
     'download-speed'?: number;
     'upload-speed'?: number;
     'active-torrent-count'?: number;
+    'cumulative-stats'?: TransmissionTransferStats;
+    'current-stats'?: TransmissionTransferStats;
   };
 };
+
+function readTransferBytes(
+  stats: TransmissionTransferStats | undefined,
+  key: 'downloaded' | 'uploaded',
+): number {
+  if (!stats) return 0;
+  const camelKey = key === 'downloaded' ? 'downloadedBytes' : 'uploadedBytes';
+  const kebabKey = key === 'downloaded' ? 'downloaded-bytes' : 'uploaded-bytes';
+  const value = stats[camelKey] ?? stats[kebabKey];
+  return typeof value === 'number' ? value : 0;
+}
 
 function mapStatusCode(
   code: number | undefined,
@@ -1096,6 +1120,22 @@ function parseSessionInfoResult(
         typeof stats.arguments['active-torrent-count'] === 'number'
           ? stats.arguments['active-torrent-count']
           : 0,
+      cumulativeDownloadedBytes: readTransferBytes(
+        stats.arguments['cumulative-stats'],
+        'downloaded',
+      ),
+      cumulativeUploadedBytes: readTransferBytes(
+        stats.arguments['cumulative-stats'],
+        'uploaded',
+      ),
+      currentDownloadedBytes: readTransferBytes(
+        stats.arguments['current-stats'],
+        'downloaded',
+      ),
+      currentUploadedBytes: readTransferBytes(
+        stats.arguments['current-stats'],
+        'uploaded',
+      ),
     },
   };
 }

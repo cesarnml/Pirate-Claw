@@ -431,6 +431,10 @@
 				host={transmissionEndpoint.host}
 				port={transmissionEndpoint.port}
 				version={data.transmissionSession?.version ?? 'Unavailable'}
+				totalDownloadedBytes={data.transmissionSession?.cumulativeDownloadedBytes ?? 0}
+				totalUploadedBytes={data.transmissionSession?.cumulativeUploadedBytes ?? 0}
+				sessionDownloadedBytes={data.transmissionSession?.currentDownloadedBytes ?? 0}
+				sessionUploadedBytes={data.transmissionSession?.currentUploadedBytes ?? 0}
 				authToken={maskConfiguredValue(transmissionAuthConfigured())}
 				url={data.config.transmission.url}
 				downloadTargets={storagePoolTargets()}

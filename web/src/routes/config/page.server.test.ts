@@ -106,7 +106,11 @@ describe('config page server actions', () => {
 							version: '3.00 (bb6b5a062ef)',
 							downloadSpeed: 2_097_152,
 							uploadSpeed: 524_288,
-							activeTorrentCount: 4
+							activeTorrentCount: 4,
+							cumulativeDownloadedBytes: 5_509_110_251_520,
+							cumulativeUploadedBytes: 1_060_143_431_680,
+							currentDownloadedBytes: 2_147_483_648,
+							currentUploadedBytes: 536_870_912
 						}),
 						{ status: 200 }
 					)
@@ -118,7 +122,11 @@ describe('config page server actions', () => {
 				version: '3.00 (bb6b5a062ef)',
 				downloadSpeed: 2_097_152,
 				uploadSpeed: 524_288,
-				activeTorrentCount: 4
+				activeTorrentCount: 4,
+				cumulativeDownloadedBytes: 5_509_110_251_520,
+				cumulativeUploadedBytes: 1_060_143_431_680,
+				currentDownloadedBytes: 2_147_483_648,
+				currentUploadedBytes: 536_870_912
 			});
 		});
 	});

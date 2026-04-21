@@ -777,6 +777,14 @@ describe('fetchSessionInfo', () => {
           'download-speed': 2097152,
           'upload-speed': 524288,
           'active-torrent-count': 3,
+          'cumulative-stats': {
+            downloadedBytes: 5_509_110_251_520,
+            uploadedBytes: 1_060_143_431_680,
+          },
+          'current-stats': {
+            downloadedBytes: 2_147_483_648,
+            uploadedBytes: 536_870_912,
+          },
         },
       });
     });
@@ -792,6 +800,10 @@ describe('fetchSessionInfo', () => {
         downloadSpeed: 2097152,
         uploadSpeed: 524288,
         activeTorrentCount: 3,
+        cumulativeDownloadedBytes: 5_509_110_251_520,
+        cumulativeUploadedBytes: 1_060_143_431_680,
+        currentDownloadedBytes: 2_147_483_648,
+        currentUploadedBytes: 536_870_912,
       },
     });
   });

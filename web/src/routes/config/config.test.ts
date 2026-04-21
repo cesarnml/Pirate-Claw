@@ -63,7 +63,17 @@ describe('/config', () => {
 			error: null,
 			etag: '"rev-1"',
 			canWrite: true,
-			onboarding: null
+			onboarding: null,
+			transmissionSession: {
+				version: '3.00 (bb6b5a062ef)',
+				downloadSpeed: 2_097_152,
+				uploadSpeed: 524_288,
+				activeTorrentCount: 4,
+				cumulativeDownloadedBytes: 5_509_110_251_520,
+				cumulativeUploadedBytes: 1_060_143_431_680,
+				currentDownloadedBytes: 2_147_483_648,
+				currentUploadedBytes: 536_870_912
+			}
 		});
 		expect(screen.getByRole('heading', { name: 'RSS Feeds' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'TV Configuration' })).toBeInTheDocument();
@@ -79,6 +89,10 @@ describe('/config', () => {
 		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
 		expect(screen.queryByText('Storage Pool')).not.toBeInTheDocument();
 		expect(screen.queryByText('Transfer Rate')).not.toBeInTheDocument();
+		expect(document.body).toHaveTextContent('DL 5.01 TB');
+		expect(document.body).toHaveTextContent('UL 987.34 GB');
+		expect(document.body).toHaveTextContent('DL 2.00 GB');
+		expect(document.body).toHaveTextContent('UL 512.0 MB');
 	});
 
 	it('renders labeled movie and tv download targets when downloadDirs are configured', () => {

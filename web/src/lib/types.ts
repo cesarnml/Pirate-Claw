@@ -206,6 +206,10 @@ export type SessionInfo = {
 	downloadSpeed: number;
 	uploadSpeed: number;
 	activeTorrentCount: number;
+	cumulativeDownloadedBytes: number;
+	cumulativeUploadedBytes: number;
+	currentDownloadedBytes: number;
+	currentUploadedBytes: number;
 };
 
 export type FeedItemOutcomeStatus = 'queued' | 'failed' | 'skipped_duplicate' | 'skipped_no_match';

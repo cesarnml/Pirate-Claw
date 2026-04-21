@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import { formatTransferSize } from '$lib/helpers';
 	import type { RuntimeConfig } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
@@ -15,6 +16,10 @@
 		host: string;
 		port: string;
 		version: string;
+		totalDownloadedBytes: number;
+		totalUploadedBytes: number;
+		sessionDownloadedBytes: number;
+		sessionUploadedBytes: number;
 		authToken: string;
 		url: string;
 		downloadTargets: Array<{ label: string; value: string }>;
@@ -37,6 +42,10 @@
 		host,
 		port,
 		version,
+		totalDownloadedBytes,
+		totalUploadedBytes,
+		sessionDownloadedBytes,
+		sessionUploadedBytes,
 		authToken,
 		url,
 		downloadTargets,
@@ -91,6 +100,26 @@
 					Auth Token
 				</p>
 				<p class="mt-2 text-lg font-semibold">{authToken}</p>
+			</div>
+			<div class="border-border bg-background/50 rounded-2xl border p-4">
+				<p class="text-muted-foreground text-xs font-semibold tracking-[0.18em] uppercase">
+					Total Transfer
+				</p>
+				<p class="mt-2 text-sm font-semibold">
+					DL {formatTransferSize(totalDownloadedBytes)} · UL {formatTransferSize(
+						totalUploadedBytes
+					)}
+				</p>
+			</div>
+			<div class="border-border bg-background/50 rounded-2xl border p-4">
+				<p class="text-muted-foreground text-xs font-semibold tracking-[0.18em] uppercase">
+					Session Transfer
+				</p>
+				<p class="mt-2 text-sm font-semibold">
+					DL {formatTransferSize(sessionDownloadedBytes)} · UL {formatTransferSize(
+						sessionUploadedBytes
+					)}
+				</p>
 			</div>
 		</div>
 

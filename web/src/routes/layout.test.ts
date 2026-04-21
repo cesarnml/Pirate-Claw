@@ -30,7 +30,11 @@ const mockSession: SessionInfo = {
 	version: '3.00 (bb6b5a062ef)',
 	downloadSpeed: 0,
 	uploadSpeed: 0,
-	activeTorrentCount: 0
+	activeTorrentCount: 0,
+	cumulativeDownloadedBytes: 0,
+	cumulativeUploadedBytes: 0,
+	currentDownloadedBytes: 0,
+	currentUploadedBytes: 0
 };
 
 describe('+layout.svelte', () => {

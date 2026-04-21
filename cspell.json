@@ -1,6 +1,8 @@
 {
   "version": "0.2",
-  "ignorePaths": ["web/"],
+  "ignorePaths": [
+    "web/"
+  ],
   "dictionaryDefinitions": [],
   "dictionaries": [],
   "words": [
@@ -24,6 +26,7 @@
     "greptile",
     "HEALTHCHECK",
     "hostnames",
+    "idempotently",
     "infohash",
     "Ironman",
     "Jellyfin",

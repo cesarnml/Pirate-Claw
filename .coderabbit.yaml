@@ -11,3 +11,13 @@ reviews:
       - 'dependabot[bot]'
       - 'renovate[bot]'
       - 'github-actions[bot]'
+    ignore_title_keywords:
+      - 'docs'
+      - 'chore'
+      - 'style'
+      - 'refactor'
+      - 'perf'
+      - 'test'
+      - 'build'
+      - 'ci'
+      - 'revert'

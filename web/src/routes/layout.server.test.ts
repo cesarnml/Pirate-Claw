@@ -20,7 +20,11 @@ describe('layout server load', () => {
 				version: '3.0',
 				downloadSpeed: 0,
 				uploadSpeed: 0,
-				activeTorrentCount: 0
+				activeTorrentCount: 0,
+				cumulativeDownloadedBytes: 0,
+				cumulativeUploadedBytes: 0,
+				currentDownloadedBytes: 0,
+				currentUploadedBytes: 0
 			})
 			.mockResolvedValueOnce({
 				plex: {
@@ -38,7 +42,11 @@ describe('layout server load', () => {
 				version: '3.0',
 				downloadSpeed: 0,
 				uploadSpeed: 0,
-				activeTorrentCount: 0
+				activeTorrentCount: 0,
+				cumulativeDownloadedBytes: 0,
+				cumulativeUploadedBytes: 0,
+				currentDownloadedBytes: 0,
+				currentUploadedBytes: 0
 			},
 			plexConfigured: true
 		});

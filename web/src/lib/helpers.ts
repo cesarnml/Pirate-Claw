@@ -66,6 +66,23 @@ export function formatTransferRate(bytesPerSec: number | undefined): string {
 	return formatSpeed(bytesPerSec);
 }
 
+export function formatTransferSize(bytes: number): string {
+	if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+
+	const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+	let value = bytes;
+	let unitIndex = 0;
+
+	while (value >= 1024 && unitIndex < units.length - 1) {
+		value /= 1024;
+		unitIndex += 1;
+	}
+
+	if (unitIndex === 0) return `${Math.round(value)} ${units[unitIndex]}`;
+	const decimals = unitIndex >= 3 ? 2 : 1;
+	return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+}
+
 export function parseHostPortFromUrl(value: string): { host: string; port: string } {
 	try {
 		const url = new URL(value);
