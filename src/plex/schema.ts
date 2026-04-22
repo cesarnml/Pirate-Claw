@@ -39,6 +39,8 @@ export function ensurePlexSchema(database: Database): void {
         last_authenticated_at TEXT,
         last_error TEXT,
         reconnect_required_at TEXT,
+        reconnect_required_reason TEXT,
+        renewal_started_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -76,6 +78,18 @@ export function ensurePlexSchema(database: Database): void {
       database,
       'plex_auth_identity',
       'private_key_pem',
+      'TEXT',
+    );
+    ensurePlexTableColumn(
+      database,
+      'plex_auth_identity',
+      'reconnect_required_reason',
+      'TEXT',
+    );
+    ensurePlexTableColumn(
+      database,
+      'plex_auth_identity',
+      'renewal_started_at',
       'TEXT',
     );
     ensurePlexTableColumn(database, 'plex_auth_sessions', 'pin_id', 'INTEGER');

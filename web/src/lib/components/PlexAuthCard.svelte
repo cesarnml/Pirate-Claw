@@ -43,6 +43,18 @@
 		reconnect_required: {
 			label: 'Reconnect required',
 			description: 'The saved Plex credential needs to be replaced from the browser flow.'
+		},
+		renewing: {
+			label: 'Renewing',
+			description: 'Pirate Claw is attempting a silent Plex credential renewal.'
+		},
+		expired_reconnect_required: {
+			label: 'Expired, reconnect required',
+			description: 'The saved Plex credential expired and silent renewal did not recover it.'
+		},
+		error_reconnect_required: {
+			label: 'Renewal error, reconnect required',
+			description: 'Silent renewal failed before Plex could confirm the current credential.'
 		}
 	} satisfies Record<PlexAuthStatusResponse['state'], { label: string; description: string }>;
 
@@ -51,8 +63,17 @@
 		if (status.state === 'connected' || status.state === 'reconnect_required') {
 			return 'Reconnect in browser';
 		}
+		if (
+			status.state === 'expired_reconnect_required' ||
+			status.state === 'error_reconnect_required'
+		) {
+			return 'Reconnect in browser';
+		}
 		if (status.state === 'connecting') {
 			return 'Restart browser sign-in';
+		}
+		if (status.state === 'renewing') {
+			return 'Connect in browser';
 		}
 		return 'Connect in browser';
 	});
@@ -62,8 +83,13 @@
 				return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100';
 			case 'reconnect_required':
 				return 'border-amber-500/40 bg-amber-500/10 text-amber-100';
+			case 'expired_reconnect_required':
+			case 'error_reconnect_required':
+				return 'border-amber-500/40 bg-amber-500/10 text-amber-100';
 			case 'connecting':
 				return 'border-sky-500/40 bg-sky-500/10 text-sky-100';
+			case 'renewing':
+				return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-100';
 			default:
 				return 'border-white/15 bg-white/5 text-white';
 		}

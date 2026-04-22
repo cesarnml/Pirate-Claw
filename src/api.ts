@@ -1700,7 +1700,14 @@ export type FeedStatus = {
 };
 
 export type PlexAuthStatusResponse = {
-  state: 'not_connected' | 'connecting' | 'connected' | 'reconnect_required';
+  state:
+    | 'not_connected'
+    | 'connecting'
+    | 'connected'
+    | 'reconnect_required'
+    | 'renewing'
+    | 'expired_reconnect_required'
+    | 'error_reconnect_required';
   plexUrl: string;
   hasToken: boolean;
   returnTo: string | null;

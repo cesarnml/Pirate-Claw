@@ -95,6 +95,66 @@ export async function exchangePlexPinForAuthToken(input: {
   return body.authToken ?? null;
 }
 
+export async function refreshPlexAuthToken(input: {
+  clientIdentifier: string;
+  identity: PlexAuthIdentity;
+  now?: Date;
+}): Promise<string> {
+  const nonceResponse = await fetch(`${PLEX_CLIENTS_API}/api/v2/auth/nonce`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      'X-Plex-Client-Identifier': input.clientIdentifier,
+    },
+  });
+
+  if (!nonceResponse.ok) {
+    throw new Error(
+      `Plex nonce request failed with HTTP ${nonceResponse.status}.`,
+    );
+  }
+
+  const nonceBody = (await nonceResponse.json()) as { nonce?: string };
+  if (!nonceBody.nonce) {
+    throw new Error('Plex nonce response did not include a nonce.');
+  }
+
+  const deviceJwt = createDeviceJwt({
+    clientIdentifier: input.clientIdentifier,
+    keyId: input.identity.keyId,
+    privateKeyPem: input.identity.privateKeyPem,
+    nonce: nonceBody.nonce,
+    now: input.now,
+  });
+
+  const tokenResponse = await fetch(`${PLEX_CLIENTS_API}/api/v2/auth/token`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Plex-Client-Identifier': input.clientIdentifier,
+    },
+    body: JSON.stringify({ jwt: deviceJwt }),
+  });
+
+  if (!tokenResponse.ok) {
+    throw new Error(
+      `Plex token refresh failed with HTTP ${tokenResponse.status}.`,
+    );
+  }
+
+  const tokenBody = (await tokenResponse.json()) as {
+    auth_token?: string;
+    authToken?: string;
+  };
+  const authToken = tokenBody.auth_token ?? tokenBody.authToken;
+  if (!authToken) {
+    throw new Error('Plex token refresh response did not include auth_token.');
+  }
+
+  return authToken;
+}
+
 function buildPlexHostedAuthUrl(input: {
   clientIdentifier: string;
   pinCode: string;
@@ -113,6 +173,7 @@ function createDeviceJwt(input: {
   clientIdentifier: string;
   keyId: string;
   privateKeyPem: string;
+  nonce?: string;
   now?: Date;
 }): string {
   const now = input.now ?? new Date();
@@ -124,6 +185,7 @@ function createDeviceJwt(input: {
     typ: 'JWT',
   };
   const payload = {
+    ...(input.nonce ? { nonce: input.nonce } : {}),
     aud: 'plex.tv',
     iss: input.clientIdentifier,
     scope: PLEX_AUTH_SCOPE,

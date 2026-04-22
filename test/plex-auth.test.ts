@@ -127,6 +127,39 @@ describe('PlexAuthStore', () => {
       },
     });
   });
+
+  it('tracks renewing and reconnect-required state transitions', async () => {
+    const store = new PlexAuthStore(createDatabase(await createDatabasePath()));
+
+    store.ensureIdentity('2026-04-22T09:00:00.000Z');
+    store.beginRenewal('2026-04-22T09:01:00.000Z');
+    expect(store.getSnapshot('2026-04-22T09:01:30.000Z').state).toBe(
+      'renewing',
+    );
+
+    store.markReconnectRequired(
+      'expired',
+      'Plex token refresh failed with HTTP 401.',
+      '2026-04-22T09:02:00.000Z',
+    );
+    expect(store.getSnapshot('2026-04-22T09:02:30.000Z')).toMatchObject({
+      state: 'expired_reconnect_required',
+      identity: {
+        lastError: 'Plex token refresh failed with HTTP 401.',
+        reconnectRequiredReason: 'expired',
+      },
+    });
+
+    store.beginRenewal('2026-04-22T09:03:00.000Z');
+    store.markReconnectRequired(
+      'error',
+      'Plex nonce request failed with HTTP 503.',
+      '2026-04-22T09:04:00.000Z',
+    );
+    expect(store.getSnapshot('2026-04-22T09:04:30.000Z').state).toBe(
+      'error_reconnect_required',
+    );
+  });
 });
 
 function createDatabase(path: string): Database {

@@ -2,6 +2,8 @@ import { XMLParser } from 'fast-xml-parser';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+export type PlexRequestFailureKind = 'auth' | 'http' | 'network' | 'parse';
+
 export type PlexLibrarySection = {
   key: string;
   type?: string;
@@ -31,6 +33,8 @@ const parser = new XMLParser({
 });
 
 export class PlexHttpClient {
+  private lastFailureKind: PlexRequestFailureKind | null = null;
+
   constructor(
     private readonly baseUrl: string,
     private readonly token: string,
@@ -39,6 +43,7 @@ export class PlexHttpClient {
   ) {}
 
   async listLibrarySections(): Promise<PlexLibrarySection[]> {
+    this.lastFailureKind = null;
     const container = await this.getXml('/library/sections');
     if (!container) {
       return [];
@@ -52,6 +57,7 @@ export class PlexHttpClient {
   }
 
   async searchMovies(title: string): Promise<PlexSearchResult[] | null> {
+    this.lastFailureKind = null;
     const query = encodeURIComponent(title);
     const container = await this.getXml(
       `/library/search?query=${query}&type=1`,
@@ -63,6 +69,7 @@ export class PlexHttpClient {
   }
 
   async searchShows(title: string): Promise<PlexSearchResult[] | null> {
+    this.lastFailureKind = null;
     const query = encodeURIComponent(title);
     const container = await this.getXml(
       `/library/search?query=${query}&type=2`,
@@ -77,6 +84,7 @@ export class PlexHttpClient {
     sectionKey: string,
     title: string,
   ): Promise<PlexSearchResult[]> {
+    this.lastFailureKind = null;
     const query = encodeURIComponent(title);
     const container = await this.getXml(
       `/library/sections/${encodeURIComponent(sectionKey)}/search?query=${query}`,
@@ -92,6 +100,7 @@ export class PlexHttpClient {
    * fallback when global `/library/search` omits or reshapes hits.
    */
   async listAllTvShowsForMatching(): Promise<PlexSearchResult[]> {
+    this.lastFailureKind = null;
     const sections = await this.listLibrarySections();
     const out: PlexSearchResult[] = [];
     for (const section of sections) {
@@ -107,6 +116,7 @@ export class PlexHttpClient {
    * Lists every movie in movie library sections (paginated). Fallback for search.
    */
   async listAllMoviesForMatching(): Promise<PlexSearchResult[]> {
+    this.lastFailureKind = null;
     const sections = await this.listLibrarySections();
     const out: PlexSearchResult[] = [];
     for (const section of sections) {
@@ -116,6 +126,10 @@ export class PlexHttpClient {
       await this.collectPagedSectionItems(section.key, 'movie', out);
     }
     return dedupeSearchResults(out);
+  }
+
+  getLastFailureKind(): PlexRequestFailureKind | null {
+    return this.lastFailureKind;
   }
 
   private async collectPagedSectionItems(
@@ -212,24 +226,34 @@ export class PlexHttpClient {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
+      this.lastFailureKind = 'network';
       const message = error instanceof Error ? error.message : String(error);
       this.log(`plex request failed: ${path} (${message})`);
       return null;
     }
 
     if (!response.ok) {
+      this.lastFailureKind = isPlexAuthFailure(response.status)
+        ? 'auth'
+        : 'http';
       this.log(`plex HTTP ${response.status} for ${path}`);
       return null;
     }
 
     try {
+      this.lastFailureKind = null;
       return parser.parse(await response.text()) as PlexMediaContainer;
     } catch (error) {
+      this.lastFailureKind = 'parse';
       const message = error instanceof Error ? error.message : String(error);
       this.log(`plex response parse failed: ${path} (${message})`);
       return null;
     }
   }
+}
+
+function isPlexAuthFailure(status: number): boolean {
+  return status === 401 || status === 403 || status === 498;
 }
 
 /** Collects movie hits from flat `Video` nodes and from `Hub` shelves (modern PMS search). */

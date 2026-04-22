@@ -6,7 +6,12 @@ export type PlexAuthState =
   | 'not_connected'
   | 'connecting'
   | 'connected'
-  | 'reconnect_required';
+  | 'reconnect_required'
+  | 'renewing'
+  | 'expired_reconnect_required'
+  | 'error_reconnect_required';
+
+export type PlexReconnectRequiredReason = 'expired' | 'error' | null;
 
 export type PlexAuthSessionStatus =
   | 'pending'
@@ -34,6 +39,8 @@ export type PlexAuthIdentity = {
   lastAuthenticatedAt: string | null;
   lastError: string | null;
   reconnectRequiredAt: string | null;
+  reconnectRequiredReason: PlexReconnectRequiredReason;
+  renewalStartedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -106,6 +113,8 @@ export class PlexAuthStore {
       lastAuthenticatedAt: null,
       lastError: null,
       reconnectRequiredAt: null,
+      reconnectRequiredReason: null,
+      renewalStartedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -126,11 +135,13 @@ export class PlexAuthStore {
           last_authenticated_at,
           last_error,
           reconnect_required_at,
+          reconnect_required_reason,
+          renewal_started_at,
           created_at,
           updated_at
         ) VALUES (
           1, ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-          NULL, NULL, NULL, NULL, NULL, ?8, ?8
+          NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?8, ?8
         )`,
       )
       .run(
@@ -163,6 +174,8 @@ export class PlexAuthStore {
           last_authenticated_at AS lastAuthenticatedAt,
           last_error AS lastError,
           reconnect_required_at AS reconnectRequiredAt,
+          reconnect_required_reason AS reconnectRequiredReason,
+          renewal_started_at AS renewalStartedAt,
           created_at AS createdAt,
           updated_at AS updatedAt
         FROM plex_auth_identity
@@ -277,6 +290,8 @@ export class PlexAuthStore {
             last_authenticated_at = ?3,
             last_error = NULL,
             reconnect_required_at = NULL,
+            reconnect_required_reason = NULL,
+            renewal_started_at = NULL,
             updated_at = ?3
         WHERE singleton = 1`,
       )
@@ -299,6 +314,8 @@ export class PlexAuthStore {
         lastAuthenticatedAt: authenticatedAt,
         lastError: null,
         reconnectRequiredAt: null,
+        reconnectRequiredReason: null,
+        renewalStartedAt: null,
         updatedAt: authenticatedAt,
       },
       session: this.getSessionOrThrow(sessionId),
@@ -331,6 +348,8 @@ export class PlexAuthStore {
             token_expires_at = NULL,
             last_error = NULL,
             reconnect_required_at = NULL,
+            reconnect_required_reason = NULL,
+            renewal_started_at = NULL,
             updated_at = ?1
         WHERE singleton = 1`,
       )
@@ -351,6 +370,91 @@ export class PlexAuthStore {
       tokenExpiresAt: null,
       lastError: null,
       reconnectRequiredAt: null,
+      reconnectRequiredReason: null,
+      renewalStartedAt: null,
+      updatedAt: now,
+    };
+  }
+
+  beginRenewal(now = new Date().toISOString()): PlexAuthIdentity {
+    const identity = this.ensureIdentity(now);
+    this.database
+      .query(
+        `UPDATE plex_auth_identity
+        SET renewal_started_at = ?1,
+            last_error = NULL,
+            updated_at = ?1
+        WHERE singleton = 1`,
+      )
+      .run(now);
+
+    return {
+      ...identity,
+      lastError: null,
+      renewalStartedAt: now,
+      updatedAt: now,
+    };
+  }
+
+  completeRenewal(
+    refreshToken: string,
+    input: { tokenExpiresAt?: string; authenticatedAt?: string } = {},
+  ): PlexAuthIdentity {
+    const authenticatedAt = input.authenticatedAt ?? new Date().toISOString();
+    const identity = this.ensureIdentity(authenticatedAt);
+
+    this.database
+      .query(
+        `UPDATE plex_auth_identity
+        SET refresh_token = ?1,
+            token_expires_at = ?2,
+            last_authenticated_at = ?3,
+            last_error = NULL,
+            reconnect_required_at = NULL,
+            reconnect_required_reason = NULL,
+            renewal_started_at = NULL,
+            updated_at = ?3
+        WHERE singleton = 1`,
+      )
+      .run(refreshToken, input.tokenExpiresAt ?? null, authenticatedAt);
+
+    return {
+      ...identity,
+      refreshToken,
+      tokenExpiresAt: input.tokenExpiresAt ?? null,
+      lastAuthenticatedAt: authenticatedAt,
+      lastError: null,
+      reconnectRequiredAt: null,
+      reconnectRequiredReason: null,
+      renewalStartedAt: null,
+      updatedAt: authenticatedAt,
+    };
+  }
+
+  markReconnectRequired(
+    reason: Exclude<PlexReconnectRequiredReason, null>,
+    error: string,
+    now = new Date().toISOString(),
+  ): PlexAuthIdentity {
+    const identity = this.ensureIdentity(now);
+    this.database
+      .query(
+        `UPDATE plex_auth_identity
+        SET last_error = ?1,
+            reconnect_required_at = ?2,
+            reconnect_required_reason = ?3,
+            renewal_started_at = NULL,
+            updated_at = ?2
+        WHERE singleton = 1`,
+      )
+      .run(error, now, reason);
+
+    return {
+      ...identity,
+      lastError: error,
+      reconnectRequiredAt: now,
+      reconnectRequiredReason: reason,
+      renewalStartedAt: null,
       updatedAt: now,
     };
   }
@@ -446,6 +550,24 @@ function resolveAuthState(
 ): PlexAuthState {
   if (pendingSession) {
     return 'connecting';
+  }
+
+  if (identity?.renewalStartedAt) {
+    return 'renewing';
+  }
+
+  if (
+    identity?.reconnectRequiredAt &&
+    identity.reconnectRequiredReason === 'expired'
+  ) {
+    return 'expired_reconnect_required';
+  }
+
+  if (
+    identity?.reconnectRequiredAt &&
+    identity.reconnectRequiredReason === 'error'
+  ) {
+    return 'error_reconnect_required';
   }
 
   if (identity?.reconnectRequiredAt) {

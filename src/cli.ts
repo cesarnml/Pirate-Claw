@@ -21,6 +21,10 @@ import {
 import { runPlexBackgroundRefresh } from './plex/background-refresh';
 import { PlexCache } from './plex/cache';
 import { PlexHttpClient } from './plex/client';
+import {
+  PlexCredentialManager,
+  RenewingPlexHttpClient,
+} from './plex/credential-manager';
 import type { PlexMovieEnrichDeps } from './plex/movies';
 import type { PlexShowEnrichDeps } from './plex/shows';
 import {
@@ -50,20 +54,27 @@ import { createTransmissionDownloader } from './transmission';
 
 function plexMovieEnrichDeps(
   database: Database,
-  config: AppConfig,
+  configHolder: { current: AppConfig },
   log: (message: string) => void,
+  credentialManager?: PlexCredentialManager,
 ): PlexMovieEnrichDeps | undefined {
+  const config = configHolder.current;
   if (!config.plex) {
     return undefined;
   }
 
   return {
     cache: new PlexCache(database),
-    client: new PlexHttpClient(
-      config.plex.url,
-      config.plex.token,
-      (m: string) => log(`[plex] ${m}`),
-    ),
+    client:
+      credentialManager === undefined
+        ? new PlexHttpClient(config.plex.url, config.plex.token, (m: string) =>
+            log(`[plex] ${m}`),
+          )
+        : new RenewingPlexHttpClient({
+            baseUrl: config.plex.url,
+            manager: credentialManager,
+            log: (m: string) => log(`[plex] ${m}`),
+          }),
     refreshIntervalMinutes: config.plex.refreshIntervalMinutes,
     log: (m: string) => log(`[plex] ${m}`),
   };
@@ -71,20 +82,27 @@ function plexMovieEnrichDeps(
 
 function plexShowEnrichDeps(
   database: Database,
-  config: AppConfig,
+  configHolder: { current: AppConfig },
   log: (message: string) => void,
+  credentialManager?: PlexCredentialManager,
 ): PlexShowEnrichDeps | undefined {
+  const config = configHolder.current;
   if (!config.plex) {
     return undefined;
   }
 
   return {
     cache: new PlexCache(database),
-    client: new PlexHttpClient(
-      config.plex.url,
-      config.plex.token,
-      (m: string) => log(`[plex] ${m}`),
-    ),
+    client:
+      credentialManager === undefined
+        ? new PlexHttpClient(config.plex.url, config.plex.token, (m: string) =>
+            log(`[plex] ${m}`),
+          )
+        : new RenewingPlexHttpClient({
+            baseUrl: config.plex.url,
+            manager: credentialManager,
+            log: (m: string) => log(`[plex] ${m}`),
+          }),
     refreshIntervalMinutes: config.plex.refreshIntervalMinutes,
     log: (m: string) => log(`[plex] ${m}`),
   };
@@ -230,8 +248,9 @@ export async function runCli(argv: string[]): Promise<number> {
 
       try {
         const repository = createRepository(database);
-        const plexMovies = plexMovieEnrichDeps(database, config, log);
-        const plexShows = plexShowEnrichDeps(database, config, log);
+        const configHolder = { current: config };
+        const plexMovies = plexMovieEnrichDeps(database, configHolder, log);
+        const plexShows = plexShowEnrichDeps(database, configHolder, log);
         await runPlexBackgroundRefresh({
           repository,
           plexMovies,
@@ -375,11 +394,30 @@ export async function runCli(argv: string[]): Promise<number> {
         const { artifactDir, artifactRetentionDays } = config.runtime;
 
         const health = createHealthState();
+        const configHolder = { current: config };
+        const plexCredentialManager = config.plex
+          ? new PlexCredentialManager({
+              database,
+              configPath: resolvedConfigPath,
+              configHolder,
+              log,
+            })
+          : undefined;
 
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
         const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
-        const plexMovies = plexMovieEnrichDeps(database, config, log);
-        const plexShows = plexShowEnrichDeps(database, config, log);
+        const plexMovies = plexMovieEnrichDeps(
+          database,
+          configHolder,
+          log,
+          plexCredentialManager,
+        );
+        const plexShows = plexShowEnrichDeps(
+          database,
+          configHolder,
+          log,
+          plexCredentialManager,
+        );
         const tmdbRefreshIntervalMinutes =
           config.runtime.tmdbRefreshIntervalMinutes!;
         const scheduleTmdbRefresh =
@@ -388,7 +426,9 @@ export async function runCli(argv: string[]): Promise<number> {
           config.plex?.refreshIntervalMinutes ?? 0;
         const schedulePlexRefresh = plexRefreshIntervalMinutes > 0;
 
-        const configHolder = { current: config };
+        if (plexCredentialManager) {
+          await plexCredentialManager.startupRenew();
+        }
 
         await runDaemonLoop({
           runCycle: async () => {

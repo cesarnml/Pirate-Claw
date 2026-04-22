@@ -170,7 +170,14 @@ export type PlexConfig = {
 	refreshIntervalMinutes: number;
 };
 
-export type PlexAuthState = 'not_connected' | 'connecting' | 'connected' | 'reconnect_required';
+export type PlexAuthState =
+	| 'not_connected'
+	| 'connecting'
+	| 'connected'
+	| 'reconnect_required'
+	| 'renewing'
+	| 'expired_reconnect_required'
+	| 'error_reconnect_required';
 
 export type PlexAuthStatusResponse = {
 	state: PlexAuthState;
