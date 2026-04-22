@@ -18,12 +18,19 @@ Follow the shared guidance in [`docs/02-delivery/phase-implementation-guidance.m
 
 - `plex.url` remains an explicit operator-managed PMS URL; Phase 23 does **not** own server discovery or selection
 - Phase 23 uses Plex's current recommended browser-oriented auth flow, not a nicer wrapper around manual token extraction
+- Phase 23 uses Plex Managed OAuth (redirect + refresh-token flow), not the PIN polling flow; PIN-derived `X-Plex-Token` behavior is too brittle for Pirate Claw's reconnect and renewal contract
 - the current usable Plex credential continues to live in `plex.token`; no new JWT-specific config shape is introduced
 - Phase 23 scope is expanded beyond first-run connect to include persisted device identity plus best-effort silent renewal
 - renewal failures surface as reconnect-required UI state rather than a silent broken integration
 - device identity / key material is durable product state and should not require operator-authored JSON editing
 - onboarding and `/config` share the same Plex auth primitives; no wizard-only Plex flow
 - PMS reachability/version compatibility remains a separate concern from account auth state and should not be collapsed into a single "Plex OK" flag
+- `P23.01` is foundation-only: auth session + durable device identity, but no `plex.token` write path yet
+- `P23.02` is the first true vertical slice: operator-visible Connect affordance, browser round-trip, and persisted `plex.token`
+- `P23.03` owns both onboarding and `/config` integration together so Pirate Claw ships one Plex connection story, not two diverging ones
+- `P23.03` lands the base operator-facing state model before renewal work: `not_connected | connecting | connected | reconnect_required`
+- `P23.04` extends that existing state model with renewal behavior and more specific renewal states such as `renewing` and expired/error reconnect-required variants
+- `P23.04` renewal stance is demand-driven first (startup, first Plex touch, auth-failure retry path); timer-driven pre-expiry renewal is opportunistic only if it falls out almost for free
 
 ## Stack
 
@@ -70,6 +77,13 @@ Do not start the next ticket until:
 - tests/checks for the current ticket are green
 - ticket rationale is updated for behavior/tradeoff changes
 - no ticket widens into Plex server discovery or account-management scope
+
+## Ticket Boundary Notes
+
+- `P23.01` must stop at backend auth/session foundation and stored identity. It should not introduce the first successful `plex.token` config write.
+- `P23.02` must be reviewable through a real operator path, not only hidden endpoints or harness-only flows. The minimum acceptable slice is: click Connect, complete Plex browser auth, return, persist credential.
+- `P23.03` must update onboarding and `/config` together and establish the shared base state model before renewal logic exists.
+- `P23.04` should build on the existing UI state model and add demand-driven renewal first. Pre-expiry timer renewal is allowed only if it is a near-free extension after the demand-driven path is already solid.
 
 ## Explicit Deferrals
 
