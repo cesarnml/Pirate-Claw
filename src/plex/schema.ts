@@ -24,5 +24,34 @@ export function ensurePlexSchema(database: Database): void {
         cached_at TEXT NOT NULL
       );
     `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS plex_auth_identity (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        client_identifier TEXT NOT NULL,
+        client_name TEXT NOT NULL,
+        platform_name TEXT NOT NULL,
+        refresh_token TEXT,
+        token_expires_at TEXT,
+        last_authenticated_at TEXT,
+        last_error TEXT,
+        reconnect_required_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    database.run(`
+      CREATE TABLE IF NOT EXISTS plex_auth_sessions (
+        id TEXT PRIMARY KEY,
+        oauth_state TEXT NOT NULL UNIQUE,
+        code_verifier TEXT NOT NULL,
+        redirect_uri TEXT NOT NULL,
+        return_to TEXT,
+        opened_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        completed_at TEXT,
+        cancelled_at TEXT
+      );
+    `);
   })();
 }
