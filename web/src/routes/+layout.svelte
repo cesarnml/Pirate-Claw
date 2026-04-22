@@ -143,7 +143,9 @@
 						class="bg-warning/10 border-warning/30 text-warning mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm"
 						data-testid="partial-config-banner"
 					>
-						<p>Setup incomplete — some services may be unavailable until configuration is complete.</p>
+						<p>
+							Setup incomplete — some services may be unavailable until configuration is complete.
+						</p>
 						<a
 							href="/onboarding"
 							class="text-primary hover:text-primary/80 shrink-0 font-medium underline-offset-4 hover:underline"
