@@ -186,6 +186,10 @@ describe('+layout.svelte', () => {
 		});
 
 		expect(screen.getByTestId('partial-config-banner')).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: 'Resume onboarding' })).toHaveAttribute(
+			'href',
+			'/onboarding'
+		);
 		expect(screen.queryByTestId('starter-mode-splash')).not.toBeInTheDocument();
 	});
 
