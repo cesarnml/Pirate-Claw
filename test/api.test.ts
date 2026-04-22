@@ -1117,14 +1117,19 @@ describe('Plex browser auth flow', () => {
         },
       ),
     );
+    let directory: string | undefined;
+    let database:
+      | ReturnType<typeof createDatabaseBackedDeps>['database']
+      | undefined;
 
     try {
-      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
+      directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
       const configPath = join(directory, 'pirate-claw.config.json');
       await writeCompactTvConfigFile(configPath);
       const loaded = await loadConfig(configPath);
       loaded.runtime.apiWriteToken = 'write-token';
       const deps = createDatabaseBackedDeps(loaded, configPath);
+      database = deps.database;
 
       const handler = createApiFetch(deps);
       const response = await handler(
@@ -1154,8 +1159,11 @@ describe('Plex browser auth flow', () => {
           'http://localhost:5173/plex/connect/callback?session=',
         ),
       );
-      deps.database?.close();
     } finally {
+      database?.close();
+      if (directory) {
+        await Bun.$`rm -rf ${directory}`;
+      }
       fetchSpy.mockRestore();
     }
   });
@@ -1175,9 +1183,13 @@ describe('Plex browser auth flow', () => {
           status: 200,
         }),
       );
+    let directory: string | undefined;
+    let database:
+      | ReturnType<typeof createDatabaseBackedDeps>['database']
+      | undefined;
 
     try {
-      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
+      directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
       const configPath = join(directory, 'pirate-claw.config.json');
       const doc = {
         feeds: [
@@ -1208,6 +1220,7 @@ describe('Plex browser auth flow', () => {
       const loaded = await loadConfig(configPath);
       loaded.runtime.apiWriteToken = 'write-token';
       const deps = createDatabaseBackedDeps(loaded, configPath);
+      database = deps.database;
       const handler = createApiFetch(deps);
 
       const started = await handler(
@@ -1249,8 +1262,11 @@ describe('Plex browser auth flow', () => {
         token: 'plex-jwt-token',
         refreshIntervalMinutes: 30,
       });
-      deps.database?.close();
     } finally {
+      database?.close();
+      if (directory) {
+        await Bun.$`rm -rf ${directory}`;
+      }
       fetchSpy.mockRestore();
     }
   });

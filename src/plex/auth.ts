@@ -258,51 +258,68 @@ export class PlexAuthStore {
     session: PlexAuthSession;
   } {
     const authenticatedAt = input.authenticatedAt ?? new Date().toISOString();
-    this.expirePendingSessions(authenticatedAt);
+    return this.database.transaction(() => {
+      this.expirePendingSessions(authenticatedAt);
 
-    const session = this.getSessionOrThrow(sessionId);
-    if (session.status !== 'pending') {
-      throw new Error(
-        `Plex auth session "${sessionId}" is ${session.status} and cannot be finalized.`,
-      );
-    }
+      const session = this.getSessionOrThrow(sessionId);
+      if (session.status !== 'pending') {
+        throw new Error(
+          `Plex auth session "${sessionId}" is ${session.status} and cannot be finalized.`,
+        );
+      }
 
-    const identity = this.ensureIdentity(authenticatedAt);
+      const identity = this.ensureIdentity(authenticatedAt);
 
-    this.database
-      .query(
-        `UPDATE plex_auth_identity
-        SET refresh_token = ?1,
-            token_expires_at = ?2,
-            last_authenticated_at = ?3,
-            last_error = NULL,
-            reconnect_required_at = NULL,
-            updated_at = ?3
-        WHERE singleton = 1`,
-      )
-      .run(input.refreshToken, input.tokenExpiresAt ?? null, authenticatedAt);
+      this.database
+        .query(
+          `UPDATE plex_auth_identity
+          SET refresh_token = ?1,
+              token_expires_at = ?2,
+              last_authenticated_at = ?3,
+              last_error = NULL,
+              reconnect_required_at = NULL,
+              updated_at = ?3
+          WHERE singleton = 1`,
+        )
+        .run(input.refreshToken, input.tokenExpiresAt ?? null, authenticatedAt);
 
-    this.database
-      .query(
-        `UPDATE plex_auth_sessions
-        SET status = 'completed',
-            completed_at = ?2
-        WHERE id = ?1`,
-      )
-      .run(sessionId, authenticatedAt);
+      const completed = this.database
+        .query(
+          `UPDATE plex_auth_sessions
+          SET status = 'completed',
+              completed_at = ?2
+          WHERE id = ?1 AND status = 'pending'`,
+        )
+        .run(sessionId, authenticatedAt);
 
-    return {
-      identity: {
-        ...identity,
-        refreshToken: input.refreshToken,
-        tokenExpiresAt: input.tokenExpiresAt ?? null,
-        lastAuthenticatedAt: authenticatedAt,
-        lastError: null,
-        reconnectRequiredAt: null,
-        updatedAt: authenticatedAt,
-      },
-      session: this.getSessionOrThrow(sessionId),
-    };
+      if (Number(completed.changes ?? 0) !== 1) {
+        throw new Error(
+          `Plex auth session "${sessionId}" could not be finalized.`,
+        );
+      }
+
+      this.database
+        .query(
+          `UPDATE plex_auth_sessions
+          SET status = 'cancelled',
+              cancelled_at = ?2
+          WHERE id <> ?1 AND status = 'pending'`,
+        )
+        .run(sessionId, authenticatedAt);
+
+      return {
+        identity: {
+          ...identity,
+          refreshToken: input.refreshToken,
+          tokenExpiresAt: input.tokenExpiresAt ?? null,
+          lastAuthenticatedAt: authenticatedAt,
+          lastError: null,
+          reconnectRequiredAt: null,
+          updatedAt: authenticatedAt,
+        },
+        session: this.getSessionOrThrow(sessionId),
+      };
+    })();
   }
 
   getSnapshot(now = new Date().toISOString()): PlexAuthSnapshot {
@@ -384,6 +401,9 @@ export class PlexAuthStore {
             key_algorithm = ?2,
             public_jwk_json = ?3,
             private_key_pem = ?4,
+            refresh_token = NULL,
+            token_expires_at = NULL,
+            reconnect_required_at = ?5,
             updated_at = ?5
         WHERE singleton = 1`,
       )
@@ -398,6 +418,9 @@ export class PlexAuthStore {
     return {
       ...existing,
       ...material,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      reconnectRequiredAt: now,
       updatedAt: now,
     };
   }

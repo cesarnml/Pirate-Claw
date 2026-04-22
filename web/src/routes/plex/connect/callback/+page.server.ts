@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { sanitizePlexReturnTo } from '$lib/plex-auth';
 import { apiRequest } from '$lib/server/api';
 import type { PageServerLoad } from './$types';
 
@@ -32,10 +33,12 @@ export const load: PageServerLoad = async ({ url }) => {
 		};
 	}
 
-	const body = (await response.json()) as { returnTo?: string | null };
+	const body = (await response.json().catch(() => ({}))) as {
+		returnTo?: string | null;
+	};
 	return {
 		ok: true,
 		message: 'Plex connected successfully.',
-		returnTo: body.returnTo ?? '/config'
+		returnTo: sanitizePlexReturnTo(body.returnTo)
 	};
 };

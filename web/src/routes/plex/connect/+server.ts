@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { redirect } from '@sveltejs/kit';
 import { apiRequest } from '$lib/server/api';
+import { sanitizePlexReturnTo } from '$lib/plex-auth';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -17,7 +18,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		},
 		body: JSON.stringify({
 			forwardUrl: `${url.origin}/plex/connect/callback`,
-			returnTo: url.searchParams.get('returnTo') ?? '/config'
+			returnTo: sanitizePlexReturnTo(url.searchParams.get('returnTo'))
 		})
 	});
 
