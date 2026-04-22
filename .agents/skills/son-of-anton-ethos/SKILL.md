@@ -44,7 +44,7 @@ Commit the delivery plan and all ticket docs to the default branch before creati
 
 ### Required Behavior
 
-1. Re-read required repo docs and handoff artifacts at each ticket boundary.
+1. Re-read required repo docs at each ticket boundary. For ticket `01`, use the implementation plan, the ticket doc, and current repo state as the initial handoff context; for later tickets, re-read the generated handoff artifact as the source of truth.
 2. Use the supported orchestrator path, not ad hoc manual substitutes.
 3. Move one ticket at a time in order.
 4. For each ticket:

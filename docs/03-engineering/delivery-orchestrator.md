@@ -162,6 +162,8 @@ When a ticket starts, the orchestrator writes a handoff artifact under:
 
 That handoff is the narrow context that the next ticket worker should begin from alongside the current repo state and required docs.
 
+For the **first ticket in a new phase**, there may be no prior-ticket handoff context beyond the implementation plan, the ticket doc, and current repo state. That is expected, not a blocker.
+
 The handoff includes:
 
 - the phase plan path
@@ -171,6 +173,8 @@ The handoff includes:
 - explicit stop conditions for when the worker should pause instead of widening scope
 
 This does not automatically create a brand-new agent session, but it is the current repo mechanism for reducing reasoning carryover between tickets while preserving stacked branch continuity.
+
+For ticket `01`, `start` is the command that initializes the first ticket context for the phase. After `start`, use the generated handoff artifact if present; before that, do not treat the absence of a prior-ticket handoff as missing workflow state.
 
 **No read-ahead during the review window.** The agent does nothing while waiting on external AI review. The wait is free (LLM idle during subprocess sleep). Read-ahead during the window burns context that is dead weight at the next ticket boundary. Be sabaai sabaai.
 
@@ -301,6 +305,8 @@ Available commands:
 Separate post-delivery closeout command:
 
 - `bun run closeout-stack --plan <plan-path>`
+
+For a fresh phase start, `start` initializes ticket `01` context. Do not expect prior PR/review handoff state for the first ticket.
 
 ## Typical Flow
 
