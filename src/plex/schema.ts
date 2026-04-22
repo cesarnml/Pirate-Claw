@@ -30,10 +30,10 @@ export function ensurePlexSchema(database: Database): void {
         client_identifier TEXT NOT NULL,
         client_name TEXT NOT NULL,
         platform_name TEXT NOT NULL,
-        key_id TEXT NOT NULL,
-        key_algorithm TEXT NOT NULL,
-        public_jwk_json TEXT NOT NULL,
-        private_key_pem TEXT NOT NULL,
+        key_id TEXT,
+        key_algorithm TEXT,
+        public_jwk_json TEXT,
+        private_key_pem TEXT,
         refresh_token TEXT,
         token_expires_at TEXT,
         last_authenticated_at TEXT,
@@ -48,6 +48,8 @@ export function ensurePlexSchema(database: Database): void {
         id TEXT PRIMARY KEY,
         oauth_state TEXT NOT NULL UNIQUE,
         code_verifier TEXT NOT NULL,
+        pin_id INTEGER,
+        pin_code TEXT,
         redirect_uri TEXT NOT NULL,
         return_to TEXT,
         opened_at TEXT NOT NULL,
@@ -57,5 +59,44 @@ export function ensurePlexSchema(database: Database): void {
         cancelled_at TEXT
       );
     `);
+    ensurePlexTableColumn(database, 'plex_auth_identity', 'key_id', 'TEXT');
+    ensurePlexTableColumn(
+      database,
+      'plex_auth_identity',
+      'key_algorithm',
+      'TEXT',
+    );
+    ensurePlexTableColumn(
+      database,
+      'plex_auth_identity',
+      'public_jwk_json',
+      'TEXT',
+    );
+    ensurePlexTableColumn(
+      database,
+      'plex_auth_identity',
+      'private_key_pem',
+      'TEXT',
+    );
+    ensurePlexTableColumn(database, 'plex_auth_sessions', 'pin_id', 'INTEGER');
+    ensurePlexTableColumn(database, 'plex_auth_sessions', 'pin_code', 'TEXT');
   })();
+}
+
+function ensurePlexTableColumn(
+  database: Database,
+  tableName: string,
+  columnName: string,
+  columnType: string,
+): void {
+  const columns = database
+    .query(`SELECT name FROM pragma_table_info('${tableName}')`)
+    .all() as Array<{ name: string }>;
+  const hasColumn = columns.some((column) => column.name === columnName);
+
+  if (!hasColumn) {
+    database.run(
+      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`,
+    );
+  }
 }

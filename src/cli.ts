@@ -462,6 +462,7 @@ export async function runCli(argv: string[]): Promise<number> {
           fetch:
             config.runtime.apiPort != null
               ? createApiFetch({
+                  database,
                   repository,
                   health,
                   config,

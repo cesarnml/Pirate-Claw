@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, spyOn } from 'bun:test';
 
 import {
@@ -19,6 +19,11 @@ import type { AppConfig } from '../src/config';
 import { loadConfig } from '../src/config';
 import type { PollState } from '../src/poll-state';
 import type { CandidateStateRecord, Repository } from '../src/repository';
+import {
+  createRepository,
+  ensureSchema,
+  openDatabase,
+} from '../src/repository';
 import type { CycleResult } from '../src/runtime-artifacts';
 import { TmdbCache } from '../src/tmdb/cache';
 import { movieMatchKey, tvMatchKey } from '../src/tmdb/keys';
@@ -90,6 +95,24 @@ function createDeps(overrides: Partial<Repository> = {}): ApiFetchDeps {
     health: createHealthState(),
     config: stubConfig(),
     configPath: '/nonexistent/pirate-claw.config.json',
+    pollStatePath: '/nonexistent/poll-state.json',
+    loadPollState: () => emptyPollState,
+  };
+}
+
+function createDatabaseBackedDeps(
+  config: AppConfig,
+  configPath: string,
+): ApiFetchDeps {
+  const database = openDatabase(join(dirname(configPath), 'pirate-claw.db'));
+  ensureSchema(database);
+  return {
+    database,
+    repository: createRepository(database),
+    health: createHealthState(),
+    config,
+    configHolder: { current: config },
+    configPath,
     pollStatePath: '/nonexistent/poll-state.json',
     loadPollState: () => emptyPollState,
   };
@@ -1081,6 +1104,155 @@ describe('GET /api/config', () => {
 
     expect(firstEtag).toBeTruthy();
     expect(firstEtag).toBe(secondEtag);
+  });
+});
+
+describe('Plex browser auth flow', () => {
+  it('starts Plex auth and returns a hosted redirect url', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ id: 42, code: 'pin-code', expiresIn: 300 }),
+        {
+          status: 200,
+        },
+      ),
+    );
+
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      loaded.runtime.apiWriteToken = 'write-token';
+      const deps = createDatabaseBackedDeps(loaded, configPath);
+
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/plex/auth/start', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({
+            forwardUrl: 'http://localhost:5173/plex/connect/callback',
+            returnTo: '/config',
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        sessionId: string;
+        redirectUrl: string;
+      };
+      expect(body.sessionId).toBeTruthy();
+      expect(body.redirectUrl).toContain('https://app.plex.tv/auth#?');
+      expect(body.redirectUrl).toContain('code=pin-code');
+      expect(body.redirectUrl).toContain(
+        encodeURIComponent(
+          'http://localhost:5173/plex/connect/callback?session=',
+        ),
+      );
+      deps.database?.close();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('finalizes Plex auth and writes plex.token for configs without a plex block', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ id: 99, code: 'pin-code', expiresIn: 300 }),
+          {
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authToken: 'plex-jwt-token' }), {
+          status: 200,
+        }),
+      );
+
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      const doc = {
+        feeds: [
+          {
+            name: 'TV Feed',
+            url: 'https://example.test/tv.rss',
+            mediaType: 'tv',
+          },
+        ],
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x265'] },
+          shows: ['Example Show'],
+        },
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+        runtime: {
+          runIntervalMinutes: RUN_INTERVAL_MINUTES_DEFAULT,
+          reconcileIntervalSeconds: RECONCILE_INTERVAL_SECONDS_DEFAULT,
+          artifactDir: '.pirate-claw/runtime',
+          artifactRetentionDays: 7,
+          apiWriteToken: 'write-token',
+        },
+      };
+      await Bun.write(configPath, `${JSON.stringify(doc, null, 2)}\n`);
+      const loaded = await loadConfig(configPath);
+      loaded.runtime.apiWriteToken = 'write-token';
+      const deps = createDatabaseBackedDeps(loaded, configPath);
+      const handler = createApiFetch(deps);
+
+      const started = await handler(
+        new Request('http://localhost/api/plex/auth/start', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({
+            forwardUrl: 'http://localhost:5173/plex/connect/callback',
+            returnTo: '/config',
+          }),
+        }),
+      );
+      const startedBody = (await started.json()) as { sessionId: string };
+
+      const finalized = await handler(
+        new Request('http://localhost/api/plex/auth/finalize', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({ sessionId: startedBody.sessionId }),
+        }),
+      );
+
+      expect(finalized.status).toBe(200);
+      const disk = (await Bun.file(configPath).json()) as {
+        plex?: {
+          url?: string;
+          token?: string;
+          refreshIntervalMinutes?: number;
+        };
+      };
+      expect(disk.plex).toEqual({
+        url: 'http://localhost:32400',
+        token: 'plex-jwt-token',
+        refreshIntervalMinutes: 30,
+      });
+      deps.database?.close();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
 

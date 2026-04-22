@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { getSetupState } from './bootstrap';
 import { renameSync, writeFileSync } from 'node:fs';
@@ -55,6 +56,11 @@ import type { PlexMovieEnrichDeps } from './plex/movies';
 import { enrichMovieBreakdownsFromPlexCache } from './plex/movies';
 import type { PlexShowEnrichDeps } from './plex/shows';
 import { enrichShowBreakdownsFromPlexCache } from './plex/shows';
+import { PlexAuthStore } from './plex/auth';
+import {
+  exchangePlexPinForAuthToken,
+  startPlexPinAuth,
+} from './plex/auth-client';
 
 export type CycleSnapshot = {
   status: CycleResult['status'];
@@ -96,6 +102,7 @@ export function recordCycleInHealth(
 }
 
 export type ApiFetchDeps = {
+  database?: Database;
   repository: Repository;
   health: HealthState;
   config: AppConfig;
@@ -330,6 +337,7 @@ export function createApiFetch(
   }
 
   const {
+    database,
     repository,
     health,
     config,
@@ -410,6 +418,146 @@ export function createApiFetch(
         return Response.json({ compatibility, url, reachable, advisory });
       } catch {
         return json500();
+      }
+    }
+
+    if (path === '/api/plex/auth/start' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+      if (!database) {
+        return json500();
+      }
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
+        const parsed = expectRecord(body, 'request body');
+        const forwardUrl = requireNonEmptyString(
+          parsed.forwardUrl,
+          'request body forwardUrl',
+        );
+        const returnTo =
+          parsed.returnTo === undefined
+            ? undefined
+            : requireNonEmptyString(parsed.returnTo, 'request body returnTo');
+
+        const store = new PlexAuthStore(database);
+        const identity = store.ensureIdentity();
+        const started = await startPlexPinAuth({
+          clientIdentifier: identity.clientIdentifier,
+          publicJwk: identity.publicJwk,
+          productName: identity.clientName,
+          forwardUrl,
+        });
+        const created = store.createSession({
+          oauthState: started.pinCode,
+          codeVerifier: String(started.pinId),
+          pinId: started.pinId,
+          pinCode: started.pinCode,
+          redirectUri: forwardUrl,
+          returnTo,
+          expiresAt: started.expiresAt,
+        });
+
+        return Response.json({
+          sessionId: created.session.id,
+          redirectUrl: appendSessionToForwardUrl(
+            started.authUrl,
+            created.session.id,
+          ),
+          expiresAt: created.session.expiresAt,
+        });
+      } catch (error) {
+        return Response.json(
+          {
+            error:
+              error instanceof Error ? error.message : 'plex auth start failed',
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (path === '/api/plex/auth/finalize' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+      if (!database) {
+        return json500();
+      }
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
+        const parsed = expectRecord(body, 'request body');
+        const sessionId = requireNonEmptyString(
+          parsed.sessionId,
+          'request body sessionId',
+        );
+        const store = new PlexAuthStore(database);
+        const snapshot = store.getSnapshot();
+
+        if (
+          !snapshot.pendingSession ||
+          snapshot.pendingSession.id !== sessionId ||
+          snapshot.pendingSession.pinId == null
+        ) {
+          return Response.json(
+            { error: 'plex auth session is missing or expired' },
+            { status: 409 },
+          );
+        }
+
+        const identity = store.ensureIdentity();
+        const authToken = await exchangePlexPinForAuthToken({
+          clientIdentifier: identity.clientIdentifier,
+          identity,
+          pinId: snapshot.pendingSession.pinId,
+        });
+
+        if (!authToken) {
+          return Response.json(
+            {
+              error:
+                'Plex sign-in was cancelled or has not completed yet. Try Connect again.',
+            },
+            { status: 409 },
+          );
+        }
+
+        activeConfig = await writePlexTokenToConfig({
+          authToken,
+          configPath,
+          currentConfig: activeConfig,
+          configHolder,
+        });
+        store.finalizeSession(sessionId, {
+          refreshToken: authToken,
+        });
+
+        return Response.json({
+          ok: true,
+          returnTo: snapshot.pendingSession.returnTo,
+        });
+      } catch (error) {
+        return Response.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'plex auth finalize failed',
+          },
+          { status: 400 },
+        );
       }
     }
 
@@ -1653,9 +1801,81 @@ function mergeTvShowsPreservingDiskEntries(
   return next;
 }
 
+async function writePlexTokenToConfig(input: {
+  authToken: string;
+  configPath: string;
+  currentConfig: AppConfig;
+  configHolder?: { current: AppConfig };
+}): Promise<AppConfig> {
+  const baseOnDisk = await readConfigFileRecord(input.configPath);
+  const diskPlex = isRecord(baseOnDisk.plex) ? baseOnDisk.plex : {};
+  const merged = {
+    ...baseOnDisk,
+    plex: {
+      ...diskPlex,
+      url:
+        optionalStringValue(diskPlex.url) ??
+        input.currentConfig.plex?.url ??
+        'http://localhost:32400',
+      token: input.authToken,
+      refreshIntervalMinutes:
+        optionalNonNegativeNumber(diskPlex.refreshIntervalMinutes) ??
+        input.currentConfig.plex?.refreshIntervalMinutes ??
+        30,
+    },
+  };
+
+  const validated = validateConfig(
+    merged,
+    'config',
+    await loadConfigEnv(input.configPath),
+  );
+  writeConfigAtomically(input.configPath, merged);
+  if (input.configHolder) {
+    input.configHolder.current = validated;
+  }
+  return validated;
+}
+
+function appendSessionToForwardUrl(url: string, sessionId: string): string {
+  const marker = 'forwardUrl=';
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex < 0) {
+    return url;
+  }
+
+  const encodedForwardUrl = url.slice(markerIndex + marker.length);
+  const forwardUrl = new URL(decodeURIComponent(encodedForwardUrl));
+  forwardUrl.searchParams.set('session', sessionId);
+
+  return `${url.slice(0, markerIndex + marker.length)}${encodeURIComponent(forwardUrl.toString())}`;
+}
+
 function expectRecord(input: unknown, label: string): Record<string, unknown> {
   if (!isRecord(input)) {
     throw new ConfigError(`Config file "${label}" must be an object.`);
+  }
+  return input;
+}
+
+function requireNonEmptyString(input: unknown, label: string): string {
+  if (typeof input !== 'string' || input.length === 0) {
+    throw new ConfigError(`Config file "${label}" must be a non-empty string.`);
+  }
+  return input;
+}
+
+function optionalStringValue(input: unknown): string | undefined {
+  if (typeof input !== 'string') {
+    return undefined;
+  }
+  const trimmed = input.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function optionalNonNegativeNumber(input: unknown): number | undefined {
+  if (typeof input !== 'number' || !Number.isFinite(input) || input < 0) {
+    return undefined;
   }
   return input;
 }

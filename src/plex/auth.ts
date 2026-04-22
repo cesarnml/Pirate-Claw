@@ -42,6 +42,8 @@ export type PlexAuthSession = {
   id: string;
   oauthState: string;
   codeVerifier: string;
+  pinId: number | null;
+  pinCode: string | null;
   redirectUri: string;
   returnTo: string | null;
   openedAt: string;
@@ -60,6 +62,8 @@ export type PlexAuthSnapshot = {
 export type CreatePlexAuthSessionInput = {
   oauthState: string;
   codeVerifier: string;
+  pinId?: number;
+  pinCode?: string;
   redirectUri: string;
   returnTo?: string;
   expiresAt: string;
@@ -81,7 +85,15 @@ export class PlexAuthStore {
   ensureIdentity(now = new Date().toISOString()): PlexAuthIdentity {
     const existing = this.getIdentity();
     if (existing) {
-      return existing;
+      if (
+        existing.keyId &&
+        existing.privateKeyPem &&
+        existing.publicJwk.x.length > 0
+      ) {
+        return existing;
+      }
+
+      return this.repairIdentity(existing, now);
     }
 
     const created: PlexAuthIdentity = {
@@ -158,7 +170,7 @@ export class PlexAuthStore {
       )
       .get() as
       | (Omit<PlexAuthIdentity, 'publicJwk'> & {
-          publicJwkJson: string;
+          publicJwkJson: string | null;
         })
       | null;
 
@@ -168,7 +180,16 @@ export class PlexAuthStore {
 
     return {
       ...row,
-      publicJwk: JSON.parse(row.publicJwkJson) as PlexAuthIdentity['publicJwk'],
+      publicJwk: row.publicJwkJson
+        ? (JSON.parse(row.publicJwkJson) as PlexAuthIdentity['publicJwk'])
+        : {
+            kty: 'OKP',
+            crv: 'Ed25519',
+            x: '',
+            kid: row.keyId,
+            alg: 'EdDSA',
+            use: 'sig',
+          },
     };
   }
 
@@ -188,6 +209,8 @@ export class PlexAuthStore {
           id,
           oauth_state,
           code_verifier,
+          pin_id,
+          pin_code,
           redirect_uri,
           return_to,
           opened_at,
@@ -195,12 +218,14 @@ export class PlexAuthStore {
           status,
           completed_at,
           cancelled_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', NULL, NULL)`,
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', NULL, NULL)`,
       )
       .run(
         id,
         input.oauthState,
         input.codeVerifier,
+        input.pinId ?? null,
+        input.pinCode ?? null,
         input.redirectUri,
         input.returnTo ?? null,
         openedAt,
@@ -300,6 +325,8 @@ export class PlexAuthStore {
           id,
           oauth_state AS oauthState,
           code_verifier AS codeVerifier,
+          pin_id AS pinId,
+          pin_code AS pinCode,
           redirect_uri AS redirectUri,
           return_to AS returnTo,
           opened_at AS openedAt,
@@ -324,6 +351,8 @@ export class PlexAuthStore {
           id,
           oauth_state AS oauthState,
           code_verifier AS codeVerifier,
+          pin_id AS pinId,
+          pin_code AS pinCode,
           redirect_uri AS redirectUri,
           return_to AS returnTo,
           opened_at AS openedAt,
@@ -341,6 +370,36 @@ export class PlexAuthStore {
     }
 
     return row;
+  }
+
+  private repairIdentity(
+    existing: PlexAuthIdentity,
+    now: string,
+  ): PlexAuthIdentity {
+    const material = createDeviceKeyMaterial();
+    this.database
+      .query(
+        `UPDATE plex_auth_identity
+        SET key_id = ?1,
+            key_algorithm = ?2,
+            public_jwk_json = ?3,
+            private_key_pem = ?4,
+            updated_at = ?5
+        WHERE singleton = 1`,
+      )
+      .run(
+        material.keyId,
+        material.keyAlgorithm,
+        JSON.stringify(material.publicJwk),
+        material.privateKeyPem,
+        now,
+      );
+
+    return {
+      ...existing,
+      ...material,
+      updatedAt: now,
+    };
   }
 }
 

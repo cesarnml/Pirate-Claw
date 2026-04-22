@@ -36,6 +36,9 @@
 			null
 	);
 	const canWrite = $derived(data.canWrite);
+	const plexConnectLabel = $derived(
+		data.config?.plex?.token ? 'Reconnect Plex in browser' : 'Connect Plex in browser'
+	);
 
 	let showRows = $state<string[]>([]);
 	let tvResolutions = $state<string[]>([]);
@@ -436,6 +439,21 @@
 	{#if data.error}
 		<ApiUnavailableAlert message={data.error} />
 	{:else if data.config}
+		<section class="border-border/70 bg-card/80 rounded-3xl border p-6 shadow-sm">
+			<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+				<div class="space-y-1">
+					<h2 class="text-foreground text-lg font-semibold">Plex Connection</h2>
+					<p class="text-muted-foreground text-sm">
+						Use Plex&apos;s hosted sign-in flow to connect Pirate Claw without manually copying a
+						token.
+					</p>
+				</div>
+				<Button href="/plex/connect?returnTo=/config" disabled={!canWrite}>
+					{plexConnectLabel}
+				</Button>
+			</div>
+		</section>
+
 		<div class="grid gap-5 xl:grid-cols-2">
 			<TransmissionCard
 				{canWrite}
