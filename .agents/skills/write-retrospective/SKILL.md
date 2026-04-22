@@ -47,6 +47,6 @@ Concrete next actions. Avoid "consider X" — prefer "fix the stale test asserti
 
 ## Naming and placement
 
-- Phase: `notes/public/phase-<N>-retrospective.md` or `notes/public/phase<N>-retrospective.md` (match existing convention in the repo)
+- Product Phase: `notes/public/pp<N>-retrospective.md` (match existing convention in the repo)
 - Engineering epic: `notes/public/ee<N>-retrospective.md`
 - Close with: `_Created: <date>. PR #N open/merged._` or equivalent factual closer.

@@ -26,7 +26,7 @@ with a one-line description each.
 
 ### Retrospective
 
-Create `notes/public/p15-retrospective.md` with:
+Create `notes/public/pp15-retrospective.md` with:
 
 - What shipped
 - Any explicit deferrals encountered during implementation (beyond those listed in the plan)
