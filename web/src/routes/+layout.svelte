@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import MenuIcon from '@lucide/svelte/icons/menu';
 	import ClapperboardIcon from '@lucide/svelte/icons/clapperboard';
 	import TvMinimalPlayIcon from '@lucide/svelte/icons/tv-minimal-play';
@@ -15,6 +17,8 @@
 	import MobileNav from './components/MobileNav.svelte';
 	import type { NavLink } from './components/SidebarNav.svelte';
 	import { page } from '$app/stores';
+	import { toast } from '$lib/toast';
+	import type { SubmitFunction } from '@sveltejs/kit';
 
 	interface Props {
 		children: Snippet;
@@ -48,6 +52,25 @@
 	const isReadyPendingRestart = $derived(
 		readinessState === 'ready_pending_restart' && !isOnboarding
 	);
+	let restartingFromBanner = $state(false);
+
+	const enhanceRestartDaemon: SubmitFunction = () => {
+		restartingFromBanner = true;
+		return async ({ result }) => {
+			restartingFromBanner = false;
+			if (result.type === 'success') {
+				toast('Restarting… the page may become temporarily unavailable', 'success');
+				await invalidateAll();
+				return;
+			}
+
+			const restartError =
+				result.type === 'failure' && typeof result.data?.restartError === 'string'
+					? result.data.restartError
+					: 'Restart failed — try again or restart manually';
+			toast(restartError, 'error');
+		};
+	};
 </script>
 
 <svelte:head>
@@ -154,12 +177,30 @@
 						</a>
 					</div>
 				{:else if isReadyPendingRestart}
-					<div
-						class="bg-warning/10 border-warning/30 text-warning mb-4 rounded-lg border px-4 py-2 text-sm"
+					<form
+						method="POST"
+						action="/config?/restartDaemon"
+						use:enhance={enhanceRestartDaemon}
+						class="mb-4"
 						data-testid="ready-pending-restart-banner"
 					>
-						Restart daemon to apply config changes.
-					</div>
+						<div
+							class="bg-warning/10 border-warning/30 text-warning flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm"
+						>
+							<p>Restart daemon to apply config changes.</p>
+							<button
+								type="submit"
+								class="border-warning/40 text-warning hover:bg-warning/10 shrink-0 rounded-md border px-3 py-1.5 font-medium transition-colors"
+								disabled={restartingFromBanner}
+							>
+								{#if restartingFromBanner}
+									Restarting…
+								{:else}
+									Restart Daemon
+								{/if}
+							</button>
+						</div>
+					</form>
 				{/if}
 				{@render children()}
 			{/if}

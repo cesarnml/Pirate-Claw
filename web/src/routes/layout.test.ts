@@ -29,6 +29,18 @@ vi.mock('$lib/components/ui/sonner', () => ({
 	Toaster: vi.fn()
 }));
 
+vi.mock('$app/forms', () => ({
+	enhance: vi.fn()
+}));
+
+vi.mock('$app/navigation', () => ({
+	invalidateAll: vi.fn()
+}));
+
+vi.mock('$lib/toast', () => ({
+	toast: vi.fn()
+}));
+
 vi.mock('$app/stores', () => ({
 	page
 }));
@@ -210,6 +222,7 @@ describe('+layout.svelte', () => {
 		});
 
 		expect(screen.getByTestId('ready-pending-restart-banner')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeInTheDocument();
 		expect(screen.queryByTestId('partial-config-banner')).not.toBeInTheDocument();
 		expect(screen.queryByTestId('starter-mode-splash')).not.toBeInTheDocument();
 	});
