@@ -1254,6 +1254,185 @@ describe('Plex browser auth flow', () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it('reports connecting status while a Plex browser sign-in is pending', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ id: 42, code: 'pin-code', expiresIn: 300 }),
+        { status: 200 },
+      ),
+    );
+
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      loaded.runtime.apiWriteToken = 'write-token';
+      const deps = createDatabaseBackedDeps(loaded, configPath);
+      const handler = createApiFetch(deps);
+
+      await handler(
+        new Request('http://localhost/api/plex/auth/start', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({
+            forwardUrl: 'http://localhost:5173/plex/connect/callback',
+            returnTo: '/onboarding',
+          }),
+        }),
+      );
+
+      const response = await handler(
+        new Request('http://localhost/api/plex/auth/status'),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        state: 'connecting',
+        plexUrl: 'http://localhost:32400',
+        hasToken: false,
+        returnTo: '/onboarding',
+      });
+      deps.database?.close();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('persists a Plex URL patch without requiring a manual token edit flow', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
+    const configPath = join(directory, 'pirate-claw.config.json');
+    await writeCompactTvConfigFile(configPath);
+    const loaded = await loadConfig(configPath);
+    loaded.runtime.apiWriteToken = 'write-token';
+    const deps = createDatabaseBackedDeps(loaded, configPath);
+    const handler = createApiFetch(deps);
+
+    const current = await handler(new Request('http://localhost/api/config'));
+    const etag = current.headers.get('etag');
+
+    const response = await handler(
+      new Request('http://localhost/api/config/plex', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer write-token',
+          'if-match': etag!,
+        },
+        body: JSON.stringify({ url: 'http://plex.internal:32400' }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const disk = (await Bun.file(configPath).json()) as {
+      plex?: {
+        url?: string;
+        token?: string;
+        refreshIntervalMinutes?: number;
+      };
+    };
+    expect(disk.plex).toEqual({
+      url: 'http://plex.internal:32400',
+      token: '',
+      refreshIntervalMinutes: 30,
+    });
+    deps.database?.close();
+  });
+
+  it('disconnects Plex by clearing both config token and stored auth state', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    process.env.PIRATE_CLAW_API_WRITE_TOKEN = 'write-token';
+    const fetchSpy = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ id: 99, code: 'pin-code', expiresIn: 300 }),
+          {
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authToken: 'plex-jwt-token' }), {
+          status: 200,
+        }),
+      );
+
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      loaded.runtime.apiWriteToken = 'write-token';
+      const deps = createDatabaseBackedDeps(loaded, configPath);
+      const handler = createApiFetch(deps);
+
+      const started = await handler(
+        new Request('http://localhost/api/plex/auth/start', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({
+            forwardUrl: 'http://localhost:5173/plex/connect/callback',
+            returnTo: '/config',
+          }),
+        }),
+      );
+      const startedBody = (await started.json()) as { sessionId: string };
+
+      await handler(
+        new Request('http://localhost/api/plex/auth/finalize', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({ sessionId: startedBody.sessionId }),
+        }),
+      );
+
+      const current = await handler(new Request('http://localhost/api/config'));
+      const disconnect = await handler(
+        new Request('http://localhost/api/plex/auth/disconnect', {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer write-token',
+            'if-match': current.headers.get('etag')!,
+          },
+        }),
+      );
+
+      expect(disconnect.status).toBe(200);
+      const status = await handler(
+        new Request('http://localhost/api/plex/auth/status'),
+      );
+      expect(await status.json()).toMatchObject({
+        state: 'not_connected',
+        plexUrl: 'http://localhost:32400',
+        returnTo: null,
+      });
+
+      const disk = (await Bun.file(configPath).json()) as {
+        plex?: {
+          token?: string;
+        };
+      };
+      expect(disk.plex?.token).toBe('');
+      deps.database?.close();
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+      fetchSpy.mockRestore();
+    }
+  });
 });
 
 describe('PUT /api/config', () => {

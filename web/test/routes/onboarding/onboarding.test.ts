@@ -19,7 +19,13 @@ const sharedLayoutData = {
 	transmissionSession: null,
 	plexConfigured: false,
 	setupState: 'ready' as const,
-	readinessState: 'ready' as const
+	readinessState: 'ready' as const,
+	plexAuth: {
+		state: 'not_connected' as const,
+		plexUrl: 'http://localhost:32400',
+		hasToken: false,
+		returnTo: null
+	}
 };
 
 function renderPage(data: Record<string, unknown>) {
@@ -88,9 +94,9 @@ describe('/onboarding', () => {
 			error: null
 		});
 
-		expect(screen.getByRole('heading', { name: 'Step 4 — Feed type' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Step 5 — Feed type' })).toBeInTheDocument();
 		expect(
-			screen.getByRole('heading', { name: 'Step 4 — Add your first feed' })
+			screen.getByRole('heading', { name: 'Step 5 — Add your first feed' })
 		).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save first feed' })).toBeInTheDocument();
 	});
@@ -129,7 +135,7 @@ describe('/onboarding', () => {
 			error: null
 		});
 
-		expect(screen.getByText('Step 5 — Add a TV target')).toBeInTheDocument();
+		expect(screen.getByText('Step 6 — Add a TV target')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save TV target' })).toBeInTheDocument();
 	});
 
@@ -198,8 +204,8 @@ describe('/onboarding', () => {
 			error: null
 		});
 
-		expect(screen.queryByText('Step 5 — Add a TV target')).not.toBeInTheDocument();
-		expect(screen.getByText('Step 5 — Add a movie target')).toBeInTheDocument();
+		expect(screen.queryByText('Step 6 — Add a TV target')).not.toBeInTheDocument();
+		expect(screen.getByText('Step 6 — Add a movie target')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save movie target' })).toBeInTheDocument();
 	});
 
@@ -249,7 +255,7 @@ describe('/onboarding', () => {
 			}
 		});
 
-		expect(screen.getByText('Step 6 — Add a movie target')).toBeInTheDocument();
+		expect(screen.getByText('Step 7 — Add a movie target')).toBeInTheDocument();
 		expect(screen.queryByText('Done')).not.toBeInTheDocument();
 	});
 
@@ -272,7 +278,7 @@ describe('/onboarding', () => {
 			error: null
 		});
 
-		expect(screen.getByText('Step 6 — Add a movie target')).toBeInTheDocument();
+		expect(screen.getByText('Step 7 — Add a movie target')).toBeInTheDocument();
 		expect(screen.queryByText('Done')).not.toBeInTheDocument();
 		writeOnboardingPath('tv');
 	});

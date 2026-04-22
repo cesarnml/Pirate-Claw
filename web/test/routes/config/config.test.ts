@@ -79,6 +79,9 @@ describe('/config', () => {
 		expect(screen.getByRole('heading', { name: 'TV Configuration' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Movie Policy' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Transmission Protocol' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Plex Connection' })).toBeInTheDocument();
+		expect(screen.getByLabelText('Plex Media Server URL')).toHaveValue('http://localhost:32400');
+		expect(screen.getByRole('link', { name: 'Connect in browser' })).toBeInTheDocument();
 		expect(screen.getByText('Write Access: Active')).toBeInTheDocument();
 		expect(screen.getByText('TestFeed')).toBeInTheDocument();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeInTheDocument();

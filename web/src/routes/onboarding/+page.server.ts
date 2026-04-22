@@ -6,6 +6,7 @@ import type {
 	AppConfig,
 	FeedConfig,
 	MoviePolicy,
+	PlexAuthStatusResponse,
 	ReadinessResponse,
 	TransmissionCompatibility,
 	TransmissionStatusResponse
@@ -16,9 +17,10 @@ export const load: PageServerLoad = async () => {
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 
 	try {
-		const [configResponse, readinessResponse] = await Promise.all([
+		const [configResponse, readinessResponse, plexAuthResponse] = await Promise.all([
 			apiRequest('/api/config'),
-			apiRequest('/api/setup/readiness')
+			apiRequest('/api/setup/readiness'),
+			apiRequest('/api/plex/auth/status')
 		]);
 
 		if (!configResponse.ok) {
@@ -28,6 +30,7 @@ export const load: PageServerLoad = async () => {
 				etag: null,
 				canWrite,
 				onboarding: null,
+				plexAuth: null,
 				readinessState: null,
 				error: 'Could not reach the API.'
 			};
@@ -38,12 +41,16 @@ export const load: PageServerLoad = async () => {
 		const readinessState = readinessResponse.ok
 			? ((await readinessResponse.json()) as ReadinessResponse).state
 			: null;
+		const plexAuth = plexAuthResponse.ok
+			? ((await plexAuthResponse.json()) as PlexAuthStatusResponse)
+			: null;
 
 		return {
 			config,
 			etag,
 			canWrite,
 			onboarding: deriveOnboardingStatus(config, canWrite),
+			plexAuth,
 			readinessState,
 			error: null
 		};
@@ -54,6 +61,7 @@ export const load: PageServerLoad = async () => {
 			etag: null,
 			canWrite,
 			onboarding: null,
+			plexAuth: null,
 			readinessState: null,
 			error: 'Could not reach the API.'
 		};

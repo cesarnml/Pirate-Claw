@@ -318,6 +318,43 @@ export class PlexAuthStore {
     };
   }
 
+  disconnect(now = new Date().toISOString()): PlexAuthIdentity | null {
+    const identity = this.getIdentity();
+    if (!identity) {
+      return null;
+    }
+
+    this.database
+      .query(
+        `UPDATE plex_auth_identity
+        SET refresh_token = NULL,
+            token_expires_at = NULL,
+            last_error = NULL,
+            reconnect_required_at = NULL,
+            updated_at = ?1
+        WHERE singleton = 1`,
+      )
+      .run(now);
+
+    this.database
+      .query(
+        `UPDATE plex_auth_sessions
+        SET status = 'cancelled',
+            cancelled_at = ?1
+        WHERE status = 'pending'`,
+      )
+      .run(now);
+
+    return {
+      ...identity,
+      refreshToken: null,
+      tokenExpiresAt: null,
+      lastError: null,
+      reconnectRequiredAt: null,
+      updatedAt: now,
+    };
+  }
+
   private getPendingSession(now: string): PlexAuthSession | null {
     const row = this.database
       .query(

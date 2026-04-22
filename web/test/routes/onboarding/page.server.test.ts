@@ -19,21 +19,35 @@ describe('onboarding page server', () => {
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: '' }
 			}));
 			const { load } = await import('../../../src/routes/onboarding/+page.server');
-			apiRequestMock.mockImplementation((url: string) =>
-				url === '/api/setup/readiness'
-					? Promise.resolve(
-							new Response(
-								JSON.stringify({
-									state: 'not_ready',
-									configState: 'starter',
-									transmissionReachable: false,
-									daemonLive: true
-								}),
-								{ status: 200 }
-							)
+			apiRequestMock.mockImplementation((url: string) => {
+				if (url === '/api/setup/readiness') {
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								state: 'not_ready',
+								configState: 'starter',
+								transmissionReachable: false,
+								daemonLive: true
+							}),
+							{ status: 200 }
 						)
-					: Promise.resolve(new Response(JSON.stringify(emptyConfig), { status: 200 }))
-			);
+					);
+				}
+				if (url === '/api/plex/auth/status') {
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								state: 'not_connected',
+								plexUrl: 'http://localhost:32400',
+								hasToken: false,
+								returnTo: null
+							}),
+							{ status: 200 }
+						)
+					);
+				}
+				return Promise.resolve(new Response(JSON.stringify(emptyConfig), { status: 200 }));
+			});
 
 			const result = await load({} as never);
 			expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
@@ -46,26 +60,40 @@ describe('onboarding page server', () => {
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
 			const { load } = await import('../../../src/routes/onboarding/+page.server');
-			apiRequestMock.mockImplementation((url: string) =>
-				url === '/api/setup/readiness'
-					? Promise.resolve(
-							new Response(
-								JSON.stringify({
-									state: 'not_ready',
-									configState: 'starter',
-									transmissionReachable: false,
-									daemonLive: true
-								}),
-								{ status: 200 }
-							)
+			apiRequestMock.mockImplementation((url: string) => {
+				if (url === '/api/setup/readiness') {
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								state: 'not_ready',
+								configState: 'starter',
+								transmissionReachable: false,
+								daemonLive: true
+							}),
+							{ status: 200 }
 						)
-					: Promise.resolve(
-							new Response(JSON.stringify(emptyConfig), {
-								status: 200,
-								headers: { etag: '"rev-1"' }
-							})
+					);
+				}
+				if (url === '/api/plex/auth/status') {
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								state: 'not_connected',
+								plexUrl: 'http://localhost:32400',
+								hasToken: false,
+								returnTo: null
+							}),
+							{ status: 200 }
 						)
-			);
+					);
+				}
+				return Promise.resolve(
+					new Response(JSON.stringify(emptyConfig), {
+						status: 200,
+						headers: { etag: '"rev-1"' }
+					})
+				);
+			});
 
 			const result = await load({} as never);
 			expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
@@ -78,31 +106,46 @@ describe('onboarding page server', () => {
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
 			const { load } = await import('../../../src/routes/onboarding/+page.server');
-			apiRequestMock.mockImplementation((url: string) =>
-				url === '/api/setup/readiness'
-					? Promise.resolve(
-							new Response(
-								JSON.stringify({
-									state: 'not_ready',
-									configState: 'partially_configured',
-									transmissionReachable: false,
-									daemonLive: true
-								}),
-								{ status: 200 }
-							)
+			apiRequestMock.mockImplementation((url: string) => {
+				if (url === '/api/setup/readiness') {
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								state: 'not_ready',
+								configState: 'partially_configured',
+								transmissionReachable: false,
+								daemonLive: true
+							}),
+							{ status: 200 }
 						)
-					: Promise.resolve(
-							new Response(JSON.stringify(feedOnlyConfig), {
-								status: 200,
-								headers: { etag: '"rev-2"' }
-							})
+					);
+				}
+				if (url === '/api/plex/auth/status') {
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								state: 'connected',
+								plexUrl: 'http://localhost:32400',
+								hasToken: true,
+								returnTo: null
+							}),
+							{ status: 200 }
 						)
-			);
+					);
+				}
+				return Promise.resolve(
+					new Response(JSON.stringify(feedOnlyConfig), {
+						status: 200,
+						headers: { etag: '"rev-2"' }
+					})
+				);
+			});
 
 			const result = await load({} as never);
 			expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
 				'partial_setup'
 			);
+			expect((result as { plexAuth: { state: string } | null }).plexAuth?.state).toBe('connected');
 		});
 	});
 

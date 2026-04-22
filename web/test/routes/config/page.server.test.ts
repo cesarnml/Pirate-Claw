@@ -37,7 +37,18 @@ describe('config page server actions', () => {
 					)
 				)
 				.mockRejectedValueOnce(new Error('network error'))
-				.mockResolvedValueOnce(new Response(JSON.stringify({ runs: [] }), { status: 200 }));
+				.mockResolvedValueOnce(new Response(JSON.stringify({ runs: [] }), { status: 200 }))
+				.mockResolvedValueOnce(
+					new Response(
+						JSON.stringify({
+							state: 'not_connected',
+							plexUrl: 'http://localhost:32400',
+							hasToken: false,
+							returnTo: null
+						}),
+						{ status: 200 }
+					)
+				);
 
 			const result = await load({} as never);
 			expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
@@ -70,7 +81,18 @@ describe('config page server actions', () => {
 					)
 				)
 				.mockRejectedValueOnce(new Error('network error'))
-				.mockResolvedValueOnce(new Response(JSON.stringify({ runs: [] }), { status: 200 }));
+				.mockResolvedValueOnce(new Response(JSON.stringify({ runs: [] }), { status: 200 }))
+				.mockResolvedValueOnce(
+					new Response(
+						JSON.stringify({
+							state: 'not_connected',
+							plexUrl: 'http://localhost:32400',
+							hasToken: false,
+							returnTo: null
+						}),
+						{ status: 200 }
+					)
+				);
 
 			const result = await load({} as never);
 			expect((result as { transmissionSession: unknown }).transmissionSession).toBeNull();
@@ -115,7 +137,18 @@ describe('config page server actions', () => {
 						{ status: 200 }
 					)
 				)
-				.mockResolvedValueOnce(new Response(JSON.stringify({ runs: [] }), { status: 200 }));
+				.mockResolvedValueOnce(new Response(JSON.stringify({ runs: [] }), { status: 200 }))
+				.mockResolvedValueOnce(
+					new Response(
+						JSON.stringify({
+							state: 'connected',
+							plexUrl: 'http://localhost:32400',
+							hasToken: true,
+							returnTo: null
+						}),
+						{ status: 200 }
+					)
+				);
 
 			const result = await load({} as never);
 			expect((result as { transmissionSession: unknown }).transmissionSession).toEqual({

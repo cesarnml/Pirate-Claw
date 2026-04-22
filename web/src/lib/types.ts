@@ -170,6 +170,15 @@ export type PlexConfig = {
 	refreshIntervalMinutes: number;
 };
 
+export type PlexAuthState = 'not_connected' | 'connecting' | 'connected' | 'reconnect_required';
+
+export type PlexAuthStatusResponse = {
+	state: PlexAuthState;
+	plexUrl: string;
+	hasToken: boolean;
+	returnTo: string | null;
+};
+
 export type AppConfig = {
 	feeds: FeedConfig[];
 	tv: TvRule[];

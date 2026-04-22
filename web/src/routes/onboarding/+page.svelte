@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
+	import PlexAuthCard from '$lib/components/PlexAuthCard.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import {
 		readOnboardingPath,
@@ -87,8 +88,13 @@
 		(data.config?.movies?.resolutions?.length ?? 0) > 0 ||
 			(data.config?.movies?.codecs?.length ?? 0) > 0
 	);
+	const plexStepLabel = 'Step 3 — Connect Plex (optional)';
+	const mediaDirsStepLabel = 'Step 4 — Media Directories (optional)';
+	const feedTypeStepLabel = 'Step 5 — Feed type';
+	const firstFeedStepLabel = 'Step 5 — Add your first feed';
+	const tvTargetStepLabel = 'Step 6 — Add a TV target';
 	const movieStepLabel = $derived(
-		onboardingPath === 'both' ? 'Step 6 — Add a movie target' : 'Step 5 — Add a movie target'
+		onboardingPath === 'both' ? 'Step 7 — Add a movie target' : 'Step 6 — Add a movie target'
 	);
 	const minimumComplete = $derived(
 		(data.onboarding?.minimumComplete ?? false) ||
@@ -235,6 +241,26 @@
 			</Alert>
 		{/if}
 
+		{#if showPreStepsDone}
+			<div class="space-y-3">
+				<h2 class="text-lg font-semibold tracking-tight">{plexStepLabel}</h2>
+				<PlexAuthCard
+					status={data.plexAuth ?? {
+						state: 'not_connected',
+						plexUrl: data.config?.plex?.url ?? 'http://localhost:32400',
+						hasToken: !!data.config?.plex?.token,
+						returnTo: null
+					}}
+					canWrite={data.canWrite}
+					returnTo="/onboarding"
+					mode="onboarding"
+					skipHref="#after-plex"
+				/>
+			</div>
+		{/if}
+
+		<div id="after-plex"></div>
+
 		{#if showTransmissionStep}
 			<!-- Step 1: Transmission -->
 			<div
@@ -289,7 +315,7 @@
 			<div
 				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
 			>
-				<h2 class="text-lg font-semibold tracking-tight">Step 3 — Media Directories (optional)</h2>
+				<h2 class="text-lg font-semibold tracking-tight">{mediaDirsStepLabel}</h2>
 				<p class="text-muted-foreground text-sm">
 					Set per-media-type download directories. Leave blank to use the Transmission default.
 				</p>
@@ -347,7 +373,7 @@
 			<div
 				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
 			>
-				<h2 class="text-lg font-semibold tracking-tight">Step 4 — Feed type</h2>
+				<h2 class="text-lg font-semibold tracking-tight">{feedTypeStepLabel}</h2>
 				<div class="flex flex-wrap gap-3">
 					<label
 						class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
@@ -378,7 +404,7 @@
 			<div
 				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
 			>
-				<h2 class="text-lg font-semibold tracking-tight">Step 4 — Add your first feed</h2>
+				<h2 class="text-lg font-semibold tracking-tight">{firstFeedStepLabel}</h2>
 				<form method="POST" action="?/saveFeed" class="space-y-4">
 					<input
 						type="hidden"
@@ -464,7 +490,7 @@
 			<div
 				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
 			>
-				<h2 class="text-lg font-semibold tracking-tight">Step 4 — Feed type</h2>
+				<h2 class="text-lg font-semibold tracking-tight">{feedTypeStepLabel}</h2>
 				<div class="flex flex-wrap gap-3">
 					<label
 						class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
@@ -495,7 +521,7 @@
 			<div
 				class="border-border/80 bg-card/80 space-y-4 rounded-2xl border p-6 shadow-lg shadow-black/20 backdrop-blur-sm"
 			>
-				<h2 class="text-lg font-semibold tracking-tight">Step 4 — Add your first feed</h2>
+				<h2 class="text-lg font-semibold tracking-tight">{firstFeedStepLabel}</h2>
 				<form method="POST" action="?/saveFeed" class="space-y-4">
 					<input
 						type="hidden"
@@ -573,7 +599,7 @@
 			<Alert
 				class="border-border/80 bg-card/85 rounded-2xl border shadow-lg shadow-black/20 backdrop-blur-sm"
 			>
-				<AlertTitle>Step 5 — Add a TV target</AlertTitle>
+				<AlertTitle>{tvTargetStepLabel}</AlertTitle>
 				<AlertDescription>
 					Your first feed is saved. Add a TV show and optional defaults without replacing any
 					existing shows already in config.

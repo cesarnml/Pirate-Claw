@@ -561,6 +561,21 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/plex/auth/status' && request.method === 'GET') {
+      if (!database) {
+        return json500();
+      }
+
+      const store = new PlexAuthStore(database);
+      const snapshot = store.getSnapshot();
+      return Response.json({
+        state: snapshot.state,
+        plexUrl: activeConfig.plex?.url ?? 'http://localhost:32400',
+        hasToken: Boolean(activeConfig.plex?.token),
+        returnTo: snapshot.pendingSession?.returnTo ?? null,
+      } satisfies PlexAuthStatusResponse);
+    }
+
     if (path === '/api/status') {
       return safeJson(() => ({ runs: repository.listRecentRunSummaries() }));
     }
@@ -952,6 +967,77 @@ export function createApiFetch(
         if (configHolder) {
           configHolder.current = validated;
         }
+
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch (error) {
+        if (error instanceof ConfigError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
+        }
+        return json500();
+      }
+    }
+
+    if (path === '/api/config/plex' && request.method === 'PUT') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+      const etagError = checkEtag(request, activeConfig);
+      if (etagError) return etagError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
+        const parsed = expectRecord(body, 'request body');
+        const plexUrl = requireNonEmptyString(parsed.url, 'request body url');
+        activeConfig = await writePlexConfigToDisk({
+          configPath,
+          configHolder,
+          currentConfig: activeConfig,
+          patch: { url: plexUrl },
+        });
+
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch (error) {
+        if (error instanceof ConfigError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
+        }
+        return json500();
+      }
+    }
+
+    if (path === '/api/plex/auth/disconnect' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+      const etagError = checkEtag(request, activeConfig);
+      if (etagError) return etagError;
+
+      try {
+        if (database) {
+          new PlexAuthStore(database).disconnect();
+        }
+
+        activeConfig = await writePlexConfigToDisk({
+          configPath,
+          configHolder,
+          currentConfig: activeConfig,
+          patch: { token: '' },
+        });
 
         const redacted = redactConfig(activeConfig);
         return Response.json(redacted, {
@@ -1613,6 +1699,13 @@ export type FeedStatus = {
   isDue: boolean;
 };
 
+export type PlexAuthStatusResponse = {
+  state: 'not_connected' | 'connecting' | 'connected' | 'reconnect_required';
+  plexUrl: string;
+  hasToken: boolean;
+  returnTo: string | null;
+};
+
 export function buildFeedStatuses(
   feeds: FeedConfig[],
   pollState: PollState,
@@ -1807,6 +1900,24 @@ async function writePlexTokenToConfig(input: {
   currentConfig: AppConfig;
   configHolder?: { current: AppConfig };
 }): Promise<AppConfig> {
+  return writePlexConfigToDisk({
+    configPath: input.configPath,
+    currentConfig: input.currentConfig,
+    configHolder: input.configHolder,
+    patch: { token: input.authToken },
+  });
+}
+
+async function writePlexConfigToDisk(input: {
+  configPath: string;
+  currentConfig: AppConfig;
+  configHolder?: { current: AppConfig };
+  patch: {
+    url?: string;
+    token?: string;
+    refreshIntervalMinutes?: number;
+  };
+}): Promise<AppConfig> {
   const baseOnDisk = await readConfigFileRecord(input.configPath);
   const diskPlex = isRecord(baseOnDisk.plex) ? baseOnDisk.plex : {};
   const merged = {
@@ -1814,11 +1925,17 @@ async function writePlexTokenToConfig(input: {
     plex: {
       ...diskPlex,
       url:
+        input.patch.url ??
         optionalStringValue(diskPlex.url) ??
         input.currentConfig.plex?.url ??
         'http://localhost:32400',
-      token: input.authToken,
+      token:
+        input.patch.token ??
+        optionalStringValue(diskPlex.token) ??
+        input.currentConfig.plex?.token ??
+        '',
       refreshIntervalMinutes:
+        input.patch.refreshIntervalMinutes ??
         optionalNonNegativeNumber(diskPlex.refreshIntervalMinutes) ??
         input.currentConfig.plex?.refreshIntervalMinutes ??
         30,
