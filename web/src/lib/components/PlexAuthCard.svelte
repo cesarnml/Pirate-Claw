@@ -176,6 +176,15 @@
 		{/if}
 	</div>
 
+	<div class="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm">
+		<p class="font-medium text-amber-100">Synology compatibility note</p>
+		<p class="text-amber-50/90">
+			The reviewed Synology baseline is Pirate Claw on Docker plus an operator-managed PMS URL. If
+			the Synology Package Center Plex build is below <code>PMS 1.43.0</code>, update Plex with a
+			newer manual install through Package Center before connecting it here.
+		</p>
+	</div>
+
 	{#if status.state === 'connecting' && status.returnTo}
 		<p class="text-muted-foreground text-sm">
 			This sign-in was started from <code>{status.returnTo}</code>.

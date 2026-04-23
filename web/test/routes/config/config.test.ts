@@ -82,6 +82,8 @@ describe('/config', () => {
 		expect(screen.getByRole('heading', { name: 'Plex Connection' })).toBeInTheDocument();
 		expect(screen.getByLabelText('Plex Media Server URL')).toHaveValue('http://localhost:32400');
 		expect(screen.getByRole('link', { name: 'Connect in browser' })).toBeInTheDocument();
+		expect(screen.getByText('Synology compatibility note')).toBeInTheDocument();
+		expect(screen.getByText(/Package Center Plex build is below/i)).toBeInTheDocument();
 		expect(screen.getByText('Write Access: Active')).toBeInTheDocument();
 		expect(screen.getByText('TestFeed')).toBeInTheDocument();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeInTheDocument();
