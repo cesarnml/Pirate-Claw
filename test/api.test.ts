@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, spyOn } from 'bun:test';
@@ -25,6 +25,7 @@ import {
   openDatabase,
 } from '../src/repository';
 import type { CycleResult } from '../src/runtime-artifacts';
+import { PlexAuthStore } from '../src/plex/auth';
 import { TmdbCache } from '../src/tmdb/cache';
 import { movieMatchKey, tvMatchKey } from '../src/tmdb/keys';
 import { ensureTmdbSchema } from '../src/tmdb/schema';
@@ -3218,6 +3219,186 @@ describe('POST /api/daemon/restart', () => {
       expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGTERM');
     } finally {
       killSpy.mockRestore();
+    }
+  });
+
+  it('preserves config writes and Plex auth identity across a restart-backed reload', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    const fetchSpy = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ id: 99, code: 'pin-code', expiresIn: 300 }),
+          {
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ authToken: 'plex-jwt-token' }), {
+          status: 200,
+        }),
+      );
+    const killSpy = spyOn(process, 'kill').mockImplementation(
+      () => undefined as never,
+    );
+
+    try {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'pirate-claw-restart-durability-'),
+      );
+      const configDir = join(directory, 'config');
+      const dataDir = join(directory, 'data');
+      const runtimeDir = join(dataDir, 'runtime');
+      await mkdir(configDir, { recursive: true });
+      await mkdir(runtimeDir, { recursive: true });
+
+      const configPath = join(configDir, 'pirate-claw.config.json');
+      const databasePath = join(dataDir, 'pirate-claw.db');
+      const doc = {
+        feeds: [
+          {
+            name: 'TV Feed',
+            url: 'https://example.test/tv.rss',
+            mediaType: 'tv',
+          },
+        ],
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x265'] },
+          shows: ['Example Show'],
+        },
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+          codecPolicy: 'prefer',
+        },
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+        runtime: {
+          runIntervalMinutes: RUN_INTERVAL_MINUTES_DEFAULT,
+          reconcileIntervalSeconds: RECONCILE_INTERVAL_SECONDS_DEFAULT,
+          artifactDir: runtimeDir,
+          artifactRetentionDays: 7,
+          apiWriteToken: 'write-token',
+        },
+      };
+      await Bun.write(configPath, `${JSON.stringify(doc, null, 2)}\n`);
+
+      const loaded = await loadConfig(configPath);
+      const database = openDatabase(databasePath);
+      ensureSchema(database);
+      const configHolder = { current: loaded };
+      const handler = createApiFetch({
+        database,
+        repository: createRepository(database),
+        health: createHealthState(),
+        config: loaded,
+        configHolder,
+        configPath,
+        pollStatePath: join(runtimeDir, 'poll-state.json'),
+        loadPollState: () => emptyPollState,
+      });
+
+      const started = await handler(
+        new Request('http://localhost/api/plex/auth/start', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({
+            forwardUrl: 'http://localhost:5173/plex/connect/callback',
+            returnTo: '/config',
+          }),
+        }),
+      );
+      const startedBody = (await started.json()) as { sessionId: string };
+
+      const finalized = await handler(
+        new Request('http://localhost/api/plex/auth/finalize', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+          },
+          body: JSON.stringify({ sessionId: startedBody.sessionId }),
+        }),
+      );
+      expect(finalized.status).toBe(200);
+
+      const current = await handler(new Request('http://localhost/api/config'));
+      const etag = current.headers.get('etag')!;
+
+      const put = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            runtime: {
+              runIntervalMinutes: 45,
+              reconcileIntervalSeconds: 2,
+              tmdbRefreshIntervalMinutes: 0,
+            },
+            tv: {
+              shows: ['Example Show'],
+            },
+          }),
+        }),
+      );
+      expect(put.status).toBe(200);
+
+      const identityBeforeRestart = new PlexAuthStore(database).getIdentity();
+      expect(identityBeforeRestart?.clientIdentifier).toBeTruthy();
+      expect(identityBeforeRestart?.refreshToken).toBe('plex-jwt-token');
+
+      const restart = await handler(
+        new Request('http://localhost/api/daemon/restart', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer write-token' },
+        }),
+      );
+      expect(restart.status).toBe(200);
+      expect(await restart.json()).toEqual({ ok: true });
+      await Promise.resolve();
+      expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+
+      database.close();
+
+      const reloadedConfig = await loadConfig(configPath);
+      expect(reloadedConfig.runtime.runIntervalMinutes).toBe(45);
+      expect(reloadedConfig.runtime.reconcileIntervalSeconds).toBe(2);
+      expect(reloadedConfig.plex?.token).toBe('plex-jwt-token');
+
+      const reopenedDatabase = openDatabase(databasePath);
+      try {
+        const identityAfterRestart = new PlexAuthStore(
+          reopenedDatabase,
+        ).getIdentity();
+        expect(identityAfterRestart).not.toBeNull();
+        expect(identityAfterRestart?.clientIdentifier).toBe(
+          identityBeforeRestart?.clientIdentifier,
+        );
+        expect(identityAfterRestart?.keyId).toBe(identityBeforeRestart?.keyId);
+        expect(identityAfterRestart?.refreshToken).toBe('plex-jwt-token');
+      } finally {
+        reopenedDatabase.close();
+      }
+    } finally {
+      killSpy.mockRestore();
+      fetchSpy.mockRestore();
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
     }
   });
 });

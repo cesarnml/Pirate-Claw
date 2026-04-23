@@ -1573,8 +1573,8 @@ export function createApiFetch(
       const authError = checkWriteAuth(request, activeConfig);
       if (authError) return authError;
 
-      // This endpoint trusts the supervisor to restart. Run the daemon under
-      // Synology Task Scheduler or systemd with auto-restart on exit.
+      // This endpoint only requests a SIGTERM exit. The reviewed Synology
+      // Docker restart policy is responsible for bringing the daemon back.
       queueMicrotask(() => process.kill(process.pid, 'SIGTERM'));
       return Response.json({ ok: true });
     }
