@@ -883,7 +883,12 @@
 			>
 				<AlertTitle>Done</AlertTitle>
 				<AlertDescription>
-					Your minimum setup is complete. Review the summary, then continue in the dashboard.
+					{#if readinessState === 'ready_pending_restart'}
+						Your minimum setup is complete, but the daemon is restarting. The dashboard unlocks once
+						it is back_online.
+					{:else}
+						Your minimum setup is complete. Review the summary, then continue in the dashboard.
+					{/if}
 				</AlertDescription>
 			</Alert>
 

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadRestartRoundTripPhase } from '../../src/lib/restart-roundtrip';
+import {
+	RESTART_RETURN_TIMEOUT_MS,
+	loadRestartRoundTripPhase
+} from '../../src/lib/restart-roundtrip';
 
 describe('loadRestartRoundTripPhase', () => {
 	it('keeps the flow in requested while the same restart request is still pending', async () => {
@@ -16,13 +19,17 @@ describe('loadRestartRoundTripPhase', () => {
 			)
 		);
 
-		await expect(loadRestartRoundTripPhase('restart-123', fetchMock)).resolves.toBe('requested');
+		await expect(
+			loadRestartRoundTripPhase('restart-123', '2026-04-23T10:00:00.000Z', fetchMock)
+		).resolves.toBe('requested');
 	});
 
 	it('treats API downtime as restarting after the request was accepted', async () => {
 		const fetchMock = vi.fn().mockRejectedValue(new Error('connection refused'));
 
-		await expect(loadRestartRoundTripPhase('restart-123', fetchMock)).resolves.toBe('restarting');
+		await expect(
+			loadRestartRoundTripPhase('restart-123', '2026-04-23T10:00:00.000Z', fetchMock)
+		).resolves.toBe('restarting');
 	});
 
 	it('returns back_online when the restarted daemon proves the same request id', async () => {
@@ -41,6 +48,21 @@ describe('loadRestartRoundTripPhase', () => {
 			)
 		);
 
-		await expect(loadRestartRoundTripPhase('restart-123', fetchMock)).resolves.toBe('back_online');
+		await expect(
+			loadRestartRoundTripPhase('restart-123', '2026-04-23T10:00:00.000Z', fetchMock)
+		).resolves.toBe('back_online');
+	});
+
+	it('returns failed_to_return after the timeout expires while the daemon stays unavailable', async () => {
+		const fetchMock = vi.fn().mockRejectedValue(new Error('connection refused'));
+
+		await expect(
+			loadRestartRoundTripPhase(
+				'restart-123',
+				'2026-04-23T10:00:00.000Z',
+				fetchMock,
+				Date.parse('2026-04-23T10:00:00.000Z') + RESTART_RETURN_TIMEOUT_MS
+			)
+		).resolves.toBe('failed_to_return');
 	});
 });

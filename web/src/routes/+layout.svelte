@@ -19,6 +19,7 @@
 	import { page } from '$app/stores';
 	import { toast } from '$lib/toast';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { loadRestartRoundTripPhase } from '$lib/restart-roundtrip';
 
 	interface Props {
 		children: Snippet;
@@ -53,20 +54,83 @@
 		readinessState === 'ready_pending_restart' && !isOnboarding
 	);
 	let restartingFromBanner = $state(false);
+	let restartBannerPhase = $state<
+		'idle' | 'requested' | 'restarting' | 'back_online' | 'failed_to_return'
+	>('idle');
+	let restartBannerRequestId = $state<string | null>(null);
+	let restartBannerRequestedAt = $state<string | null>(null);
+	let restartBannerPollTimer = $state<number | null>(null);
+
+	function clearRestartBannerPolling() {
+		if (restartBannerPollTimer !== null) {
+			window.clearTimeout(restartBannerPollTimer);
+			restartBannerPollTimer = null;
+		}
+	}
+
+	function queueRestartBannerPoll(requestId: string) {
+		clearRestartBannerPolling();
+		restartBannerPollTimer = window.setTimeout(() => {
+			void pollRestartBannerStatus(requestId);
+		}, 1000);
+	}
+
+	async function pollRestartBannerStatus(requestId: string) {
+		if (!restartBannerRequestedAt) return;
+		const phase = await loadRestartRoundTripPhase(requestId, restartBannerRequestedAt);
+		if (restartBannerRequestId !== requestId) return;
+
+		restartBannerPhase = phase;
+		if (phase === 'back_online') {
+			clearRestartBannerPolling();
+			restartBannerRequestId = null;
+			restartBannerRequestedAt = null;
+			toast('Daemon back online — restart proof confirmed.', 'success');
+			await invalidateAll();
+			return;
+		}
+		if (phase === 'failed_to_return') {
+			clearRestartBannerPolling();
+			restartBannerRequestId = null;
+			restartBannerRequestedAt = null;
+			toast(
+				'Daemon failed to return within 45 seconds — check the host, then retry or restart manually.',
+				'error'
+			);
+			return;
+		}
+
+		queueRestartBannerPoll(requestId);
+	}
 
 	const enhanceRestartDaemon: SubmitFunction = () => {
 		restartingFromBanner = true;
 		return async ({ result }) => {
 			restartingFromBanner = false;
 			if (result.type === 'success') {
-				toast(
-					'Restart requested — this page may go unavailable before the daemon returns',
-					'success'
-				);
-				await invalidateAll();
+				const restartStatus = (
+					result.data as { restartStatus?: { requestId?: string; requestedAt?: string } } | null
+				)?.restartStatus;
+				if (restartStatus?.requestId && restartStatus.requestedAt) {
+					restartBannerRequestId = restartStatus.requestId;
+					restartBannerRequestedAt = restartStatus.requestedAt;
+					restartBannerPhase = 'requested';
+					toast('Restart requested — waiting for the daemon to restart.', 'success');
+					queueRestartBannerPoll(restartStatus.requestId);
+				} else {
+					toast(
+						'Restart requested — this page may go unavailable before the daemon returns',
+						'success'
+					);
+					await invalidateAll();
+				}
 				return;
 			}
 
+			clearRestartBannerPolling();
+			restartBannerRequestId = null;
+			restartBannerRequestedAt = null;
+			restartBannerPhase = 'idle';
 			const restartError =
 				result.type === 'failure' && typeof result.data?.restartError === 'string'
 					? result.data.restartError
@@ -191,7 +255,19 @@
 							class="bg-warning/10 border-warning/30 text-warning flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm"
 						>
 							<p>
-								Restart daemon to apply config changes. The browser will not confirm return yet.
+								{#if restartBannerPhase === 'requested'}
+									Restart requested. Waiting for the daemon to go away.
+								{:else if restartBannerPhase === 'restarting'}
+									Daemon restarting. This page will confirm when it comes back.
+								{:else if restartBannerPhase === 'back_online'}
+									Daemon back_online. Return proof is recorded.
+								{:else if restartBannerPhase === 'failed_to_return'}
+									Daemon failed_to_return within 45 seconds. Check the host, then retry or restart
+									manually.
+								{:else}
+									Restart daemon to apply config changes. The browser will confirm whether it comes
+									back.
+								{/if}
 							</p>
 							<button
 								type="submit"

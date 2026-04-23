@@ -28,7 +28,7 @@
 		showRows: string[];
 		testingConnection: boolean;
 		restarting: boolean;
-		restartPhase: 'idle' | 'requested' | 'restarting' | 'back_online';
+		restartPhase: 'idle' | 'requested' | 'restarting' | 'back_online' | 'failed_to_return';
 		runtimeChangesPending: boolean;
 		runtimeMessage?: string;
 		compatibility?: TransmissionCompatibility | null;
@@ -289,7 +289,9 @@
 				{:else if restartPhase === 'restarting'}
 					Daemon restarting. This page will confirm when it comes back.
 				{:else if restartPhase === 'back_online'}
-					Daemon return proved. Runtime changes are live.
+					Daemon back_online. Return proof is recorded and runtime changes are live.
+				{:else if restartPhase === 'failed_to_return'}
+					Daemon failed_to_return within 45 seconds. Check the host, then retry or restart manually.
 				{:else if runtimeChangesPending}
 					Runtime changes are saved and waiting for restart.
 				{:else}
