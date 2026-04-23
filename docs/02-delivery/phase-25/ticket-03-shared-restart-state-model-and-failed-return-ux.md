@@ -14,7 +14,7 @@ Converge the rest of the product on one truthful restart vocabulary and add the 
 
 ### Failure handling
 
-- choose and implement the timeout that converts `restarting` into `failed_to_return`
+- implement the locked 45-second timeout that converts `restarting` into `failed_to_return`
 - show a bounded failure state with clear operator guidance when the daemon does not return in time
 - add tests for timeout-driven failure behavior and shared state rendering
 

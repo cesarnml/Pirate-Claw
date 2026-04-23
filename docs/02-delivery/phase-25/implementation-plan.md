@@ -24,6 +24,29 @@ Follow the shared guidance in [`docs/02-delivery/phase-implementation-guidance.m
 - Phase 25 should prefer existing request/poll/load primitives over introducing a new websocket or push-only transport unless the simpler path proves insufficient.
 - Shared restart wording across `/config`, layout banners, and onboarding matters enough to deserve its own slice after the first visible success path lands.
 
+## Locked implementation contract
+
+### Durable proof artifact
+
+- The durable proof artifact for this phase is `.pirate-claw/runtime/restart-proof.json`.
+- The file is written by the daemon before it exits for an accepted restart request and remains the single restart-proof artifact inside the existing Phase 24 durability boundary.
+- The proof record must keep the request identity and timing fields needed to distinguish "request accepted by daemon instance A" from "request satisfied by daemon instance B": `requestId`, `requestedAt`, `requestedByStartedAt`, and, once resolved, `returnedAt` plus `returnedStartedAt`.
+- Successful return proof is established only when a restarted daemon instance with a different `startedAt` reads the pending proof record and resolves it to `back_online`.
+
+### Browser reconnection path
+
+- Phase 25 reuses the existing request/load/poll model rather than introducing websocket or SSE transport.
+- Browser-triggered restart continues to begin with the existing restart action response carrying `restartStatus.requestId` and `restartStatus.requestedAt`.
+- After that response, browser surfaces should treat transient fetch failure or API disappearance as expected `restarting` behavior, not immediate error.
+- Browser clients should poll `GET /api/daemon/restart-status` on a short interval using the existing client-side polling helper until the same `requestId` resolves to `back_online` or the timeout expires.
+- Server-rendered layout/config loads remain unchanged except that, once the daemon returns, invalidation/reload should converge on the same restart vocabulary instead of inventing a second path.
+
+### Timeout contract
+
+- The timeout that converts `restarting` into `failed_to_return` is 45 seconds.
+- This matches the current Phase 25 web helper constant and is long enough for the supported Synology restart path to survive container/process turnover without leaving the browser in an unbounded spinner.
+- Anything beyond 45 seconds is treated as outside the trustworthy browser round-trip window for this phase and should route the operator toward host-level verification rather than broader deployment diagnostics.
+
 ## Stack
 
 - Bun + TypeScript daemon/API in `src/`
@@ -71,9 +94,9 @@ Do not start the next ticket until:
 
 ## Ticket Boundary Notes
 
-- `P25.01` is foundation-only: durable restart request/proof semantics, read API/status surface, and tests. It must stop short of broad operator-visible UX claims beyond the minimum needed to exercise the contract.
-- `P25.02` is the first required visible slice: the `/config` restart action should carry a real operator through accepted request, temporary API loss, and successful return proof. If this ticket cannot show a real `back_online` journey, the foundation is insufficient.
-- `P25.03` aligns the rest of the product with the shipped state model: layout banners, onboarding-affecting restart wording, and the bounded `failed_to_return` state all converge here. Do not bury those copy/state transitions back into `P25.01`.
+- `P25.01` is foundation-only: `.pirate-claw/runtime/restart-proof.json` semantics, the `GET /api/daemon/restart-status` read surface, and tests. It must stop short of broad operator-visible UX claims beyond the minimum needed to exercise the contract.
+- `P25.02` is the first required visible slice: the `/config` restart action should carry a real operator through accepted request, temporary API loss, one-request polling against `GET /api/daemon/restart-status`, and successful return proof. If this ticket cannot show a real `back_online` journey, the foundation is insufficient.
+- `P25.03` aligns the rest of the product with the shipped state model: layout banners, onboarding-affecting restart wording, and the already-chosen 45-second `failed_to_return` boundary all converge here. Do not bury those copy/state transitions back into `P25.01`.
 - `P25.04` closes the phase, updates overview/operator docs, and writes the retrospective. It does not introduce new restart semantics.
 
 ## Explicit Deferrals

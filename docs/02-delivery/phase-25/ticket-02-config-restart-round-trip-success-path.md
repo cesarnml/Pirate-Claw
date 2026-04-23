@@ -8,13 +8,14 @@ Land the first real operator-visible restart round-trip through the existing `/c
 
 ### `/config` flow
 
-- wire the existing `/config` restart action to the new restart-proof read surface
+- wire the existing `/config` restart action to `GET /api/daemon/restart-status`
 - show truthful `requested` and `restarting` states while the API is temporarily unavailable
 - transition to proven `back_online` when the restarted daemon instance satisfies the durable restart request
 
 ### Browser behavior
 
-- define the reconnection path after the current daemon exits
+- use the existing request/load/poll primitives for the reconnection path after the current daemon exits
+- continue polling the same `requestId` until it resolves to `back_online` or the phase timeout expires
 - keep the first slice reviewable through a real browser path rather than hidden helpers
 - add tests for the successful `/config` round-trip
 

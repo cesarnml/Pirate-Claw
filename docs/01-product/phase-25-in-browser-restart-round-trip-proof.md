@@ -1,6 +1,6 @@
 # Phase 25: In-Browser Restart Round-Trip Proof
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-25/` implementation plan until tickets are approved.
+**Delivery status:** Planned — implementation plan and ticket draft exist under `docs/02-delivery/phase-25/`; awaiting developer approval and merge to `main` before delivery starts.
 
 Phase 25 follows the Synology restart-durability contract from Phase 24. Once Pirate Claw can restart correctly under supervision, the browser should stop treating restart as a fire-and-forget hope and start showing a truthful restart journey with proof that the daemon actually came back.
 
@@ -56,9 +56,9 @@ Phase 25 should leave Pirate Claw in a state where:
 
 ## Planning Constraints Before Ticketing
 
-- The implementation plan must name the durable proof artifact or state record that represents a restart request and its eventual satisfaction.
-- The implementation plan must define the browser reconnection path after the current daemon exits, including what the UI shows while the API is unavailable.
-- The implementation plan must choose the timeout that converts `restarting` into `failed_to_return` and explain why that window matches the supported Synology contract.
+- The implementation plan must name the durable proof artifact or state record that represents a restart request and its eventual satisfaction. For this phase, that artifact is `.pirate-claw/runtime/restart-proof.json`.
+- The implementation plan must define the browser reconnection path after the current daemon exits, including what the UI shows while the API is unavailable. For this phase, the browser should keep using the existing server-load plus client-polling model and poll `GET /api/daemon/restart-status` until proof appears or the timeout expires.
+- The implementation plan must choose the timeout that converts `restarting` into `failed_to_return` and explain why that window matches the supported Synology contract. For this phase, the timeout is 45 seconds.
 - Ticket decomposition should keep proof semantics, browser state transitions, and restart-surface copy aligned; splitting those into unrelated slices would recreate the drift that Phase 24 just removed.
 
 ## Explicit Deferrals

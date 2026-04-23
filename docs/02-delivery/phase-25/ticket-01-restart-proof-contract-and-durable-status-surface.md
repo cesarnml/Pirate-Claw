@@ -8,13 +8,13 @@ Define the durable restart-proof contract and expose the minimum read surface th
 
 ### Durable proof model
 
-- choose the Pirate Claw-owned durable artifact or state record that represents a restart request and its eventual satisfaction
+- use `.pirate-claw/runtime/restart-proof.json` as the Pirate Claw-owned durable artifact that represents a restart request and its eventual satisfaction
 - keep the proof inside the shipped durability boundary: writable config directory, `pirate-claw.db`, and `.pirate-claw/runtime`
-- ensure the proof survives process exit and restart
+- ensure the proof survives process exit and restart by recording `requestId`, `requestedAt`, and daemon-instance identity before exit, then resolving the same record after the restarted daemon comes back
 
 ### API/runtime surface
 
-- expose the minimum read path needed for the browser to observe restart proof from the restarted daemon instance
+- expose `GET /api/daemon/restart-status` as the minimum read path the browser uses to observe restart proof from the restarted daemon instance
 - define the base status vocabulary used by later UI tickets
 - add tests for accepted restart request, in-progress restart, and proven successful return semantics
 
@@ -32,4 +32,4 @@ Pirate Claw has a durable restart-proof contract plus a read surface that a brow
 
 If the proof contract is vague, every later UI state is theater. This ticket makes restart truth observable before the browser starts narrating it.
 
-Phase 25 chooses a repo-owned runtime artifact under `.pirate-claw/runtime` as the restart proof boundary so the browser can verify return without adding a second restart-specific database contract beside the already-shipped durable surfaces.
+Phase 25 chooses the repo-owned runtime artifact `.pirate-claw/runtime/restart-proof.json` as the restart proof boundary so the browser can verify return without adding a second restart-specific database contract beside the already-shipped durable surfaces.
