@@ -189,6 +189,15 @@ The daemon currently also supports inline Transmission credentials in
 Plex enrichment is optional. Add a `plex` block to
 `/volume1/pirate-claw/config/pirate-claw.config.json` to enable it.
 
+Compatibility floor for this runbook:
+
+- Pirate Claw's current Plex contract assumes **PMS 1.43.0 or later**
+- the reviewed Synology baseline is Pirate Claw itself on Docker plus an
+  operator-managed Plex Media Server path
+- if Synology Package Center offers an older Plex build than that floor, the
+  supported remediation is a newer manual Plex install through Package Center
+  using Plex's DSM 7 download
+
 ### Choosing `plex.url` (host network vs bridge)
 
 This runbook runs `pirate-claw` with `**--network host**`. In that mode the

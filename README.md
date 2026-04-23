@@ -38,7 +38,7 @@ Pirate Claw creates its own starter config on first boot. No SSH, no vim, no han
 
 ### Mac (local dev / test)
 
-**Plex prerequisite:** Plex Media Server **1.19.0 or later**. Download the current release from [plex.tv/media-server-downloads](https://www.plex.tv/media-server-downloads/). Install as a normal Mac app and confirm it is running before starting Pirate Claw.
+**Plex prerequisite:** Plex Media Server **1.43.0 or later**. Download the current release from [plex.tv/media-server-downloads](https://www.plex.tv/media-server-downloads/). Install as a normal Mac app and confirm it is running before starting Pirate Claw.
 
 **First-boot sequence:**
 
@@ -77,10 +77,12 @@ The writable `/volume1/pirate-claw/config` directory and
 `.pirate-claw/runtime/`, which contains `poll-state.json`) are one durability
 boundary for that contract.
 
-**Plex prerequisite:** Plex Media Server **1.19.0 or later**. Check your
+**Plex prerequisite:** Plex Media Server **1.43.0 or later**. Check your
 installed version in **Package Center → Installed → Plex Media Server →
-Details**. If the listed version is below 1.19.0, open **Package Center →
-Update** and update Plex before proceeding.
+Details**. On the reviewed `DS918+ / DSM 7.1.1-42962 Update 9` baseline,
+Synology Package Center can lag below that floor. If it does, use Package
+Center's manual install path with a newer Plex package from Plex's DSM 7
+download page before connecting Plex in Pirate Claw.
 
 **First-boot sequence:**
 
@@ -269,9 +271,9 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 ## Current Scope
 
-Pirate Claw is a local operator tool for a personal NAS. The roadmap now targets **Phases 24–27** for restart-backed completion, browser restart proof, Mac first-class deployment, and UX polish before the **Phase 28** release/versioning ceremony.
+Pirate Claw is a local operator tool for a personal NAS. The roadmap now targets **Phases 25–27** for browser restart proof, Mac first-class deployment, and UX polish before the **Phase 28** release/versioning ceremony.
 
-**Implemented (Phases 01–23):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional Plex Media Server enrichment, the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, a TMDB refresh control on TV detail, **Phase 20** dashboard Transmission controls, and **Phase 23** browser-managed Plex connect / reconnect with durable device identity and best-effort silent renewal.
+**Implemented (Phases 01–24):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional Plex Media Server enrichment, the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, a TMDB refresh control on TV detail, **Phase 20** dashboard Transmission controls, **Phase 23** browser-managed Plex connect / reconnect with durable device identity and best-effort silent renewal, and **Phase 24** Synology restart supervision truthfulness with restart durability proof plus truthful Plex-on-Synology guidance.
 
 **Implemented (Phase 20):** Dashboard Torrent Manager actions (pause, resume, remove, remove-with-delete), missing-torrent disposition, Transmission failures / requeue, related daemon JSON endpoints, and the `pirateClawDisposition` + derived display-state model (see `docs/01-product/phase-20-dashboard-torrent-actions.md`).
 
