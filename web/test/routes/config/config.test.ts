@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import Page from '../../../src/routes/config/+page.svelte';
+import TransmissionCard from '../../../src/routes/config/components/TransmissionCard.svelte';
 import type { AppConfig } from '$lib/types';
 
 vi.mock('svelte-sonner', () => ({
@@ -346,5 +347,39 @@ describe('/config', () => {
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeDisabled();
 		expect(screen.getByRole('spinbutton', { name: 'Run interval (minutes)' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Test Connection' })).toBeEnabled();
+	});
+
+	it('renders failed_to_return guidance when restart proof times out', () => {
+		render(TransmissionCard, {
+			canWrite: true,
+			currentEtag: '"rev-1"',
+			writeDisabledTooltip: '',
+			connected: true,
+			host: 'localhost',
+			port: '9091',
+			version: '3.00',
+			totalDownloadedBytes: 0,
+			totalUploadedBytes: 0,
+			sessionDownloadedBytes: 0,
+			sessionUploadedBytes: 0,
+			authToken: '[redacted]',
+			url: 'http://localhost:9091',
+			downloadTargets: [{ label: 'Download', value: '/tmp' }],
+			runtime: mockConfig.runtime,
+			showRows: ['The Show'],
+			testingConnection: false,
+			restarting: false,
+			restartPhase: 'failed_to_return',
+			runtimeChangesPending: false,
+			enhanceTestConnection: vi.fn(),
+			enhanceSaveRuntime: vi.fn(),
+			enhanceRestartDaemon: vi.fn()
+		});
+
+		expect(
+			screen.getByText(
+				'Daemon failed_to_return within 45 seconds. Check the host, then retry or restart manually.'
+			)
+		).toBeInTheDocument();
 	});
 });

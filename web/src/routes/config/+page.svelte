@@ -84,8 +84,11 @@
 	let showAddDraftInputEl = $state<HTMLInputElement | null>(null);
 	let runtimeChangesPending = $state(false);
 	let restarting = $state(false);
-	let restartPhase = $state<'idle' | 'requested' | 'restarting' | 'back_online'>('idle');
+	let restartPhase = $state<
+		'idle' | 'requested' | 'restarting' | 'back_online' | 'failed_to_return'
+	>('idle');
 	let restartRequestId = $state<string | null>(null);
+	let restartRequestedAt = $state<string | null>(null);
 	let restartPollTimer = $state<number | null>(null);
 
 	const restartInProgress = $derived(
@@ -291,7 +294,11 @@
 	}
 
 	async function pollRestartStatus(requestId: string) {
-		const phase = await loadRestartRoundTripPhase(requestId);
+		if (!restartRequestedAt) {
+			return;
+		}
+
+		const phase = await loadRestartRoundTripPhase(requestId, restartRequestedAt);
 		if (restartRequestId !== requestId) {
 			return;
 		}
@@ -300,9 +307,21 @@
 		if (phase === 'back_online') {
 			clearRestartPolling();
 			restartRequestId = null;
+			restartRequestedAt = null;
 			runtimeChangesPending = false;
 			toast('Daemon back online — restart proof confirmed.', 'success');
 			await invalidateAll();
+			return;
+		}
+
+		if (phase === 'failed_to_return') {
+			clearRestartPolling();
+			restartRequestId = null;
+			restartRequestedAt = null;
+			toast(
+				'Daemon failed to return within 45 seconds — check the host, then retry or restart manually.',
+				'error'
+			);
 			return;
 		}
 
@@ -479,6 +498,7 @@
 				if (restartStatus?.state === 'requested') {
 					runtimeChangesPending = false;
 					restartRequestId = restartStatus.requestId;
+					restartRequestedAt = restartStatus.requestedAt;
 					restartPhase = 'requested';
 					toast('Restart requested — waiting for the daemon to restart.', 'success');
 					queueRestartStatusPoll(restartStatus.requestId);
@@ -491,6 +511,7 @@
 			} else {
 				clearRestartPolling();
 				restartRequestId = null;
+				restartRequestedAt = null;
 				restartPhase = 'idle';
 				toast('Restart failed — try again or restart manually', 'error');
 			}

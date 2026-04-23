@@ -30,3 +30,5 @@ Pirate Claw uses one restart vocabulary across its existing surfaces and reports
 ## Rationale
 
 The success path alone is not enough. Without a shared failure model, Pirate Claw would still overclaim certainty the moment the happy path breaks.
+
+This ticket sets one browser-side timeout of 45 seconds for `failed_to_return`, which is long enough for the supported Synology restart path to hand control back on a normal restart without leaving the UI in an indefinite `restarting` state when the daemon never returns.
