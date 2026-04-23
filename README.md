@@ -59,11 +59,27 @@ bun run --cwd web dev
 
 5. Open **http://localhost:5173** — Pirate Claw will guide you through the browser-only setup flow from starter mode to an ingestion-ready config. No config file was needed.
 
-> **Note:** Mac launchd supervisor / auto-restart setup is covered in P24.
+> **Note:** Mac `launchd` first-class auto-restart is Phase 26 work. Phase 24
+> covers the reviewed Synology restart/supervision contract.
 
 ### Synology NAS (production)
 
-**Plex prerequisite:** Plex Media Server **1.19.0 or later**. Check your installed version in **Package Center → Installed → Plex Media Server → Details**. If the listed version is below 1.19.0, open **Package Center → Update** and update Plex before proceeding.
+Reviewed reference daemon supervision path:
+[`docs/synology-reference-pirate-claw-container.sh`](./docs/synology-reference-pirate-claw-container.sh)
+
+Synology restart-backed operation is supported through Docker restart
+supervision on the `pirate-claw` daemon container. The browser restart control
+requests a daemon `SIGTERM`; Docker `--restart always` is what brings the
+daemon back. Browser-visible return proof is deferred to Phase 25.
+
+The writable `/volume1/pirate-claw/config` directory and
+`/volume1/pirate-claw/data` files (`pirate-claw.db`, `poll-state.json`, and
+`.pirate-claw/runtime/`) are one durability boundary for that contract.
+
+**Plex prerequisite:** Plex Media Server **1.19.0 or later**. Check your
+installed version in **Package Center → Installed → Plex Media Server →
+Details**. If the listed version is below 1.19.0, open **Package Center →
+Update** and update Plex before proceeding.
 
 **First-boot sequence:**
 

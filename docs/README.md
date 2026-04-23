@@ -16,6 +16,7 @@ The docs are organized by purpose so later phases can be added without flattenin
 ## Top-Level Docs
 
 - `synology-runbook.md`: canonical current Synology operator runbook and live deployment contract
+- `synology-reference-pirate-claw-container.sh`: repo-owned Synology daemon supervision artifact for the reviewed Docker restart contract
 
 ## Folder Structure
 

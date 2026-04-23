@@ -7,6 +7,12 @@ The historical Phase 06 validation artifact still lives at
 original validated baseline and ticket rationale trail. Use this top-level
 document for current operational guidance.
 
+The Phase 24 daemon supervision reference artifact lives at
+[`docs/synology-reference-pirate-claw-container.sh`](./synology-reference-pirate-claw-container.sh).
+Treat that file as the source of truth for the reviewed `pirate-claw` container
+invocation. The prose in this runbook explains the contract around it; it does
+not replace it.
+
 ## Scope
 
 This document is for the actual NAS deployment shape that Pirate Claw now
@@ -64,6 +70,8 @@ Observed container contract:
 - network: `host`
 - command: `daemon --config /config/pirate-claw.config.json`
 - entrypoint: `bun run dist/cli.js`
+- repo-owned reference artifact:
+  [`docs/synology-reference-pirate-claw-container.sh`](./synology-reference-pirate-claw-container.sh)
 
 Required mounts:
 
@@ -88,6 +96,28 @@ The live daemon supports `PUT /api/config`, `PUT /api/config/feeds`,
 `PUT /api/config/tv/defaults`, and `PUT /api/config/movies`. Those writes are
 real file writes, not in-memory-only updates, and they use an atomic
 temp-file-plus-rename flow.
+
+### Supervision Contract
+
+Under the reviewed Synology baseline, Pirate Claw's daemon supervision contract
+is:
+
+- the daemon runs as the `pirate-claw` Docker container created from the
+  repo-owned reference artifact
+- Docker `--restart always` is the supervisor; the browser UI is not the
+  supervisor
+- `POST /api/daemon/restart` only asks the daemon process to exit with
+  `SIGTERM`; it does not prove that the browser has observed the daemon come
+  back yet
+- restart-backed operation is supported only when the writable `/config`
+  directory and the writable data files (`pirate-claw.db`, `poll-state.json`,
+  and `.pirate-claw/runtime/`) are mounted together as the durable Pirate Claw
+  boundary
+- if the container is started without Docker restart supervision, a restart
+  request leaves Pirate Claw stopped until the operator intervenes manually
+
+That browser-visible return-proof gap remains Phase 25 work. Phase 24 only
+defines the supported supervisor contract and the durable paths it relies on.
 
 ### `pirate-claw-web`
 
@@ -483,12 +513,8 @@ was rebuilt.
 ssh -p "$SSH_PORT" "$DEST" "sudo -n /usr/local/bin/docker stop pirate-claw pirate-claw-web"
 ssh -p "$SSH_PORT" "$DEST" "sudo -n /usr/local/bin/docker rm pirate-claw pirate-claw-web"
 
-ssh -p "$SSH_PORT" "$DEST" "sudo -n /usr/local/bin/docker run -d --name pirate-claw --restart always --network host \
-  -v /volume1/pirate-claw/config:/config \
-  -v /volume1/pirate-claw/data/pirate-claw.db:/app/pirate-claw.db \
-  -v /volume1/pirate-claw/data/runtime:/app/.pirate-claw/runtime \
-  -v /volume1/pirate-claw/data/poll-state.json:/app/poll-state.json \
-  pirate-claw:latest daemon --config /config/pirate-claw.config.json"
+scp -O -P "$SSH_PORT" docs/synology-reference-pirate-claw-container.sh "$DEST:/tmp/pirate-claw-reference.sh"
+ssh -p "$SSH_PORT" "$DEST" "chmod +x /tmp/pirate-claw-reference.sh && sudo -n /tmp/pirate-claw-reference.sh"
 
 ssh -p "$SSH_PORT" "$DEST" "sudo -n /usr/local/bin/docker run -d --name pirate-claw-web --restart always --network host \
   --env-file /volume1/pirate-claw/config/web.env \
