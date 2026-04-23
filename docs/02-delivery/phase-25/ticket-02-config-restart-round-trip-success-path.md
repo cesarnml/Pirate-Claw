@@ -30,3 +30,5 @@ An operator can trigger restart from `/config` and receive a truthful end-to-end
 ## Rationale
 
 Phase 25 needs an early visible payoff. `/config` already owns the main restart-backed settings flow, so it is the right first place to prove the contract end to end.
+
+This slice uses a same-origin SvelteKit proxy plus client polling so the browser can survive daemon downtime and verify the returned `requestId` without exposing private API base configuration to client-side code.

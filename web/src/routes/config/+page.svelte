@@ -1,12 +1,14 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import PlexAuthCard from '$lib/components/PlexAuthCard.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { maskConfiguredValue, parseHostPortFromUrl } from '$lib/helpers';
+	import { loadRestartRoundTripPhase } from '$lib/restart-roundtrip';
 	import { toast } from '$lib/toast';
-	import type { FeedConfig } from '$lib/types';
+	import type { FeedConfig, RestartStatus } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 	import ConfigPageHeader from './components/ConfigPageHeader.svelte';
 	import DeleteShowModal from './components/DeleteShowModal.svelte';
@@ -82,6 +84,19 @@
 	let showAddDraftInputEl = $state<HTMLInputElement | null>(null);
 	let runtimeChangesPending = $state(false);
 	let restarting = $state(false);
+	let restartPhase = $state<'idle' | 'requested' | 'restarting' | 'back_online'>('idle');
+	let restartRequestId = $state<string | null>(null);
+	let restartPollTimer = $state<number | null>(null);
+
+	const restartInProgress = $derived(
+		restarting || restartPhase === 'requested' || restartPhase === 'restarting'
+	);
+
+	onDestroy(() => {
+		if (restartPollTimer !== null) {
+			window.clearTimeout(restartPollTimer);
+		}
+	});
 
 	$effect(() => {
 		if (!showAddDraftActive) return;
@@ -261,6 +276,39 @@
 		return !!(data.config.transmission.username || data.config.transmission.password);
 	}
 
+	function clearRestartPolling() {
+		if (restartPollTimer !== null) {
+			window.clearTimeout(restartPollTimer);
+			restartPollTimer = null;
+		}
+	}
+
+	function queueRestartStatusPoll(requestId: string) {
+		clearRestartPolling();
+		restartPollTimer = window.setTimeout(() => {
+			void pollRestartStatus(requestId);
+		}, 1000);
+	}
+
+	async function pollRestartStatus(requestId: string) {
+		const phase = await loadRestartRoundTripPhase(requestId);
+		if (restartRequestId !== requestId) {
+			return;
+		}
+
+		restartPhase = phase;
+		if (phase === 'back_online') {
+			clearRestartPolling();
+			restartRequestId = null;
+			runtimeChangesPending = false;
+			toast('Daemon back online — restart proof confirmed.', 'success');
+			await invalidateAll();
+			return;
+		}
+
+		queueRestartStatusPoll(requestId);
+	}
+
 	function storagePoolTargets(): Array<{ label: string; value: string }> {
 		if (!data.config) return [{ label: 'Download', value: 'Unavailable' }];
 		const { downloadDirs, downloadDir } = data.config.transmission;
@@ -426,12 +474,24 @@
 		return async ({ result, update }) => {
 			restarting = false;
 			if (result.type === 'success') {
-				runtimeChangesPending = false;
-				toast(
-					'Restart requested — this page may go unavailable before the daemon returns',
-					'success'
-				);
+				const restartStatus =
+					(result.data as { restartStatus?: RestartStatus | null } | null)?.restartStatus ?? null;
+				if (restartStatus?.state === 'requested') {
+					runtimeChangesPending = false;
+					restartRequestId = restartStatus.requestId;
+					restartPhase = 'requested';
+					toast('Restart requested — waiting for the daemon to restart.', 'success');
+					queueRestartStatusPoll(restartStatus.requestId);
+				} else {
+					toast(
+						'Restart requested — this page may go unavailable before the daemon returns',
+						'success'
+					);
+				}
 			} else {
+				clearRestartPolling();
+				restartRequestId = null;
+				restartPhase = 'idle';
 				toast('Restart failed — try again or restart manually', 'error');
 			}
 			await update({ reset: false });
@@ -483,7 +543,8 @@
 				runtime={data.config.runtime}
 				{showRows}
 				{testingConnection}
-				{restarting}
+				restarting={restartInProgress}
+				{restartPhase}
 				{runtimeChangesPending}
 				runtimeMessage={form?.runtimeMessage}
 				compatibility={transmissionCompatibility}

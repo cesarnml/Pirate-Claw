@@ -6,6 +6,7 @@ import type {
 	AppConfig,
 	OnboardingStatus,
 	PlexAuthStatusResponse,
+	RestartStatus,
 	RunSummaryRecord,
 	SessionInfo,
 	TransmissionStatusResponse
@@ -506,7 +507,8 @@ export const actions: Actions = {
 				return fail(response.status, { restartError });
 			}
 
-			return { restarted: true };
+			const body = (await response.json()) as { restartStatus?: RestartStatus };
+			return { restarted: true, restartStatus: body.restartStatus ?? null };
 		} catch (error) {
 			console.error('[config] restartDaemon failed:', error);
 			return fail(502, { restartError: 'Could not reach the API to restart.' });

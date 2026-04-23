@@ -28,6 +28,7 @@
 		showRows: string[];
 		testingConnection: boolean;
 		restarting: boolean;
+		restartPhase: 'idle' | 'requested' | 'restarting' | 'back_online';
 		runtimeChangesPending: boolean;
 		runtimeMessage?: string;
 		compatibility?: TransmissionCompatibility | null;
@@ -56,6 +57,7 @@
 		showRows,
 		testingConnection,
 		restarting,
+		restartPhase,
 		runtimeChangesPending,
 		runtimeMessage,
 		compatibility = null,
@@ -282,7 +284,13 @@
 				{/if}
 			</Button>
 			<p class="text-muted-foreground text-xs">
-				{#if runtimeChangesPending}
+				{#if restartPhase === 'requested'}
+					Restart requested. Waiting for the daemon to go away.
+				{:else if restartPhase === 'restarting'}
+					Daemon restarting. This page will confirm when it comes back.
+				{:else if restartPhase === 'back_online'}
+					Daemon return proved. Runtime changes are live.
+				{:else if runtimeChangesPending}
 					Runtime changes are saved and waiting for restart.
 				{:else}
 					Restart stays disabled until runtime settings change.

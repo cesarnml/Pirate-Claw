@@ -478,18 +478,41 @@ describe('config page server actions', () => {
 			expect(apiRequestMock).not.toHaveBeenCalled();
 		});
 
-		it('returns restarted: true on success', async () => {
+		it('returns restarted: true with restart proof state on success', async () => {
 			vi.doMock('$env/dynamic/private', () => ({
 				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
 			}));
 			const { actions } = await import('../../../src/routes/config/+page.server');
-			apiRequestMock.mockResolvedValue(new Response(null, { status: 202 }));
+			apiRequestMock.mockResolvedValue(
+				new Response(
+					JSON.stringify({
+						ok: true,
+						restartStatus: {
+							state: 'requested',
+							requestId: 'restart-123',
+							requestedAt: '2026-04-23T10:00:00.000Z',
+							requestedByStartedAt: '2026-04-23T10:00:00.000Z',
+							currentDaemonStartedAt: '2026-04-23T10:00:00.000Z'
+						}
+					}),
+					{ status: 200 }
+				)
+			);
 
 			const result = await actions.restartDaemon({
 				request: new Request('http://localhost/config', { method: 'POST' })
 			} as never);
 
 			expect((result as { restarted?: boolean }).restarted).toBe(true);
+			expect(
+				(result as { restartStatus?: { requestId?: string; state?: string } | null }).restartStatus
+			).toEqual({
+				state: 'requested',
+				requestId: 'restart-123',
+				requestedAt: '2026-04-23T10:00:00.000Z',
+				requestedByStartedAt: '2026-04-23T10:00:00.000Z',
+				currentDaemonStartedAt: '2026-04-23T10:00:00.000Z'
+			});
 			expect(apiRequestMock).toHaveBeenCalledWith(
 				'/api/daemon/restart',
 				expect.objectContaining({ method: 'POST' })
