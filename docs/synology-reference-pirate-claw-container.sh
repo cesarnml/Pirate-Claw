@@ -15,7 +15,7 @@ set -eu
 # - /volume1/pirate-claw/config -> /config
 # - /volume1/pirate-claw/data/pirate-claw.db -> /app/pirate-claw.db
 # - /volume1/pirate-claw/data/runtime -> /app/.pirate-claw/runtime
-# - /volume1/pirate-claw/data/poll-state.json -> /app/poll-state.json
+#   (includes runtime artifacts such as poll-state.json)
 #
 # Restart contract:
 # - Pirate Claw exits on SIGTERM.
@@ -35,6 +35,5 @@ exec "$DOCKER_BIN" run -d \
   -v "$CONFIG_DIR:/config" \
   -v "$DATA_DIR/pirate-claw.db:/app/pirate-claw.db" \
   -v "$DATA_DIR/runtime:/app/.pirate-claw/runtime" \
-  -v "$DATA_DIR/poll-state.json:/app/poll-state.json" \
   "$IMAGE" \
   daemon --config /config/pirate-claw.config.json

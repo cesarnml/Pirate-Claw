@@ -51,8 +51,8 @@ Expected durable files and directories:
 - `/volume1/pirate-claw/config/pirate-claw.config.json`
 - `/volume1/pirate-claw/config/.env`
 - `/volume1/pirate-claw/data/pirate-claw.db`
-- `/volume1/pirate-claw/data/poll-state.json`
 - `/volume1/pirate-claw/data/runtime/`
+- `/volume1/pirate-claw/data/runtime/poll-state.json`
 - `/volume1/transmission/config/`
 - `/volume1/media/downloads/`
 
@@ -78,7 +78,6 @@ Required mounts:
 - `/volume1/pirate-claw/config -> /config`
 - `/volume1/pirate-claw/data/pirate-claw.db -> /app/pirate-claw.db`
 - `/volume1/pirate-claw/data/runtime -> /app/.pirate-claw/runtime`
-- `/volume1/pirate-claw/data/poll-state.json -> /app/poll-state.json`
 
 Critical rule:
 
@@ -110,9 +109,9 @@ is:
   `SIGTERM`; it does not prove that the browser has observed the daemon come
   back yet
 - restart-backed operation is supported only when the writable `/config`
-  directory and the writable data files (`pirate-claw.db`, `poll-state.json`,
-  and `.pirate-claw/runtime/`) are mounted together as the durable Pirate Claw
-  boundary
+  directory and the writable data files (`pirate-claw.db` plus the
+  `.pirate-claw/runtime/` tree, including `poll-state.json`) are mounted
+  together as the durable Pirate Claw boundary
 - if the container is started without Docker restart supervision, a restart
   request leaves Pirate Claw stopped until the operator intervenes manually
 

@@ -427,7 +427,10 @@
 			restarting = false;
 			if (result.type === 'success') {
 				runtimeChangesPending = false;
-				toast('Restarting… the page may become temporarily unavailable', 'success');
+				toast(
+					'Restart requested — this page may go unavailable before the daemon returns',
+					'success'
+				);
 			} else {
 				toast('Restart failed — try again or restart manually', 'error');
 			}

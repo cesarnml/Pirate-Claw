@@ -23,7 +23,8 @@
 			<div class="space-y-1">
 				<p class="font-semibold">Runtime changes are staged.</p>
 				<p class="text-muted-foreground text-sm">
-					Restart the daemon to apply interval and port updates.
+					Restart the daemon to apply interval and port updates. The browser will not confirm when
+					it comes back yet.
 				</p>
 			</div>
 			<Button
