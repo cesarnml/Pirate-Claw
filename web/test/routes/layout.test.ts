@@ -222,6 +222,11 @@ describe('+layout.svelte', () => {
 		});
 
 		expect(screen.getByTestId('ready-pending-restart-banner')).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Restart daemon to apply config changes. The browser will not confirm return yet.'
+			)
+		).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeInTheDocument();
 		expect(screen.queryByTestId('partial-config-banner')).not.toBeInTheDocument();
 		expect(screen.queryByTestId('starter-mode-splash')).not.toBeInTheDocument();

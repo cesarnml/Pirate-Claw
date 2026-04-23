@@ -59,7 +59,10 @@
 		return async ({ result }) => {
 			restartingFromBanner = false;
 			if (result.type === 'success') {
-				toast('Restarting… the page may become temporarily unavailable', 'success');
+				toast(
+					'Restart requested — this page may go unavailable before the daemon returns',
+					'success'
+				);
 				await invalidateAll();
 				return;
 			}
@@ -187,7 +190,9 @@
 						<div
 							class="bg-warning/10 border-warning/30 text-warning flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm"
 						>
-							<p>Restart daemon to apply config changes.</p>
+							<p>
+								Restart daemon to apply config changes. The browser will not confirm return yet.
+							</p>
 							<button
 								type="submit"
 								class="border-warning/40 text-warning hover:bg-warning/10 shrink-0 rounded-md border px-3 py-1.5 font-medium transition-colors"

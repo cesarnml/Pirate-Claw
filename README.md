@@ -73,8 +73,9 @@ requests a daemon `SIGTERM`; Docker `--restart always` is what brings the
 daemon back. Browser-visible return proof is deferred to Phase 25.
 
 The writable `/volume1/pirate-claw/config` directory and
-`/volume1/pirate-claw/data` files (`pirate-claw.db`, `poll-state.json`, and
-`.pirate-claw/runtime/`) are one durability boundary for that contract.
+`/volume1/pirate-claw/data` mounts (`pirate-claw.db` plus
+`.pirate-claw/runtime/`, which contains `poll-state.json`) are one durability
+boundary for that contract.
 
 **Plex prerequisite:** Plex Media Server **1.19.0 or later**. Check your
 installed version in **Package Center → Installed → Plex Media Server →
