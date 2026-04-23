@@ -106,17 +106,20 @@ is:
 - Docker `--restart always` is the supervisor; the browser UI is not the
   supervisor
 - `POST /api/daemon/restart` only asks the daemon process to exit with
-  `SIGTERM`; it does not prove that the browser has observed the daemon come
-  back yet
+  `SIGTERM`; Docker restart policy is what brings the daemon back
 - restart-backed operation is supported only when the writable `/config`
   directory and the writable data files (`pirate-claw.db` plus the
   `.pirate-claw/runtime/` tree, including `poll-state.json`) are mounted
   together as the durable Pirate Claw boundary
+- the daemon writes restart proof under `.pirate-claw/runtime/restart-proof.json`
+  so the browser can distinguish `requested`, `restarting`, `back_online`, and
+  bounded `failed_to_return` states instead of stopping at "request sent"
 - if the container is started without Docker restart supervision, a restart
   request leaves Pirate Claw stopped until the operator intervenes manually
 
-That browser-visible return-proof gap remains Phase 25 work. Phase 24 only
-defines the supported supervisor contract and the durable paths it relies on.
+Phase 24 defines the supported supervisor contract and durable paths. Phase 25
+adds the browser-visible round trip on top of that same boundary; the current
+product now ships both.
 
 ### `pirate-claw-web`
 
