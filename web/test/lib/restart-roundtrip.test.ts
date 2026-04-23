@@ -5,22 +5,25 @@ import {
 } from '../../src/lib/restart-roundtrip';
 
 describe('loadRestartRoundTripPhase', () => {
+	const requestedAt = '2026-04-23T10:00:00.000Z';
+	const justAfterRequestedAt = Date.parse(requestedAt) + 1_000;
+
 	it('keeps the flow in requested while the same restart request is still pending', async () => {
 		const fetchMock = vi.fn().mockResolvedValue(
 			new Response(
 				JSON.stringify({
 					state: 'requested',
 					requestId: 'restart-123',
-					requestedAt: '2026-04-23T10:00:00.000Z',
-					requestedByStartedAt: '2026-04-23T10:00:00.000Z',
-					currentDaemonStartedAt: '2026-04-23T10:00:00.000Z'
+					requestedAt,
+					requestedByStartedAt: requestedAt,
+					currentDaemonStartedAt: requestedAt
 				}),
 				{ status: 200 }
 			)
 		);
 
 		await expect(
-			loadRestartRoundTripPhase('restart-123', '2026-04-23T10:00:00.000Z', fetchMock)
+			loadRestartRoundTripPhase('restart-123', requestedAt, fetchMock, justAfterRequestedAt)
 		).resolves.toBe('requested');
 	});
 
@@ -30,9 +33,9 @@ describe('loadRestartRoundTripPhase', () => {
 				JSON.stringify({
 					state: 'requested',
 					requestId: 'restart-123',
-					requestedAt: '2026-04-23T10:00:00.000Z',
-					requestedByStartedAt: '2026-04-23T10:00:00.000Z',
-					currentDaemonStartedAt: '2026-04-23T10:00:00.000Z'
+					requestedAt,
+					requestedByStartedAt: requestedAt,
+					currentDaemonStartedAt: requestedAt
 				}),
 				{ status: 200 }
 			)
@@ -41,9 +44,9 @@ describe('loadRestartRoundTripPhase', () => {
 		await expect(
 			loadRestartRoundTripPhase(
 				'restart-123',
-				'2026-04-23T10:00:00.000Z',
+				requestedAt,
 				fetchMock,
-				Date.parse('2026-04-23T10:00:00.000Z') + RESTART_RETURN_TIMEOUT_MS
+				Date.parse(requestedAt) + RESTART_RETURN_TIMEOUT_MS
 			)
 		).resolves.toBe('failed_to_return');
 	});
@@ -52,7 +55,7 @@ describe('loadRestartRoundTripPhase', () => {
 		const fetchMock = vi.fn().mockRejectedValue(new Error('connection refused'));
 
 		await expect(
-			loadRestartRoundTripPhase('restart-123', '2026-04-23T10:00:00.000Z', fetchMock)
+			loadRestartRoundTripPhase('restart-123', requestedAt, fetchMock, justAfterRequestedAt)
 		).resolves.toBe('restarting');
 	});
 
@@ -62,8 +65,8 @@ describe('loadRestartRoundTripPhase', () => {
 				JSON.stringify({
 					state: 'back_online',
 					requestId: 'restart-123',
-					requestedAt: '2026-04-23T10:00:00.000Z',
-					requestedByStartedAt: '2026-04-23T10:00:00.000Z',
+					requestedAt,
+					requestedByStartedAt: requestedAt,
 					returnedAt: '2026-04-23T10:00:05.000Z',
 					returnedStartedAt: '2026-04-23T10:00:05.000Z',
 					currentDaemonStartedAt: '2026-04-23T10:00:05.000Z'
@@ -73,7 +76,7 @@ describe('loadRestartRoundTripPhase', () => {
 		);
 
 		await expect(
-			loadRestartRoundTripPhase('restart-123', '2026-04-23T10:00:00.000Z', fetchMock)
+			loadRestartRoundTripPhase('restart-123', requestedAt, fetchMock, justAfterRequestedAt)
 		).resolves.toBe('back_online');
 	});
 
@@ -83,9 +86,9 @@ describe('loadRestartRoundTripPhase', () => {
 		await expect(
 			loadRestartRoundTripPhase(
 				'restart-123',
-				'2026-04-23T10:00:00.000Z',
+				requestedAt,
 				fetchMock,
-				Date.parse('2026-04-23T10:00:00.000Z') + RESTART_RETURN_TIMEOUT_MS
+				Date.parse(requestedAt) + RESTART_RETURN_TIMEOUT_MS
 			)
 		).resolves.toBe('failed_to_return');
 	});
@@ -96,9 +99,9 @@ describe('loadRestartRoundTripPhase', () => {
 		await expect(
 			loadRestartRoundTripPhase(
 				'restart-123',
-				'2026-04-23T10:00:00.000Z',
+				requestedAt,
 				fetchMock,
-				Date.parse('2026-04-23T10:00:00.000Z') + RESTART_RETURN_TIMEOUT_MS - 1
+				Date.parse(requestedAt) + RESTART_RETURN_TIMEOUT_MS - 1
 			)
 		).resolves.toBe('restarting');
 	});
