@@ -1,6 +1,6 @@
 # Phase 24 Implementation Plan
 
-**Status:** Proposed — awaiting developer approval before implementation.
+**Status:** Delivered in the active Phase 24 stack (`P24.01`–`P24.05`).
 
 Phase 24 closes the Synology deployment loop by making Pirate Claw's restart behavior and durability boundary truthful under the repo-owned reference supervision path, while explicitly deferring browser return-proof UX to Phase 25.
 

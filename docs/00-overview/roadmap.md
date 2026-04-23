@@ -573,7 +573,11 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-24-synology-supervision-and-restart.md`](../01-product/phase-24-synology-supervision-and-restart.md)
+- implemented in the active Phase 24 delivery stack
+- the repo now carries a reviewed Synology daemon supervision artifact and runbook contract for Docker-managed restart
+- restart-backed config writes plus SQLite/Plex auth state are covered by automated durability proof rather than prose-only claims
+- restart UI copy is explicit that the browser can request restart but does not confirm daemon return yet
+- Plex-on-Synology guidance now distinguishes the reviewed Pirate Claw baseline from the operator-managed PMS compatibility/remediation path
 
 ## Phase 25: In-Browser Restart Round-Trip Proof
 
@@ -584,7 +588,8 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-25-in-browser-restart-round-trip-proof.md`](../01-product/phase-25-in-browser-restart-round-trip-proof.md)
+- product definition only; Phase 24 intentionally stopped before browser-visible daemon return proof
+- see [`docs/01-product/phase-25-in-browser-restart-round-trip-proof.md`](../01-product/phase-25-in-browser-restart-round-trip-proof.md)
 
 ## Phase 26: Mac First-Class Always-On Deployment
 
