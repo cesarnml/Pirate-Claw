@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–23** shipped the current core product: the CLI/runtime stack, Obsidian Tide dashboard, zero-file-edit bootstrap, browser-only setup flow, the dashboard Transmission layer (Torrent Manager pause/resume/remove/remove-with-delete, missing-torrent disposition, Feed Event Log with failed-enqueue **Queue** retries, and matching daemon routes), and browser-managed Plex auth with durable device identity plus best-effort silent renewal. The current follow-on planning sequence is **Phase 24** and **Phase 25**; **Phase 26** remains the v1.0.0 / schema-versioning release ceremony (`schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, tagged release). See `docs/01-product/`.
+Phases **01–23** shipped the current core product: the CLI/runtime stack, Obsidian Tide dashboard, zero-file-edit bootstrap, browser-only setup flow, the dashboard Transmission layer (Torrent Manager pause/resume/remove/remove-with-delete, missing-torrent disposition, Feed Event Log with failed-enqueue **Queue** retries, and matching daemon routes), and browser-managed Plex auth with durable device identity plus best-effort silent renewal. The current follow-on planning sequence is **Phases 24–28**: Synology supervision durability, in-browser restart round-trip proof, Mac first-class always-on deployment, UX/UI polish, then the v1.0.0 / schema-versioning release ceremony (`schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, tagged release). See `docs/01-product/`.
 
 It currently supports:
 
@@ -252,13 +252,13 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 ## Current Scope
 
-Pirate Claw is a local operator tool for a personal NAS. The roadmap now targets **Phases 24–25** for restart-backed completion and UX polish before the **Phase 26** release/versioning ceremony.
+Pirate Claw is a local operator tool for a personal NAS. The roadmap now targets **Phases 24–27** for restart-backed completion, browser restart proof, Mac first-class deployment, and UX polish before the **Phase 28** release/versioning ceremony.
 
 **Implemented (Phases 01–23):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional Plex Media Server enrichment, the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, a TMDB refresh control on TV detail, **Phase 20** dashboard Transmission controls, and **Phase 23** browser-managed Plex connect / reconnect with durable device identity and best-effort silent renewal.
 
 **Implemented (Phase 20):** Dashboard Torrent Manager actions (pause, resume, remove, remove-with-delete), missing-torrent disposition, Transmission failures / requeue, related daemon JSON endpoints, and the `pirateClawDisposition` + derived display-state model (see `docs/01-product/phase-20-dashboard-torrent-actions.md`).
 
-**Planned (Phase 26):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release (see `docs/01-product/phase-26-v1-release-and-schema-versioning.md`).
+**Planned (Phase 28):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release (see `docs/01-product/phase-28-v1-release-and-schema-versioning.md`).
 
 Not in scope through v1:
 

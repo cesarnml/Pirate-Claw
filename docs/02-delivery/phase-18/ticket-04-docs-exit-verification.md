@@ -42,5 +42,5 @@ Retrospective is marked `required` in the implementation plan because Phase 18
 introduces a durable optional external-service boundary with decisions (matching
 strategy, cache TTL policy, pirate-claw-first refresh pattern, display-only v1
 constraint) that future phases will revisit. Recording the learning now prevents
-context loss before Phase 25 (v1 release) or any future media-library provider
+context loss before Phase 28 (v1 release) or any future media-library provider
 expansion.

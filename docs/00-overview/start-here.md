@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 23** in the current delivery stack (product phases 01–23; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–23 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec remains the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI, **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) remains the dashboard-as-Transmission-proxy contract, and **Phase 23** ([`phase-23-plex-browser-auth-and-credential-lifecycle.md`](../01-product/phase-23-plex-browser-auth-and-credential-lifecycle.md)) is now the live Plex auth/lifecycle contract. **Phases 24–25** define the remaining product-completion path after that shipped Plex lifecycle slice: Synology restart-backed completion, then UX/UI polish. **Phase 26** ([`phase-26-v1-release-and-schema-versioning.md`](../01-product/phase-26-v1-release-and-schema-versioning.md)) is the v1.0.0 / schema-versioning release ceremony after those product-completion phases land.
+Pirate Claw is implemented through **Phase 23** in the current delivery stack (product phases 01–23; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–23 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec remains the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI, **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) remains the dashboard-as-Transmission-proxy contract, and **Phase 23** ([`phase-23-plex-browser-auth-and-credential-lifecycle.md`](../01-product/phase-23-plex-browser-auth-and-credential-lifecycle.md)) is now the live Plex auth/lifecycle contract. **Phases 24–27** define the remaining product-completion path after that shipped Plex lifecycle slice: Synology supervision durability, browser-visible restart round-trip proof, Mac first-class always-on deployment, then UX/UI polish. **Phase 28** ([`phase-28-v1-release-and-schema-versioning.md`](../01-product/phase-28-v1-release-and-schema-versioning.md)) is the v1.0.0 / schema-versioning release ceremony after those product-completion phases land.
 
 Current delivered surface:
 
@@ -58,16 +58,16 @@ Still deferred (beyond the current Phase 21–25 planning sequence):
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md`, roadmap, and active product docs: 2026-04-22.
+Last verified against `README.md`, roadmap, and active product docs: 2026-04-23.
 
 Current planning focus:
 
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
-- the next product-completion planning buckets are Phase 24 (Synology supervision/restart completion) and Phase 25 (post-functional UX/UI polish)
+- the next product-completion planning buckets are Phase 24 (Synology supervision/restart durability), Phase 25 (in-browser restart round-trip proof), Phase 26 (Mac first-class always-on deployment), and Phase 27 (post-functional UX/UI polish)
 - treat Phase 24 as a follow-on to the shipped Phase 23 browser-auth contract, not as a replacement for the new persisted Plex auth/device boundary
-- Phase 26 (`schemaVersion`, tagged v1, `VERSIONING.md`, changelog) is the release/versioning ceremony after those product-completion phases; keep Phase 20 dashboard torrent work in [`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md), not under the Phase 19 contract
+- Phase 28 (`schemaVersion`, tagged v1, `VERSIONING.md`, changelog) is the release/versioning ceremony after those product-completion phases; keep Phase 20 dashboard torrent work in [`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md), not under the Phase 19 contract
 
 ## Read These Docs By Task Type
 

@@ -53,9 +53,11 @@ Phase-level product definitions.
 - `phase-21-bootstrap-contract.md`: zero hand-edited files and starter-state bootstrap contract
 - `phase-22-browser-only-setup.md`: browser-only onboarding and installer flow to working daemon setup
 - `phase-23-plex-browser-auth-and-credential-lifecycle.md`: browser-managed Plex auth, persisted device identity, and best-effort credential renewal
-- `phase-24-synology-supervision-and-restart.md`: Synology restart-backed setup completion and supervision contract
-- `phase-25-ux-ui-polish-after-functional-completion.md`: UX/UI polish after functional product completion
-- `phase-26-v1-release-and-schema-versioning.md`: v1.0.0 release, config `schemaVersion`, SQLite `PRAGMA user_version` (product definition; renumbered from the former “Phase 20 v1-only” slot)
+- `phase-24-synology-supervision-and-restart.md`: Synology restart durability and supervision contract
+- `phase-25-in-browser-restart-round-trip-proof.md`: browser-visible restart request, progress, and return-proof contract
+- `phase-26-mac-first-class-always-on-deployment.md`: Mac Mini / Mac Studio / dev-server always-on deployment contract
+- `phase-27-ux-ui-polish-after-functional-completion.md`: UX/UI polish after functional product completion
+- `phase-28-v1-release-and-schema-versioning.md`: v1.0.0 release, config `schemaVersion`, SQLite `PRAGMA user_version` (product definition; renumbered from the former “Phase 20 v1-only” slot)
 
 ### `02-delivery`
 
