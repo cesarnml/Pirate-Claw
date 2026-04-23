@@ -81,7 +81,10 @@ async function writeFixture(path: string, content: string) {
   await writeFile(path, content, 'utf8');
 }
 import { getUsage, parseCliArgs } from '../cli';
-import { advanceToNextTicket } from '../ticket-flow';
+import {
+  advanceToNextTicket,
+  openPullRequest as openPullRequestFlow,
+} from '../ticket-flow';
 import { normalizeDeliveryStateFromPersisted } from '../state';
 import { resolveNativeReviewThreads } from '../review';
 
@@ -5233,6 +5236,113 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
         },
       });
     }
+  });
+
+  it('open-pr reports publication progress for a new PR', () => {
+    const progress: string[] = [];
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'codex_preflight_complete',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+        },
+      ],
+    };
+
+    const nextState = openPullRequestFlow(state, '/tmp/pirate_claw', 'P3.01', {
+      assertReviewerFacingMarkdown: () => {},
+      buildPullRequestBody: () => 'body',
+      buildPullRequestTitle: () => 'feat: example [P3.01]',
+      createPullRequest: () => 'https://example.test/pull/23',
+      editPullRequest: () => {
+        throw new Error('should not edit existing PR');
+      },
+      ensureBranchPushed: () => {},
+      findOpenPullRequest: () => undefined,
+      parsePullRequestNumber: () => 23,
+      readLatestCommitSubject: () => 'feat: example',
+      reportProgress: (message) => progress.push(message),
+    });
+
+    expect(progress).toEqual([
+      'open-pr: publishing branch agents/p3-01-persist-transmission-identity-for-queued-torrents to origin (push hooks may take a bit)...',
+      'open-pr: creating PR on GitHub...',
+      'open-pr: PR ready https://example.test/pull/23',
+    ]);
+    expect(nextState.tickets[0]?.status).toBe('in_review');
+    expect(nextState.tickets[0]?.prNumber).toBe(23);
+  });
+
+  it('open-pr reports publication progress when refreshing an existing PR', () => {
+    const progress: string[] = [];
+    const state: DeliveryState = {
+      planKey: 'phase-03',
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      statePath: '.agents/delivery/phase-03/state.json',
+      reviewsDirPath: '.agents/delivery/phase-03/reviews',
+      handoffsDirPath: '.agents/delivery/phase-03/handoffs',
+      reviewPollIntervalMinutes: 6,
+      reviewPollMaxWaitMinutes: 12,
+      tickets: [
+        {
+          id: 'P3.01',
+          title: 'Persist Transmission Identity For Queued Torrents',
+          slug: 'persist-transmission-identity-for-queued-torrents',
+          ticketFile:
+            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          status: 'in_review',
+          branch:
+            'agents/p3-01-persist-transmission-identity-for-queued-torrents',
+          baseBranch: 'main',
+          worktreePath: '/tmp/p3_01',
+          prUrl: 'https://example.test/pull/23',
+          prNumber: 23,
+          prOpenedAt: '2026-04-01T10:00:00.000Z',
+        },
+      ],
+    };
+
+    const nextState = openPullRequestFlow(state, '/tmp/pirate_claw', 'P3.01', {
+      assertReviewerFacingMarkdown: () => {},
+      buildPullRequestBody: () => 'body',
+      buildPullRequestTitle: () => 'feat: example [P3.01]',
+      createPullRequest: () => {
+        throw new Error('should not create a new PR');
+      },
+      editPullRequest: () => {},
+      ensureBranchPushed: () => {},
+      findOpenPullRequest: () => ({
+        number: 23,
+        state: 'OPEN',
+        url: 'https://example.test/pull/23',
+      }),
+      parsePullRequestNumber: () => 23,
+      readLatestCommitSubject: () => 'feat: example',
+      reportProgress: (message) => progress.push(message),
+    });
+
+    expect(progress).toEqual([
+      'open-pr: publishing branch agents/p3-01-persist-transmission-identity-for-queued-torrents to origin (push hooks may take a bit)...',
+      'open-pr: updating PR #23 on GitHub...',
+      'open-pr: PR ready https://example.test/pull/23',
+    ]);
+    expect(nextState.tickets[0]?.status).toBe('in_review');
+    expect(nextState.tickets[0]?.prNumber).toBe(23);
   });
 
   it('formats codex_preflight outcome in formatStatus', () => {

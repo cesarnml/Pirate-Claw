@@ -458,6 +458,7 @@ export function openPullRequest(
     ) => PullRequestSummary | undefined;
     parsePullRequestNumber: (prUrl: string) => number;
     readLatestCommitSubject: (cwd: string) => string;
+    reportProgress?: (message: string) => void;
     resolveGitHubRepo?: (
       cwd: string,
     ) => { defaultBranch: string; name: string; owner: string } | undefined;
@@ -505,6 +506,9 @@ export function openPullRequest(
     );
   }
 
+  dependencies.reportProgress?.(
+    `open-pr: publishing branch ${target.branch} to origin (push hooks may take a bit)...`,
+  );
   dependencies.ensureBranchPushed(target.worktreePath, target.branch);
 
   const title = dependencies.buildPullRequestTitle(
@@ -523,6 +527,9 @@ export function openPullRequest(
   let prNumber: number;
 
   if (existingPullRequest) {
+    dependencies.reportProgress?.(
+      `open-pr: updating PR #${existingPullRequest.number} on GitHub...`,
+    );
     dependencies.editPullRequest(
       target.worktreePath,
       existingPullRequest.number,
@@ -534,6 +541,7 @@ export function openPullRequest(
     prUrl = existingPullRequest.url;
     prNumber = existingPullRequest.number;
   } else {
+    dependencies.reportProgress?.('open-pr: creating PR on GitHub...');
     prUrl = dependencies.createPullRequest(target.worktreePath, {
       base: target.baseBranch,
       body,
@@ -542,6 +550,8 @@ export function openPullRequest(
     });
     prNumber = dependencies.parsePullRequestNumber(prUrl);
   }
+
+  dependencies.reportProgress?.(`open-pr: PR ready ${prUrl}`);
 
   const now = new Date().toISOString();
 

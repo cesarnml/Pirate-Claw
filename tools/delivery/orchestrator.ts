@@ -1365,6 +1365,7 @@ export async function openPullRequest(
     findOpenPullRequest,
     parsePullRequestNumber,
     readLatestCommitSubject,
+    reportProgress: (message: string) => console.log(message),
     resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
   });
 
