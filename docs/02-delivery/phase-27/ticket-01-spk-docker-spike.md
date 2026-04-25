@@ -46,5 +46,6 @@ Fallback feasibility:
 
 - DSM Docker's **Container > Settings > Import** flow opens a DSM file picker rooted in shared folders and includes an **Upload** entry. The dialog did not advertise supported file extensions, but it is GUI-accessible and can select files from DSM shares.
 - File Station can create folders and upload files through the GUI.
+- Developer clarification after the spike: DSM 7.1 fallback may include multiple GUI-only Docker image/import and volume mount steps. The controlling constraint is no SSH, no Docker CLI, no hand-edited files, and no owner-visible secrets.
 
-P27.04 must not assume Package Center hooks can create/start Docker containers on DSM 7.1. It should either use the confirmed GUI-accessible File Station + Docker import path or explicitly revise scope before implementation if the required import artifact format is not compatible with legacy DSM Docker.
+P27.04 must not assume Package Center hooks can create/start Docker containers on DSM 7.1. It should either use a documented GUI-only File Station + Docker import/image/mount path or explicitly revise scope before implementation if the required artifact format is not compatible with legacy DSM Docker.

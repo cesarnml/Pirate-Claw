@@ -14,7 +14,7 @@ Follow the shared guidance in [`docs/02-delivery/phase-implementation-guidance.m
 
 ## Grill-Me decisions locked for this phase
 
-- **SPK spike gates the installer shape.** P27.01 must produce a finding before P27.04 is written or started. If `.spk` hooks cannot orchestrate Docker containers on DSM 7.1, the install path falls back to a guided File Station + Docker GUI import flow — still fully GUI-only.
+- **SPK spike gates the installer shape.** P27.01 must produce a finding before P27.04 is written or started. If `.spk` hooks cannot orchestrate Docker containers on DSM 7.1, the install path falls back to a guided File Station + Docker GUI import/mount flow — still fully GUI-only. Multiple Docker GUI image or volume mount steps are allowed when they are documented and do not require SSH, Docker CLI, or hand-edited files.
 - **Daemon generates secrets on first startup.** Install root exists and subdirectory tree is created on daemon first startup (create-if-absent). Secrets (daemon write token, etc.) are generated at first startup, skipped if already present. The installer does not do crypto.
 - **First-run health checks extend `/onboarding`.** No new route. Layout server gains `installHealthState`. Install health panel in `/onboarding` must pass before config steps are shown. Surface is unauthenticated in P27; P28 gates it behind owner login.
 - **DSM 7.2+ Compose artifact ships in the bundle.** Artifact is authored and included in the release zip. Validation status is explicitly marked pending until a DSM 7.2+ tester verifies it. DSM 7.2+ screenshots are marked pending.
@@ -89,7 +89,7 @@ Pause for review if:
 - the spike shows that any required install step needs SSH or CLI
 - install health checks require exposing daemon or Transmission ports to the LAN
 - the SPK format requires owner-visible secrets in the compose file or config JSON
-- the fallback GUI flow requires more than three File Station + Docker GUI steps
+- the fallback flow requires SSH, Docker CLI, hand-edited files, or owner-visible secrets; multiple GUI-only File Station, Docker import, image, or volume mount steps are allowed when documented
 
 ## Phase Closeout
 

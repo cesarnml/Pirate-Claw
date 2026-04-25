@@ -35,6 +35,7 @@ Supported owner actions:
 - Package Center manual install for DSM 7.1 Docker systems
 - Container Manager Project import for DSM 7.2+ systems
 - File Station actions when a fallback folder step is unavoidable
+- Docker GUI image/import and volume mount actions when DSM 7.1 needs a GUI-only fallback path
 - DSM Main Menu / Package Center launch
 - Pirate Claw browser setup at `http://<nas-ip>:8888`
 
@@ -48,6 +49,8 @@ Unsupported in the owner path:
 - manual JSON edits
 - manual `.env` edits
 - manual Docker container assembly
+
+If the DSM 7.1 `.spk` cannot directly orchestrate Docker containers, a documented fallback may use multiple DSM GUI-only Docker import, image, and volume mount steps. The fallback remains inside the product contract only if every step is performed through DSM UI and avoids terminal commands, hand-edited files, and owner-visible secrets.
 
 Legacy hand-built Docker deployments remain possible for developers and advanced operators, but they are outside the DSM-first owner install contract.
 
