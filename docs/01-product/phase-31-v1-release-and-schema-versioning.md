@@ -1,6 +1,6 @@
-# Phase 30: v1.0.0 Release and Schema Versioning
+# Phase 31: v1.0.0 Release and Schema Versioning
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-30/` implementation plan until tickets are approved.
+**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-31/` implementation plan until tickets are approved.
 
 ## TL;DR
 
@@ -12,16 +12,16 @@
 
 ---
 
-Phase 30 is the formal v1.0.0 milestone. It stamps the config and database with versioning, establishes the breaking change policy, and cuts the first tagged release. No new features, no new API endpoints, no new auth enforcement — Phase 13 already delivered the security model.
+Phase 31 is the formal v1.0.0 milestone. It stamps the config and database with versioning, establishes the breaking change policy, and cuts the first tagged release. No new features, no new API endpoints, and no new product behavior belongs here; DSM-first install, owner security, OpenVPN bridge, and release-critical polish must land in Phases 27–30 first.
 
 ## Phase Goal
 
-Phase 30 should leave Pirate Claw in a state where:
+Phase 31 should leave Pirate Claw in a state where:
 
 - the running daemon, config file, and SQLite database are all stamped with a schema version that future operators and tooling can inspect
 - the breaking change policy is documented: major version bump = new config/db schema pair; no cross-version migration path is guaranteed
 - `package.json` version is `1.0.0` and a tagged release exists on the repository
-- existing installs are not broken by any of the above — an unversioned config or DB from before Phase 30 ships is treated as v1 automatically
+- existing installs are not broken by any of the above — an unversioned config or DB from before Phase 31 ships is treated as v1 automatically
 
 ## Committed Scope
 
@@ -34,7 +34,7 @@ Phase 30 should leave Pirate Claw in a state where:
 ### Database schema versioning
 
 - use SQLite `PRAGMA user_version` — built in, no extra table needed
-- on first startup after Phase 30 ships: if `user_version` is `0` (the default for all existing DBs), set it to `1` — this is non-destructive and silent
+- on first startup after Phase 31 ships: if `user_version` is `0` (the default for all existing DBs), set it to `1` — this is non-destructive and silent
 - future breaking DB changes increment `user_version`; the startup check refuses to run if the DB version is ahead of what the binary knows
 - the existing ad-hoc `ALTER TABLE ADD COLUMN` guards in `src/repository.ts` are preserved as the migration mechanism for non-breaking additive changes; `user_version` only changes on breaking schema changes
 
@@ -74,11 +74,11 @@ columns) are backward-compatible and do not require operator action.
 - automated migration tooling between major versions (manual re-import is the policy)
 - audit logs, plugin or extension support (not in v1)
 - new auth enforcement beyond what Phase 13 delivered (bearer token + localhost bind)
-- any new user-visible features — Phase 30 is infrastructure and release only
+- any new user-visible features — Phase 31 is infrastructure and release only
 
 ## Exit Condition
 
-The repo has a `v1.0.0` tag. A fresh install sees `"schemaVersion": 1` in the config after first write and `PRAGMA user_version = 1` in the DB. An operator upgrading from an install before Phase 30 versioning ships sees no errors — the unversioned config is silently treated as v1, and the DB is silently stamped on first startup.
+The repo has a `v1.0.0` tag. A fresh install sees `"schemaVersion": 1` in the config after first write and `PRAGMA user_version = 1` in the DB. An operator upgrading from an install before Phase 31 versioning ships sees no errors — the unversioned config is silently treated as v1, and the DB is silently stamped on first startup.
 
 ## Retrospective
 

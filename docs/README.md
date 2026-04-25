@@ -5,7 +5,7 @@ The docs are organized by purpose so later phases can be added without flattenin
 ## Recommended Reading Order
 
 1. `../README.md`
-2. `synology-runbook.md` when the work touches NAS deployment or operator setup
+2. `synology-install.md` for the DSM-first Synology owner path once Phase 27 lands, or `synology-runbook.md` for current advanced/manual NAS deployment notes
 3. `00-overview/start-here.md`
 4. `00-overview/roadmap.md`
 5. the most relevant current product doc under `01-product/`
@@ -15,7 +15,8 @@ The docs are organized by purpose so later phases can be added without flattenin
 
 ## Top-Level Docs
 
-- `synology-runbook.md`: canonical current Synology operator runbook and live deployment contract
+- `synology-install.md`: planned DSM-first Synology owner install guide (created by Phase 27)
+- `synology-runbook.md`: advanced/manual Synology operator runbook and live historical deployment contract
 - `synology-reference-pirate-claw-container.sh`: repo-owned Synology daemon supervision artifact for the reviewed Docker restart contract
 
 ## Folder Structure
@@ -57,8 +58,11 @@ Phase-level product definitions.
 - `phase-24-synology-supervision-and-restart.md`: Synology restart durability and supervision contract
 - `phase-25-in-browser-restart-round-trip-proof.md`: browser-visible restart request, progress, and return-proof contract
 - `phase-26-mac-first-class-always-on-deployment.md`: Mac Mini / Mac Studio / dev-server always-on deployment contract
-- `phase-29-ux-ui-polish-after-functional-completion.md`: UX/UI polish after functional product completion
-- `phase-30-v1-release-and-schema-versioning.md`: v1.0.0 release, config `schemaVersion`, SQLite `PRAGMA user_version` (product definition; renumbered from the former “Phase 20 v1-only” slot)
+- `phase-27-synology-dsm-first-stack-and-cold-start.md`: DSM-first Synology `.spk` / Container Manager stack and cold-start contract
+- `phase-28-owner-web-security.md`: local owner account, sessions, CSRF, trusted origins, and destructive action gates
+- `phase-29-openvpn-bridge-for-bundled-transmission.md`: OpenVPN bridge for the bundled Transmission stack
+- `phase-30-ux-ui-polish-after-functional-completion.md`: UX/UI polish after functional product completion
+- `phase-31-v1-release-and-schema-versioning.md`: v1.0.0 release, config `schemaVersion`, SQLite `PRAGMA user_version` (product definition; renumbered from the former “Phase 20 v1-only” slot)
 
 ### `02-delivery`
 

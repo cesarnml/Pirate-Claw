@@ -42,8 +42,8 @@ Phase 26 should leave Pirate Claw in a state where:
 
 ## Explicit Deferrals
 
-- broad UX/UI polish outside deployment/lifecycle work (Phase 29)
-- v1 release/versioning ceremony (Phase 30)
+- broad UX/UI polish outside deployment/lifecycle work (Phase 30)
+- v1 release/versioning ceremony (Phase 31)
 - native GUI app packaging or menu-bar app work
 - generic supervisor abstraction for every Linux distro or NAS
 - one-click installer marketplaces

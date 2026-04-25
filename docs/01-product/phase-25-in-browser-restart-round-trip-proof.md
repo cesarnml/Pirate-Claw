@@ -64,8 +64,8 @@ Phase 25 should leave Pirate Claw in a state where:
 ## Explicit Deferrals
 
 - Mac always-on deployment work (Phase 26)
-- broad UX/UI polish outside restart flows (Phase 29)
-- v1 release/versioning ceremony (Phase 30)
+- broad UX/UI polish outside restart flows (Phase 30)
+- v1 release/versioning ceremony (Phase 31)
 - full hot reload of restart-backed settings
 - general supervisor abstraction beyond what the supported deployment docs already cover
 - widening the durable state boundary beyond the shipped Phase 24 contract

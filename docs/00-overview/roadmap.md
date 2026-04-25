@@ -610,18 +610,57 @@ Current status:
 - see [`docs/mac-runbook.md`](../mac-runbook.md)
 - see [`docs/mac-launchd-reference.md`](../mac-launchd-reference.md)
 
-## Phase 29: UX/UI Polish After Functional Completion
+## Phase 27: Synology DSM-First Stack and Cold Start
 
 Goal:
 
-- perform broad UX/UI refinement only after bootstrap, browser-only setup, restart proof, and Mac/Synology always-on deployment work are in place
-- improve cohesion, clarity, and visual trust across operational and shelf-like views
+- replace the expert-built Synology Docker runbook path with a DSM-first owner install path
+- ship a DS918+ / DSM 7.1 Docker `.spk` installer as the validated baseline
+- ship a DSM 7.2+ Container Manager Project artifact as the simpler modern path
+- make bundled Transmission part of the default appliance stack while exposing only Pirate Claw web on port `8888`
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-29-ux-ui-polish-after-functional-completion.md`](../01-product/phase-29-ux-ui-polish-after-functional-completion.md)
+- product definition only; see [`docs/01-product/phase-27-synology-dsm-first-stack-and-cold-start.md`](../01-product/phase-27-synology-dsm-first-stack-and-cold-start.md)
 
-## Phase 30: v1.0.0 Release and Schema Versioning
+## Phase 28: Owner Web Security
+
+Goal:
+
+- require local owner setup/login before detailed app state or destructive web controls are available
+- store owner auth state in daemon-owned durable state, not config JSON
+- gate destructive dashboard/config actions behind web sessions and CSRF protection
+- persist trusted origins for LAN and Tailscale/private mesh access
+
+Current status:
+
+- product definition only; see [`docs/01-product/phase-28-owner-web-security.md`](../01-product/phase-28-owner-web-security.md)
+
+## Phase 29: OpenVPN Bridge for Bundled Transmission
+
+Goal:
+
+- guide a DSM-first owner through OpenVPN profile upload, credential storage, and VPN-backed bundled Transmission topology
+- support bundled Transmission only; BYO Transmission traffic security remains operator-owned
+- provide DSM GUI apply/rollback flows for the DSM 7.1 package path and DSM 7.2+ Project path
+- verify VPN bridge and Transmission RPC health after topology changes
+
+Current status:
+
+- product definition only; see [`docs/01-product/phase-29-openvpn-bridge-for-bundled-transmission.md`](../01-product/phase-29-openvpn-bridge-for-bundled-transmission.md)
+
+## Phase 30: UX/UI Polish After Functional Completion
+
+Goal:
+
+- perform release-critical UX/UI refinement only after install, security, VPN, bootstrap, browser-only setup, restart proof, and Mac/Synology always-on deployment work are in place
+- improve cohesion, clarity, responsive behavior, and visual trust across operational and shelf-like views
+
+Current status:
+
+- product definition only; see [`docs/01-product/phase-30-ux-ui-polish-after-functional-completion.md`](../01-product/phase-30-ux-ui-polish-after-functional-completion.md)
+
+## Phase 31: v1.0.0 Release and Schema Versioning
 
 Goal:
 
@@ -632,7 +671,7 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-30-v1-release-and-schema-versioning.md`](../01-product/phase-30-v1-release-and-schema-versioning.md)
+- product definition only; see [`docs/01-product/phase-31-v1-release-and-schema-versioning.md`](../01-product/phase-31-v1-release-and-schema-versioning.md)
 
 ## Future Deferrals
 
@@ -645,7 +684,7 @@ These items are still explicitly deferred or not yet assigned a numbered phase:
 The following items are **mapped** to numbered phases (no longer “unbounded” deferrals):
 
 - **Config editor via web UI** — Phase 13 (runtime subset); Phase 14 (feeds, movies, TV defaults); Phase 16 (unified UX)
-- **Visual polish / design system iteration** — Phase 12 (baseline); Phase 19 (full Obsidian Tide redesign); Phase 29 (post-functional completion polish)
+- **Visual polish / design system iteration** — Phase 12 (baseline); Phase 19 (full Obsidian Tide redesign); Phase 30 (post-functional completion polish)
 - **Plex Media Server enrichment** — Phase 18
 - **Zero hand-edited bootstrap** — Phase 21
 - **Browser-only first-run setup** — Phase 22
@@ -653,15 +692,19 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 - **Synology restart-backed completion** — Phase 24
 - **Browser restart round-trip proof** — Phase 25
 - **Mac first-class always-on deployment** — Phase 26
-- **v1.0.0 release / schema versioning** — Phase 30
+- **Synology DSM-first owner install** — Phase 27
+- **Owner web security** — Phase 28
+- **OpenVPN bridge for bundled Transmission** — Phase 29
+- **v1.0.0 release / schema versioning** — Phase 31
 - **Dashboard Transmission proxy** — Phase 20
 
 ## Current Planning Posture
 
 - product phases `01`–`19` are implemented in the current delivery stack; **Phase 19** is delivered via `P19.01`–`P19.08`
 - **Phase 20** (dashboard torrent proxy) is **shipped** on `main`
-- **Phases 21–26** are shipped on `main`; **Phase 29** remains the current product-completion planning bucket for UX/UI polish
-- **Phase 30** (v1.0.0 / schema versioning) remains the release/versioning ceremony after product-completion phases are done
+- **Phases 21–26** are shipped on `main`; **Phases 27–29** are the release-blocking Synology install, owner security, and OpenVPN bridge planning sequence
+- **Phase 30** remains the release-critical UX/UI polish bucket after functional completion
+- **Phase 31** (v1.0.0 / schema versioning) remains the release/versioning ceremony after product-completion phases are done
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
@@ -680,4 +723,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-25 (Phases 20, 21, 22, 23, 24, 25, and 26 are delivered on `main`; Phase 29 remains the current product-planning bucket; Phase 30 remains the release/versioning phase).
+Last verified against `README.md` and active delivery plans: 2026-04-25 (Phases 20, 21, 22, 23, 24, 25, and 26 are delivered on `main`; Phases 27–29 are the current release-blocking product-planning sequence; Phase 30 is release-critical polish; Phase 31 remains the release/versioning phase).

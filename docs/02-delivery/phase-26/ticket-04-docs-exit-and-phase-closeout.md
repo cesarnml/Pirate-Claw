@@ -15,7 +15,7 @@ Close Phase 26 with final overview/operator documentation, status updates, and a
 
 - new runtime behavior
 - new Mac runbook mechanics beyond consolidating already-delivered guidance
-- Phase 29 UX/UI polish or Phase 30 release/versioning work
+- Phase 30 UX/UI polish or Phase 31 release/versioning work
 
 ## Exit Condition
 
@@ -23,4 +23,4 @@ Retrospective written. Overview and operator docs match the delivered Phase 26 M
 
 ## Rationale
 
-Phase 26 changes the supported always-on deployment boundary. That boundary should be closed out explicitly so Phase 29 and Phase 30 inherit a clear product story instead of reconstructing it from implementation diffs.
+Phase 26 changes the supported always-on deployment boundary. That boundary should be closed out explicitly so the later product-completion and release phases inherit a clear product story instead of reconstructing it from implementation diffs.
