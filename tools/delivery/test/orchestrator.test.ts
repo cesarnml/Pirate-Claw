@@ -38,7 +38,6 @@ import {
   mergeStandaloneAiReviewSection,
   notifyBestEffort,
   openPullRequest,
-  parseDotEnv,
   parseGitWorktreeList,
   parseAiReviewFetcherOutput,
   parseResolveReviewThreadOutput,
@@ -384,22 +383,6 @@ describe('delivery orchestrator', () => {
         branch: 'refs/heads/agents/ai-code-review-template-boundary',
       },
     ]);
-  });
-
-  it('parses dotenv content for missing process env hydration', () => {
-    expect(
-      parseDotEnv(
-        [
-          '# comment',
-          'TELEGRAM_BOT_TOKEN=bot-token',
-          'TELEGRAM_CHAT_ID="chat-id"',
-          '',
-        ].join('\n'),
-      ),
-    ).toEqual({
-      TELEGRAM_BOT_TOKEN: 'bot-token',
-      TELEGRAM_CHAT_ID: 'chat-id',
-    });
   });
 
   it('prefers existing ticket-id branch matches over title-derived names', () => {
