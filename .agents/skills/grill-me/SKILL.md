@@ -18,7 +18,10 @@ Works in Plan Mode and Ask Mode. Prefer whichever the developer initiates from; 
 
 - One question at a time. After the answer, ask the next single best question — never batch.
 - Prefix with progress: `Question N of ~M` (M shifts as branches open or close — expected and fine).
-- Give your recommended answer so the developer can agree, disagree, or refine.
+- For each question, include:
+  - **Recommendation:** your preferred answer and why — be direct, not hedged.
+  - **Opposing view:** the strongest case against your recommendation. Steelman it.
+  - **Tradeoffs:** brief pros/cons of the main strategies under consideration (bullet list, not prose).
 - If the codebase can answer a question, inspect it instead of asking.
 - Walk the decision tree: scope → dependencies → sequence → tradeoffs → edge cases → success criteria.
 
