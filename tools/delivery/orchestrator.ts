@@ -5,13 +5,13 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { getUsage, parseCliArgs, resolveOptionsForCommand } from './cli';
 import { ensureEnvReady as ensureEnvReadyImpl } from './env';
 import {
-  loadOrchestratorConfig as loadOrchestratorConfigImpl,
-  resolveOrchestratorConfig as resolveOrchestratorConfigImpl,
-  type OrchestratorConfig,
-  type ReviewPolicyStageValue,
-  type ResolvedOrchestratorConfig,
-  type TicketBoundaryMode,
-} from './config';
+  _config,
+  generateRunDeliverInvocation,
+  initOrchestratorConfig,
+  loadOrchestratorConfig,
+  resolveOrchestratorConfig,
+} from './runtime-config';
+import type { ReviewPolicyStageValue, TicketBoundaryMode } from './config';
 import type {
   AiReviewComment,
   AiReviewThreadResolution,
@@ -206,74 +206,22 @@ type BranchMatch = {
   source: 'ticket-id' | 'derived';
 };
 
-export type { OrchestratorConfig, ResolvedOrchestratorConfig } from './config';
-
+export {
+  generateRunDeliverInvocation,
+  getOrchestratorConfig,
+  inferPackageManager,
+  initOrchestratorConfig,
+  loadOrchestratorConfig,
+  resolveOrchestratorConfig,
+  VALID_REVIEW_POLICY_STAGE_VALUES,
+} from './runtime-config';
 export type {
+  OrchestratorConfig,
+  ResolvedOrchestratorConfig,
   ResolvedReviewPolicy,
   ReviewPolicy,
   ReviewPolicyStageValue,
-} from './config';
-
-let _config: ResolvedOrchestratorConfig = {
-  defaultBranch: 'main',
-  planRoot: 'docs',
-  runtime: 'bun',
-  packageManager: 'npm',
-  ticketBoundaryMode: 'cook',
-  reviewPolicy: {
-    selfAudit: 'skip_doc_only',
-    codexPreflight: 'skip_doc_only',
-    externalReview: 'skip_doc_only',
-  },
-};
-
-export function initOrchestratorConfig(
-  config: Omit<ResolvedOrchestratorConfig, 'reviewPolicy'> & {
-    reviewPolicy?: ResolvedOrchestratorConfig['reviewPolicy'];
-  },
-): void {
-  _config = {
-    ..._config,
-    ...config,
-    reviewPolicy: config.reviewPolicy ?? {
-      selfAudit: 'skip_doc_only',
-      codexPreflight: 'skip_doc_only',
-      externalReview: 'skip_doc_only',
-    },
-  };
-}
-
-export function getOrchestratorConfig(): ResolvedOrchestratorConfig {
-  return _config;
-}
-
-export async function loadOrchestratorConfig(
-  cwd: string,
-): Promise<OrchestratorConfig> {
-  return loadOrchestratorConfigImpl(cwd);
-}
-
-export function resolveOrchestratorConfig(
-  raw: OrchestratorConfig,
-  cwd: string,
-): ResolvedOrchestratorConfig {
-  return resolveOrchestratorConfigImpl(raw, cwd);
-}
-
-export {
-  inferPackageManager,
-  VALID_REVIEW_POLICY_STAGE_VALUES,
-} from './config';
-
-export function generateRunDeliverInvocation(
-  packageManager: ResolvedOrchestratorConfig['packageManager'],
-): string {
-  if (packageManager === 'npm') {
-    return 'npm run deliver --';
-  }
-
-  return `${packageManager} run deliver`;
-}
+} from './runtime-config';
 
 export async function runDeliveryOrchestrator(
   argv: string[],
@@ -299,12 +247,15 @@ export async function runDeliveryOrchestrator(
       ),
     );
     parsed = parseCliArgs(argv, usage);
-    _config = resolveOrchestratorConfig(
-      {
-        ...rawConfig,
-        ticketBoundaryMode: parsed.boundaryMode ?? rawConfig.ticketBoundaryMode,
-      },
-      cwd,
+    initOrchestratorConfig(
+      resolveOrchestratorConfig(
+        {
+          ...rawConfig,
+          ticketBoundaryMode:
+            parsed.boundaryMode ?? rawConfig.ticketBoundaryMode,
+        },
+        cwd,
+      ),
     );
     const notifier = resolveNotifier();
     if (parsed.command === 'ai-review') {
