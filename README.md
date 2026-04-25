@@ -97,6 +97,17 @@ startup creates the Synology install tree if it is missing and writes generated
 app secrets under `config/generated/`. Existing directories and generated
 secret files are left untouched on later starts.
 
+Phase 27 adds the DSM Package Center source under
+[`tools/synology-spk/`](./tools/synology-spk/). Build the current `.spk` with:
+
+```bash
+tools/synology-spk/build-spk.sh
+```
+
+The DSM 7.1 package follows the validated fallback from the spike: Package
+Center installs the launcher/artifacts, and any required Docker image/import or
+volume steps stay inside DSM GUI.
+
 **Plex prerequisite:** Plex Media Server **1.43.0 or later**. Check your
 installed version in **Package Center → Installed → Plex Media Server →
 Details**. On the reviewed `DS918+ / DSM 7.1.1-42962 Update 9` baseline,

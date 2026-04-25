@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pirate Claw</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        color: #111827;
+        background: #f5f7fb;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+      }
+
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        line-height: 1.2;
+      }
+
+      h2 {
+        margin: 28px 0 10px;
+        font-size: 18px;
+      }
+
+      p,
+      li {
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        min-height: 40px;
+        margin: 16px 0 8px;
+        padding: 0 16px;
+        border-radius: 6px;
+        background: #0f5e84;
+        color: white;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      code {
+        border-radius: 4px;
+        background: #e8edf5;
+        padding: 2px 5px;
+      }
+
+      .panel {
+        margin-top: 24px;
+        border: 1px solid #d9e1ec;
+        border-radius: 8px;
+        background: white;
+        padding: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Pirate Claw</h1>
+      <p>
+        The DSM package installed the Pirate Claw launcher and placed the stack
+        artifact under <code>/volume1/pirate-claw</code> when DSM allowed it.
+      </p>
+
+      <a class="button" id="open-pirate-claw" href="#">Open Pirate Claw</a>
+
+      <section class="panel">
+        <h2>DSM 7.1 Docker GUI first run</h2>
+        <ol>
+          <li>
+            In File Station, confirm <code>/volume1/pirate-claw</code> exists.
+            If it does not, create the shared folder path and subfolders shown
+            in the install guide.
+          </li>
+          <li>
+            Confirm <code>compose.synology.yml</code> is in
+            <code>/volume1/pirate-claw</code>. If DSM could not copy it during
+            package install, upload the release-bundle copy there with File
+            Station.
+          </li>
+          <li>
+            In Docker, import or create the three services from the release
+            bundle instructions: <code>pirate-claw-web</code>,
+            <code>pirate-claw-daemon</code>, and <code>transmission</code>.
+          </li>
+          <li>
+            Mount the Pirate Claw folders through Docker's volume UI. Do not
+            type daemon tokens, Transmission credentials, JSON config, or shell
+            commands.
+          </li>
+          <li>
+            Start the containers in Docker, then use the button above to open
+            Pirate Claw on port <code>8888</code>.
+          </li>
+        </ol>
+      </section>
+    </main>
+
+    <script>
+      const host = window.location.hostname || window.location.host;
+      const target = `http://${host}:8888/`;
+      const link = document.getElementById('open-pirate-claw');
+      link.href = target;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+    </script>
+  </body>
+</html>

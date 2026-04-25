@@ -1,0 +1,11 @@
+{
+  ".url": {
+    "com.pirateclaw.Launcher": {
+      "type": "url",
+      "icon": "images/icon_{0}.png",
+      "title": "Pirate Claw",
+      "desc": "Open Pirate Claw or follow the DSM Docker GUI first-run steps.",
+      "url": "3rdparty/PirateClaw/index.html"
+    }
+  }
+}

@@ -56,7 +56,7 @@ Follow the shared guidance in [`docs/02-delivery/phase-implementation-guidance.m
 
 ## Exit Condition
 
-On the DS918+ DSM 7.1 validated baseline, a DSM-first owner can install Pirate Claw through Package Center, launch it from DSM Main Menu or `http://<nas-ip>:8888`, and see passing install health checks — without SSH, terminal commands, manual JSON edits, manual `.env` edits, or manual Docker container assembly. All required screenshots are captured and committed. The release bundle includes the DSM 7.2+ Compose artifact with explicit validation status.
+On the DS918+ DSM 7.1 validated baseline, a DSM-first owner can install Pirate Claw through Package Center, complete any required Docker image/import/volume steps through the DSM GUI, launch it from DSM Main Menu or `http://<nas-ip>:8888`, and see passing install health checks — without SSH, terminal commands, manual JSON edits, manual `.env` edits, or owner-visible secrets. All required screenshots are captured and committed. The release bundle includes the DSM 7.2+ Compose artifact with explicit validation status.
 
 ## Review Rules
 

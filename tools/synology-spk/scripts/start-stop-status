@@ -1,0 +1,55 @@
+#!/usr/bin/env sh
+set -eu
+
+INSTALL_ROOT="${PIRATE_CLAW_INSTALL_ROOT:-/volume1/pirate-claw}"
+PACKAGE_TARGET="${SYNOPKG_PKGDEST:-/var/packages/PirateClaw/target}"
+SOURCE_COMPOSE="$PACKAGE_TARGET/synology/compose.synology.yml"
+TARGET_COMPOSE="$INSTALL_ROOT/compose.synology.yml"
+LOG_FILE="/tmp/pirate-claw-spk.log"
+
+log() {
+  printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >>"$LOG_FILE" 2>/dev/null || true
+}
+
+prepare_install_root() {
+  if mkdir -p \
+    "$INSTALL_ROOT/config" \
+    "$INSTALL_ROOT/data" \
+    "$INSTALL_ROOT/downloads/incomplete" \
+    "$INSTALL_ROOT/media/movies" \
+    "$INSTALL_ROOT/media/shows" \
+    "$INSTALL_ROOT/transmission/config"; then
+    log "prepared install root at $INSTALL_ROOT"
+  else
+    log "could not prepare $INSTALL_ROOT from package hook; owner can create it with File Station"
+    return 0
+  fi
+
+  if [ -f "$SOURCE_COMPOSE" ]; then
+    if cp "$SOURCE_COMPOSE" "$TARGET_COMPOSE"; then
+      log "copied compose artifact to $TARGET_COMPOSE"
+    else
+      log "could not copy compose artifact to $TARGET_COMPOSE"
+    fi
+  else
+    log "compose artifact missing at $SOURCE_COMPOSE"
+  fi
+}
+
+case "${1:-status}" in
+  start)
+    prepare_install_root
+    exit 0
+    ;;
+  stop)
+    log "Pirate Claw launcher package stopped; Docker GUI-managed stack is left unchanged"
+    exit 0
+    ;;
+  status)
+    exit 0
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status}" >&2
+    exit 1
+    ;;
+esac

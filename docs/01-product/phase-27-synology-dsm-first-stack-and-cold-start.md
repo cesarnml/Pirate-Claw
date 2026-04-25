@@ -65,7 +65,7 @@ The release-critical path is the real NAS baseline already used by the project:
 - legacy DSM `Docker` package
 - Package Center manual install of `pirate-claw.spk`
 
-The `.spk` installer must fully create and start the Pirate Claw stack. It must not install only a helper that asks the owner to hand-create Docker containers.
+After the P27.01 DSM 7.1 spike, the validated `.spk` path is a Package Center launcher/artifact package plus DSM Docker GUI fallback. Package Center hooks must not be treated as the Docker orchestration boundary unless later validation proves that path. The fallback remains supported only while all Docker image/import/volume steps are performed through DSM GUI and do not require SSH, Docker CLI, hand-edited files, or owner-visible secrets.
 
 ### Modern Path: DSM 7.2+ Container Manager Project
 
@@ -222,7 +222,7 @@ DSM 7.2+ screenshots may be marked pending external validation until a tester ve
 
 ## Exit Condition
 
-On the DS918+ DSM 7.1 validated baseline, a DSM-first owner can install Pirate Claw through Package Center, launch it from DSM or `http://<nas-ip>:8888`, and see passing install health checks without SSH, terminal commands, manual JSON edits, manual `.env` edits, or manual Docker container assembly.
+On the DS918+ DSM 7.1 validated baseline, a DSM-first owner can install Pirate Claw through Package Center, complete any required Docker image/import/volume steps through DSM GUI, launch it from DSM or `http://<nas-ip>:8888`, and see passing install health checks without SSH, terminal commands, manual JSON edits, manual `.env` edits, or owner-visible secrets.
 
 The release bundle also contains the DSM 7.2+ Compose Project artifact with explicit validation status.
 
