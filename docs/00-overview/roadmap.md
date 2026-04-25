@@ -610,7 +610,7 @@ Current status:
 - see [`docs/mac-runbook.md`](../mac-runbook.md)
 - see [`docs/mac-launchd-reference.md`](../mac-launchd-reference.md)
 
-## Phase 27: UX/UI Polish After Functional Completion
+## Phase 29: UX/UI Polish After Functional Completion
 
 Goal:
 
@@ -619,9 +619,9 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-27-ux-ui-polish-after-functional-completion.md`](../01-product/phase-27-ux-ui-polish-after-functional-completion.md)
+- product definition only; see [`docs/01-product/phase-29-ux-ui-polish-after-functional-completion.md`](../01-product/phase-29-ux-ui-polish-after-functional-completion.md)
 
-## Phase 28: v1.0.0 Release and Schema Versioning
+## Phase 30: v1.0.0 Release and Schema Versioning
 
 Goal:
 
@@ -632,7 +632,7 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-28-v1-release-and-schema-versioning.md`](../01-product/phase-28-v1-release-and-schema-versioning.md)
+- product definition only; see [`docs/01-product/phase-30-v1-release-and-schema-versioning.md`](../01-product/phase-30-v1-release-and-schema-versioning.md)
 
 ## Future Deferrals
 
@@ -645,7 +645,7 @@ These items are still explicitly deferred or not yet assigned a numbered phase:
 The following items are **mapped** to numbered phases (no longer “unbounded” deferrals):
 
 - **Config editor via web UI** — Phase 13 (runtime subset); Phase 14 (feeds, movies, TV defaults); Phase 16 (unified UX)
-- **Visual polish / design system iteration** — Phase 12 (baseline); Phase 19 (full Obsidian Tide redesign); Phase 27 (post-functional completion polish)
+- **Visual polish / design system iteration** — Phase 12 (baseline); Phase 19 (full Obsidian Tide redesign); Phase 29 (post-functional completion polish)
 - **Plex Media Server enrichment** — Phase 18
 - **Zero hand-edited bootstrap** — Phase 21
 - **Browser-only first-run setup** — Phase 22
@@ -653,15 +653,15 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 - **Synology restart-backed completion** — Phase 24
 - **Browser restart round-trip proof** — Phase 25
 - **Mac first-class always-on deployment** — Phase 26
-- **v1.0.0 release / schema versioning** — Phase 28
+- **v1.0.0 release / schema versioning** — Phase 30
 - **Dashboard Transmission proxy** — Phase 20
 
 ## Current Planning Posture
 
 - product phases `01`–`19` are implemented in the current delivery stack; **Phase 19** is delivered via `P19.01`–`P19.08`
 - **Phase 20** (dashboard torrent proxy) is **shipped** on `main`
-- **Phases 21–25** are shipped on `main`; **Phases 26–27** remain the current product-completion planning buckets: Mac first-class always-on deployment and UX/UI polish
-- **Phase 28** (v1.0.0 / schema versioning) remains the release/versioning ceremony after product-completion phases are done
+- **Phases 21–26** are shipped on `main`; **Phase 29** remains the current product-completion planning bucket for UX/UI polish
+- **Phase 30** (v1.0.0 / schema versioning) remains the release/versioning ceremony after product-completion phases are done
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
@@ -680,4 +680,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-23 (Phases 20, 21, 22, 23, 24, and 25 are delivered on `main`; Phases 26 and 27 remain the current product-planning buckets; Phase 28 remains the release/versioning phase).
+Last verified against `README.md` and active delivery plans: 2026-04-25 (Phases 20, 21, 22, 23, 24, 25, and 26 are delivered on `main`; Phase 29 remains the current product-planning bucket; Phase 30 remains the release/versioning phase).

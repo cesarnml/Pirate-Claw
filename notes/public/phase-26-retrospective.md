@@ -1,6 +1,6 @@
 ## Scope delivered
 
-Phase 26 shipped across stacked PRs for `P26.01` through `P26.04` on the `agents/p26-01-...` through `agents/p26-04-...` stack. Delivered scope: a repo-owned Mac `launchd` reference artifact and boundary contract, a real-machine Apple Silicon validation harness that proved restart truthfulness under per-user `launchd`, a dedicated Mac operator runbook plus README truthfulness updates, and the overview/retrospective closeout needed to hand Phase 27 a settled deployment story.
+Phase 26 shipped across stacked PRs for `P26.01` through `P26.04` on the `agents/p26-01-...` through `agents/p26-04-...` stack. Delivered scope: a repo-owned Mac `launchd` reference artifact and boundary contract, a real-machine Apple Silicon validation harness that proved restart truthfulness under per-user `launchd`, a dedicated Mac operator runbook plus README truthfulness updates, and the overview/retrospective closeout needed to hand Phase 29 a settled deployment story.
 
 ## What went well
 
@@ -20,11 +20,11 @@ We would teach the orchestrator a slightly more atomic happy path for docs-only/
 
 ## Net assessment
 
-Phase 26 achieved its goal. Pirate Claw now has a truthful Mac always-on story: one supported Apple Silicon `launchd` supervisor contract, one durable install boundary, one real-machine validation proof for restart-backed behavior, and one dedicated operator runbook that does not blur into the Synology deployment path. The remaining product-completion work is no longer deployment truth; it is Phase 27 polish and then Phase 28 release/versioning ceremony.
+Phase 26 achieved its goal. Pirate Claw now has a truthful Mac always-on story: one supported Apple Silicon `launchd` supervisor contract, one durable install boundary, one real-machine validation proof for restart-backed behavior, and one dedicated operator runbook that does not blur into the Synology deployment path. The remaining product-completion work is no longer deployment truth; it is Phase 29 polish and then Phase 30 release/versioning ceremony.
 
 ## Follow-up
 
-- Phase 27 should treat the Mac and Synology deployment stories as settled operator boundaries and avoid reopening them casually while polishing the UI.
+- Phase 29 should treat the Mac and Synology deployment stories as settled operator boundaries and avoid reopening them casually while polishing the UI.
 - The orchestrator should consider smoothing state transitions for docs-only or `externalReview: disabled` tickets so immediate `advance` retries are less timing-sensitive.
 - If Pirate Claw ever widens Mac support beyond Apple Silicon or per-user `launchd`, that should be a new explicit phase or bounded follow-up rather than an incidental runbook edit.
 

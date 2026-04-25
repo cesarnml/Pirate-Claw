@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 26** in the active delivery stack (product phases 01–26; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–26 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec remains the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI, **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) remains the dashboard-as-Transmission-proxy contract, **Phase 23** ([`phase-23-plex-browser-auth-and-credential-lifecycle.md`](../01-product/phase-23-plex-browser-auth-and-credential-lifecycle.md)) remains the live Plex auth/lifecycle contract, **Phase 24** ([`phase-24-synology-supervision-and-restart.md`](../01-product/phase-24-synology-supervision-and-restart.md)) remains the durable restart/supervision boundary, **Phase 25** ([`phase-25-in-browser-restart-round-trip-proof.md`](../01-product/phase-25-in-browser-restart-round-trip-proof.md)) remains the live browser restart round-trip contract, and **Phase 26** ([`phase-26-mac-first-class-always-on-deployment.md`](../01-product/phase-26-mac-first-class-always-on-deployment.md)) is now the active Mac always-on deployment contract. **Phase 27** is the remaining product-completion polish phase before **Phase 28** ([`phase-28-v1-release-and-schema-versioning.md`](../01-product/phase-28-v1-release-and-schema-versioning.md)) handles the v1.0.0 / schema-versioning release ceremony.
+Pirate Claw is implemented through **Phase 26** in the active delivery stack (product phases 01–26; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–26 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec remains the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI, **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) remains the dashboard-as-Transmission-proxy contract, **Phase 23** ([`phase-23-plex-browser-auth-and-credential-lifecycle.md`](../01-product/phase-23-plex-browser-auth-and-credential-lifecycle.md)) remains the live Plex auth/lifecycle contract, **Phase 24** ([`phase-24-synology-supervision-and-restart.md`](../01-product/phase-24-synology-supervision-and-restart.md)) remains the durable restart/supervision boundary, **Phase 25** ([`phase-25-in-browser-restart-round-trip-proof.md`](../01-product/phase-25-in-browser-restart-round-trip-proof.md)) remains the live browser restart round-trip contract, and **Phase 26** ([`phase-26-mac-first-class-always-on-deployment.md`](../01-product/phase-26-mac-first-class-always-on-deployment.md)) is now the active Mac always-on deployment contract. **Phase 29** is the remaining product-completion polish phase before **Phase 30** ([`phase-30-v1-release-and-schema-versioning.md`](../01-product/phase-30-v1-release-and-schema-versioning.md)) handles the v1.0.0 / schema-versioning release ceremony.
 
 Current delivered surface:
 
@@ -52,7 +52,7 @@ Current product boundary:
 - daemon HTTP API with read endpoints plus bounded write controls (`/api/config*`, `/api/daemon/restart`, `/api/transmission/ping`, and Phase 19 TV-detail TMDB refresh) when `runtime.apiPort` is configured; **Phase 20** (shipped) adds Transmission torrent lifecycle JSON actions, missing-torrent dispose, and `POST /api/candidates/:id/requeue` on the same port — requeue requires the daemon process to host the Transmission downloader alongside the API
 - TMDB metadata is display-only and does not gate RSS intake
 
-Still deferred (beyond the current Phase 21–25 planning sequence):
+Still deferred (beyond the current Phase 21–26 completion sequence):
 
 - remote feed capture
 - hosted persistence
@@ -60,17 +60,17 @@ Still deferred (beyond the current Phase 21–25 planning sequence):
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md`, roadmap, and active product docs: 2026-04-23.
+Last verified against `README.md`, roadmap, and active product docs: 2026-04-25.
 
 Current planning focus:
 
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
-- the next product-completion planning bucket is Phase 27 (post-functional UX/UI polish)
+- the next product-completion planning bucket is Phase 29 (post-functional UX/UI polish)
 - treat the shipped Phase 25 browser proof as a follow-on to the Phase 24 restart contract, not as a replacement for the persisted Plex auth/device boundary
 - treat the shipped Phase 26 Mac `launchd` path as a parallel supported deployment contract alongside the reviewed Synology runbook, not as a reason to merge those operator runbooks together
-- Phase 28 (`schemaVersion`, tagged v1, `VERSIONING.md`, changelog) is the release/versioning ceremony after the remaining product-completion phase lands; keep Phase 20 dashboard torrent work in [`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md), not under the Phase 19 contract
+- Phase 30 (`schemaVersion`, tagged v1, `VERSIONING.md`, changelog) is the release/versioning ceremony after the remaining product-completion phase lands; keep Phase 20 dashboard torrent work in [`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md), not under the Phase 19 contract
 
 ## Read These Docs By Task Type
 

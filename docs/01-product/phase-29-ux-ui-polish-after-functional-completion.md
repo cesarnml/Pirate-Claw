@@ -1,8 +1,8 @@
-# Phase 27: UX/UI Polish After Functional Completion
+# Phase 29: UX/UI Polish After Functional Completion
 
-**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-27/` implementation plan until tickets are approved.
+**Delivery status:** Not started — product definition only; no `docs/02-delivery/phase-29/` implementation plan until tickets are approved.
 
-Phase 27 is intentionally sequenced after Phases 21–26. Pirate Claw should finish the functional product-completion path first: bootstrap, browser-only setup, dependable Plex auth lifecycle handling, dependable Synology restart-backed operation, browser restart round-trip proof, and Mac first-class always-on deployment. Only then should the next major phase be a broad UX/UI polish pass.
+Phase 29 is intentionally sequenced after Phases 21–26. Pirate Claw should finish the functional product-completion path first: bootstrap, browser-only setup, dependable Plex auth lifecycle handling, dependable Synology restart-backed operation, browser restart round-trip proof, and Mac first-class always-on deployment. Only then should the next major phase be a broad UX/UI polish pass.
 
 ## TL;DR
 
@@ -14,7 +14,7 @@ Phase 27 is intentionally sequenced after Phases 21–26. Pirate Claw should fin
 
 ## Phase Goal
 
-Phase 27 should leave Pirate Claw in a state where:
+Phase 29 should leave Pirate Claw in a state where:
 
 - functional setup is already complete before polish work begins
 - operational surfaces are clearer, more legible, and more cohesive
@@ -37,8 +37,8 @@ Phase 27 should leave Pirate Claw in a state where:
 
 ## Exit Condition
 
-Pirate Claw is already functionally complete for first-run bootstrap, browser-only setup, Plex auth lifecycle handling, restart proof, and always-on deployment on its supported reference platforms; Phase 27 then leaves the interface more cohesive, polished, and trustworthy without changing the core product contract.
+Pirate Claw is already functionally complete for first-run bootstrap, browser-only setup, Plex auth lifecycle handling, restart proof, and always-on deployment on its supported reference platforms; Phase 29 then leaves the interface more cohesive, polished, and trustworthy without changing the core product contract.
 
 ## Rationale
 
-Previous visual phases improved the interface while meaningful setup and deployment gaps still remained. Phase 27 deliberately inverts that priority. The product should first earn the right to be polished by being complete where it matters: zero hand-edited files, browser-only setup, dependable Plex auth lifecycle handling, truthful restart proof, and dependable always-on deployment on supported platforms.
+Previous visual phases improved the interface while meaningful setup and deployment gaps still remained. Phase 29 deliberately inverts that priority. The product should first earn the right to be polished by being complete where it matters: zero hand-edited files, browser-only setup, dependable Plex auth lifecycle handling, truthful restart proof, and dependable always-on deployment on supported platforms.
