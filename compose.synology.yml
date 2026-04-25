@@ -1,0 +1,95 @@
+name: pirate-claw-synology
+
+x-install-root: &install-root ${PIRATE_CLAW_INSTALL_ROOT:-/volume1/pirate-claw}
+x-container-install-root: &container-install-root /volume1/pirate-claw
+x-daemon-token-file: &daemon-token-file /volume1/pirate-claw/config/generated/daemon-api-write-token
+
+services:
+  pirate-claw-daemon:
+    image: pirate-claw:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ['bun', 'run', '/app/dist/cli.js']
+    command:
+      [
+        'daemon',
+        '--config',
+        '/volume1/pirate-claw/config/pirate-claw.config.json',
+      ]
+    working_dir: /volume1/pirate-claw/data
+    restart: unless-stopped
+    environment:
+      PIRATE_CLAW_INSTALL_ROOT: *container-install-root
+      PIRATE_CLAW_API_HOST: 0.0.0.0
+      PIRATE_CLAW_API_PORT: '5555'
+      PIRATE_CLAW_TRANSMISSION_URL: http://transmission:9091/transmission/rpc
+    expose:
+      - '5555'
+    volumes:
+      - type: bind
+        source: *install-root
+        target: /volume1/pirate-claw
+    depends_on:
+      - transmission
+    networks:
+      - pirate-claw
+
+  pirate-claw-web:
+    image: pirate-claw-web:latest
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    command:
+      - sh
+      - -c
+      - |
+        while [ ! -s "$$PIRATE_CLAW_DAEMON_TOKEN_FILE" ]; do sleep 1; done
+        export PIRATE_CLAW_API_WRITE_TOKEN="$$(cat "$$PIRATE_CLAW_DAEMON_TOKEN_FILE")"
+        exec node build
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: '8888'
+      PIRATE_CLAW_API_URL: http://pirate-claw-daemon:5555
+      PIRATE_CLAW_DAEMON_TOKEN_FILE: *daemon-token-file
+    ports:
+      - '8888:8888'
+    volumes:
+      - type: bind
+        source: *install-root
+        target: /volume1/pirate-claw
+        read_only: true
+    depends_on:
+      - pirate-claw-daemon
+    networks:
+      - pirate-claw
+
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    restart: unless-stopped
+    environment:
+      PUID: '1026'
+      PGID: '100'
+      TZ: UTC
+    expose:
+      - '9091'
+    volumes:
+      - type: bind
+        source: ${PIRATE_CLAW_INSTALL_ROOT:-/volume1/pirate-claw}/transmission/config
+        target: /config
+      - type: bind
+        source: ${PIRATE_CLAW_INSTALL_ROOT:-/volume1/pirate-claw}/downloads
+        target: /downloads
+      - type: bind
+        source: ${PIRATE_CLAW_INSTALL_ROOT:-/volume1/pirate-claw}/downloads/incomplete
+        target: /incomplete-downloads
+      - type: bind
+        source: ${PIRATE_CLAW_INSTALL_ROOT:-/volume1/pirate-claw}/media
+        target: /media
+    networks:
+      - pirate-claw
+
+networks:
+  pirate-claw:
+    name: pirate-claw

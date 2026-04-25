@@ -32,4 +32,16 @@ Both compose files exist. `compose.synology.yml` starts the three-service stack 
 
 ## Rationale
 
-_To be completed after implementation._
+Added `compose.synology.yml` for the DSM 7.1 baseline and `compose.synology.cm.yml` for the DSM 7.2+ Container Manager artifact. Both define the same three-service stack (`pirate-claw-web`, `pirate-claw-daemon`, `transmission`), publish only `pirate-claw-web` on host port `8888`, keep daemon `5555` and Transmission `9091` internal, and use service-name URLs for web → daemon and daemon → Transmission communication.
+
+The compose files intentionally do not inline secret values. The daemon generates `config/generated/daemon-api-write-token` through the P27.02 first-startup bootstrap. The web service waits for that file, reads it at process start, and exports `PIRATE_CLAW_API_WRITE_TOKEN` internally so the owner does not hand-enter the write token in compose or DSM.
+
+Small runtime config additions were needed to make the compose contract real rather than only documented: `PIRATE_CLAW_API_HOST` lets the daemon bind `0.0.0.0` inside the private Docker network while preserving the local default of `127.0.0.1`; `PIRATE_CLAW_API_PORT` enables the daemon API without hand-editing starter JSON; and `PIRATE_CLAW_TRANSMISSION_URL` lets the bundled stack use `http://transmission:9091/transmission/rpc` while the on-disk starter config remains non-secret and operator-editable later.
+
+Local validation used:
+
+```bash
+PIRATE_CLAW_INSTALL_ROOT="$(pwd)/.pirate-claw/compose-validation" docker compose -f compose.synology.yml up --build -d
+```
+
+Result: all three containers started; Docker published only `0.0.0.0:8888->8888/tcp`; the daemon logged `api listening on 0.0.0.0:5555`; `curl http://127.0.0.1:8888/` returned `200`; the web container fetched `http://pirate-claw-daemon:5555/api/status` with `200`; and the daemon effective config reported Transmission URL `http://transmission:9091/transmission/rpc` with the API write token redacted.

@@ -145,6 +145,16 @@ describe('validateConfig', () => {
     expect(config.transmission.password).toBe('pass');
   });
 
+  it('prefers PIRATE_CLAW_TRANSMISSION_URL over inline transmission URL', () => {
+    const config = validateConfig(createMinimalConfig(), 'config', {
+      PIRATE_CLAW_TRANSMISSION_URL: 'http://transmission:9091/transmission/rpc',
+    });
+
+    expect(config.transmission.url).toBe(
+      'http://transmission:9091/transmission/rpc',
+    );
+  });
+
   it('normalizes tv and movie allowlists to lowercase', () => {
     const config = validateConfig({
       feeds: [
@@ -400,6 +410,24 @@ describe('validateConfig', () => {
     });
 
     expect(config.runtime.apiPort).toBe(5555);
+  });
+
+  it('accepts runtime.apiPort and runtime.apiHost from env', () => {
+    const config = validateConfig(createMinimalConfig(), 'config', {
+      PIRATE_CLAW_API_PORT: '5555',
+      PIRATE_CLAW_API_HOST: '0.0.0.0',
+    });
+
+    expect(config.runtime.apiPort).toBe(5555);
+    expect(config.runtime.apiHost).toBe('0.0.0.0');
+  });
+
+  it('fails when PIRATE_CLAW_API_PORT is not an integer', () => {
+    expect(() =>
+      validateConfig(createMinimalConfig(), 'config', {
+        PIRATE_CLAW_API_PORT: 'not-a-port',
+      }),
+    ).toThrow(/runtime apiPort.*positive integer/);
   });
 
   it('accepts runtime.tmdbRefreshIntervalMinutes zero to disable background refresh', () => {

@@ -137,7 +137,7 @@ Config file: `pirate-claw.config.json` (see [`pirate-claw.config.example.json`](
 - `tv` — compact `defaults + shows` object or legacy per-show array
 - `movies` — global year, resolution, codec, and `codecPolicy` (`"prefer"` or `"require"`)
 - `transmission` — RPC URL, credentials, optional `downloadDirs` per media type
-- `runtime` — daemon scheduling and artifacts; `apiPort` enables HTTP API; `apiWriteToken` enables config writes; `installRoot` or `PIRATE_CLAW_INSTALL_ROOT` enables Synology first-startup directory and secret bootstrap; `tmdbRefreshIntervalMinutes` controls background TMDB refresh (default 360, `0` disables)
+- `runtime` — daemon scheduling and artifacts; `apiPort` enables HTTP API; `apiHost` controls the API bind address; `apiWriteToken` enables config writes; `installRoot` or `PIRATE_CLAW_INSTALL_ROOT` enables Synology first-startup directory and secret bootstrap; `tmdbRefreshIntervalMinutes` controls background TMDB refresh (default 360, `0` disables)
 - `tmdb` — optional `apiKey` (or env `PIRATE_CLAW_TMDB_API_KEY`) and cache TTL overrides
 - `plex` — optional operator-managed `url`, the current usable `token` (normally browser-managed after Connect Plex; env override via `PIRATE_CLAW_PLEX_TOKEN` still works), and `refreshIntervalMinutes` for library/watch refresh cadence
 

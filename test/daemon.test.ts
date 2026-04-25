@@ -323,9 +323,11 @@ describe('daemon', () => {
       artifactDir: '.pirate-claw/runtime',
       artifactRetentionDays: 7,
       apiPort: 8080,
+      apiHost: '0.0.0.0',
     });
 
     expect(options.apiPort).toBe(8080);
+    expect(options.apiHost).toBe('0.0.0.0');
   });
 
   it('passes plex refresh interval through daemonOptionsFromConfig', () => {
@@ -412,7 +414,9 @@ describe('daemon', () => {
       fetch: () => Response.json({ ok: true }),
     });
 
-    expect(log.some((m) => m.startsWith('api listening on port'))).toBe(true);
+    expect(log.some((m) => m.startsWith('api listening on 127.0.0.1:'))).toBe(
+      true,
+    );
     expect(log).toContain('api stopped');
     expect(log).toContain('daemon stopped');
   });
@@ -460,9 +464,13 @@ describe('daemon', () => {
     await runDaemonLoop({
       runCycle: async () => {
         // capture port from log
-        const portMsg = log.find((m) => m.startsWith('api listening on port'));
+        const portMsg = log.find((m) =>
+          m.startsWith('api listening on 127.0.0.1:'),
+        );
         if (portMsg) {
-          serverPort = Number(portMsg.replace('api listening on port ', ''));
+          serverPort = Number(
+            portMsg.replace('api listening on 127.0.0.1:', ''),
+          );
         }
         controller.abort();
       },

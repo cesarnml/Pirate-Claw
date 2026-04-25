@@ -50,6 +50,7 @@ export type RuntimeConfig = {
   artifactDir: string;
   artifactRetentionDays: number;
   apiPort?: number;
+  apiHost?: string;
   apiWriteToken?: string;
   installRoot?: string;
   /**
@@ -98,8 +99,11 @@ export type AppConfig = {
 };
 
 const DEFAULT_CONFIG_PATH = 'pirate-claw.config.json';
+const TRANSMISSION_URL_ENV = 'PIRATE_CLAW_TRANSMISSION_URL';
 const TRANSMISSION_USERNAME_ENV = 'PIRATE_CLAW_TRANSMISSION_USERNAME';
 const TRANSMISSION_PASSWORD_ENV = 'PIRATE_CLAW_TRANSMISSION_PASSWORD';
+const API_HOST_ENV = 'PIRATE_CLAW_API_HOST';
+const API_PORT_ENV = 'PIRATE_CLAW_API_PORT';
 const API_WRITE_TOKEN_ENV = 'PIRATE_CLAW_API_WRITE_TOKEN';
 const INSTALL_ROOT_ENV = 'PIRATE_CLAW_INSTALL_ROOT';
 const PLEX_TOKEN_ENV = 'PIRATE_CLAW_PLEX_TOKEN';
@@ -393,7 +397,12 @@ function validateTransmission(
   env: Record<string, string | undefined>,
 ): TransmissionConfig {
   return {
-    url: requireString(input, 'url', `${path} transmission`),
+    url:
+      resolveOptionalString(
+        input.url,
+        env[TRANSMISSION_URL_ENV],
+        `${path} transmission url`,
+      ) ?? requireString(input, 'url', `${path} transmission`),
     username: resolveTransmissionSecret(
       input.username,
       env[TRANSMISSION_USERNAME_ENV],
@@ -743,6 +752,17 @@ function validateRuntime(
   env: Record<string, string | undefined>,
 ): RuntimeConfig {
   if (input === undefined) {
+    const apiPort = resolveOptionalPositiveInteger(
+      undefined,
+      env[API_PORT_ENV],
+      `${path} runtime apiPort`,
+      API_PORT_ENV,
+    );
+    const apiHost = resolveOptionalString(
+      undefined,
+      env[API_HOST_ENV],
+      `${path} runtime apiHost`,
+    );
     const apiWriteToken = resolveApiWriteToken(
       undefined,
       env[API_WRITE_TOKEN_ENV],
@@ -756,12 +776,25 @@ function validateRuntime(
 
     return {
       ...DEFAULT_RUNTIME_CONFIG,
+      ...(apiPort ? { apiPort } : {}),
+      ...(apiHost ? { apiHost } : {}),
       ...(apiWriteToken ? { apiWriteToken } : {}),
       ...(installRoot ? { installRoot } : {}),
     };
   }
 
   const runtime = expectRecord(input, `${path} runtime`);
+  const apiPort = resolveOptionalPositiveInteger(
+    runtime.apiPort,
+    env[API_PORT_ENV],
+    `${path} runtime apiPort`,
+    API_PORT_ENV,
+  );
+  const apiHost = resolveOptionalString(
+    runtime.apiHost,
+    env[API_HOST_ENV],
+    `${path} runtime apiHost`,
+  );
   const apiWriteToken = resolveApiWriteToken(
     runtime.apiWriteToken,
     env[API_WRITE_TOKEN_ENV],
@@ -792,10 +825,8 @@ function validateRuntime(
         runtime.artifactRetentionDays,
         `${path} runtime artifactRetentionDays`,
       ) ?? DEFAULT_RUNTIME_CONFIG.artifactRetentionDays,
-    apiPort: optionalPositiveInteger(
-      runtime.apiPort,
-      `${path} runtime apiPort`,
-    ),
+    ...(apiPort ? { apiPort } : {}),
+    ...(apiHost ? { apiHost } : {}),
     ...(apiWriteToken ? { apiWriteToken } : {}),
     ...(installRoot ? { installRoot } : {}),
     tmdbRefreshIntervalMinutes:
@@ -917,6 +948,27 @@ function optionalPositiveInteger(
   }
 
   return input;
+}
+
+function resolveOptionalPositiveInteger(
+  inlineValue: unknown,
+  envValue: string | undefined,
+  path: string,
+  envKey: string,
+): number | undefined {
+  if (typeof envValue === 'string' && envValue.length > 0) {
+    const parsed = Number(envValue);
+
+    if (!Number.isInteger(parsed)) {
+      throw new ConfigError(
+        `Config file "${path}" must be a positive integer (1–${MAX_PORT}) or come from ${envKey} as a positive integer.`,
+      );
+    }
+
+    return optionalPositiveInteger(parsed, path);
+  }
+
+  return optionalPositiveInteger(inlineValue, path);
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {

@@ -161,6 +161,7 @@ export type RuntimeConfig = {
 	artifactDir: string;
 	artifactRetentionDays: number;
 	apiPort?: number;
+	apiHost?: string;
 	apiWriteToken?: string;
 	installRoot?: string;
 	tmdbRefreshIntervalMinutes?: number;

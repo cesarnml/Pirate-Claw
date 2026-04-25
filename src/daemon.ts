@@ -5,6 +5,7 @@ export type DaemonOptions = {
   runIntervalMs: number;
   reconcileIntervalMs: number;
   apiPort?: number;
+  apiHost?: string;
   /** When set (TMDB configured + interval > 0), daemon schedules background refreshes. */
   tmdbRefreshIntervalMs?: number;
   /** When set (Plex configured + interval > 0), daemon schedules background refreshes. */
@@ -20,6 +21,7 @@ export function daemonOptionsFromConfig(
     runIntervalMs: runtime.runIntervalMinutes * 60 * 1000,
     reconcileIntervalMs: runtime.reconcileIntervalSeconds * 1000,
     apiPort: runtime.apiPort,
+    apiHost: runtime.apiHost,
     tmdbRefreshIntervalMs:
       tmdbMin != null && tmdbMin > 0 ? tmdbMin * 60 * 1000 : undefined,
     plexRefreshIntervalMs:
@@ -55,23 +57,25 @@ export async function runDaemonLoop(input: {
   }
 
   if (options.apiPort != null && input.fetch) {
+    const apiHost = options.apiHost ?? '127.0.0.1';
+
     try {
       server = Bun.serve({
         port: options.apiPort,
-        hostname: '127.0.0.1',
+        hostname: apiHost,
         fetch: input.fetch,
       });
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e?.code === 'EADDRINUSE') {
         throw new Error(
-          `Cannot bind HTTP API on 127.0.0.1:${options.apiPort}: address already in use (EADDRINUSE). Stop the other process or set a different runtime.apiPort in pirate-claw.config.json. To list listeners: lsof -iTCP:${options.apiPort} -sTCP:LISTEN`,
+          `Cannot bind HTTP API on ${apiHost}:${options.apiPort}: address already in use (EADDRINUSE). Stop the other process or set a different runtime.apiPort in pirate-claw.config.json. To list listeners: lsof -iTCP:${options.apiPort} -sTCP:LISTEN`,
           { cause: err },
         );
       }
       throw err;
     }
-    log(`api listening on port ${server.port}`);
+    log(`api listening on ${apiHost}:${server.port}`);
   }
 
   const emitCycleResult = (result: CycleResult): void => {
