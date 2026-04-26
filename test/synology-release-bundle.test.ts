@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 
 const version = (await Bun.file('package.json').json()).version as string;
 const bundlePath = `.pirate-claw/synology-release/pirate-claw-synology-v${version}.zip`;
@@ -24,10 +24,6 @@ async function run(args: string[]): Promise<string> {
 }
 
 describe('Synology release bundle', () => {
-  afterAll(async () => {
-    await run(['rm', '-rf', '.pirate-claw/synology-release/test-extract']);
-  });
-
   it('assembles the expected DSM-first release zip structure', async () => {
     const output = await run([
       'tools/synology-release/build-release-bundle.sh',
