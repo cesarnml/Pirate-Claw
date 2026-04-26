@@ -3,12 +3,12 @@ import { resolve } from 'node:path';
 import { buildReviewPollCheckMinutes } from './review';
 import { readReviewArtifacts } from './review-artifacts';
 import type {
-  DeliveryState,
   DeliveryNotificationEvent,
+  DeliveryState,
   ReviewResult,
   StandaloneAiReviewResult,
   TicketState,
-} from './orchestrator';
+} from './types';
 
 export type DeliveryNotifier =
   | {

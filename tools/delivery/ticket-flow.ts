@@ -4,14 +4,14 @@ import { dirname, resolve } from 'node:path';
 
 import type { PullRequestSummary } from './platform';
 import type { ReviewActionCommit } from './pr-metadata';
+import type { ReviewPolicyStageValue } from './config';
 import type {
   CodexPreflightOutcome,
   DeliveryState,
   InternalReviewPatchCommit,
   ReviewOutcome,
-  ReviewPolicyStageValue,
   TicketState,
-} from './orchestrator';
+} from './types';
 
 function validateInternalReviewPatchCommits(input: {
   outcome: ReviewOutcome | CodexPreflightOutcome;

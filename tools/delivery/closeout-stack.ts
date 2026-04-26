@@ -7,9 +7,8 @@ import {
   resolveOrchestratorConfig,
   runProcessResult,
   saveState,
-  type DeliveryState,
-  type TicketState,
 } from './orchestrator';
+import type { DeliveryState, TicketState } from './types';
 
 type CloseoutStackArgs = {
   planPath: string;

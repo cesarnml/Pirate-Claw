@@ -35,7 +35,6 @@ import {
   VALID_REVIEW_POLICY_STAGE_VALUES,
   recordCodexPreflight,
   loadOrchestratorConfig,
-  type CodexPreflightOutcome,
   mergeStandaloneAiReviewSection,
   notifyBestEffort,
   openPullRequest,
@@ -66,8 +65,8 @@ import {
   formatStatus,
   materializeTicketContext,
   resolveEffectiveAdvanceBoundaryMode,
-  type DeliveryState,
 } from '../orchestrator';
+import type { CodexPreflightOutcome, DeliveryState } from '../types';
 
 async function readArtifactJson(cwd: string, relativePath: string) {
   return JSON.parse(await readFile(join(cwd, relativePath), 'utf8')) as Record<

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import type { DeliveryState, TicketState } from '../orchestrator';
+import type { DeliveryState, TicketState } from '../types';
 import {
   getCloseoutTicketChain,
   parseCloseoutStackArgs,

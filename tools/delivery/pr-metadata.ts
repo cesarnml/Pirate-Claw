@@ -3,15 +3,15 @@ import { resolve } from 'node:path';
 import type {
   AiReviewComment,
   AiReviewThreadResolution,
-  DeliveryState,
   DeliveryNotificationEvent,
+  DeliveryState,
   InternalReviewPatchCommit,
   ReviewResult,
   StandaloneAiReviewResult,
   StandalonePullRequest,
   TicketState,
   TicketStatus,
-} from './orchestrator';
+} from './types';
 import { DEFAULT_REVIEW_POLLING_PROFILE } from './review-polling-profile';
 import { readReviewArtifacts } from './review-artifacts';
 

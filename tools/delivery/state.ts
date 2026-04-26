@@ -17,7 +17,7 @@ import type {
   TicketDefinition,
   TicketState,
   TicketStatus,
-} from './orchestrator';
+} from './types';
 
 /** Persisted tickets may use legacy status and timestamp keys until re-saved. */
 type PersistedTicketFields = Partial<TicketState> & {

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
-import type { OrchestratorOptions, TicketDefinition } from './orchestrator';
+import type { OrchestratorOptions, TicketDefinition } from './types';
 import { DEFAULT_REVIEW_POLLING_PROFILE } from './review-polling-profile';
 
 export function parsePlan(

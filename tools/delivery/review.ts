@@ -15,7 +15,7 @@ import type {
   StandaloneAiReviewResult,
   StandalonePullRequest,
   TicketState,
-} from './orchestrator';
+} from './types';
 
 import {
   buildReviewArtifactPaths,

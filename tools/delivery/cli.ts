@@ -1,5 +1,5 @@
 import { VALID_TICKET_BOUNDARY_MODES, type TicketBoundaryMode } from './config';
-import type { OrchestratorOptions } from './orchestrator';
+import type { OrchestratorOptions } from './types';
 
 export type ParsedCliArgs = {
   command: string;

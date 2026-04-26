@@ -8,7 +8,7 @@ import type {
   AiReviewThreadResolution,
   ReviewOutcome,
   ReviewResult,
-} from './orchestrator';
+} from './types';
 
 export type AiReviewFetchArtifact = {
   schemaVersion: 1;
