@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test';
-import { mkdtemp, stat } from 'node:fs/promises';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,8 +12,17 @@ import {
 } from '../src/install-bootstrap';
 
 describe('ensureFirstStartupBootstrap', () => {
+  let installRoot: string | undefined;
+
+  afterEach(async () => {
+    if (installRoot) {
+      await rm(installRoot, { recursive: true, force: true });
+      installRoot = undefined;
+    }
+  });
+
   it('creates the Synology install root tree and generated daemon token on a clean root', async () => {
-    const installRoot = await mkdtemp(join(tmpdir(), 'pirate-claw-install-'));
+    installRoot = await mkdtemp(join(tmpdir(), 'pirate-claw-install-'));
     const configPath = join(installRoot, 'config', 'pirate-claw.config.json');
 
     const result = await ensureFirstStartupBootstrap({
@@ -40,7 +49,7 @@ describe('ensureFirstStartupBootstrap', () => {
   });
 
   it('leaves existing directories and generated secrets unchanged on second startup', async () => {
-    const installRoot = await mkdtemp(join(tmpdir(), 'pirate-claw-install-'));
+    installRoot = await mkdtemp(join(tmpdir(), 'pirate-claw-install-'));
     const configPath = join(installRoot, 'config', 'pirate-claw.config.json');
 
     const first = await ensureFirstStartupBootstrap({
