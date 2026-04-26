@@ -188,7 +188,10 @@ export function deriveBranchName(
 
 export function deriveWorktreePath(cwd: string, ticketId: string): string {
   const parent = dirname(resolve(cwd));
-  const repoBaseName = basename(resolve(cwd)).replace(/_(?:p\d+(?:_\d+)?|ee\d+_\d+)$/, '');
+  const repoBaseName = basename(resolve(cwd)).replace(
+    /_(?:p\d+(?:_\d+)?|ee\d+_\d+)$/,
+    '',
+  );
   return join(
     parent,
     `${repoBaseName}_${ticketId.toLowerCase().replace('.', '_')}`,
