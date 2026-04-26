@@ -25,9 +25,36 @@ type PullRequestSnapshot = {
 };
 
 type CloseoutSummary = {
-  merged: Array<{ prNumber: number; ticketId: string; url: string }>;
+  merged: Array<{
+    prNumber: number;
+    ticketId: string;
+    url: string;
+    landedVia: 'squash' | 'cherry-pick';
+  }>;
   skippedMerged: Array<{ prNumber: number; ticketId: string; url: string }>;
 };
+
+export type PullRequestCommitRef = {
+  oid: string;
+  authoredDate?: string;
+};
+
+export function orderCommitsForCherryPick(
+  commits: PullRequestCommitRef[],
+): string[] {
+  const sorted = [...commits].sort((left, right) => {
+    const leftDate = left.authoredDate ?? '';
+    const rightDate = right.authoredDate ?? '';
+
+    if (leftDate !== rightDate) {
+      return leftDate.localeCompare(rightDate);
+    }
+
+    return left.oid.localeCompare(right.oid);
+  });
+
+  return sorted.map((commit) => commit.oid);
+}
 
 export function parseCloseoutStackArgs(argv: string[]): CloseoutStackArgs {
   let planPath: string | undefined;
@@ -101,6 +128,36 @@ function ensureCleanWorktree(cwd: string): void {
 
 function readJson<T>(cwd: string, cmd: string[]): T {
   return JSON.parse(runProcess(cwd, cmd)) as T;
+}
+
+function listPullRequestCommitOidsAscending(
+  cwd: string,
+  prNumber: number,
+): string[] {
+  const raw = readJson<{ commits?: PullRequestCommitRef[] }>(cwd, [
+    'gh',
+    'pr',
+    'view',
+    String(prNumber),
+    '--json',
+    'commits',
+  ]);
+
+  return orderCommitsForCherryPick(raw.commits ?? []);
+}
+
+function cherryPickCommitOntoHead(cwd: string, oid: string): void {
+  const parents = runProcess(cwd, ['git', 'show', '-s', '--format=%P', oid])
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+
+  if (parents.length > 1) {
+    runProcess(cwd, ['git', 'cherry-pick', '-m', '1', oid]);
+    return;
+  }
+
+  runProcess(cwd, ['git', 'cherry-pick', oid]);
 }
 
 function resolveRepoSlug(cwd: string): string {
@@ -192,14 +249,21 @@ function closePullRequest(
   cwd: string,
   prNumber: number,
   ticketId: string,
+  defaultBranch: string,
+  landedVia: 'squash' | 'cherry-pick',
 ): void {
+  const comment =
+    landedVia === 'cherry-pick'
+      ? `Merged to ${defaultBranch} via closeout-stack (${ticketId}). merge --squash conflicted with the stacked branch; landed this PR using sequential git cherry-pick instead.`
+      : `Squash-merged to ${defaultBranch} via closeout-stack (${ticketId}).`;
+
   const result = runProcessResult(cwd, [
     'gh',
     'pr',
     'close',
     String(prNumber),
     '--comment',
-    `Squash-merged to main via closeout-stack (${ticketId}).`,
+    comment,
   ]);
 
   if (result.exitCode !== 0) {
@@ -220,8 +284,10 @@ function formatCloseoutSummary(
   const lines = [formatStatus(state), '', 'Stacked Closeout Summary'];
 
   for (const merged of summary.merged) {
+    const via =
+      merged.landedVia === 'cherry-pick' ? ' [cherry-pick fallback]' : '';
     lines.push(
-      `- merged ${merged.ticketId}: PR #${merged.prNumber} (${merged.url})`,
+      `- merged ${merged.ticketId}: PR #${merged.prNumber} (${merged.url})${via}`,
     );
   }
 
@@ -292,18 +358,59 @@ export async function runCloseoutStack(
 
       // Fetch ticket branch and squash-merge locally (3-way merge, no rebase)
       runProcess(cwd, ['git', 'fetch', 'origin', ticket.branch]);
-      runProcess(cwd, ['git', 'merge', '--squash', `origin/${ticket.branch}`]);
-      runProcess(cwd, ['git', 'commit', '-m', pr.title]);
+      const squashResult = runProcessResult(cwd, [
+        'git',
+        'merge',
+        '--squash',
+        `origin/${ticket.branch}`,
+      ]);
+
+      let landedVia: 'squash' | 'cherry-pick' = 'squash';
+
+      if (squashResult.exitCode !== 0) {
+        runProcess(cwd, [
+          'git',
+          'reset',
+          '--hard',
+          `origin/${config.defaultBranch}`,
+        ]);
+
+        const oids = listPullRequestCommitOidsAscending(cwd, pr.number);
+
+        if (oids.length === 0) {
+          const detail =
+            squashResult.stderr || squashResult.stdout || 'no stderr/stdout';
+          throw new Error(
+            `git merge --squash origin/${ticket.branch} failed and gh pr view #${pr.number} returned no commits to cherry-pick. Squash output:\n${detail.trim()}`,
+          );
+        }
+
+        for (const oid of oids) {
+          cherryPickCommitOntoHead(cwd, oid);
+        }
+
+        landedVia = 'cherry-pick';
+      } else {
+        runProcess(cwd, ['git', 'commit', '-m', pr.title]);
+      }
+
       runProcess(cwd, ['git', 'push', 'origin', config.defaultBranch]);
 
       // Close the PR and clean up the remote branch
-      closePullRequest(cwd, pr.number, ticket.id);
+      closePullRequest(
+        cwd,
+        pr.number,
+        ticket.id,
+        config.defaultBranch,
+        landedVia,
+      );
       deleteRemoteBranch(cwd, repo, ticket.branch);
 
       summary.merged.push({
         prNumber: pr.number,
         ticketId: ticket.id,
         url: pr.url,
+        landedVia,
       });
     }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import type { DeliveryState, TicketState } from '../types';
 import {
   getCloseoutTicketChain,
+  orderCommitsForCherryPick,
   parseCloseoutStackArgs,
 } from '../closeout-stack';
 
@@ -96,6 +97,27 @@ describe('closeout-stack', () => {
       expect(() => getCloseoutTicketChain(state)).toThrow(
         'closeout-stack requires the full phase to be done first. Incomplete tickets: P1.02=reviewed',
       );
+    });
+  });
+
+  describe('orderCommitsForCherryPick', () => {
+    it('orders by authoredDate ascending, then oid', () => {
+      expect(
+        orderCommitsForCherryPick([
+          { oid: 'bbbb', authoredDate: '2026-04-26T12:00:00Z' },
+          { oid: 'aaaa', authoredDate: '2026-04-26T11:00:00Z' },
+          { oid: 'cccc', authoredDate: '2026-04-26T11:00:00Z' },
+        ]),
+      ).toEqual(['aaaa', 'cccc', 'bbbb']);
+    });
+
+    it('treats missing authoredDate as empty string', () => {
+      expect(
+        orderCommitsForCherryPick([
+          { oid: 'z' },
+          { oid: 'a', authoredDate: '2026-01-01T00:00:00Z' },
+        ]),
+      ).toEqual(['z', 'a']);
     });
   });
 });

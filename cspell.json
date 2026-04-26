@@ -1,6 +1,8 @@
 {
   "version": "0.2",
-  "ignorePaths": ["web/"],
+  "ignorePaths": [
+    "web/"
+  ],
   "dictionaryDefinitions": [],
   "dictionaries": [],
   "words": [
@@ -36,6 +38,7 @@
     "Kodi",
     "mktemp",
     "NEWGROUP",
+    "oids",
     "oklch",
     "overclaim",
     "overclaims",

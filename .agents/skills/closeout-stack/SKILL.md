@@ -14,7 +14,9 @@ git checkout main
 bun run closeout-stack --plan <plan-path>
 ```
 
-Processes each ticket in stack order via `git merge --squash` (3-way, robust against parent patches). For each ticket: fetch + reset local `main` to `origin/main`, squash-merge the ticket branch, commit with PR title, push to `origin/main`, close PR, delete remote branch. Produces one squash commit per ticket on `main`.
+Processes each ticket in stack order via `git merge --squash` (3-way, robust against parent patches). For each ticket: fetch + reset local `main` to `origin/main`, squash-merge the ticket branch, commit with PR title, push to `origin/main`, close PR, delete remote branch. Produces one squash commit per ticket on `main` when squash succeeds.
+
+If `merge --squash` hits conflicts (common after earlier tickets were squash-merged so SHAs diverge from the stacked branches), `closeout-stack` resets to `origin/main`, reads the PR’s commits via `gh pr view --json commits`, and lands them in order with `git cherry-pick` (merge commits use `-m 1`). That may yield multiple commits on `main` for one ticket. If cherry-pick also fails, recover manually using the checklist below.
 
 ### Delivery artifact mirror (`state.json`, `reviews/`, `handoffs/`)
 
@@ -53,7 +55,7 @@ git remote prune origin
 
 ## Recovery
 
-If closeout fails mid-flight, do not retry. Instead:
+If closeout fails mid-flight (including after an automatic cherry-pick attempt), do not blindly re-run the script. Instead:
 
 1. Check `git log --oneline origin/main` and GitHub PR state to see what merged.
 2. `git checkout main && git reset --hard origin/main`
@@ -72,5 +74,5 @@ If closeout fails mid-flight, do not retry. Instead:
 ## Key Rules
 
 - Developer must explicitly approve closeout. Never run autonomously.
-- Stop and surface merge conflicts to the developer — do not force-resolve.
+- `merge --squash` conflicts are handled automatically via sequential `git cherry-pick` of the PR’s commits; only unresolved cherry-pick conflicts need manual resolution.
 - Verify the test suite passes on `main` after closeout.
