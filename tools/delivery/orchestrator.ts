@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, readdir } from 'node:fs/promises';
+import { copyFile, mkdir, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { getUsage, parseCliArgs, resolveOptionsForCommand } from './cli';
+import { ensureEnvReady as ensureEnvReadyImpl } from './env';
 import {
   loadOrchestratorConfig as loadOrchestratorConfigImpl,
   resolveOrchestratorConfig as resolveOrchestratorConfigImpl,
@@ -291,7 +292,7 @@ export async function runDeliveryOrchestrator(
 
   try {
     const rawConfig = await loadOrchestratorConfig(cwd);
-    await ensureEnvReady(cwd);
+    await ensureEnvReadyImpl(cwd, findPrimaryWorktreePath);
     const usage = getUsage(
       generateRunDeliverInvocation(
         resolveOrchestratorConfig(rawConfig, cwd).packageManager,
@@ -636,60 +637,7 @@ export async function runDeliveryOrchestrator(
   }
 }
 
-export function parseDotEnv(content: string): Record<string, string> {
-  const values: Record<string, string> = {};
-
-  for (const rawLine of content.split('\n')) {
-    const line = rawLine.trim();
-
-    if (line.length === 0 || line.startsWith('#')) {
-      continue;
-    }
-
-    const separatorIndex = line.indexOf('=');
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    let value = line.slice(separatorIndex + 1).trim();
-
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    if (key.length > 0) {
-      values[key] = value;
-    }
-  }
-
-  return values;
-}
-
-async function ensureEnvReady(cwd: string): Promise<void> {
-  await ensureLocalEnvFile(cwd);
-  await loadDotEnvIntoProcess(cwd);
-}
-
-async function ensureLocalEnvFile(cwd: string): Promise<void> {
-  const localEnvPath = resolve(cwd, '.env');
-
-  if (existsSync(localEnvPath)) {
-    return;
-  }
-
-  const primaryWorktreePath = findPrimaryWorktreePath(cwd);
-
-  if (!primaryWorktreePath) {
-    return;
-  }
-
-  await copyLocalEnvIfPresent(primaryWorktreePath, cwd);
-}
+export { parseDotEnv } from './env';
 
 export function findPrimaryWorktreePath(cwd: string): string | undefined {
   return findPlatformPrimaryWorktreePath(
@@ -697,22 +645,6 @@ export function findPrimaryWorktreePath(cwd: string): string | undefined {
     _config.defaultBranch,
     _config.runtime,
   );
-}
-
-async function loadDotEnvIntoProcess(cwd: string): Promise<void> {
-  const envPath = resolve(cwd, '.env');
-
-  if (!existsSync(envPath)) {
-    return;
-  }
-
-  const values = parseDotEnv(await readFile(envPath, 'utf8'));
-
-  for (const [key, value] of Object.entries(values)) {
-    if (typeof process.env[key] === 'undefined') {
-      process.env[key] = value;
-    }
-  }
 }
 
 export function parsePlan(
