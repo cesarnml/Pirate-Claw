@@ -17,6 +17,12 @@ describe('planning', () => {
     expect(deriveWorktreePath('/tmp/pirate_claw', 'P2.03')).toBe(
       '/tmp/pirate_claw_p2_03',
     );
+    expect(deriveWorktreePath('/tmp/pirate_claw_ee10_04', 'EE10.05')).toBe(
+      '/tmp/pirate_claw_ee10_05',
+    );
+    expect(deriveWorktreePath('/tmp/pirate_claw_p2_03', 'P2.04')).toBe(
+      '/tmp/pirate_claw_p2_04',
+    );
   });
 
   it('prefers existing ticket-id branch matches over title-derived names', () => {
