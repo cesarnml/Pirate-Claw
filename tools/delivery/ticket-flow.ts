@@ -4,6 +4,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -632,6 +633,15 @@ async function copyTicketScopedArtifacts(input: {
   const sourceDir = resolve(input.sourceWorktreePath, input.artifactDirPath);
   if (!existsSync(sourceDir) || input.artifactNames.size === 0) {
     return;
+  }
+
+  const targetDir = resolve(input.targetWorktreePath, input.artifactDirPath);
+  if (existsSync(targetDir)) {
+    for (const fileName of await readdir(targetDir)) {
+      if (!input.artifactNames.has(fileName)) {
+        await unlink(resolve(targetDir, fileName));
+      }
+    }
   }
 
   for (const fileName of await readdir(sourceDir)) {

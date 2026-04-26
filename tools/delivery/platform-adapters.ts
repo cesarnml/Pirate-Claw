@@ -186,11 +186,11 @@ export function replyToReviewThreadForOrchestrator(
   const cached = REPO_CACHE_BY_WORKTREE.get(worktreePath);
   const repo =
     cached ?? resolvePlatformGitHubRepo(worktreePath, _config.runtime);
-  if (!cached) {
-    REPO_CACHE_BY_WORKTREE.set(worktreePath, repo);
-  }
   if (!repo) {
     return;
+  }
+  if (!cached) {
+    REPO_CACHE_BY_WORKTREE.set(worktreePath, repo);
   }
 
   try {
