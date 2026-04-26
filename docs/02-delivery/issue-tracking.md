@@ -66,6 +66,16 @@ Each ticket or PR should include a short rationale section with these prompts:
 - `Alternative considered:` one plausible alternative and why it was rejected for this ticket
 - `Deferred:` what was intentionally not built yet
 
+## Epic Status
+
+| Epic                                         | Status      | Notes                                                                                                                                                  |
+| -------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| EE10 — Delivery Tooling Module Decomposition | **closed**  | `orchestrator.ts` reduced to a pure re-export barrel; 6 focused modules extracted; `bun test` green throughout                                         |
+| EE11 — Delivery Tooling Context Object       | **planned** | Replace `_config` singleton with explicit context object; eliminate `initOrchestratorConfig` test boilerplate; design platform adapter factory pattern |
+
+EE11 is the direct follow-up to EE10. It is an architectural improvement, not a
+structural refactor. Do not start EE11 until EE10 PRs are merged.
+
 ## Source Of Truth
 
 - phase goals live in `docs/01-product/`

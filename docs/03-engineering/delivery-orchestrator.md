@@ -14,6 +14,33 @@ That means:
 
 This keeps the product boundary honest. `src/` remains the Pirate Claw application. The delivery tool is a maintainer workflow helper.
 
+## Module Structure
+
+After EE10, `tools/delivery/` is decomposed into focused single-concern modules.
+`orchestrator.ts` is a pure re-export barrel with no logic — it exists only so
+external callers can import from one stable path.
+
+| Module                 | Concern                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `types.ts`             | All shared TypeScript types and interfaces                                                  |
+| `env.ts`               | `.env` parsing (`parseDotEnv`)                                                              |
+| `runtime-config.ts`    | `OrchestratorConfig` loading, `_config` singleton, `resolveOrchestratorConfig`              |
+| `format.ts`            | Human-readable status formatting (`formatStatus`, `formatCurrentTicketStatus`, etc.)        |
+| `platform.ts`          | Raw platform primitives: `spawnSync`, git worktree parsing, shell helpers                   |
+| `platform-adapters.ts` | Thin wrappers that inject `_config.runtime` into `platform.ts` calls                        |
+| `planning.ts`          | Branch and worktree naming (`deriveBranchName`, `deriveWorktreePath`, `findExistingBranch`) |
+| `state.ts`             | State persistence (`loadState`, `saveState`, `normalizeDeliveryStateFromPersisted`)         |
+| `ticket-flow.ts`       | Ticket lifecycle transitions, handoff artifact writing, `materializeTicketContext`          |
+| `notifications.ts`     | Telegram notification events and formatting                                                 |
+| `pr-metadata.ts`       | PR title/body construction and AI-review section builders                                   |
+| `review.ts`            | Review polling lifecycle, fetcher/triager adapters, artifact parsing                        |
+| `cli-runner.ts`        | `runDeliveryOrchestrator` dispatch switch and private CLI helpers                           |
+| `cli.ts`               | Argument parsing (`parseCliArgs`, `getUsage`)                                               |
+| `orchestrator.ts`      | Pure re-export barrel — no logic                                                            |
+
+Each source module has a corresponding test file under `tools/delivery/test/`.
+Import from source modules in tests, not from the barrel.
+
 ## Configurable Core
 
 The orchestrator core now reads `orchestrator.config.json` at the repo root so
