@@ -1,6 +1,10 @@
 # Synology Runbook
 
-This is the canonical operator-facing Synology deployment guide for Pirate Claw.
+This is the advanced operator reference for Pirate Claw on Synology.
+
+**Owner install path:** For first-time installation, use [`docs/synology-install.md`](./synology-install.md) and the validated install guides in `tools/synology-release/`. The owner path stays inside DSM GUI screens and requires no terminal access.
+
+This runbook covers the advanced operator deployment shape — expert-built container topology, NAS-side image rebuilds, Plex diagnostics, and manual config management. It is not the default first-time path for Phase 27 and beyond.
 
 The historical Phase 06 validation artifact still lives at
 `docs/02-delivery/phase-06/synology-runbook.md`. Keep that file for the
@@ -15,8 +19,7 @@ not replace it.
 
 ## Scope
 
-This document is for the actual NAS deployment shape that Pirate Claw now
-depends on in production:
+This document is for the advanced NAS deployment shape used in the production operator environment:
 
 - Synology `DS918+`
 - DSM `7.1.1-42962 Update 9`

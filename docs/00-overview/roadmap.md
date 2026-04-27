@@ -621,7 +621,15 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-27-synology-dsm-first-stack-and-cold-start.md`](../01-product/phase-27-synology-dsm-first-stack-and-cold-start.md)
+- implemented via `P27.01`–`P27.10` stacked delivery; validated on DS918+ / DSM 7.1.1-42962 Update 9
+- the `.spk` spike (P27.01) found that DSM 7.1 Package Center hooks produced no GUI-observable Docker orchestration result; the fallback owner path uses Package Center only for the launcher/icon and keeps all container setup inside DSM Docker GUI
+- the three-container stack (`pirate-claw-daemon`, `pirate-claw-web`, `transmission`) on a `pirate-claw` user-defined Docker network exposes only port `8888` to the host; all internal RPC stays on the private network
+- daemon first-startup bootstrap creates the install tree and generates a write token so the owner never hand-enters secrets
+- install health gate in onboarding blocks config setup until Docker images, folder mounts, write access, and Transmission path checks all pass
+- DSM 7.2+ Container Manager path is included in the bundle but marked validation-pending
+- owner install guide: [`docs/synology-install.md`](../synology-install.md)
+- product contract: [`docs/01-product/phase-27-synology-dsm-first-stack-and-cold-start.md`](../01-product/phase-27-synology-dsm-first-stack-and-cold-start.md)
+- delivery record: [`docs/02-delivery/phase-27/implementation-plan.md`](../02-delivery/phase-27/implementation-plan.md)
 
 ## Phase 28: Owner Web Security
 
@@ -702,7 +710,7 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 
 - product phases `01`–`19` are implemented in the current delivery stack; **Phase 19** is delivered via `P19.01`–`P19.08`
 - **Phase 20** (dashboard torrent proxy) is **shipped** on `main`
-- **Phases 21–26** are shipped on `main`; **Phases 27–29** are the release-blocking Synology install, owner security, and OpenVPN bridge planning sequence
+- **Phases 21–27** are shipped on `main`; **Phases 28–29** are the release-blocking owner security and OpenVPN bridge planning sequence
 - **Phase 30** remains the release-critical UX/UI polish bucket after functional completion
 - **Phase 31** (v1.0.0 / schema versioning) remains the release/versioning ceremony after product-completion phases are done
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
@@ -723,4 +731,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-25 (Phases 20, 21, 22, 23, 24, 25, and 26 are delivered on `main`; Phases 27–29 are the current release-blocking product-planning sequence; Phase 30 is release-critical polish; Phase 31 remains the release/versioning phase).
+Last verified against `README.md` and active delivery plans: 2026-04-27 (Phases 20–27 are delivered on `main`; Phases 28–29 are the current release-blocking product-planning sequence; Phase 30 is release-critical polish; Phase 31 remains the release/versioning phase).

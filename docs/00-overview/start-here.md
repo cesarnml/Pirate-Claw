@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 26** in the active delivery stack (product phases 01–26; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–26 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec remains the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI, **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) remains the dashboard-as-Transmission-proxy contract, **Phase 23** ([`phase-23-plex-browser-auth-and-credential-lifecycle.md`](../01-product/phase-23-plex-browser-auth-and-credential-lifecycle.md)) remains the live Plex auth/lifecycle contract, **Phase 24** ([`phase-24-synology-supervision-and-restart.md`](../01-product/phase-24-synology-supervision-and-restart.md)) remains the durable restart/supervision boundary, **Phase 25** ([`phase-25-in-browser-restart-round-trip-proof.md`](../01-product/phase-25-in-browser-restart-round-trip-proof.md)) remains the live browser restart round-trip contract, and **Phase 26** ([`phase-26-mac-first-class-always-on-deployment.md`](../01-product/phase-26-mac-first-class-always-on-deployment.md)) is now the active Mac always-on deployment contract. The next release-blocking planning sequence is **Phase 27** ([`phase-27-synology-dsm-first-stack-and-cold-start.md`](../01-product/phase-27-synology-dsm-first-stack-and-cold-start.md)), **Phase 28** ([`phase-28-owner-web-security.md`](../01-product/phase-28-owner-web-security.md)), and **Phase 29** ([`phase-29-openvpn-bridge-for-bundled-transmission.md`](../01-product/phase-29-openvpn-bridge-for-bundled-transmission.md)); **Phase 30** is release-critical UX/UI polish and **Phase 31** ([`phase-31-v1-release-and-schema-versioning.md`](../01-product/phase-31-v1-release-and-schema-versioning.md)) handles the v1.0.0 / schema-versioning release ceremony.
+Pirate Claw is implemented through **Phase 27** in the active delivery stack (product phases 01–27; see [`roadmap.md`](./roadmap.md)). Delivery artifacts for Phases 12–27 live under [`docs/02-delivery/`](../02-delivery/). The Phase 19 product spec remains the contract reference for the Obsidian Tide redesign and related dashboard/TV/movie read UI, **Phase 20** ([`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md)) remains the dashboard-as-Transmission-proxy contract, **Phase 23** ([`phase-23-plex-browser-auth-and-credential-lifecycle.md`](../01-product/phase-23-plex-browser-auth-and-credential-lifecycle.md)) remains the live Plex auth/lifecycle contract, **Phase 24** ([`phase-24-synology-supervision-and-restart.md`](../01-product/phase-24-synology-supervision-and-restart.md)) remains the durable restart/supervision boundary, **Phase 25** ([`phase-25-in-browser-restart-round-trip-proof.md`](../01-product/phase-25-in-browser-restart-round-trip-proof.md)) remains the live browser restart round-trip contract, **Phase 26** ([`phase-26-mac-first-class-always-on-deployment.md`](../01-product/phase-26-mac-first-class-always-on-deployment.md)) is the active Mac always-on deployment contract, and **Phase 27** ([`phase-27-synology-dsm-first-stack-and-cold-start.md`](../01-product/phase-27-synology-dsm-first-stack-and-cold-start.md)) is the DSM-first Synology owner install contract (validated on DS918+ / DSM 7.1.1; owner install guide at [`docs/synology-install.md`](../synology-install.md)). The next release-blocking planning sequence is **Phase 28** ([`phase-28-owner-web-security.md`](../01-product/phase-28-owner-web-security.md)) and **Phase 29** ([`phase-29-openvpn-bridge-for-bundled-transmission.md`](../01-product/phase-29-openvpn-bridge-for-bundled-transmission.md)); **Phase 30** is release-critical UX/UI polish and **Phase 31** ([`phase-31-v1-release-and-schema-versioning.md`](../01-product/phase-31-v1-release-and-schema-versioning.md)) handles the v1.0.0 / schema-versioning release ceremony.
 
 Current delivered surface:
 
@@ -37,6 +37,7 @@ Current delivered surface:
 - Phase 26 Mac deployment contract: repo-owned per-user `launchd` reference artifact, dedicated Mac operator runbook, validated Apple Silicon restart round-trip under `launchd`, and a browser-facing restart-status proxy proven against the same durable restart artifact
 - Phase 16 config editing: unified `/config` accordion cards, per-section toast feedback, post-save daemon restart affordance, Transmission ping, and read-only tooltips when write auth is absent
 - Phase 17 onboarding and empty states: `/onboarding` guided first-run flow, strict initial-empty auto-trigger plus dismissal suppression/resume, blocked onboarding when writes are disabled, and explicit empty-state guidance across `/`, `/config`, `/shows`, `/movies`, and `/candidates/unmatched`
+- Phase 27 DSM-first Synology owner install: `.spk` launcher/icon via Package Center, three-container stack (`pirate-claw-daemon`, `pirate-claw-web`, `transmission`) on a private Docker network, daemon first-startup bootstrap and generated write token, install health gate in onboarding; validated on DS918+ / DSM 7.1.1-42962 Update 9; owner install guide at [`docs/synology-install.md`](../synology-install.md)
 
 Current product boundary:
 
@@ -60,17 +61,19 @@ Still deferred (beyond the current Phase 21–26 completion sequence):
 - Synology archiving
 - ingestion redesign beyond the local SQLite model
 
-Last verified against `README.md`, roadmap, and active product docs: 2026-04-25.
+Last verified against `README.md`, roadmap, and active product docs: 2026-04-27.
 
 Current planning focus:
 
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
+<<<<<<< HEAD
 - for delivery-tooling architecture work, EE11 is the approved follow-up plan to replace the orchestrator `_config` singleton with an explicit context object and platform adapter factory; see [`engineering-epic-11/implementation-plan.md`](../02-delivery/engineering-epic-11/implementation-plan.md)
-- the next product-completion planning buckets are Phase 27 (Synology DSM-first stack and cold start), Phase 28 (owner web security), and Phase 29 (OpenVPN bridge for bundled Transmission)
+- the next product-completion planning buckets are Phase 28 (owner web security) and Phase 29 (OpenVPN bridge for bundled Transmission)
 - treat the shipped Phase 25 browser proof as a follow-on to the Phase 24 restart contract, not as a replacement for the persisted Plex auth/device boundary
-- treat the shipped Phase 26 Mac `launchd` path as a parallel supported deployment contract alongside the reviewed Synology runbook, not as a reason to merge those operator runbooks together
+- treat the shipped Phase 26 Mac `launchd` path as a parallel supported deployment contract alongside the Phase 27 DSM-first owner install path, not as a reason to merge those operator runbooks together
+- treat the Phase 27 DSM-first path as the validated Synology owner install path; the legacy expert-built runbook at `docs/synology-runbook.md` is now the advanced operator reference, not the default first-time path
 - Phase 30 is release-critical UX/UI polish after functional completion; Phase 31 (`schemaVersion`, tagged v1, `VERSIONING.md`, changelog) is the release/versioning ceremony after product-completion phases land; keep Phase 20 dashboard torrent work in [`phase-20-dashboard-torrent-actions.md`](../01-product/phase-20-dashboard-torrent-actions.md), not under the Phase 19 contract
 
 ## Read These Docs By Task Type

@@ -2,7 +2,7 @@
 
 Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
 
-Phases **01–26** shipped the current core product: the CLI/runtime stack, Obsidian Tide dashboard, zero-file-edit bootstrap, browser-only setup flow, the dashboard Transmission layer (Torrent Manager pause/resume/remove/remove-with-delete, missing-torrent disposition, Feed Event Log with failed-enqueue **Queue** retries, and matching daemon routes), browser-managed Plex auth with durable device identity plus best-effort silent renewal, Synology restart durability, browser-visible restart round-trip proof, and Mac first-class always-on deployment. The current release-blocking planning sequence is **Phase 27** Synology DSM-first stack/cold start, **Phase 28** owner web security, **Phase 29** OpenVPN bridge for bundled Transmission, **Phase 30** UX/UI polish, then the **Phase 31** v1.0.0 / schema-versioning release ceremony (`schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, tagged release). See `docs/01-product/`.
+Phases **01–27** shipped the current core product: the CLI/runtime stack, Obsidian Tide dashboard, zero-file-edit bootstrap, browser-only setup flow, the dashboard Transmission layer (Torrent Manager pause/resume/remove/remove-with-delete, missing-torrent disposition, Feed Event Log with failed-enqueue **Queue** retries, and matching daemon routes), browser-managed Plex auth with durable device identity plus best-effort silent renewal, Synology restart durability, browser-visible restart round-trip proof, Mac first-class always-on deployment, and the DSM-first Synology owner install path validated on DS918+ / DSM 7.1.1. The current release-blocking planning sequence is **Phase 28** owner web security, **Phase 29** OpenVPN bridge for bundled Transmission, **Phase 30** UX/UI polish, then the **Phase 31** v1.0.0 / schema-versioning release ceremony (`schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, tagged release). See `docs/01-product/`.
 
 It currently supports:
 
@@ -77,49 +77,21 @@ vocabulary as Synology, but the supervisor is `launchd` instead of Docker.
 
 ### Synology NAS (production)
 
-Reviewed reference daemon supervision path:
-[`docs/synology-reference-pirate-claw-container.sh`](./docs/synology-reference-pirate-claw-container.sh)
+**Owner install guide:** [`docs/synology-install.md`](./docs/synology-install.md)
 
-Synology restart-backed operation is supported through Docker restart
-supervision on the `pirate-claw` daemon container. The browser restart control
-requests a daemon `SIGTERM`; Docker `--restart always` is what brings the
-daemon back. Pirate Claw now persists restart proof under its existing durable
-runtime boundary so the browser can show a truthful `requested -> restarting ->
-back_online | failed_to_return` journey instead of stopping at "request sent."
+Phase 27 ships a DSM-first owner install path validated on DS918+ / DSM 7.1.1-42962 Update 9. The owner path stays entirely inside DSM GUI screens — Package Center, File Station, Docker, and the Pirate Claw browser page. No SSH, terminal commands, or hand-edited config files are required.
 
-The writable `/volume1/pirate-claw/config` directory and
-`/volume1/pirate-claw/data` mounts (`pirate-claw.db` plus
-`.pirate-claw/runtime/`, which contains `poll-state.json`) are one durability
-boundary for that contract.
+Download the release bundle (see `docs/synology-install.md` for the link), follow [`tools/synology-release/install-dsm-7.1-docker.md`](./tools/synology-release/install-dsm-7.1-docker.md) for DSM 7.1 or [`tools/synology-release/install-dsm-7.2-container-manager.md`](./tools/synology-release/install-dsm-7.2-container-manager.md) for DSM 7.2+, then open `http://<nas-ip>:8888` to complete setup in the browser.
 
-When `PIRATE_CLAW_INSTALL_ROOT` or `runtime.installRoot` is configured, daemon
-startup creates the Synology install tree if it is missing and writes generated
-app secrets under `config/generated/`. Existing directories and generated
-secret files are left untouched on later starts.
+When `PIRATE_CLAW_INSTALL_ROOT` or `runtime.installRoot` is configured, daemon startup creates the Synology install tree if it is missing and writes generated app secrets under `config/generated/`. Existing directories and generated secret files are left untouched on later starts.
 
-Phase 27 adds the DSM Package Center source under
-[`tools/synology-spk/`](./tools/synology-spk/). Build the current `.spk` with:
-
-```bash
-tools/synology-spk/build-spk.sh
-```
-
-The DSM 7.1 package follows the validated fallback from the spike: Package
-Center installs the launcher/artifacts, and any required Docker image/import or
-volume steps stay inside DSM GUI.
-
-**Plex prerequisite:** Plex Media Server **1.43.0 or later**. Check your
-installed version in **Package Center → Installed → Plex Media Server →
-Details**. On the reviewed `DS918+ / DSM 7.1.1-42962 Update 9` baseline,
-Synology Package Center can lag below that floor. If it does, use Package
-Center's manual install path with a newer Plex package from Plex's DSM 7
-download page before connecting Plex in Pirate Claw.
+**Plex prerequisite:** Plex Media Server **1.43.0 or later**. Check your installed version in **Package Center → Installed → Plex Media Server → Details**. On the reviewed `DS918+ / DSM 7.1.1-42962 Update 9` baseline, Synology Package Center can lag below that floor. If it does, use Package Center's manual install path with a newer Plex package from Plex's DSM 7 download page before connecting Plex in Pirate Claw.
 
 **First-boot sequence:**
 
 1. Start the Pirate Claw container or process on the NAS
-2. Open a browser at `http://<nas-ip>:<api-port>` (default port configured in `runtime.apiPort`)
-3. Pirate Claw will open in starter mode and guide setup through the browser. No config editing was required.
+2. Open a browser at `http://<nas-ip>:8888`
+3. Pirate Claw opens in starter mode and guides setup through the browser. No config editing is required.
 
 ### Operator promise
 
@@ -303,13 +275,13 @@ cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.j
 
 ## Current Scope
 
-Pirate Claw is a local operator tool for a personal NAS. The roadmap now targets **Phase 27** Synology DSM-first stack/cold start, **Phase 28** owner web security, **Phase 29** OpenVPN bridge for bundled Transmission, **Phase 30** UX/UI polish, and **Phase 31** release/versioning.
+Pirate Claw is a local operator tool for a personal NAS. The roadmap now targets **Phase 28** owner web security, **Phase 29** OpenVPN bridge for bundled Transmission, **Phase 30** UX/UI polish, and **Phase 31** release/versioning.
 
-**Implemented (Phases 01–26):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional Plex Media Server enrichment, the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, a TMDB refresh control on TV detail, **Phase 20** dashboard Transmission controls, **Phase 23** browser-managed Plex connect / reconnect with durable device identity and best-effort silent renewal, **Phase 24** Synology restart supervision truthfulness with restart durability proof plus truthful Plex-on-Synology guidance, **Phase 25** in-browser restart round-trip proof with bounded `failed_to_return` UX, and **Phase 26** Mac first-class always-on deployment with a reviewed `launchd` reference path.
+**Implemented (Phases 01–27):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional Plex Media Server enrichment, the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, a TMDB refresh control on TV detail, **Phase 20** dashboard Transmission controls, **Phase 23** browser-managed Plex connect / reconnect with durable device identity and best-effort silent renewal, **Phase 24** Synology restart supervision truthfulness with restart durability proof plus truthful Plex-on-Synology guidance, **Phase 25** in-browser restart round-trip proof with bounded `failed_to_return` UX, **Phase 26** Mac first-class always-on deployment with a reviewed `launchd` reference path, and **Phase 27** DSM-first Synology owner install validated on DS918+ / DSM 7.1.1 with a three-container stack (pirate-claw, pirate-claw-web, Transmission) deployed through DSM GUI only.
 
 **Implemented (Phase 20):** Dashboard Torrent Manager actions (pause, resume, remove, remove-with-delete), missing-torrent disposition, Transmission failures / requeue, related daemon JSON endpoints, and the `pirateClawDisposition` + derived display-state model (see `docs/01-product/phase-20-dashboard-torrent-actions.md`).
 
-**Planned (Phases 27–29):** DSM-first Synology install bundle, local owner web auth, and OpenVPN bridge for bundled Transmission.
+**Planned (Phases 28–29):** local owner web auth, and OpenVPN bridge for bundled Transmission.
 
 **Planned (Phase 31):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release (see `docs/01-product/phase-31-v1-release-and-schema-versioning.md`).
 
