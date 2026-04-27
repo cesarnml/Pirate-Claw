@@ -8,22 +8,15 @@ Validated baseline: Synology DS918+, DSM 7.1.1-42962 Update 9, legacy Docker pac
 - Keep the three image tarballs from this bundle available on the computer you use to open DSM.
 - Keep the default install root: `/volume1/pirate-claw`.
 
-## Install The Package
-
-1. Open Package Center.
-2. Choose Manual Install.
-3. Select `pirate-claw.spk` from this bundle.
-4. Accept the third-party package confirmation if DSM shows it.
-5. Finish the install.
-6. Open Main Menu and confirm the Pirate Claw icon is present.
-
-The package is a launcher and install-root artifact package. It does not create or start Docker containers from package hooks on DSM 7.1.
-
 ## Prepare The DSM Folders
 
 1. Open Control Panel → Shared Folder and confirm `pirate-claw` exists, or create it.
 2. Open File Station and navigate into `pirate-claw`.
-3. Create these folders:
+3. In File Station, right-click the `pirate-claw` folder → Properties → Permission tab.
+4. Click Create. Set User or group to `Everyone`, Type to `Allow`, Permission to `Read & Write`.
+5. Check **Apply to this folder, sub-folders and files**.
+6. Click Save.
+7. Create these folders inside `pirate-claw`:
    - `config`
    - `data`
    - `downloads`
@@ -33,10 +26,6 @@ The package is a launcher and install-root artifact package. It does not create 
    - `media/movies`
    - `media/shows`
    - `transmission/config`
-4. In File Station, right-click the `pirate-claw` folder → Properties → Permission tab.
-5. Click Create. Set User or group to `Everyone`, Type to `Allow`, Permission to `Read & Write`.
-6. Check **Apply to this folder, sub-folders and files**.
-7. Click Save.
 
 This grants Docker containers access to the install root and all subfolders. Without it, DSM's default ACLs block the containers from reading and writing their mount paths.
 
@@ -63,18 +52,18 @@ Use the Docker package GUI only.
    - Image: `lscr.io/linuxserver/transmission:latest`
    - Container name: `transmission`
    - Network: `pirate-claw`
+   - **Remove all default port mappings.** DSM pre-fills `9091/tcp`, `51413/tcp`, and `51413/udp` — delete all three. Publishing these ports is not required and exposes Transmission to the network.
    - Map `/volume1/pirate-claw/transmission/config` to `/config`.
    - Map `/volume1/pirate-claw/downloads` to `/downloads`.
    - Map `/volume1/pirate-claw/downloads/complete` to `/downloads/complete`.
    - Map `/volume1/pirate-claw/downloads/incomplete` to `/incomplete-downloads`.
    - Map `/volume1/pirate-claw/media` to `/media`.
 
-   The folder permission step above is sufficient for DSM 7.1 Docker bind mounts. The bundled Transmission RPC stays private because no Transmission ports are published to the NAS host.
-
 9. Create the Pirate Claw daemon container:
    - Image: `pirate-claw:latest`
    - Container name: `pirate-claw-daemon`
    - Network: `pirate-claw`
+   - Map the DSM shared folder `pirate-claw` to container mount path `/volume1/pirate-claw`.
    - Under Advanced Settings:
    - In Execution Command, leave EntryPoint as `bun run dist/cli.js`.
    - Set Command to exactly `daemon --config /volume1/pirate-claw/config/pirate-claw.config.json`.
@@ -83,7 +72,6 @@ Use the Docker package GUI only.
      - `PIRATE_CLAW_API_HOST` = `0.0.0.0`
      - `PIRATE_CLAW_API_PORT` = `5555`
      - `PIRATE_CLAW_TRANSMISSION_URL` = `http://transmission:9091/transmission/rpc`
-   - Map the DSM shared folder `pirate-claw` to container mount path `/volume1/pirate-claw`.
 
 10. Start the daemon container and wait for it to create the generated token file under the install root.
 11. Create the Pirate Claw web container:
@@ -104,7 +92,7 @@ Use the Docker package GUI only.
 
 ## Open Pirate Claw
 
-1. Open the Pirate Claw icon from DSM Main Menu, or open `http://<nas-ip>:8888` in a browser.
+1. Open `http://<nas-ip>:8888` in a browser.
 2. On the onboarding page, review Synology install health.
 3. If a check fails, follow the DSM-language remediation shown on the page, then use Re-check.
 4. Continue Pirate Claw setup only after install health passes.
