@@ -21,3 +21,4 @@ pirate-claw.db
 .codex-clone-*/
 .codex-worktrees/
 .claude/worktrees/**/*
+validation
