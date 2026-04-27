@@ -1,8 +1,9 @@
 import { resolve } from 'node:path';
 
 import { readReviewArtifacts } from './review-artifacts';
-import { _config, generateRunDeliverInvocation } from './runtime-config';
+import { generateRunDeliverInvocation } from './runtime-config';
 import type { TicketBoundaryMode } from './config';
+import type { ResolvedOrchestratorConfig } from './runtime-config';
 import type {
   AiReviewComment,
   AiReviewThreadResolution,
@@ -63,7 +64,10 @@ function loadTicketReviewSnapshot(ticket: TicketState): {
   };
 }
 
-export function formatStatus(state: DeliveryState): string {
+export function formatStatus(
+  state: DeliveryState,
+  config: ResolvedOrchestratorConfig,
+): string {
   return [
     'Delivery Orchestrator',
     `plan_key=${state.planKey}`,
@@ -72,8 +76,8 @@ export function formatStatus(state: DeliveryState): string {
     `handoffs=${state.handoffsDirPath}`,
     `review_poll_interval_minutes=${state.reviewPollIntervalMinutes}`,
     `review_poll_max_wait_minutes=${state.reviewPollMaxWaitMinutes}`,
-    `boundary_mode=${_config.ticketBoundaryMode}`,
-    `review_policy=selfAudit:${_config.reviewPolicy.selfAudit} codexPreflight:${_config.reviewPolicy.codexPreflight} externalReview:${_config.reviewPolicy.externalReview}`,
+    `boundary_mode=${config.ticketBoundaryMode}`,
+    `review_policy=selfAudit:${config.reviewPolicy.selfAudit} codexPreflight:${config.reviewPolicy.codexPreflight} externalReview:${config.reviewPolicy.externalReview}`,
     '',
     ...state.tickets.map((ticket) =>
       [
@@ -111,6 +115,7 @@ export function formatAdvanceBoundaryGuidance(
   state: DeliveryState,
   advancedState: DeliveryState,
   nextState: DeliveryState,
+  config: ResolvedOrchestratorConfig,
 ): string | undefined {
   const nextPending = advancedState.tickets.find(
     (t) =>
@@ -128,9 +133,9 @@ export function formatAdvanceBoundaryGuidance(
   }
 
   const effectiveMode = resolveEffectiveAdvanceBoundaryMode(
-    _config.ticketBoundaryMode,
+    config.ticketBoundaryMode,
   );
-  const invocation = `${generateRunDeliverInvocation(_config.packageManager)} --plan ${state.planPath} start`;
+  const invocation = `${generateRunDeliverInvocation(config.packageManager)} --plan ${state.planPath} start`;
   const resumePrompt = `Immediately execute \`${invocation}\`, read the locally materialized handoff artifact in the started worktree as the source of truth for context, and implement ${nextPending.id}.`;
 
   if (effectiveMode === 'cook') {
@@ -162,11 +167,11 @@ export function formatAdvanceBoundaryGuidance(
 
   return [
     'context_reset_required=true',
-    _config.ticketBoundaryMode === 'glide' ? 'glide_fallback=gated' : undefined,
-    _config.ticketBoundaryMode === 'glide'
+    config.ticketBoundaryMode === 'glide' ? 'glide_fallback=gated' : undefined,
+    config.ticketBoundaryMode === 'glide'
       ? `GLIDE FALLBACK before starting ${nextPending.id}.`
       : `GATED BOUNDARY before starting ${nextPending.id}.`,
-    _config.ticketBoundaryMode === 'glide'
+    config.ticketBoundaryMode === 'glide'
       ? 'Host/runtime self-reset is not supported here, so Son-of-Anton is using gated boundary behavior instead.'
       : undefined,
     'Reset context now. Prefer /clear for minimum token use; use /compact only if you intentionally want compressed carry-forward context.',
@@ -178,6 +183,7 @@ export function formatAdvanceBoundaryGuidance(
 
 export function formatCurrentTicketStatus(
   state: DeliveryState,
+  config: ResolvedOrchestratorConfig,
   ticketId?: string,
 ): string {
   const ticket =
@@ -192,7 +198,7 @@ export function formatCurrentTicketStatus(
     'Delivery Orchestrator',
     `plan_key=${state.planKey}`,
     `plan=${state.planPath}`,
-    `boundary_mode=${_config.ticketBoundaryMode}`,
+    `boundary_mode=${config.ticketBoundaryMode}`,
   ].join('\n');
 
   if (!ticket) {

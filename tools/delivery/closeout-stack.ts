@@ -9,6 +9,7 @@ import {
   resolveOrchestratorConfig,
   saveState,
 } from './orchestrator';
+import type { ResolvedOrchestratorConfig } from './runtime-config';
 import type { DeliveryState, TicketState } from './types';
 
 type CloseoutStackArgs = {
@@ -294,8 +295,9 @@ function closePullRequest(
 function formatCloseoutSummary(
   summary: CloseoutSummary,
   state: DeliveryState,
+  config: ResolvedOrchestratorConfig,
 ): string {
-  const lines = [formatStatus(state), '', 'Stacked Closeout Summary'];
+  const lines = [formatStatus(state, config), '', 'Stacked Closeout Summary'];
 
   for (const merged of summary.merged) {
     const via =
@@ -430,7 +432,7 @@ export async function runCloseoutStack(
     }
 
     await saveState(cwd, state);
-    console.log(formatCloseoutSummary(summary, state));
+    console.log(formatCloseoutSummary(summary, state, config));
     return 0;
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

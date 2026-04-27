@@ -179,25 +179,32 @@ describe('delivery orchestrator', () => {
   });
 
   it('formats status with the effective boundary mode', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'glide',
-    });
-
     expect(
-      formatStatus({
-        planKey: 'engineering-epic-07',
-        planPath: 'docs/02-delivery/engineering-epic-07/implementation-plan.md',
-        statePath: '.agents/delivery/engineering-epic-07/state.json',
-        reviewsDirPath: '.agents/delivery/engineering-epic-07/reviews',
-        handoffsDirPath: '.agents/delivery/engineering-epic-07/handoffs',
-        reviewPollIntervalMinutes: 6,
-        reviewPollMaxWaitMinutes: 12,
-        tickets: [],
-      }),
+      formatStatus(
+        {
+          planKey: 'engineering-epic-07',
+          planPath:
+            'docs/02-delivery/engineering-epic-07/implementation-plan.md',
+          statePath: '.agents/delivery/engineering-epic-07/state.json',
+          reviewsDirPath: '.agents/delivery/engineering-epic-07/reviews',
+          handoffsDirPath: '.agents/delivery/engineering-epic-07/handoffs',
+          reviewPollIntervalMinutes: 6,
+          reviewPollMaxWaitMinutes: 12,
+          tickets: [],
+        },
+        {
+          defaultBranch: 'main',
+          planRoot: 'docs',
+          runtime: 'bun',
+          packageManager: 'bun',
+          ticketBoundaryMode: 'glide',
+          reviewPolicy: {
+            selfAudit: 'skip_doc_only',
+            codexPreflight: 'skip_doc_only',
+            externalReview: 'skip_doc_only',
+          },
+        },
+      ),
     ).toContain('boundary_mode=glide');
   });
 

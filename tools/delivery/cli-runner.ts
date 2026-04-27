@@ -163,7 +163,7 @@ export async function runDeliveryOrchestrator(
     if (parsed.command === 'repair-state') {
       const repaired = await repairState(cwd, options);
       console.log(
-        [formatStatus(repaired.state), formatRepairSummary(repaired)]
+        [formatStatus(repaired.state, _config), formatRepairSummary(repaired)]
           .filter(Boolean)
           .join('\n\n'),
       );
@@ -175,17 +175,17 @@ export async function runDeliveryOrchestrator(
     switch (parsed.command) {
       case 'sync': {
         await saveState(cwd, state);
-        console.log(formatStatus(state));
+        console.log(formatStatus(state, _config));
         return 0;
       }
       case 'status': {
-        console.log(formatStatus(state));
+        console.log(formatStatus(state, _config));
         return 0;
       }
       case 'start': {
         const nextState = await startTicket(state, cwd, parsed.positionals[0]);
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatStatus(nextState, _config));
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -230,7 +230,7 @@ export async function runDeliveryOrchestrator(
           auditPatchCommits,
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatStatus(nextState, _config));
         return 0;
       }
       case 'codex-preflight': {
@@ -286,7 +286,7 @@ export async function runDeliveryOrchestrator(
           console.log('Doc-only ticket — Codex preflight auto-skipped.');
         }
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatStatus(nextState, _config));
         return 0;
       }
       case 'open-pr': {
@@ -298,7 +298,7 @@ export async function runDeliveryOrchestrator(
         await saveState(cwd, nextState);
         console.log(
           [
-            formatStatus(nextState),
+            formatStatus(nextState, _config),
             formatReviewWindowMessage(nextState, parsed.positionals[0]),
           ]
             .filter(Boolean)
@@ -341,7 +341,9 @@ export async function runDeliveryOrchestrator(
             skipNote,
           );
           await saveState(cwd, docOnlyState);
-          console.log(formatCurrentTicketStatus(docOnlyState, pollTicketId));
+          console.log(
+            formatCurrentTicketStatus(docOnlyState, _config, pollTicketId),
+          );
           await emitNotificationWarnings(
             notifier,
             cwd,
@@ -352,7 +354,9 @@ export async function runDeliveryOrchestrator(
 
         const nextState = await pollReview(state, cwd, pollTicketId);
         await saveState(cwd, nextState);
-        console.log(formatCurrentTicketStatus(nextState, pollTicketId));
+        console.log(
+          formatCurrentTicketStatus(nextState, _config, pollTicketId),
+        );
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -371,7 +375,7 @@ export async function runDeliveryOrchestrator(
 
         const nextState = await reconcileLateReview(state, cwd, ticketId);
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatStatus(nextState, _config));
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -401,7 +405,7 @@ export async function runDeliveryOrchestrator(
           noteParts.join(' ').trim() || undefined,
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatStatus(nextState, _config));
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -417,11 +421,12 @@ export async function runDeliveryOrchestrator(
           cwd,
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatStatus(nextState, _config));
         const boundaryGuidance = formatAdvanceBoundaryGuidance(
           state,
           advancedState,
           nextState,
+          _config,
         );
 
         if (boundaryGuidance) {
@@ -443,7 +448,7 @@ export async function runDeliveryOrchestrator(
           parsed.positionals[0],
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState));
+        console.log(formatStatus(nextState, _config));
         return 0;
       }
       default: {

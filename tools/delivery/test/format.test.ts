@@ -1,12 +1,25 @@
 import { describe, expect, it } from 'bun:test';
 
-import { initOrchestratorConfig } from '../orchestrator';
 import {
   formatAdvanceBoundaryGuidance,
   formatCurrentTicketStatus,
   resolveEffectiveAdvanceBoundaryMode,
 } from '../format';
+import type { ResolvedOrchestratorConfig } from '../runtime-config';
 import type { DeliveryState } from '../types';
+
+const baseConfig: ResolvedOrchestratorConfig = {
+  defaultBranch: 'main',
+  planRoot: 'docs',
+  runtime: 'bun',
+  packageManager: 'bun',
+  ticketBoundaryMode: 'cook',
+  reviewPolicy: {
+    selfAudit: 'skip_doc_only',
+    codexPreflight: 'skip_doc_only',
+    externalReview: 'skip_doc_only',
+  },
+};
 
 describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
   const baseState: DeliveryState = {
@@ -52,18 +65,16 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
   };
 
   it('emits gated reset guidance and the canonical resume prompt', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
+    const config: ResolvedOrchestratorConfig = {
+      ...baseConfig,
       ticketBoundaryMode: 'gated',
-    });
+    };
 
     const output = formatAdvanceBoundaryGuidance(
       baseState,
       advancedState,
       advancedState,
+      config,
     );
 
     expect(output).toContain('context_reset_required=true');
@@ -75,13 +86,10 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
   });
 
   it('emits cook continuation guidance with the next worktree and absolute handoff path', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
+    const config: ResolvedOrchestratorConfig = {
+      ...baseConfig,
       ticketBoundaryMode: 'cook',
-    });
+    };
 
     const nextState: DeliveryState = {
       ...advancedState,
@@ -101,6 +109,7 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
       baseState,
       advancedState,
       nextState,
+      config,
     );
 
     expect(output).toContain('continuation_mode=cook');
@@ -115,18 +124,16 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
   });
 
   it('emits explicit glide fallback guidance', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
+    const config: ResolvedOrchestratorConfig = {
+      ...baseConfig,
       ticketBoundaryMode: 'glide',
-    });
+    };
 
     const output = formatAdvanceBoundaryGuidance(
       baseState,
       advancedState,
       advancedState,
+      config,
     );
 
     expect(output).toContain('context_reset_required=true');
@@ -191,7 +198,7 @@ describe('formatCurrentTicketStatus (EE6: findings block)', () => {
   };
 
   it('emits a findings block for actionable finding comments', () => {
-    const output = formatCurrentTicketStatus(baseState, 'P15.06');
+    const output = formatCurrentTicketStatus(baseState, baseConfig, 'P15.06');
 
     expect(output).toContain('findings (2):');
     expect(output).toContain(
@@ -213,7 +220,11 @@ describe('formatCurrentTicketStatus (EE6: findings block)', () => {
       })),
     };
 
-    const output = formatCurrentTicketStatus(stateWithStale, 'P15.06');
+    const output = formatCurrentTicketStatus(
+      stateWithStale,
+      baseConfig,
+      'P15.06',
+    );
 
     expect(output).not.toContain('findings (');
     expect(output).not.toContain('[coderabbit]');
@@ -225,7 +236,11 @@ describe('formatCurrentTicketStatus (EE6: findings block)', () => {
       tickets: baseState.tickets.map((t) => ({ ...t, reviewComments: [] })),
     };
 
-    const output = formatCurrentTicketStatus(stateNoComments, 'P15.06');
+    const output = formatCurrentTicketStatus(
+      stateNoComments,
+      baseConfig,
+      'P15.06',
+    );
 
     expect(output).not.toContain('findings (');
   });
@@ -252,7 +267,7 @@ describe('formatCurrentTicketStatus (EE6: findings block)', () => {
       })),
     };
 
-    const output = formatCurrentTicketStatus(stateNoBold, 'P15.06');
+    const output = formatCurrentTicketStatus(stateNoBold, baseConfig, 'P15.06');
 
     expect(output).toContain('findings (1):');
     expect(output).toContain(
@@ -282,7 +297,11 @@ describe('formatCurrentTicketStatus (EE6: findings block)', () => {
       })),
     };
 
-    const output = formatCurrentTicketStatus(stateUnknown, 'P15.06');
+    const output = formatCurrentTicketStatus(
+      stateUnknown,
+      baseConfig,
+      'P15.06',
+    );
 
     expect(output).toContain('findings (1):');
     expect(output).toContain(
@@ -300,7 +319,7 @@ describe('formatCurrentTicketStatus (EE6: findings block)', () => {
     };
 
     // no ticketId — selector must find needs_patch ticket
-    const output = formatCurrentTicketStatus(stateNeedsPatch);
+    const output = formatCurrentTicketStatus(stateNeedsPatch, baseConfig);
 
     expect(output).toContain('findings (2):');
     expect(output).toContain('[coderabbit]');

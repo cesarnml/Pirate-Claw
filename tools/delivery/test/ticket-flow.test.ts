@@ -18,6 +18,7 @@ import {
   initOrchestratorConfig,
   loadOrchestratorConfig,
   resolveOrchestratorConfig,
+  type ResolvedOrchestratorConfig,
   VALID_REVIEW_POLICY_STAGE_VALUES,
 } from '../runtime-config';
 import {
@@ -29,6 +30,19 @@ async function writeFixture(path: string, content: string) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, 'utf8');
 }
+
+const baseConfig: ResolvedOrchestratorConfig = {
+  defaultBranch: 'main',
+  planRoot: 'docs',
+  runtime: 'bun',
+  packageManager: 'bun',
+  ticketBoundaryMode: 'cook',
+  reviewPolicy: {
+    selfAudit: 'skip_doc_only',
+    codexPreflight: 'skip_doc_only',
+    externalReview: 'skip_doc_only',
+  },
+};
 
 describe('ticket-flow', () => {
   it('materializes first-ticket continuation artifacts into the target worktree', async () => {
@@ -364,14 +378,7 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
         },
       ],
     );
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
-    });
-    const output = formatStatus(state);
+    const output = formatStatus(state, baseConfig);
     expect(output).toMatch(
       /post_verify_self_audit=completed at .+ \(patched\)/,
     );
@@ -386,19 +393,15 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
   });
 
   it('renders effective reviewPolicy in formatStatus', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
+    const config: ResolvedOrchestratorConfig = {
+      ...baseConfig,
       reviewPolicy: {
         selfAudit: 'required',
         codexPreflight: 'disabled',
         externalReview: 'required',
       },
-    });
-    const output = formatStatus(baseInProgressState);
+    };
+    const output = formatStatus(baseInProgressState, config);
     expect(output).toContain(
       'review_policy=selfAudit:required codexPreflight:disabled externalReview:required',
     );
@@ -830,13 +833,6 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
   });
 
   it('formats codex_preflight outcome in formatStatus', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
-    });
     const state: DeliveryState = {
       ...basePostAuditState,
       tickets: basePostAuditState.tickets.map((t) => ({
@@ -846,20 +842,13 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
         codexPreflightCompletedAt: '2026-04-14T10:00:00.000Z',
       })),
     };
-    const output = formatStatus(state);
+    const output = formatStatus(state, baseConfig);
     expect(output).toContain(
       'codex_preflight=completed at 2026-04-14T10:00:00.000Z (clean)',
     );
   });
 
   it('formats skipped codex_preflight outcome in formatStatus', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
-    });
     const state: DeliveryState = {
       ...basePostAuditState,
       tickets: basePostAuditState.tickets.map((t) => ({
@@ -869,7 +858,7 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
         codexPreflightCompletedAt: '2026-04-14T10:00:00.000Z',
       })),
     };
-    const output = formatStatus(state);
+    const output = formatStatus(state, baseConfig);
     expect(output).toContain(
       'codex_preflight=completed at 2026-04-14T10:00:00.000Z (skipped)',
     );

@@ -49,10 +49,17 @@ output unchanged unless a test only encoded previous singleton setup mechanics.
 
 ## Rationale
 
-Red first:
+Red first: direct formatter, ticket-flow, and orchestrator tests were updated to
+pass explicit config values before the full `verify:quiet` gate. The formatter
+module now has no `_config` import to satisfy the ticket's hidden-state check.
 
-Why this path:
+Why this path: passing `ResolvedOrchestratorConfig` directly keeps formatter
+functions as pure string renderers while preserving existing terminal output and
+avoiding a broader CLI command-context migration before EE11.04.
 
-Alternative considered:
+Alternative considered: passing the full delivery context everywhere, but the
+formatters only need config values today, so taking the narrower dependency
+keeps this ticket smaller and makes future context threading mechanical.
 
-Deferred:
+Deferred: command helper splitting and full context ownership remain in EE11.04;
+final singleton export removal remains in EE11.05.
