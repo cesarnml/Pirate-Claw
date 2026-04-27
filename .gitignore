@@ -20,5 +20,5 @@ pirate-claw.config.minimal.json
 pirate-claw.db
 .codex-clone-*/
 .codex-worktrees/
-.claude/worktrees/**/*
 validation
+.claude/worktrees
