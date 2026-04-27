@@ -1,8 +1,17 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { Button } from '$lib/components/ui/button';
 	import type { PageData } from './$types';
 
 	const { data }: { data: PageData } = $props();
+
+	$effect(() => {
+		if (!browser || !data.ok) return;
+		const timer = setTimeout(() => {
+			window.location.href = data.returnTo ?? '/config';
+		}, 2000);
+		return () => clearTimeout(timer);
+	});
 </script>
 
 <svelte:head>
@@ -20,7 +29,12 @@
 		</p>
 		<h1 class="text-foreground text-3xl font-semibold">Plex Browser Auth</h1>
 		<p class="text-muted-foreground text-sm">{data.message}</p>
+		{#if data.ok}
+			<p class="text-muted-foreground text-xs">Redirecting automatically…</p>
+		{/if}
 	</div>
 
-	<Button href={data.returnTo ?? '/config'}>Return to settings</Button>
+	<Button href={data.returnTo ?? '/config'}
+		>{data.returnTo === '/onboarding' ? 'Continue setup' : 'Return to settings'}</Button
+	>
 </div>

@@ -416,5 +416,50 @@ export const actions: Actions = {
 			console.error('[onboarding] saveDownloadDirs failed:', error);
 			return fail(500, { downloadDirsMessage: 'Could not save download directories.' });
 		}
+	},
+
+	reapplyConfig: async () => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { reapplyMessage: 'Config writes are disabled.' });
+		}
+
+		const configResponse = await apiRequest('/api/config');
+		if (!configResponse.ok) {
+			return fail(500, { reapplyMessage: 'Could not load config.' });
+		}
+		const config = (await configResponse.json()) as AppConfig;
+		const etag = configResponse.headers.get('etag');
+		if (!etag) {
+			return fail(500, { reapplyMessage: 'Missing config revision.' });
+		}
+
+		try {
+			const response = await apiRequest('/api/config/feeds', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': etag
+				},
+				body: JSON.stringify(config.feeds ?? [])
+			});
+
+			if (!response.ok) {
+				let reapplyMessage = `Re-apply failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) reapplyMessage = body.error;
+				} catch {
+					// keep fallback
+				}
+				return fail(response.status, { reapplyMessage });
+			}
+
+			return { reapplySuccess: true };
+		} catch (error) {
+			console.error('[onboarding] reapplyConfig failed:', error);
+			return fail(500, { reapplyMessage: 'Could not re-apply config.' });
+		}
 	}
 };

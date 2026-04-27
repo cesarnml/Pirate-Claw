@@ -229,6 +229,7 @@
 		Stand up Pirate Claw with the minimum viable config, then continue in the dashboard for deeper
 		tuning.
 	</p>
+	<a href="/" class="text-muted-foreground text-sm hover:underline">← Back to dashboard</a>
 </section>
 
 {#if data.error}
@@ -1005,6 +1006,28 @@
 							Review Config
 						</a>
 					</div>
+
+					{#if readinessState !== 'ready' && readinessState !== 'ready_pending_restart'}
+						<div class="border-border/60 bg-background/40 rounded-xl border p-4">
+							<p class="text-muted-foreground text-sm">
+								Setup looks complete but readiness is stuck. Re-apply your config to clear the
+								state.
+							</p>
+							<form method="POST" action="?/reapplyConfig" class="mt-3">
+								<button
+									type="submit"
+									class="border-border bg-background/55 hover:bg-muted/80 inline-flex h-9 items-center rounded-xl border px-4 text-sm transition-colors"
+								>
+									Re-apply config
+								</button>
+							</form>
+							{#if (form as { reapplyMessage?: string } | undefined)?.reapplyMessage}
+								<p class="text-muted-foreground mt-2 text-xs">
+									{(form as { reapplyMessage?: string }).reapplyMessage}
+								</p>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			{:else if showPreStepsDone && !(data.onboarding?.hasTvTargets ?? false) && !(data.onboarding?.hasMovieTargets ?? false)}
 				<Alert
