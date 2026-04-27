@@ -6,10 +6,23 @@ import { join } from 'node:path';
 import { createOptions, syncStateFromScratch } from '../orchestrator';
 import {
   inferPackageManager,
-  initOrchestratorConfig,
   loadOrchestratorConfig,
   resolveOrchestratorConfig,
+  type ResolvedOrchestratorConfig,
 } from '../runtime-config';
+
+const baseConfig: ResolvedOrchestratorConfig = {
+  defaultBranch: 'main',
+  planRoot: 'docs',
+  runtime: 'bun',
+  packageManager: 'bun',
+  ticketBoundaryMode: 'cook',
+  reviewPolicy: {
+    selfAudit: 'skip_doc_only',
+    codexPreflight: 'skip_doc_only',
+    externalReview: 'skip_doc_only',
+  },
+};
 
 describe('orchestrator config', () => {
   it('returns defaults when config file is absent', async () => {
@@ -253,41 +266,28 @@ describe('orchestrator config', () => {
   });
 
   it('syncStateFromScratch uses configured defaultBranch for first ticket baseBranch', () => {
-    initOrchestratorConfig({
+    const config: ResolvedOrchestratorConfig = {
+      ...baseConfig,
       defaultBranch: 'develop',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
+    };
+    const options = createOptions({
+      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
     });
 
-    try {
-      const options = createOptions({
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
-      });
+    const synced = syncStateFromScratch(
+      [
+        {
+          id: 'P3.01',
+          title: 'First Ticket',
+          slug: 'first-ticket',
+          ticketFile: 'docs/02-delivery/phase-03/ticket-01-first-ticket.md',
+        },
+      ],
+      '/workspace/test',
+      options,
+      config,
+    );
 
-      const synced = syncStateFromScratch(
-        [
-          {
-            id: 'P3.01',
-            title: 'First Ticket',
-            slug: 'first-ticket',
-            ticketFile: 'docs/02-delivery/phase-03/ticket-01-first-ticket.md',
-          },
-        ],
-        '/workspace/test',
-        options,
-      );
-
-      expect(synced.tickets[0]?.baseBranch).toBe('develop');
-    } finally {
-      initOrchestratorConfig({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'bun',
-        ticketBoundaryMode: 'cook',
-      });
-    }
+    expect(synced.tickets[0]?.baseBranch).toBe('develop');
   });
 });

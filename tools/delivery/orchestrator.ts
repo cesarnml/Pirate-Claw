@@ -70,9 +70,7 @@ export type {
 } from './types';
 export {
   generateRunDeliverInvocation,
-  getOrchestratorConfig,
   inferPackageManager,
-  initOrchestratorConfig,
   loadOrchestratorConfig,
   resolveOrchestratorConfig,
   VALID_REVIEW_POLICY_STAGE_VALUES,

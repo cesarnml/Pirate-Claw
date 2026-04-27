@@ -1,13 +1,15 @@
 import { getUsage, parseCliArgs, resolveOptionsForCommand } from './cli';
 import { ensureEnvReady as ensureEnvReadyImpl } from './env';
 import {
-  _config,
   generateRunDeliverInvocation,
-  initOrchestratorConfig,
   loadOrchestratorConfig,
   resolveOrchestratorConfig,
 } from './runtime-config';
-import type { ReviewPolicyStageValue, TicketBoundaryMode } from './config';
+import type {
+  ResolvedOrchestratorConfig,
+  ReviewPolicyStageValue,
+  TicketBoundaryMode,
+} from './config';
 import type {
   DeliveryState,
   InternalReviewPatchCommit,
@@ -95,10 +97,6 @@ import {
   startTicket as startTicketImpl,
 } from './ticket-flow';
 
-function defaultContext(): DeliveryOrchestratorContext {
-  return createDeliveryOrchestratorContext(_config);
-}
-
 export async function runDeliveryOrchestrator(
   argv: string[],
   cwd: string,
@@ -116,11 +114,12 @@ export async function runDeliveryOrchestrator(
 
   try {
     const rawConfig = await loadOrchestratorConfig(cwd);
-    await ensureEnvReadyImpl(cwd, findPrimaryWorktreePath);
+    const initialConfig = resolveOrchestratorConfig(rawConfig, cwd);
+    await ensureEnvReadyImpl(cwd, (worktreePath) =>
+      findPrimaryWorktreePath(worktreePath, initialConfig),
+    );
     const usage = getUsage(
-      generateRunDeliverInvocation(
-        resolveOrchestratorConfig(rawConfig, cwd).packageManager,
-      ),
+      generateRunDeliverInvocation(initialConfig.packageManager),
     );
     parsed = parseCliArgs(argv, usage);
     const resolvedConfig = resolveOrchestratorConfig(
@@ -130,7 +129,6 @@ export async function runDeliveryOrchestrator(
       },
       cwd,
     );
-    initOrchestratorConfig(resolvedConfig);
     const context = createDeliveryOrchestratorContext(resolvedConfig);
     const platform = context.platform;
     const notifier = resolveNotifier();
@@ -151,7 +149,8 @@ export async function runDeliveryOrchestrator(
       command: parsed.command,
       createOptions,
       cwd,
-      inferPlanPathFromBranch,
+      inferPlanPathFromBranch: (worktreePath, branch) =>
+        inferPlanPathFromBranch(worktreePath, branch, context.config),
       planPath: parsed.planPath,
       readCurrentBranch: platform.readCurrentBranch,
     });
@@ -161,7 +160,7 @@ export async function runDeliveryOrchestrator(
     };
 
     if (parsed.command === 'repair-state') {
-      const repaired = await repairState(cwd, options);
+      const repaired = await repairState(cwd, options, context.config);
       console.log(
         [
           formatStatus(repaired.state, context.config),
@@ -173,7 +172,7 @@ export async function runDeliveryOrchestrator(
       return 0;
     }
 
-    const state = await loadState(cwd, options);
+    const state = await loadState(cwd, options, context.config);
 
     switch (parsed.command) {
       case 'sync': {
@@ -235,6 +234,7 @@ export async function runDeliveryOrchestrator(
           state,
           auditTicketId,
           auditOutcome,
+          context.config,
           {},
           auditPatchCommits,
         );
@@ -498,11 +498,14 @@ export async function runDeliveryOrchestrator(
   }
 }
 
-export function findPrimaryWorktreePath(cwd: string): string | undefined {
+export function findPrimaryWorktreePath(
+  cwd: string,
+  config: ResolvedOrchestratorConfig,
+): string | undefined {
   return findPlatformPrimaryWorktreePath(
     cwd,
-    _config.defaultBranch,
-    _config.runtime,
+    config.defaultBranch,
+    config.runtime,
   );
 }
 
@@ -517,11 +520,12 @@ export function syncStateFromScratch(
   ticketDefinitions: TicketDefinition[],
   cwd: string,
   options: OrchestratorOptions,
+  config: ResolvedOrchestratorConfig,
   inferred?: DeliveryState,
 ): DeliveryState {
   return syncStateFromScratchImpl(ticketDefinitions, options, inferred, {
     cwd,
-    defaultBranch: _config.defaultBranch,
+    defaultBranch: config.defaultBranch,
     deriveBranchName,
     deriveWorktreePath,
   });
@@ -532,6 +536,7 @@ export function syncStateFromExisting(
   ticketDefinitions: TicketDefinition[],
   cwd: string,
   options: OrchestratorOptions,
+  config: ResolvedOrchestratorConfig,
   inferred?: DeliveryState,
 ): DeliveryState {
   return syncStateFromExistingImpl(
@@ -541,7 +546,7 @@ export function syncStateFromExisting(
     inferred,
     {
       cwd,
-      defaultBranch: _config.defaultBranch,
+      defaultBranch: config.defaultBranch,
       deriveBranchName,
       deriveWorktreePath,
     },
@@ -573,11 +578,12 @@ export function createOptions(input: {
 export async function loadState(
   cwd: string,
   options: OrchestratorOptions,
+  config: ResolvedOrchestratorConfig,
 ): Promise<DeliveryState> {
   return loadStateImpl(cwd, options, {
     cwd,
-    defaultBranch: _config.defaultBranch,
-    runtime: _config.runtime,
+    defaultBranch: config.defaultBranch,
+    runtime: config.runtime,
     deriveBranchName,
     deriveWorktreePath,
     findExistingBranch,
@@ -587,11 +593,12 @@ export async function loadState(
 async function repairState(
   cwd: string,
   options: OrchestratorOptions,
+  config: ResolvedOrchestratorConfig,
 ): Promise<RepairStateResult> {
   return repairStateImpl(cwd, options, {
     cwd,
-    defaultBranch: _config.defaultBranch,
-    runtime: _config.runtime,
+    defaultBranch: config.defaultBranch,
+    runtime: config.runtime,
     deriveBranchName,
     deriveWorktreePath,
     findExistingBranch,
@@ -601,11 +608,12 @@ async function repairState(
 export async function inferPlanPathFromBranch(
   cwd: string,
   branch: string,
+  config: ResolvedOrchestratorConfig,
 ): Promise<string> {
   return inferPlanPathFromBranchImpl(
     cwd,
     branch,
-    _config.planRoot,
+    config.planRoot,
     findExistingBranch,
   );
 }
@@ -668,6 +676,7 @@ export async function recordPostVerifySelfAudit(
   state: DeliveryState,
   ticketId?: string,
   outcome?: ReviewOutcome,
+  config?: ResolvedOrchestratorConfig,
   dependencies: {
     isLocalBranchDocOnly?: (
       cwd: string,
@@ -678,21 +687,24 @@ export async function recordPostVerifySelfAudit(
   } = {},
   patchCommits?: InternalReviewPatchCommit[],
 ): Promise<DeliveryState> {
-  const context = defaultContext();
+  if (!config) {
+    throw new Error('recordPostVerifySelfAudit requires explicit config.');
+  }
+
   const target =
     (ticketId
       ? state.tickets.find((ticket) => ticket.id === ticketId)
       : state.tickets.find((ticket) => ticket.status === 'in_progress')) ??
     undefined;
   const selfAuditPolicy =
-    dependencies.selfAuditPolicy ?? context.config.reviewPolicy.selfAudit;
+    dependencies.selfAuditPolicy ?? config.reviewPolicy.selfAudit;
   const isDocOnly =
     target &&
     selfAuditPolicy !== 'disabled' &&
     (dependencies.isLocalBranchDocOnly ?? isPlatformLocalBranchDocOnly)(
       target.worktreePath,
       target.baseBranch,
-      context.config.runtime,
+      config.runtime,
     );
 
   if (selfAuditPolicy === 'skip_doc_only' && isDocOnly) {
@@ -712,11 +724,14 @@ export function recordCodexPreflight(
   state: DeliveryState,
   outcome?: 'clean' | 'patched',
   isDocOnly?: boolean,
-  policy: ReviewPolicyStageValue = defaultContext().config.reviewPolicy
-    .codexPreflight,
+  policy?: ReviewPolicyStageValue,
   patchCommits?: InternalReviewPatchCommit[],
   note?: string,
 ): DeliveryState {
+  if (!policy) {
+    throw new Error('recordCodexPreflight requires an explicit policy.');
+  }
+
   return recordCodexPreflightImpl(
     state,
     outcome,
@@ -786,15 +801,10 @@ function resolveInternalReviewPatchCommits(
 export async function openPullRequest(
   state: DeliveryState,
   cwd: string,
-  contextOrTicketId?: DeliveryOrchestratorContext | string,
+  context: DeliveryOrchestratorContext,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const context =
-    typeof contextOrTicketId === 'object'
-      ? contextOrTicketId
-      : defaultContext();
-  const resolvedTicketId =
-    typeof contextOrTicketId === 'string' ? contextOrTicketId : ticketId;
+  const resolvedTicketId = ticketId;
   const platform = context.platform;
   const nextState = openPullRequestImpl(state, cwd, resolvedTicketId, {
     assertReviewerFacingMarkdown,
@@ -839,24 +849,13 @@ export async function openPullRequest(
 export async function pollReview(
   state: DeliveryState,
   cwd: string,
-  contextOrTicketId?: DeliveryOrchestratorContext | string,
-  maybeTicketIdOrDependencies?: string | Partial<TicketReviewDependencies>,
+  context: DeliveryOrchestratorContext,
+  ticketId?: string,
+  maybeDependencies?: Partial<TicketReviewDependencies>,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
-  const context =
-    typeof contextOrTicketId === 'object'
-      ? contextOrTicketId
-      : defaultContext();
-  const ticketId =
-    typeof contextOrTicketId === 'string'
-      ? contextOrTicketId
-      : typeof maybeTicketIdOrDependencies === 'string'
-        ? maybeTicketIdOrDependencies
-        : undefined;
   const resolvedDependencies =
-    typeof maybeTicketIdOrDependencies === 'object'
-      ? maybeTicketIdOrDependencies
-      : dependencies;
+    typeof maybeDependencies === 'object' ? maybeDependencies : dependencies;
   const platform = context.platform;
   return runTicketReviewLifecycle(state, cwd, ticketId, {
     ...resolvedDependencies,
@@ -877,23 +876,13 @@ export async function pollReview(
 export async function reconcileLateReview(
   state: DeliveryState,
   cwd: string,
-  contextOrTicketId: DeliveryOrchestratorContext | string,
-  maybeTicketIdOrDependencies?: string | Partial<TicketReviewDependencies>,
+  context: DeliveryOrchestratorContext,
+  ticketId: string,
+  maybeDependencies?: Partial<TicketReviewDependencies>,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
-  const context =
-    typeof contextOrTicketId === 'object'
-      ? contextOrTicketId
-      : defaultContext();
-  const ticketId =
-    typeof contextOrTicketId === 'string'
-      ? contextOrTicketId
-      : (maybeTicketIdOrDependencies as string | undefined);
   const resolvedDependencies =
-    typeof contextOrTicketId === 'string' &&
-    typeof maybeTicketIdOrDependencies === 'object'
-      ? maybeTicketIdOrDependencies
-      : dependencies;
+    typeof maybeDependencies === 'object' ? maybeDependencies : dependencies;
   if (!ticketId) {
     throw new Error('Missing ticket id for reconcile-late-review.');
   }
@@ -917,26 +906,13 @@ export async function reconcileLateReview(
 export async function runStandaloneAiReview(
   cwd: string,
   notifier: DeliveryNotifier,
-  contextOrPrNumber?: DeliveryOrchestratorContext | number,
-  maybePrNumberOrDependencies?:
-    | number
-    | Partial<StandaloneAiReviewDependencies>,
+  context: DeliveryOrchestratorContext,
+  prNumber?: number,
+  maybeDependencies?: Partial<StandaloneAiReviewDependencies>,
   dependencies: Partial<StandaloneAiReviewDependencies> = {},
 ): Promise<StandaloneAiReviewResult> {
-  const context =
-    typeof contextOrPrNumber === 'object'
-      ? contextOrPrNumber
-      : defaultContext();
-  const prNumber =
-    typeof contextOrPrNumber === 'number'
-      ? contextOrPrNumber
-      : typeof maybePrNumberOrDependencies === 'number'
-        ? maybePrNumberOrDependencies
-        : undefined;
   const resolvedDependencies =
-    typeof maybePrNumberOrDependencies === 'object'
-      ? maybePrNumberOrDependencies
-      : dependencies;
+    typeof maybeDependencies === 'object' ? maybeDependencies : dependencies;
   const platform = context.platform;
   const pullRequest =
     resolvedDependencies.pullRequest ??
@@ -967,62 +943,30 @@ export async function runStandaloneAiReview(
 export async function recordReview(
   state: DeliveryState,
   cwd: string,
-  contextOrTicketId: DeliveryOrchestratorContext | string,
-  ticketIdOrOutcome: string | ReviewResult,
-  outcomeOrNote?: ReviewResult | string,
-  noteOrDependencies?: string | Partial<TicketReviewDependencies>,
+  context: DeliveryOrchestratorContext,
+  ticketId: string,
+  outcome: ReviewResult,
+  note?: string,
+  maybeDependencies?: Partial<TicketReviewDependencies>,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
-  const context =
-    typeof contextOrTicketId === 'object'
-      ? contextOrTicketId
-      : defaultContext();
-  const ticketId =
-    typeof contextOrTicketId === 'string'
-      ? contextOrTicketId
-      : ticketIdOrOutcome;
-  const resolvedOutcome =
-    typeof contextOrTicketId === 'string'
-      ? (ticketIdOrOutcome as ReviewResult)
-      : (outcomeOrNote as ReviewResult);
-  const resolvedNote =
-    typeof contextOrTicketId === 'string'
-      ? typeof outcomeOrNote === 'string'
-        ? outcomeOrNote
-        : undefined
-      : typeof noteOrDependencies === 'string'
-        ? noteOrDependencies
-        : undefined;
   const resolvedDependencies =
-    typeof contextOrTicketId === 'string'
-      ? typeof noteOrDependencies === 'object'
-        ? noteOrDependencies
-        : dependencies
-      : typeof noteOrDependencies === 'object'
-        ? noteOrDependencies
-        : dependencies;
+    typeof maybeDependencies === 'object' ? maybeDependencies : dependencies;
   const platform = context.platform;
-  return recordTicketReview(
-    state,
-    cwd,
-    ticketId,
-    resolvedOutcome,
-    resolvedNote,
-    {
-      ...(resolvedDependencies as Partial<TicketReviewDependencies>),
-      relativeToRepo,
-      replyToReviewThread:
-        resolvedDependencies.replyToReviewThread ??
-        platform.replyToReviewThreadForOrchestrator,
-      resolveReviewFetcher,
-      resolveReviewThread: platform.resolveReviewThread,
-      resolveReviewTriager,
-      runProcess: platform.runProcess,
-      updatePullRequestBody:
-        resolvedDependencies.updatePullRequestBody ??
-        platform.updatePullRequestBody,
-    },
-  );
+  return recordTicketReview(state, cwd, ticketId, outcome, note, {
+    ...(resolvedDependencies as Partial<TicketReviewDependencies>),
+    relativeToRepo,
+    replyToReviewThread:
+      resolvedDependencies.replyToReviewThread ??
+      platform.replyToReviewThreadForOrchestrator,
+    resolveReviewFetcher,
+    resolveReviewThread: platform.resolveReviewThread,
+    resolveReviewTriager,
+    runProcess: platform.runProcess,
+    updatePullRequestBody:
+      resolvedDependencies.updatePullRequestBody ??
+      platform.updatePullRequestBody,
+  });
 }
 
 async function advanceToNextTicketImpl(
@@ -1040,41 +984,18 @@ export async function applyAdvanceBoundaryMode(
   state: DeliveryState,
   advancedState: DeliveryState,
   cwd: string,
-  contextOrDependencies?:
-    | DeliveryOrchestratorContext
-    | {
-        startTicket: (
-          state: DeliveryState,
-          cwd: string,
-          ticketId?: string,
-        ) => Promise<DeliveryState>;
-      },
+  context: DeliveryOrchestratorContext,
   dependencies: {
     startTicket: (
       state: DeliveryState,
       cwd: string,
       ticketId?: string,
     ) => Promise<DeliveryState>;
-  } = typeof contextOrDependencies === 'object' &&
-  'startTicket' in contextOrDependencies
-    ? contextOrDependencies
-    : {
-        startTicket: (state, cwd, ticketId) =>
-          startTicket(
-            state,
-            cwd,
-            typeof contextOrDependencies === 'object'
-              ? contextOrDependencies
-              : defaultContext(),
-            ticketId,
-          ),
-      },
+  } = {
+    startTicket: (state, cwd, ticketId) =>
+      startTicket(state, cwd, context, ticketId),
+  },
 ): Promise<DeliveryState> {
-  const context =
-    typeof contextOrDependencies === 'object' &&
-    !('startTicket' in contextOrDependencies)
-      ? contextOrDependencies
-      : defaultContext();
   const nextPending = advancedState.tickets.find(
     (ticket) =>
       ticket.status === 'pending' &&

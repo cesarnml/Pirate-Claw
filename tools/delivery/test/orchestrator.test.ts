@@ -56,7 +56,7 @@ import {
 } from '../review';
 import {
   generateRunDeliverInvocation,
-  initOrchestratorConfig,
+  type ResolvedOrchestratorConfig,
 } from '../runtime-config';
 import { normalizeDeliveryStateFromPersisted } from '../state';
 import {
@@ -65,12 +65,40 @@ import {
   canAdvanceTicket,
   findTicketByBranch,
 } from '../ticket-flow';
+import { createDeliveryOrchestratorContext } from '../context';
 
 async function readArtifactJson(cwd: string, relativePath: string) {
   return JSON.parse(await readFile(join(cwd, relativePath), 'utf8')) as Record<
     string,
     unknown
   >;
+}
+
+const baseConfig: ResolvedOrchestratorConfig = {
+  defaultBranch: 'main',
+  planRoot: 'docs',
+  runtime: 'bun',
+  packageManager: 'bun',
+  ticketBoundaryMode: 'cook',
+  reviewPolicy: {
+    selfAudit: 'skip_doc_only',
+    codexPreflight: 'skip_doc_only',
+    externalReview: 'skip_doc_only',
+  },
+};
+
+function testConfig(
+  overrides: Partial<ResolvedOrchestratorConfig> = {},
+): ResolvedOrchestratorConfig {
+  return {
+    ...baseConfig,
+    ...overrides,
+    reviewPolicy: overrides.reviewPolicy ?? baseConfig.reviewPolicy,
+  };
+}
+
+function testContext(overrides: Partial<ResolvedOrchestratorConfig> = {}) {
+  return createDeliveryOrchestratorContext(testConfig(overrides));
 }
 
 describe('delivery orchestrator', () => {
@@ -259,6 +287,7 @@ describe('delivery orchestrator', () => {
       ],
       '/workspace/pirate_claw',
       options,
+      baseConfig,
     );
 
     expect(synced.tickets[0]?.status).toBe('done');
@@ -1826,7 +1855,12 @@ describe('delivery orchestrator', () => {
       ],
     };
 
-    const nextState = await recordPostVerifySelfAudit(state, 'P3.01');
+    const nextState = await recordPostVerifySelfAudit(
+      state,
+      'P3.01',
+      undefined,
+      baseConfig,
+    );
 
     expect(nextState.tickets[0]?.status).toBe(
       'post_verify_self_audit_complete',
@@ -1960,7 +1994,7 @@ describe('delivery orchestrator', () => {
     };
 
     await expect(
-      openPullRequest(state, '/tmp/pirate_claw', 'P3.01'),
+      openPullRequest(state, '/tmp/pirate_claw', testContext(), 'P3.01'),
     ).rejects.toThrow(
       'Ticket P3.01 must complete post-verify self-audit before opening a PR.',
     );
@@ -2026,7 +2060,7 @@ describe('delivery orchestrator', () => {
     let fetchCount = 0;
 
     try {
-      const nextState = await pollReview(state, cwd, 'P3.01', {
+      const nextState = await pollReview(state, cwd, testContext(), 'P3.01', {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
         sleep: async (milliseconds) => {
           sleeps.push(milliseconds);
@@ -2176,54 +2210,60 @@ describe('delivery orchestrator', () => {
     };
     const prBodyUpdates: string[] = [];
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async () => {},
-      fetcher: () => ({
-        agents: [
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher: () => ({
+          agents: [
+            {
+              agent: 'coderabbit',
+              state: 'findings_detected',
+              findingsCount: 1,
+              note: 'actionable findings captured',
+            },
+          ],
+          detected: true,
+          artifactText: 'normalized ai review artifact',
+          reviewedHeadSha: 'abcdef1234567890',
+          vendors: ['coderabbit'],
+          comments: [
+            {
+              vendor: 'coderabbit',
+              channel: 'inline_review',
+              authorLogin: 'coderabbitai',
+              authorType: 'Bot',
+              body: 'Guard the null return here.',
+              threadId: 'thread_example_1',
+              threadViewerCanResolve: true,
+              kind: 'finding',
+            },
+          ],
+        }),
+        triager: () => ({
+          outcome: 'patched',
+          note: 'Patched the prudent AI review follow-up.',
+          actionSummary: 'Patched 1 finding comment.',
+          nonActionSummary: undefined,
+          vendors: ['coderabbit'],
+        }),
+        resolveThreads: () => [
           {
-            agent: 'coderabbit',
-            state: 'findings_detected',
-            findingsCount: 1,
-            note: 'actionable findings captured',
-          },
-        ],
-        detected: true,
-        artifactText: 'normalized ai review artifact',
-        reviewedHeadSha: 'abcdef1234567890',
-        vendors: ['coderabbit'],
-        comments: [
-          {
-            vendor: 'coderabbit',
-            channel: 'inline_review',
-            authorLogin: 'coderabbitai',
-            authorType: 'Bot',
-            body: 'Guard the null return here.',
+            status: 'resolved',
             threadId: 'thread_example_1',
-            threadViewerCanResolve: true,
-            kind: 'finding',
+            url: 'https://example.test/comment/1',
+            vendor: 'coderabbit',
           },
         ],
-      }),
-      triager: () => ({
-        outcome: 'patched',
-        note: 'Patched the prudent AI review follow-up.',
-        actionSummary: 'Patched 1 finding comment.',
-        nonActionSummary: undefined,
-        vendors: ['coderabbit'],
-      }),
-      resolveThreads: () => [
-        {
-          status: 'resolved',
-          threadId: 'thread_example_1',
-          url: 'https://example.test/comment/1',
-          vendor: 'coderabbit',
+        updatePullRequestBody: async (updatedState, ticket) => {
+          prBodyUpdates.push(`${updatedState.planKey}:${ticket.reviewOutcome}`);
         },
-      ],
-      updatePullRequestBody: async (updatedState, ticket) => {
-        prBodyUpdates.push(`${updatedState.planKey}:${ticket.reviewOutcome}`);
       },
-    });
+    );
 
     expect(nextState.tickets[0]).toMatchObject({
       status: 'done',
@@ -2265,26 +2305,32 @@ describe('delivery orchestrator', () => {
     };
     const sleeps: number[] = [];
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async (milliseconds) => {
-        sleeps.push(milliseconds);
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async (milliseconds) => {
+          sleeps.push(milliseconds);
+        },
+        fetcher: () => ({
+          agents: [
+            {
+              agent: 'coderabbit',
+              state: 'started',
+              note: 'review still in progress',
+            },
+          ],
+          detected: true,
+          artifactText: 'started only artifact',
+          vendors: ['coderabbit'],
+          comments: [],
+        }),
+        updatePullRequestBody: async () => undefined,
       },
-      fetcher: () => ({
-        agents: [
-          {
-            agent: 'coderabbit',
-            state: 'started',
-            note: 'review still in progress',
-          },
-        ],
-        detected: true,
-        artifactText: 'started only artifact',
-        vendors: ['coderabbit'],
-        comments: [],
-      }),
-      updatePullRequestBody: async () => undefined,
-    });
+    );
 
     expect(sleeps).toEqual([360000, 720000]);
     expect(nextState.tickets[0]).toMatchObject({
@@ -2335,22 +2381,28 @@ describe('delivery orchestrator', () => {
     const sleeps: number[] = [];
     const prBodyUpdates: string[] = [];
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async (milliseconds) => {
-        sleeps.push(milliseconds);
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async (milliseconds) => {
+          sleeps.push(milliseconds);
+        },
+        fetcher: () => ({
+          agents: [],
+          detected: false,
+          artifactText: '',
+          vendors: [],
+          comments: [],
+        }),
+        updatePullRequestBody: async (updatedState, ticket) => {
+          prBodyUpdates.push(`${updatedState.planKey}:${ticket.reviewOutcome}`);
+        },
       },
-      fetcher: () => ({
-        agents: [],
-        detected: false,
-        artifactText: '',
-        vendors: [],
-        comments: [],
-      }),
-      updatePullRequestBody: async (updatedState, ticket) => {
-        prBodyUpdates.push(`${updatedState.planKey}:${ticket.reviewOutcome}`);
-      },
-    });
+    );
 
     expect(sleeps).toEqual([360000, 720000]);
     expect(nextState.tickets[0]).toMatchObject({
@@ -2401,30 +2453,36 @@ describe('delivery orchestrator', () => {
       ],
     };
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async () => {},
-      fetcher: () => ({
-        agents: [
-          {
-            agent: 'coderabbit',
-            state: 'completed',
-            note: 'review completed without actionable findings',
-          },
-        ],
-        detected: true,
-        artifactText: 'normalized ai review artifact',
-        reviewedHeadSha: 'abcdef1234567890',
-        vendors: ['coderabbit'],
-        comments: [],
-      }),
-      triager: () => ({
-        outcome: 'clean',
-        note: 'External AI review completed without prudent follow-up changes.',
-        vendors: ['coderabbit'],
-      }),
-      updatePullRequestBody: async () => {},
-    });
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher: () => ({
+          agents: [
+            {
+              agent: 'coderabbit',
+              state: 'completed',
+              note: 'review completed without actionable findings',
+            },
+          ],
+          detected: true,
+          artifactText: 'normalized ai review artifact',
+          reviewedHeadSha: 'abcdef1234567890',
+          vendors: ['coderabbit'],
+          comments: [],
+        }),
+        triager: () => ({
+          outcome: 'clean',
+          note: 'External AI review completed without prudent follow-up changes.',
+          vendors: ['coderabbit'],
+        }),
+        updatePullRequestBody: async () => {},
+      },
+    );
 
     expect(nextState.tickets[0]).toMatchObject({
       status: 'done',
@@ -2473,18 +2531,24 @@ describe('delivery orchestrator', () => {
       ],
     };
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async () => {},
-      fetcher: () => ({
-        agents: [],
-        detected: false,
-        artifactText: '',
-        vendors: [],
-        comments: [],
-      }),
-      updatePullRequestBody: async () => {},
-    });
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher: () => ({
+          agents: [],
+          detected: false,
+          artifactText: '',
+          vendors: [],
+          comments: [],
+        }),
+        updatePullRequestBody: async () => {},
+      },
+    );
 
     expect(nextState.tickets[0]).toMatchObject({
       status: 'done',
@@ -2552,16 +2616,23 @@ describe('delivery orchestrator', () => {
       vendors: ['coderabbit'],
     });
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async () => {},
-      fetcher,
-      triager,
-      updatePullRequestBody: async () => {},
-    });
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher,
+        triager,
+        updatePullRequestBody: async () => {},
+      },
+    );
     const standaloneResult = await runStandaloneAiReview(
       '/tmp/pirate_claw',
       { kind: 'noop', enabled: false },
+      testContext(),
       undefined,
       {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
@@ -2629,15 +2700,22 @@ describe('delivery orchestrator', () => {
       comments: [],
     });
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async () => {},
-      fetcher,
-      updatePullRequestBody: async () => {},
-    });
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher,
+        updatePullRequestBody: async () => {},
+      },
+    );
     const standaloneResult = await runStandaloneAiReview(
       '/tmp/pirate_claw',
       { kind: 'noop', enabled: false },
+      testContext(),
       undefined,
       {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
@@ -2708,15 +2786,22 @@ describe('delivery orchestrator', () => {
       comments: [],
     });
 
-    const nextState = await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
-      now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-      sleep: async () => {},
-      fetcher,
-      updatePullRequestBody: async () => {},
-    });
+    const nextState = await pollReview(
+      state,
+      '/tmp/pirate_claw',
+      testContext(),
+      'P3.01',
+      {
+        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+        sleep: async () => {},
+        fetcher,
+        updatePullRequestBody: async () => {},
+      },
+    );
     const standaloneResult = await runStandaloneAiReview(
       '/tmp/pirate_claw',
       { kind: 'noop', enabled: false },
+      testContext(),
       undefined,
       {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
@@ -2751,6 +2836,7 @@ describe('delivery orchestrator', () => {
     const standaloneResult = await runStandaloneAiReview(
       '/tmp/pirate_claw',
       { kind: 'noop', enabled: false },
+      testContext(),
       undefined,
       {
         now: () => Date.parse('2026-04-01T10:12:00.000Z'),
@@ -2852,6 +2938,7 @@ describe('delivery orchestrator', () => {
     const standaloneResult = await runStandaloneAiReview(
       '/tmp/pirate_claw',
       { kind: 'noop', enabled: false },
+      testContext(),
       undefined,
       {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
@@ -2918,6 +3005,7 @@ describe('delivery orchestrator', () => {
     const standaloneResult = await runStandaloneAiReview(
       '/tmp/pirate_claw',
       { kind: 'noop', enabled: false },
+      testContext(),
       undefined,
       {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
@@ -2984,7 +3072,7 @@ describe('delivery orchestrator', () => {
     };
     const sleeps: number[] = [];
 
-    await pollReview(state, '/tmp/pirate_claw', 'P3.01', {
+    await pollReview(state, '/tmp/pirate_claw', testContext(), 'P3.01', {
       now: () => Date.parse('2026-04-01T10:00:00.000Z'),
       sleep: async (milliseconds) => {
         sleeps.push(milliseconds);
@@ -3059,47 +3147,53 @@ describe('delivery orchestrator', () => {
     let fetchCount = 0;
 
     try {
-      const nextState = await reconcileLateReview(state, cwd, 'P3.01', {
-        now: () => Date.parse('2026-04-01T10:00:00.000Z'),
-        sleep: async (milliseconds) => {
-          sleeps.push(milliseconds);
-        },
-        fetcher: () => {
-          fetchCount += 1;
-          return {
-            agents: [
-              {
-                agent: 'coderabbit',
-                state: 'completed',
-                note: 'review completed',
-              },
-            ],
-            detected: true,
-            artifactText: 'late review artifact',
-            reviewedHeadSha: 'abcdef1234567890',
+      const nextState = await reconcileLateReview(
+        state,
+        cwd,
+        testContext(),
+        'P3.01',
+        {
+          now: () => Date.parse('2026-04-01T10:00:00.000Z'),
+          sleep: async (milliseconds) => {
+            sleeps.push(milliseconds);
+          },
+          fetcher: () => {
+            fetchCount += 1;
+            return {
+              agents: [
+                {
+                  agent: 'coderabbit',
+                  state: 'completed',
+                  note: 'review completed',
+                },
+              ],
+              detected: true,
+              artifactText: 'late review artifact',
+              reviewedHeadSha: 'abcdef1234567890',
+              vendors: ['coderabbit'],
+              comments: [
+                {
+                  vendor: 'coderabbit',
+                  channel: 'inline_review',
+                  authorLogin: 'coderabbitai',
+                  authorType: 'Bot',
+                  body: 'Late follow-up.',
+                  threadId: 'thread_late_1',
+                  threadViewerCanResolve: true,
+                  kind: 'finding',
+                },
+              ],
+            };
+          },
+          triager: () => ({
+            outcome: 'needs_patch',
+            note: 'Actionable AI review findings were detected and still need follow-up.',
+            actionSummary: 'Flagged 1 finding comment for follow-up.',
+            nonActionSummary: undefined,
             vendors: ['coderabbit'],
-            comments: [
-              {
-                vendor: 'coderabbit',
-                channel: 'inline_review',
-                authorLogin: 'coderabbitai',
-                authorType: 'Bot',
-                body: 'Late follow-up.',
-                threadId: 'thread_late_1',
-                threadViewerCanResolve: true,
-                kind: 'finding',
-              },
-            ],
-          };
+          }),
         },
-        triager: () => ({
-          outcome: 'needs_patch',
-          note: 'Actionable AI review findings were detected and still need follow-up.',
-          actionSummary: 'Flagged 1 finding comment for follow-up.',
-          nonActionSummary: undefined,
-          vendors: ['coderabbit'],
-        }),
-      });
+      );
 
       expect(sleeps).toEqual([]);
       expect(fetchCount).toBe(1);
@@ -3148,7 +3242,7 @@ describe('delivery orchestrator', () => {
     };
 
     await expect(
-      reconcileLateReview(state, '/tmp/pirate_claw', 'P3.01', {
+      reconcileLateReview(state, '/tmp/pirate_claw', testContext(), 'P3.01', {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
         sleep: async () => {},
         fetcher: () => ({
@@ -3199,6 +3293,7 @@ describe('delivery orchestrator', () => {
     const nextState = await reconcileLateReview(
       state,
       '/tmp/pirate_claw',
+      testContext(),
       'P3.01',
       {
         now: () => Date.parse('2026-04-01T10:00:00.000Z'),
@@ -3276,6 +3371,7 @@ describe('delivery orchestrator', () => {
     const nextState = await recordReview(
       state,
       '/tmp/pirate_claw',
+      testContext(),
       'P3.01',
       'patched',
       undefined,
@@ -3346,6 +3442,7 @@ describe('delivery orchestrator', () => {
     const nextState = await recordReview(
       state,
       '/tmp/pirate_claw',
+      testContext(),
       'P3.01',
       'clean',
       'External AI review completed without prudent follow-up changes.',
@@ -3401,6 +3498,7 @@ describe('delivery orchestrator', () => {
     const nextState = await recordReview(
       state,
       '/tmp/pirate_claw',
+      testContext(),
       'P3.01',
       'clean',
       undefined,
@@ -3474,6 +3572,7 @@ describe('delivery orchestrator', () => {
     const nextState = await recordReview(
       state,
       '/tmp/pirate_claw',
+      testContext(),
       'P3.01',
       'patched',
       undefined,
@@ -3607,39 +3706,13 @@ describe('delivery orchestrator', () => {
   });
 
   it('surfaces node spawn startup errors in stderr', () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
+    const result = createPlatformAdapters({
+      ...baseConfig,
       runtime: 'node',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
-    });
+    }).runProcessResult(process.cwd(), ['__codex_missing_binary_for_test__']);
 
-    try {
-      const result = createPlatformAdapters({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'node',
-        packageManager: 'bun',
-        ticketBoundaryMode: 'cook',
-        reviewPolicy: {
-          selfAudit: 'skip_doc_only',
-          codexPreflight: 'skip_doc_only',
-          externalReview: 'skip_doc_only',
-        },
-      }).runProcessResult(process.cwd(), ['__codex_missing_binary_for_test__']);
-
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('__codex_missing_binary_for_test__');
-    } finally {
-      initOrchestratorConfig({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'bun',
-        ticketBoundaryMode: 'cook',
-      });
-    }
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('__codex_missing_binary_for_test__');
   });
 
   it('replies to a thread before resolving when databaseId is present', () => {
@@ -3831,11 +3904,7 @@ describe('delivery orchestrator', () => {
     };
 
     it('auto-starts the next ticket in cook mode', async () => {
-      initOrchestratorConfig({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'bun',
+      const context = testContext({
         ticketBoundaryMode: 'cook',
       });
 
@@ -3854,6 +3923,7 @@ describe('delivery orchestrator', () => {
         baseState,
         advancedState,
         '/tmp',
+        context,
         {
           startTicket: async (_state, _cwd, ticketId) => {
             startedTicketId = ticketId;
@@ -3882,11 +3952,7 @@ describe('delivery orchestrator', () => {
     });
 
     it('does not auto-start the next ticket for glide fallback', async () => {
-      initOrchestratorConfig({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'bun',
+      const context = testContext({
         ticketBoundaryMode: 'glide',
       });
 
@@ -3903,6 +3969,7 @@ describe('delivery orchestrator', () => {
         baseState,
         advancedState,
         '/tmp',
+        context,
         {
           startTicket: async () => {
             throw new Error('should not start');

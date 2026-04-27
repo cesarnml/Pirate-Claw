@@ -47,9 +47,26 @@ builders only when they reduce repeated object boilerplate.
 ## Rationale
 
 Red first:
+Focused delivery tests initially encoded the hidden singleton contract: helpers
+could be called after mutating module-level config. The removal work made those
+dependencies explicit, so tests now build local resolved config/context values
+and pass them through the same helper surfaces used by the CLI.
 
 Why this path:
+Deleting `_config`, `initOrchestratorConfig`, and `getOrchestratorConfig`
+directly from `runtime-config.ts` forced every remaining source and test caller
+to choose a config source at the call site. `runDeliveryOrchestrator` resolves
+config once, builds a `DeliveryOrchestratorContext`, and passes config/context
+through state, review, PR, and boundary helpers. This keeps runtime config
+visible without adding a replacement global.
 
 Alternative considered:
+Keeping optional helper fallbacks with hard-coded defaults would reduce test
+churn, but it would preserve a second implicit runtime path. The ticket is the
+cleanup gate for EE11, so the exported helper signatures now require explicit
+config or context where runtime behavior depends on it.
 
 Deferred:
+Durable documentation cleanup for the final EE11 architecture summary remains
+with the docs/retrospective ticket; this ticket only updates the active cleanup
+ticket rationale and code/test surfaces.

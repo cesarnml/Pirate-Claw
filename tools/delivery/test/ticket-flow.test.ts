@@ -15,12 +15,12 @@ import {
 } from '../cli-runner';
 import { formatStatus } from '../format';
 import {
-  initOrchestratorConfig,
   loadOrchestratorConfig,
   resolveOrchestratorConfig,
   type ResolvedOrchestratorConfig,
   VALID_REVIEW_POLICY_STAGE_VALUES,
 } from '../runtime-config';
+import { createDeliveryOrchestratorContext } from '../context';
 import {
   materializeTicketContext,
   openPullRequest as openPullRequestFlow,
@@ -43,6 +43,20 @@ const baseConfig: ResolvedOrchestratorConfig = {
     externalReview: 'skip_doc_only',
   },
 };
+
+function testConfig(
+  overrides: Partial<ResolvedOrchestratorConfig> = {},
+): ResolvedOrchestratorConfig {
+  return {
+    ...baseConfig,
+    ...overrides,
+    reviewPolicy: overrides.reviewPolicy ?? baseConfig.reviewPolicy,
+  };
+}
+
+function testContext(overrides: Partial<ResolvedOrchestratorConfig> = {}) {
+  return createDeliveryOrchestratorContext(testConfig(overrides));
+}
 
 describe('ticket-flow', () => {
   it('materializes first-ticket continuation artifacts into the target worktree', async () => {
@@ -300,6 +314,7 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
       baseInProgressState,
       undefined,
       'clean',
+      baseConfig,
     );
     expect(nextState.tickets[0]?.selfAuditOutcome).toBe('clean');
     expect(nextState.tickets[0]?.status).toBe(
@@ -312,6 +327,7 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
       baseInProgressState,
       undefined,
       'patched',
+      baseConfig,
       {},
       [
         {
@@ -333,7 +349,12 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
   });
 
   it('defaults selfAuditOutcome to clean when no outcome arg is passed', async () => {
-    const nextState = await recordPostVerifySelfAudit(baseInProgressState);
+    const nextState = await recordPostVerifySelfAudit(
+      baseInProgressState,
+      undefined,
+      undefined,
+      baseConfig,
+    );
     expect(nextState.tickets[0]?.selfAuditOutcome).toBe('clean');
     expect(nextState.tickets[0]?.status).toBe(
       'post_verify_self_audit_complete',
@@ -345,6 +366,7 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
       baseInProgressState,
       undefined,
       undefined,
+      baseConfig,
       {
         isLocalBranchDocOnly: () => true,
         selfAuditPolicy: 'skip_doc_only',
@@ -358,10 +380,16 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
 
   it('requires an explicit self-audit outcome for doc-only tickets when policy is required', async () => {
     await expect(
-      recordPostVerifySelfAudit(baseInProgressState, undefined, undefined, {
-        isLocalBranchDocOnly: () => true,
-        selfAuditPolicy: 'required',
-      }),
+      recordPostVerifySelfAudit(
+        baseInProgressState,
+        undefined,
+        undefined,
+        baseConfig,
+        {
+          isLocalBranchDocOnly: () => true,
+          selfAuditPolicy: 'required',
+        },
+      ),
     ).rejects.toThrow(/requires an explicit self-audit outcome/);
   });
 
@@ -370,6 +398,7 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
       baseInProgressState,
       undefined,
       'patched',
+      baseConfig,
       {},
       [
         {
@@ -386,7 +415,12 @@ describe('EE8.01 — self-audit observability and reviewPolicy config', () => {
 
   it('rejects patched self-audit outcomes without recorded patch commits', async () => {
     await expect(
-      recordPostVerifySelfAudit(baseInProgressState, undefined, 'patched'),
+      recordPostVerifySelfAudit(
+        baseInProgressState,
+        undefined,
+        'patched',
+        baseConfig,
+      ),
     ).rejects.toThrow(
       /Self-audit recorded as patched requires at least one patch commit/,
     );
@@ -495,7 +529,12 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
   };
 
   it('records codexPreflightOutcome: clean and transitions to codex_preflight_complete', () => {
-    const nextState = recordCodexPreflight(basePostAuditState, 'clean');
+    const nextState = recordCodexPreflight(
+      basePostAuditState,
+      'clean',
+      false,
+      baseConfig.reviewPolicy.codexPreflight,
+    );
     expect(nextState.tickets[0]?.codexPreflightOutcome).toBe('clean');
     expect(nextState.tickets[0]?.status).toBe('codex_preflight_complete');
     expect(nextState.tickets[0]?.codexPreflightCompletedAt).toBeTruthy();
@@ -506,7 +545,7 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
       basePostAuditState,
       'patched',
       false,
-      'skip_doc_only',
+      baseConfig.reviewPolicy.codexPreflight,
       [
         {
           sha: 'bbbbbbbbbbbb2222222222222222222222222222',
@@ -537,7 +576,7 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
       docOnlyState,
       undefined,
       true,
-      'skip_doc_only',
+      baseConfig.reviewPolicy.codexPreflight,
     );
     expect(nextState.tickets[0]?.codexPreflightOutcome).toBe('skipped');
     expect(nextState.tickets[0]?.status).toBe('codex_preflight_complete');
@@ -564,21 +603,38 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
         status: 'in_progress' as const,
       })),
     };
-    expect(() => recordCodexPreflight(inProgressState, 'clean')).toThrow(
-      /No ticket at post_verify_self_audit_complete status/,
-    );
+    expect(() =>
+      recordCodexPreflight(
+        inProgressState,
+        'clean',
+        false,
+        baseConfig.reviewPolicy.codexPreflight,
+      ),
+    ).toThrow(/No ticket at post_verify_self_audit_complete status/);
   });
 
   it('rejects patched codex-preflight outcomes without recorded patch commits', () => {
-    expect(() => recordCodexPreflight(basePostAuditState, 'patched')).toThrow(
+    expect(() =>
+      recordCodexPreflight(
+        basePostAuditState,
+        'patched',
+        false,
+        baseConfig.reviewPolicy.codexPreflight,
+      ),
+    ).toThrow(
       /Codex preflight recorded as patched requires at least one patch commit/,
     );
   });
 
   it('rejects codex-preflight on a code ticket with no outcome arg', () => {
-    expect(() => recordCodexPreflight(basePostAuditState)).toThrow(
-      /requires a Codex preflight outcome/,
-    );
+    expect(() =>
+      recordCodexPreflight(
+        basePostAuditState,
+        undefined,
+        false,
+        baseConfig.reviewPolicy.codexPreflight,
+      ),
+    ).toThrow(/requires a Codex preflight outcome/);
   });
 
   it('statusRank orders: post_verify_self_audit_complete < codex_preflight_complete < in_review', () => {
@@ -617,111 +673,52 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
       existing.tickets,
       '/tmp',
       options,
+      baseConfig,
       inferred,
     );
     expect(synced.tickets[0]?.status).toBe('codex_preflight_complete');
   });
 
   it('open-pr rejects code ticket at post_verify_self_audit_complete when policy is required', async () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
+    const context = testContext({
       reviewPolicy: {
         selfAudit: 'required',
         codexPreflight: 'required',
         externalReview: 'required',
       },
     });
-    try {
-      await expect(
-        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
-      ).rejects.toThrow(/requires Codex preflight before opening a PR/);
-    } finally {
-      initOrchestratorConfig({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'bun',
-        ticketBoundaryMode: 'cook',
-        reviewPolicy: {
-          selfAudit: 'required',
-          codexPreflight: 'disabled',
-          externalReview: 'required',
-        },
-      });
-    }
+    await expect(
+      openPullRequest(basePostAuditState, '/tmp/pirate_claw', context, 'P3.01'),
+    ).rejects.toThrow(/requires Codex preflight before opening a PR/);
   });
 
   it('open-pr rejects code ticket at post_verify_self_audit_complete when policy is skip_doc_only', async () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
+    const context = testContext({
       reviewPolicy: {
         selfAudit: 'skip_doc_only',
         codexPreflight: 'skip_doc_only',
         externalReview: 'skip_doc_only',
       },
     });
-    try {
-      await expect(
-        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
-      ).rejects.toThrow(/requires Codex preflight before opening a PR/);
-    } finally {
-      initOrchestratorConfig({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'bun',
-        ticketBoundaryMode: 'cook',
-        reviewPolicy: {
-          selfAudit: 'required',
-          codexPreflight: 'disabled',
-          externalReview: 'required',
-        },
-      });
-    }
+    await expect(
+      openPullRequest(basePostAuditState, '/tmp/pirate_claw', context, 'P3.01'),
+    ).rejects.toThrow(/requires Codex preflight before opening a PR/);
   });
 
   it('open-pr error message includes codex-plugin-cc and config escape hatch', async () => {
-    initOrchestratorConfig({
-      defaultBranch: 'main',
-      planRoot: 'docs',
-      runtime: 'bun',
-      packageManager: 'bun',
-      ticketBoundaryMode: 'cook',
+    const context = testContext({
       reviewPolicy: {
         selfAudit: 'required',
         codexPreflight: 'required',
         externalReview: 'required',
       },
     });
-    try {
-      await expect(
-        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
-      ).rejects.toThrow(/codex-plugin-cc/);
-      await expect(
-        openPullRequest(basePostAuditState, '/tmp/pirate_claw', 'P3.01'),
-      ).rejects.toThrow(/codexPreflight.*disabled.*orchestrator\.config\.json/);
-    } finally {
-      initOrchestratorConfig({
-        defaultBranch: 'main',
-        planRoot: 'docs',
-        runtime: 'bun',
-        packageManager: 'bun',
-        ticketBoundaryMode: 'cook',
-        reviewPolicy: {
-          selfAudit: 'required',
-          codexPreflight: 'disabled',
-          externalReview: 'required',
-        },
-      });
-    }
+    await expect(
+      openPullRequest(basePostAuditState, '/tmp/pirate_claw', context, 'P3.01'),
+    ).rejects.toThrow(/codex-plugin-cc/);
+    await expect(
+      openPullRequest(basePostAuditState, '/tmp/pirate_claw', context, 'P3.01'),
+    ).rejects.toThrow(/codexPreflight.*disabled.*orchestrator\.config\.json/);
   });
 
   it('open-pr reports publication progress for a new PR', () => {

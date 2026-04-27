@@ -20,39 +20,6 @@ export type {
 
 export { inferPackageManager, VALID_REVIEW_POLICY_STAGE_VALUES };
 
-export let _config: ResolvedOrchestratorConfig = {
-  defaultBranch: 'main',
-  planRoot: 'docs',
-  runtime: 'bun',
-  packageManager: 'npm',
-  ticketBoundaryMode: 'cook',
-  reviewPolicy: {
-    selfAudit: 'skip_doc_only',
-    codexPreflight: 'skip_doc_only',
-    externalReview: 'skip_doc_only',
-  },
-};
-
-export function initOrchestratorConfig(
-  config: Omit<ResolvedOrchestratorConfig, 'reviewPolicy'> & {
-    reviewPolicy?: ResolvedOrchestratorConfig['reviewPolicy'];
-  },
-): void {
-  _config = {
-    ..._config,
-    ...config,
-    reviewPolicy: config.reviewPolicy ?? {
-      selfAudit: 'skip_doc_only',
-      codexPreflight: 'skip_doc_only',
-      externalReview: 'skip_doc_only',
-    },
-  };
-}
-
-export function getOrchestratorConfig(): ResolvedOrchestratorConfig {
-  return _config;
-}
-
 export async function loadOrchestratorConfig(
   cwd: string,
 ): Promise<OrchestratorConfig> {

@@ -3,7 +3,6 @@ import {
   createPlatformAdapters,
   type DeliveryPlatformAdapters,
   formatStatus,
-  initOrchestratorConfig,
   loadOrchestratorConfig,
   loadState,
   resolveOrchestratorConfig,
@@ -324,10 +323,9 @@ export async function runCloseoutStack(
     const parsed = parseCloseoutStackArgs(argv);
     const rawConfig = await loadOrchestratorConfig(cwd);
     const config = resolveOrchestratorConfig(rawConfig, cwd);
-    initOrchestratorConfig(config);
     closeoutPlatform = createPlatformAdapters(config);
     const options = createOptions({ planPath: parsed.planPath });
-    const state = await loadState(cwd, options);
+    const state = await loadState(cwd, options, config);
     const tickets = getCloseoutTicketChain(state);
     const repo = resolveRepoSlug(cwd);
     const summary: CloseoutSummary = {
