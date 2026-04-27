@@ -19,16 +19,16 @@ import type {
   TicketState,
 } from './types';
 import {
+  createDeliveryOrchestratorContext,
+  type DeliveryOrchestratorContext,
+} from './context';
+import {
   copyLocalBootstrapFilesIfPresent as copyPlatformBootstrapFilesIfPresent,
   copyLocalEnvIfPresent as copyPlatformEnvIfPresent,
   findPrimaryWorktreePath as findPlatformPrimaryWorktreePath,
   isLocalBranchDocOnly as isPlatformLocalBranchDocOnly,
   type Runtime,
 } from './platform';
-import {
-  createPlatformAdapters,
-  type PlatformAdapters,
-} from './platform-adapters';
 import {
   createOptions as createOptionsImpl,
   deriveBranchName,
@@ -95,8 +95,8 @@ import {
   startTicket as startTicketImpl,
 } from './ticket-flow';
 
-function platformAdapters(): PlatformAdapters {
-  return createPlatformAdapters(_config);
+function defaultContext(): DeliveryOrchestratorContext {
+  return createDeliveryOrchestratorContext(_config);
 }
 
 export async function runDeliveryOrchestrator(
@@ -123,22 +123,22 @@ export async function runDeliveryOrchestrator(
       ),
     );
     parsed = parseCliArgs(argv, usage);
-    initOrchestratorConfig(
-      resolveOrchestratorConfig(
-        {
-          ...rawConfig,
-          ticketBoundaryMode:
-            parsed.boundaryMode ?? rawConfig.ticketBoundaryMode,
-        },
-        cwd,
-      ),
+    const resolvedConfig = resolveOrchestratorConfig(
+      {
+        ...rawConfig,
+        ticketBoundaryMode: parsed.boundaryMode ?? rawConfig.ticketBoundaryMode,
+      },
+      cwd,
     );
-    const platform = platformAdapters();
+    initOrchestratorConfig(resolvedConfig);
+    const context = createDeliveryOrchestratorContext(resolvedConfig);
+    const platform = context.platform;
     const notifier = resolveNotifier();
     if (parsed.command === 'ai-review') {
       const result = await runStandaloneAiReview(
         cwd,
         notifier,
+        context,
         parsed.prNumber,
       );
       console.log(formatStandaloneAiReviewResult(result));
@@ -163,7 +163,10 @@ export async function runDeliveryOrchestrator(
     if (parsed.command === 'repair-state') {
       const repaired = await repairState(cwd, options);
       console.log(
-        [formatStatus(repaired.state, _config), formatRepairSummary(repaired)]
+        [
+          formatStatus(repaired.state, context.config),
+          formatRepairSummary(repaired),
+        ]
           .filter(Boolean)
           .join('\n\n'),
       );
@@ -175,17 +178,22 @@ export async function runDeliveryOrchestrator(
     switch (parsed.command) {
       case 'sync': {
         await saveState(cwd, state);
-        console.log(formatStatus(state, _config));
+        console.log(formatStatus(state, context.config));
         return 0;
       }
       case 'status': {
-        console.log(formatStatus(state, _config));
+        console.log(formatStatus(state, context.config));
         return 0;
       }
       case 'start': {
-        const nextState = await startTicket(state, cwd, parsed.positionals[0]);
+        const nextState = await startTicket(
+          state,
+          cwd,
+          context,
+          parsed.positionals[0],
+        );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState, _config));
+        console.log(formatStatus(nextState, context.config));
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -217,6 +225,7 @@ export async function runDeliveryOrchestrator(
                   ) ??
                   state.tickets[0]
                 )?.worktreePath ?? cwd,
+                context,
                 auditPatchCommitArgs,
                 '[self-audit]',
                 'Self-audit',
@@ -230,7 +239,7 @@ export async function runDeliveryOrchestrator(
           auditPatchCommits,
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState, _config));
+        console.log(formatStatus(nextState, context.config));
         return 0;
       }
       case 'codex-preflight': {
@@ -246,7 +255,7 @@ export async function runDeliveryOrchestrator(
           ? isPlatformLocalBranchDocOnly(
               preflightTarget.worktreePath,
               preflightTarget.baseBranch,
-              _config.runtime,
+              context.config.runtime,
             )
           : false;
         const preflightNote =
@@ -265,10 +274,11 @@ export async function runDeliveryOrchestrator(
           state,
           preflightOutcome,
           isDocOnly,
-          _config.reviewPolicy.codexPreflight,
+          context.config.reviewPolicy.codexPreflight,
           preflightOutcome === 'patched'
             ? resolveInternalReviewPatchCommits(
                 preflightTarget?.worktreePath ?? cwd,
+                context,
                 parsed.positionals.slice(1),
                 '[codexPreflight]',
                 'Codex preflight',
@@ -286,19 +296,20 @@ export async function runDeliveryOrchestrator(
           console.log('Doc-only ticket — Codex preflight auto-skipped.');
         }
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState, _config));
+        console.log(formatStatus(nextState, context.config));
         return 0;
       }
       case 'open-pr': {
         const nextState = await openPullRequest(
           state,
           cwd,
+          context,
           parsed.positionals[0],
         );
         await saveState(cwd, nextState);
         console.log(
           [
-            formatStatus(nextState, _config),
+            formatStatus(nextState, context.config),
             formatReviewWindowMessage(nextState, parsed.positionals[0]),
           ]
             .filter(Boolean)
@@ -320,29 +331,34 @@ export async function runDeliveryOrchestrator(
         if (
           pollTarget &&
           shouldAutoRecordReviewSkippedForPollReview(
-            _config.reviewPolicy.externalReview,
+            context.config.reviewPolicy.externalReview,
             pollTarget,
           )
         ) {
           const skipNote =
-            _config.reviewPolicy.externalReview === 'disabled'
+            context.config.reviewPolicy.externalReview === 'disabled'
               ? 'external AI review disabled by policy'
               : 'doc-only PR; external AI review skipped by policy';
           console.log(
-            _config.reviewPolicy.externalReview === 'disabled'
+            context.config.reviewPolicy.externalReview === 'disabled'
               ? `externalReview=disabled for ${pollTarget.id}: skipping AI review window, recording skipped`
               : `doc_only=true for ${pollTarget.id} under externalReview=skip_doc_only: skipping AI review window, recording skipped`,
           );
           const docOnlyState = await recordReview(
             state,
             cwd,
+            context,
             pollTarget.id,
             'skipped',
             skipNote,
           );
           await saveState(cwd, docOnlyState);
           console.log(
-            formatCurrentTicketStatus(docOnlyState, _config, pollTicketId),
+            formatCurrentTicketStatus(
+              docOnlyState,
+              context.config,
+              pollTicketId,
+            ),
           );
           await emitNotificationWarnings(
             notifier,
@@ -352,10 +368,10 @@ export async function runDeliveryOrchestrator(
           return 0;
         }
 
-        const nextState = await pollReview(state, cwd, pollTicketId);
+        const nextState = await pollReview(state, cwd, context, pollTicketId);
         await saveState(cwd, nextState);
         console.log(
-          formatCurrentTicketStatus(nextState, _config, pollTicketId),
+          formatCurrentTicketStatus(nextState, context.config, pollTicketId),
         );
         await emitNotificationWarnings(
           notifier,
@@ -369,13 +385,18 @@ export async function runDeliveryOrchestrator(
 
         if (!ticketId) {
           throw new Error(
-            `Usage: ${generateRunDeliverInvocation(_config.packageManager)} --plan <plan-path> reconcile-late-review <ticket-id>`,
+            `Usage: ${context.invocation} --plan <plan-path> reconcile-late-review <ticket-id>`,
           );
         }
 
-        const nextState = await reconcileLateReview(state, cwd, ticketId);
+        const nextState = await reconcileLateReview(
+          state,
+          cwd,
+          context,
+          ticketId,
+        );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState, _config));
+        console.log(formatStatus(nextState, context.config));
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -393,19 +414,20 @@ export async function runDeliveryOrchestrator(
             outcome !== 'operator_input_needed')
         ) {
           throw new Error(
-            `Usage: ${generateRunDeliverInvocation(_config.packageManager)} --plan <plan-path> record-review <ticket-id> <clean|patched|operator_input_needed> [note]`,
+            `Usage: ${context.invocation} --plan <plan-path> record-review <ticket-id> <clean|patched|operator_input_needed> [note]`,
           );
         }
 
         const nextState = await recordReview(
           state,
           cwd,
+          context,
           ticketId,
           outcome,
           noteParts.join(' ').trim() || undefined,
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState, _config));
+        console.log(formatStatus(nextState, context.config));
         await emitNotificationWarnings(
           notifier,
           cwd,
@@ -414,19 +436,24 @@ export async function runDeliveryOrchestrator(
         return 0;
       }
       case 'advance': {
-        const advancedState = await advanceToNextTicketImpl(state, cwd);
+        const advancedState = await advanceToNextTicketImpl(
+          state,
+          cwd,
+          context,
+        );
         const nextState = await applyAdvanceBoundaryMode(
           state,
           advancedState,
           cwd,
+          context,
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState, _config));
+        console.log(formatStatus(nextState, context.config));
         const boundaryGuidance = formatAdvanceBoundaryGuidance(
           state,
           advancedState,
           nextState,
-          _config,
+          context.config,
         );
 
         if (boundaryGuidance) {
@@ -445,10 +472,11 @@ export async function runDeliveryOrchestrator(
         const nextState = await restackTicket(
           state,
           cwd,
+          context,
           parsed.positionals[0],
         );
         await saveState(cwd, nextState);
-        console.log(formatStatus(nextState, _config));
+        console.log(formatStatus(nextState, context.config));
         return 0;
       }
       default: {
@@ -606,9 +634,10 @@ export function summarizeStateDifferences(
 async function startTicket(
   state: DeliveryState,
   cwd: string,
+  context: DeliveryOrchestratorContext,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const platform = platformAdapters();
+  const platform = context.platform;
   return startTicketImpl(state, cwd, ticketId, {
     addWorktree: platform.addWorktree,
     bootstrapWorktreeIfNeeded: platform.bootstrapWorktreeIfNeeded,
@@ -649,20 +678,21 @@ export async function recordPostVerifySelfAudit(
   } = {},
   patchCommits?: InternalReviewPatchCommit[],
 ): Promise<DeliveryState> {
+  const context = defaultContext();
   const target =
     (ticketId
       ? state.tickets.find((ticket) => ticket.id === ticketId)
       : state.tickets.find((ticket) => ticket.status === 'in_progress')) ??
     undefined;
   const selfAuditPolicy =
-    dependencies.selfAuditPolicy ?? _config.reviewPolicy.selfAudit;
+    dependencies.selfAuditPolicy ?? context.config.reviewPolicy.selfAudit;
   const isDocOnly =
     target &&
     selfAuditPolicy !== 'disabled' &&
     (dependencies.isLocalBranchDocOnly ?? isPlatformLocalBranchDocOnly)(
       target.worktreePath,
       target.baseBranch,
-      _config.runtime,
+      context.config.runtime,
     );
 
   if (selfAuditPolicy === 'skip_doc_only' && isDocOnly) {
@@ -682,7 +712,8 @@ export function recordCodexPreflight(
   state: DeliveryState,
   outcome?: 'clean' | 'patched',
   isDocOnly?: boolean,
-  policy: ReviewPolicyStageValue = _config.reviewPolicy.codexPreflight,
+  policy: ReviewPolicyStageValue = defaultContext().config.reviewPolicy
+    .codexPreflight,
   patchCommits?: InternalReviewPatchCommit[],
   note?: string,
 ): DeliveryState {
@@ -735,11 +766,12 @@ function parseSelfAuditArgs(positionals: string[]): {
 
 function resolveInternalReviewPatchCommits(
   cwd: string,
+  context: DeliveryOrchestratorContext,
   rawShas: string[],
   suffix: '[self-audit]' | '[codexPreflight]',
   stageLabel: string,
 ): InternalReviewPatchCommit[] {
-  const platform = platformAdapters();
+  const platform = context.platform;
   return normalizeUniquePatchCommitShas(rawShas).map((sha) => {
     const subject = platform.readCommitSubject(cwd, sha);
     if (!subject.endsWith(` ${suffix}`)) {
@@ -754,14 +786,21 @@ function resolveInternalReviewPatchCommits(
 export async function openPullRequest(
   state: DeliveryState,
   cwd: string,
+  contextOrTicketId?: DeliveryOrchestratorContext | string,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const platform = platformAdapters();
-  const nextState = openPullRequestImpl(state, cwd, ticketId, {
+  const context =
+    typeof contextOrTicketId === 'object'
+      ? contextOrTicketId
+      : defaultContext();
+  const resolvedTicketId =
+    typeof contextOrTicketId === 'string' ? contextOrTicketId : ticketId;
+  const platform = context.platform;
+  const nextState = openPullRequestImpl(state, cwd, resolvedTicketId, {
     assertReviewerFacingMarkdown,
     buildPullRequestBody,
     buildPullRequestTitle,
-    codexPreflightPolicy: _config.reviewPolicy.codexPreflight,
+    codexPreflightPolicy: context.config.reviewPolicy.codexPreflight,
     createPullRequest: platform.createPullRequest,
     editPullRequest: platform.editPullRequest,
     ensureBranchPushed: platform.ensureBranchPushed,
@@ -775,15 +814,15 @@ export async function openPullRequest(
   // Recompute on every open-pr call so that a PR that gains code changes
   // after an initial docs-only push has its docOnly flag cleared.
   const reviewTicket =
-    (ticketId
-      ? nextState.tickets.find((t) => t.id === ticketId)
+    (resolvedTicketId
+      ? nextState.tickets.find((t) => t.id === resolvedTicketId)
       : nextState.tickets.find((t) => t.status === 'in_review')) ?? undefined;
 
   if (reviewTicket) {
     const docOnly = isPlatformLocalBranchDocOnly(
       reviewTicket.worktreePath,
       reviewTicket.baseBranch,
-      _config.runtime,
+      context.config.runtime,
     );
 
     return {
@@ -800,56 +839,107 @@ export async function openPullRequest(
 export async function pollReview(
   state: DeliveryState,
   cwd: string,
-  ticketId?: string,
+  contextOrTicketId?: DeliveryOrchestratorContext | string,
+  maybeTicketIdOrDependencies?: string | Partial<TicketReviewDependencies>,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
-  const platform = platformAdapters();
+  const context =
+    typeof contextOrTicketId === 'object'
+      ? contextOrTicketId
+      : defaultContext();
+  const ticketId =
+    typeof contextOrTicketId === 'string'
+      ? contextOrTicketId
+      : typeof maybeTicketIdOrDependencies === 'string'
+        ? maybeTicketIdOrDependencies
+        : undefined;
+  const resolvedDependencies =
+    typeof maybeTicketIdOrDependencies === 'object'
+      ? maybeTicketIdOrDependencies
+      : dependencies;
+  const platform = context.platform;
   return runTicketReviewLifecycle(state, cwd, ticketId, {
-    ...dependencies,
+    ...resolvedDependencies,
     relativeToRepo,
     replyToReviewThread:
-      dependencies.replyToReviewThread ??
+      resolvedDependencies.replyToReviewThread ??
       platform.replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
     resolveReviewThread: platform.resolveReviewThread,
     resolveReviewTriager,
     runProcess: platform.runProcess,
     updatePullRequestBody:
-      dependencies.updatePullRequestBody ?? platform.updatePullRequestBody,
+      resolvedDependencies.updatePullRequestBody ??
+      platform.updatePullRequestBody,
   });
 }
 
 export async function reconcileLateReview(
   state: DeliveryState,
   cwd: string,
-  ticketId: string,
+  contextOrTicketId: DeliveryOrchestratorContext | string,
+  maybeTicketIdOrDependencies?: string | Partial<TicketReviewDependencies>,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
-  const platform = platformAdapters();
+  const context =
+    typeof contextOrTicketId === 'object'
+      ? contextOrTicketId
+      : defaultContext();
+  const ticketId =
+    typeof contextOrTicketId === 'string'
+      ? contextOrTicketId
+      : (maybeTicketIdOrDependencies as string | undefined);
+  const resolvedDependencies =
+    typeof contextOrTicketId === 'string' &&
+    typeof maybeTicketIdOrDependencies === 'object'
+      ? maybeTicketIdOrDependencies
+      : dependencies;
+  if (!ticketId) {
+    throw new Error('Missing ticket id for reconcile-late-review.');
+  }
+  const platform = context.platform;
   return runReconcileLateTicketReview(state, cwd, ticketId, {
-    ...dependencies,
+    ...resolvedDependencies,
     relativeToRepo,
     replyToReviewThread:
-      dependencies.replyToReviewThread ??
+      resolvedDependencies.replyToReviewThread ??
       platform.replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
     resolveReviewThread: platform.resolveReviewThread,
     resolveReviewTriager,
     runProcess: platform.runProcess,
     updatePullRequestBody:
-      dependencies.updatePullRequestBody ?? platform.updatePullRequestBody,
+      resolvedDependencies.updatePullRequestBody ??
+      platform.updatePullRequestBody,
   });
 }
 
 export async function runStandaloneAiReview(
   cwd: string,
   notifier: DeliveryNotifier,
-  prNumber?: number,
+  contextOrPrNumber?: DeliveryOrchestratorContext | number,
+  maybePrNumberOrDependencies?:
+    | number
+    | Partial<StandaloneAiReviewDependencies>,
   dependencies: Partial<StandaloneAiReviewDependencies> = {},
 ): Promise<StandaloneAiReviewResult> {
-  const platform = platformAdapters();
+  const context =
+    typeof contextOrPrNumber === 'object'
+      ? contextOrPrNumber
+      : defaultContext();
+  const prNumber =
+    typeof contextOrPrNumber === 'number'
+      ? contextOrPrNumber
+      : typeof maybePrNumberOrDependencies === 'number'
+        ? maybePrNumberOrDependencies
+        : undefined;
+  const resolvedDependencies =
+    typeof maybePrNumberOrDependencies === 'object'
+      ? maybePrNumberOrDependencies
+      : dependencies;
+  const platform = context.platform;
   const pullRequest =
-    dependencies.pullRequest ??
+    resolvedDependencies.pullRequest ??
     platform.resolveStandalonePullRequest(cwd, prNumber);
 
   await emitNotificationWarnings(notifier, cwd, [
@@ -857,11 +947,11 @@ export async function runStandaloneAiReview(
   ]);
 
   return runStandaloneAiReviewLifecycle(cwd, prNumber, {
-    ...dependencies,
+    ...resolvedDependencies,
     pullRequest,
     relativeToRepo,
     replyToReviewThread:
-      dependencies.replyToReviewThread ??
+      resolvedDependencies.replyToReviewThread ??
       platform.replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
     resolveReviewThread: platform.resolveReviewThread,
@@ -869,7 +959,7 @@ export async function runStandaloneAiReview(
     resolveStandalonePullRequest: platform.resolveStandalonePullRequest,
     runProcess: platform.runProcess,
     updatePullRequestBody:
-      dependencies.updatePullRequestBody ??
+      resolvedDependencies.updatePullRequestBody ??
       platform.updateStandalonePullRequestBody,
   });
 }
@@ -877,32 +967,70 @@ export async function runStandaloneAiReview(
 export async function recordReview(
   state: DeliveryState,
   cwd: string,
-  ticketId: string,
-  outcome: ReviewResult,
-  note?: string,
+  contextOrTicketId: DeliveryOrchestratorContext | string,
+  ticketIdOrOutcome: string | ReviewResult,
+  outcomeOrNote?: ReviewResult | string,
+  noteOrDependencies?: string | Partial<TicketReviewDependencies>,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
-  const platform = platformAdapters();
-  return recordTicketReview(state, cwd, ticketId, outcome, note, {
-    ...dependencies,
-    relativeToRepo,
-    replyToReviewThread:
-      dependencies.replyToReviewThread ??
-      platform.replyToReviewThreadForOrchestrator,
-    resolveReviewFetcher,
-    resolveReviewThread: platform.resolveReviewThread,
-    resolveReviewTriager,
-    runProcess: platform.runProcess,
-    updatePullRequestBody:
-      dependencies.updatePullRequestBody ?? platform.updatePullRequestBody,
-  });
+  const context =
+    typeof contextOrTicketId === 'object'
+      ? contextOrTicketId
+      : defaultContext();
+  const ticketId =
+    typeof contextOrTicketId === 'string'
+      ? contextOrTicketId
+      : ticketIdOrOutcome;
+  const resolvedOutcome =
+    typeof contextOrTicketId === 'string'
+      ? (ticketIdOrOutcome as ReviewResult)
+      : (outcomeOrNote as ReviewResult);
+  const resolvedNote =
+    typeof contextOrTicketId === 'string'
+      ? typeof outcomeOrNote === 'string'
+        ? outcomeOrNote
+        : undefined
+      : typeof noteOrDependencies === 'string'
+        ? noteOrDependencies
+        : undefined;
+  const resolvedDependencies =
+    typeof contextOrTicketId === 'string'
+      ? typeof noteOrDependencies === 'object'
+        ? noteOrDependencies
+        : dependencies
+      : typeof noteOrDependencies === 'object'
+        ? noteOrDependencies
+        : dependencies;
+  const platform = context.platform;
+  return recordTicketReview(
+    state,
+    cwd,
+    ticketId,
+    resolvedOutcome,
+    resolvedNote,
+    {
+      ...(resolvedDependencies as Partial<TicketReviewDependencies>),
+      relativeToRepo,
+      replyToReviewThread:
+        resolvedDependencies.replyToReviewThread ??
+        platform.replyToReviewThreadForOrchestrator,
+      resolveReviewFetcher,
+      resolveReviewThread: platform.resolveReviewThread,
+      resolveReviewTriager,
+      runProcess: platform.runProcess,
+      updatePullRequestBody:
+        resolvedDependencies.updatePullRequestBody ??
+        platform.updatePullRequestBody,
+    },
+  );
 }
 
 async function advanceToNextTicketImpl(
   state: DeliveryState,
   cwd: string,
+  context: DeliveryOrchestratorContext,
 ): Promise<DeliveryState> {
-  const platform = platformAdapters();
+  const platform = context.platform;
   return advanceToNextTicket(state, cwd, {
     updatePullRequestBody: platform.updatePullRequestBody,
   });
@@ -912,16 +1040,41 @@ export async function applyAdvanceBoundaryMode(
   state: DeliveryState,
   advancedState: DeliveryState,
   cwd: string,
+  contextOrDependencies?:
+    | DeliveryOrchestratorContext
+    | {
+        startTicket: (
+          state: DeliveryState,
+          cwd: string,
+          ticketId?: string,
+        ) => Promise<DeliveryState>;
+      },
   dependencies: {
     startTicket: (
       state: DeliveryState,
       cwd: string,
       ticketId?: string,
     ) => Promise<DeliveryState>;
-  } = {
-    startTicket,
-  },
+  } = typeof contextOrDependencies === 'object' &&
+  'startTicket' in contextOrDependencies
+    ? contextOrDependencies
+    : {
+        startTicket: (state, cwd, ticketId) =>
+          startTicket(
+            state,
+            cwd,
+            typeof contextOrDependencies === 'object'
+              ? contextOrDependencies
+              : defaultContext(),
+            ticketId,
+          ),
+      },
 ): Promise<DeliveryState> {
+  const context =
+    typeof contextOrDependencies === 'object' &&
+    !('startTicket' in contextOrDependencies)
+      ? contextOrDependencies
+      : defaultContext();
   const nextPending = advancedState.tickets.find(
     (ticket) =>
       ticket.status === 'pending' &&
@@ -934,7 +1087,7 @@ export async function applyAdvanceBoundaryMode(
   }
 
   const effectiveMode = resolveEffectiveAdvanceBoundaryMode(
-    _config.ticketBoundaryMode,
+    context.config.ticketBoundaryMode,
   );
 
   if (effectiveMode !== 'cook') {
@@ -947,12 +1100,13 @@ export async function applyAdvanceBoundaryMode(
 async function restackTicket(
   state: DeliveryState,
   cwd: string,
+  context: DeliveryOrchestratorContext,
   ticketId?: string,
 ): Promise<DeliveryState> {
-  const platform = platformAdapters();
+  const platform = context.platform;
   return restackTicketImpl(state, cwd, ticketId, {
     buildPullRequestBody,
-    defaultBranch: _config.defaultBranch,
+    defaultBranch: context.config.defaultBranch,
     editPullRequest: platform.editPullRequest,
     ensureCleanWorktree: platform.ensureCleanWorktree,
     fetchOrigin: platform.fetchOrigin,

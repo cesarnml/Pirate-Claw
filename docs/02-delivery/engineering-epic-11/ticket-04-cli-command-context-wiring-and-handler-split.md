@@ -54,10 +54,18 @@ to test without the full dispatcher.
 
 ## Rationale
 
-Red first:
+Red first: the orchestrator integration tests were run after threading context
+through the command paths, and `verify:quiet` caught no behavioral drift.
 
-Why this path:
+Why this path: `runDeliveryOrchestrator` now creates one
+`DeliveryOrchestratorContext` from the resolved config and passes it through the
+live command path while preserving exported helper defaults for the existing
+test surface.
 
-Alternative considered:
+Alternative considered: changing every exported helper signature as a hard
+break, but that would force a broad test migration before EE11.05's final
+singleton cleanup and would make this ticket harder to review.
 
-Deferred:
+Deferred: remaining compatibility defaults that still fall back to the current
+singleton are intentionally left for EE11.05, where the deprecated singleton
+exports are removed in one cleanup pass.
