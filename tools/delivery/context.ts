@@ -1,8 +1,11 @@
-import * as platformAdapters from './platform-adapters';
+import {
+  createPlatformAdapters,
+  type PlatformAdapters,
+} from './platform-adapters';
 import { generateRunDeliverInvocation } from './runtime-config';
 import type { ResolvedOrchestratorConfig } from './runtime-config';
 
-export type PlatformAdapters = typeof platformAdapters;
+export type { PlatformAdapters };
 
 export type DeliveryOrchestratorContext = {
   config: ResolvedOrchestratorConfig;
@@ -16,6 +19,6 @@ export function createDeliveryOrchestratorContext(
   return {
     config,
     invocation: generateRunDeliverInvocation(config.packageManager),
-    platform: platformAdapters,
+    platform: createPlatformAdapters(config),
   };
 }

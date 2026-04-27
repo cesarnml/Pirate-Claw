@@ -26,29 +26,8 @@ import {
   type Runtime,
 } from './platform';
 import {
-  addWorktree,
-  bootstrapWorktreeIfNeeded,
-  createPullRequest,
-  editPullRequest,
-  ensureBranchPushed,
-  ensureCleanWorktree,
-  fetchOrigin,
-  findOpenPullRequest,
-  hasMergedPullRequestForBranch,
-  parsePullRequestNumber,
-  readCommitSubject,
-  readCurrentBranch,
-  readLatestCommitSubject,
-  readMergeBase,
-  rebaseOnto,
-  rebaseOntoDefaultBranch,
-  replyToReviewThreadForOrchestrator,
-  resolveGitHubRepoForOrchestrator,
-  resolveReviewThread,
-  resolveStandalonePullRequest,
-  runProcess,
-  updatePullRequestBody,
-  updateStandalonePullRequestBody,
+  createPlatformAdapters,
+  type PlatformAdapters,
 } from './platform-adapters';
 import {
   createOptions as createOptionsImpl,
@@ -116,6 +95,10 @@ import {
   startTicket as startTicketImpl,
 } from './ticket-flow';
 
+function platformAdapters(): PlatformAdapters {
+  return createPlatformAdapters(_config);
+}
+
 export async function runDeliveryOrchestrator(
   argv: string[],
   cwd: string,
@@ -150,6 +133,7 @@ export async function runDeliveryOrchestrator(
         cwd,
       ),
     );
+    const platform = platformAdapters();
     const notifier = resolveNotifier();
     if (parsed.command === 'ai-review') {
       const result = await runStandaloneAiReview(
@@ -169,7 +153,7 @@ export async function runDeliveryOrchestrator(
       cwd,
       inferPlanPathFromBranch,
       planPath: parsed.planPath,
-      readCurrentBranch,
+      readCurrentBranch: platform.readCurrentBranch,
     });
     parsed = {
       ...parsed,
@@ -619,9 +603,10 @@ async function startTicket(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
+  const platform = platformAdapters();
   return startTicketImpl(state, cwd, ticketId, {
-    addWorktree,
-    bootstrapWorktreeIfNeeded,
+    addWorktree: platform.addWorktree,
+    bootstrapWorktreeIfNeeded: platform.bootstrapWorktreeIfNeeded,
     copyLocalBootstrapFilesIfPresent,
     materializeTicketContext,
     relativeToRepo,
@@ -749,8 +734,9 @@ function resolveInternalReviewPatchCommits(
   suffix: '[self-audit]' | '[codexPreflight]',
   stageLabel: string,
 ): InternalReviewPatchCommit[] {
+  const platform = platformAdapters();
   return normalizeUniquePatchCommitShas(rawShas).map((sha) => {
-    const subject = readCommitSubject(cwd, sha);
+    const subject = platform.readCommitSubject(cwd, sha);
     if (!subject.endsWith(` ${suffix}`)) {
       throw new Error(
         `${stageLabel} patch commit ${sha.slice(0, 12)} must end with " ${suffix}" (note the space).`,
@@ -765,19 +751,19 @@ export async function openPullRequest(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
+  const platform = platformAdapters();
   const nextState = openPullRequestImpl(state, cwd, ticketId, {
     assertReviewerFacingMarkdown,
     buildPullRequestBody,
     buildPullRequestTitle,
     codexPreflightPolicy: _config.reviewPolicy.codexPreflight,
-    createPullRequest,
-    editPullRequest,
-    ensureBranchPushed,
-    findOpenPullRequest,
-    parsePullRequestNumber,
-    readLatestCommitSubject,
+    createPullRequest: platform.createPullRequest,
+    editPullRequest: platform.editPullRequest,
+    ensureBranchPushed: platform.ensureBranchPushed,
+    findOpenPullRequest: platform.findOpenPullRequest,
+    readLatestCommitSubject: platform.readLatestCommitSubject,
     reportProgress: (message: string) => console.log(message),
-    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
+    resolveGitHubRepo: platform.resolveGitHubRepoForOrchestrator,
   });
 
   // Detect doc-only PRs to skip the external AI review window.
@@ -812,17 +798,19 @@ export async function pollReview(
   ticketId?: string,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
+  const platform = platformAdapters();
   return runTicketReviewLifecycle(state, cwd, ticketId, {
     ...dependencies,
     relativeToRepo,
     replyToReviewThread:
-      dependencies.replyToReviewThread ?? replyToReviewThreadForOrchestrator,
+      dependencies.replyToReviewThread ??
+      platform.replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
-    resolveReviewThread,
+    resolveReviewThread: platform.resolveReviewThread,
     resolveReviewTriager,
-    runProcess,
+    runProcess: platform.runProcess,
     updatePullRequestBody:
-      dependencies.updatePullRequestBody ?? updatePullRequestBody,
+      dependencies.updatePullRequestBody ?? platform.updatePullRequestBody,
   });
 }
 
@@ -832,17 +820,19 @@ export async function reconcileLateReview(
   ticketId: string,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
+  const platform = platformAdapters();
   return runReconcileLateTicketReview(state, cwd, ticketId, {
     ...dependencies,
     relativeToRepo,
     replyToReviewThread:
-      dependencies.replyToReviewThread ?? replyToReviewThreadForOrchestrator,
+      dependencies.replyToReviewThread ??
+      platform.replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
-    resolveReviewThread,
+    resolveReviewThread: platform.resolveReviewThread,
     resolveReviewTriager,
-    runProcess,
+    runProcess: platform.runProcess,
     updatePullRequestBody:
-      dependencies.updatePullRequestBody ?? updatePullRequestBody,
+      dependencies.updatePullRequestBody ?? platform.updatePullRequestBody,
   });
 }
 
@@ -852,8 +842,10 @@ export async function runStandaloneAiReview(
   prNumber?: number,
   dependencies: Partial<StandaloneAiReviewDependencies> = {},
 ): Promise<StandaloneAiReviewResult> {
+  const platform = platformAdapters();
   const pullRequest =
-    dependencies.pullRequest ?? resolveStandalonePullRequest(cwd, prNumber);
+    dependencies.pullRequest ??
+    platform.resolveStandalonePullRequest(cwd, prNumber);
 
   await emitNotificationWarnings(notifier, cwd, [
     buildStandaloneReviewStartedEvent(pullRequest.number, pullRequest.url),
@@ -864,14 +856,16 @@ export async function runStandaloneAiReview(
     pullRequest,
     relativeToRepo,
     replyToReviewThread:
-      dependencies.replyToReviewThread ?? replyToReviewThreadForOrchestrator,
+      dependencies.replyToReviewThread ??
+      platform.replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
-    resolveReviewThread,
+    resolveReviewThread: platform.resolveReviewThread,
     resolveReviewTriager,
-    resolveStandalonePullRequest,
-    runProcess,
+    resolveStandalonePullRequest: platform.resolveStandalonePullRequest,
+    runProcess: platform.runProcess,
     updatePullRequestBody:
-      dependencies.updatePullRequestBody ?? updateStandalonePullRequestBody,
+      dependencies.updatePullRequestBody ??
+      platform.updateStandalonePullRequestBody,
   });
 }
 
@@ -883,17 +877,19 @@ export async function recordReview(
   note?: string,
   dependencies: Partial<TicketReviewDependencies> = {},
 ): Promise<DeliveryState> {
+  const platform = platformAdapters();
   return recordTicketReview(state, cwd, ticketId, outcome, note, {
     ...dependencies,
     relativeToRepo,
     replyToReviewThread:
-      dependencies.replyToReviewThread ?? replyToReviewThreadForOrchestrator,
+      dependencies.replyToReviewThread ??
+      platform.replyToReviewThreadForOrchestrator,
     resolveReviewFetcher,
-    resolveReviewThread,
+    resolveReviewThread: platform.resolveReviewThread,
     resolveReviewTriager,
-    runProcess,
+    runProcess: platform.runProcess,
     updatePullRequestBody:
-      dependencies.updatePullRequestBody ?? updatePullRequestBody,
+      dependencies.updatePullRequestBody ?? platform.updatePullRequestBody,
   });
 }
 
@@ -901,8 +897,9 @@ async function advanceToNextTicketImpl(
   state: DeliveryState,
   cwd: string,
 ): Promise<DeliveryState> {
+  const platform = platformAdapters();
   return advanceToNextTicket(state, cwd, {
-    updatePullRequestBody,
+    updatePullRequestBody: platform.updatePullRequestBody,
   });
 }
 
@@ -947,19 +944,20 @@ async function restackTicket(
   cwd: string,
   ticketId?: string,
 ): Promise<DeliveryState> {
+  const platform = platformAdapters();
   return restackTicketImpl(state, cwd, ticketId, {
     buildPullRequestBody,
     defaultBranch: _config.defaultBranch,
-    editPullRequest,
-    ensureCleanWorktree,
-    fetchOrigin,
-    findOpenPullRequest,
-    hasMergedPullRequestForBranch,
-    readCurrentBranch,
-    readMergeBase,
-    rebaseOnto,
-    rebaseOntoDefaultBranch,
-    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
+    editPullRequest: platform.editPullRequest,
+    ensureCleanWorktree: platform.ensureCleanWorktree,
+    fetchOrigin: platform.fetchOrigin,
+    findOpenPullRequest: platform.findOpenPullRequest,
+    hasMergedPullRequestForBranch: platform.hasMergedPullRequestForBranch,
+    readCurrentBranch: platform.readCurrentBranch,
+    readMergeBase: platform.readMergeBase,
+    rebaseOnto: platform.rebaseOnto,
+    rebaseOntoDefaultBranch: platform.rebaseOntoDefaultBranch,
+    resolveGitHubRepo: platform.resolveGitHubRepoForOrchestrator,
   });
 }
 

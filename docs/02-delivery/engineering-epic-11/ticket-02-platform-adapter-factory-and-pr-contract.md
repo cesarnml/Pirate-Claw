@@ -64,10 +64,20 @@ the adapter-side parse.
 
 ## Rationale
 
-Red first:
+Red first: focused platform, context, and ticket-flow tests covered the richer
+PR creation return value first. `verify:quiet` then caught the remaining barrel
+consumer in `closeout-stack.ts`, which still expected `runProcessResult` from
+the old named adapter export.
 
-Why this path:
+Why this path: `createPlatformAdapters(config)` keeps runtime and package
+manager values closed over in one adapter object, while ticket-flow now consumes
+the PR number directly from the adapter-created PR result instead of receiving a
+URL parser dependency.
 
-Alternative considered:
+Alternative considered: keeping singleton-backed named adapter exports as
+compatibility shims, but that would preserve the dependency direction EE11 is
+trying to remove and make later singleton cleanup less mechanical.
 
-Deferred:
+Deferred: broader command context wiring remains in EE11.04, and final removal
+of `_config`/`initOrchestratorConfig`/`getOrchestratorConfig` remains in
+EE11.05.

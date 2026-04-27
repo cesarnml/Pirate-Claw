@@ -37,7 +37,7 @@ import {
   resolveNotifier,
 } from '../notifications';
 import { parseGitWorktreeList } from '../platform';
-import { runProcessResult } from '../platform-adapters';
+import { createPlatformAdapters } from '../platform-adapters';
 import {
   assertReviewerFacingMarkdown,
   buildExternalAiReviewSection,
@@ -3609,9 +3609,18 @@ describe('delivery orchestrator', () => {
     });
 
     try {
-      const result = runProcessResult(process.cwd(), [
-        '__codex_missing_binary_for_test__',
-      ]);
+      const result = createPlatformAdapters({
+        defaultBranch: 'main',
+        planRoot: 'docs',
+        runtime: 'node',
+        packageManager: 'bun',
+        ticketBoundaryMode: 'cook',
+        reviewPolicy: {
+          selfAudit: 'skip_doc_only',
+          codexPreflight: 'skip_doc_only',
+          externalReview: 'skip_doc_only',
+        },
+      }).runProcessResult(process.cwd(), ['__codex_missing_binary_for_test__']);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('__codex_missing_binary_for_test__');

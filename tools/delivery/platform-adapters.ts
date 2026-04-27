@@ -28,7 +28,7 @@ import {
   updatePullRequestBody as updatePrMetadataPullRequestBody,
   updateStandalonePullRequestBody as updateStandalonePrMetadataPullRequestBody,
 } from './pr-metadata';
-import { _config } from './runtime-config';
+import type { ResolvedOrchestratorConfig } from './runtime-config';
 import type {
   DeliveryState,
   StandaloneAiReviewResult,
@@ -36,89 +36,91 @@ import type {
   TicketState,
 } from './types';
 
-export function addWorktree(
-  cwd: string,
-  worktreePath: string,
-  branch: string,
-  baseBranch: string,
-): void {
-  addPlatformWorktree(cwd, worktreePath, branch, baseBranch, _config.runtime);
-}
+export type CreatePullRequestResult = {
+  number: number;
+  url: string;
+};
 
-export async function bootstrapWorktreeIfNeeded(
-  worktreePath: string,
-): Promise<void> {
-  await bootstrapPlatformWorktreeIfNeeded(
-    worktreePath,
-    _config.packageManager,
-    _config.runtime,
-  );
-}
-
-export function createPullRequest(
-  cwd: string,
-  options: {
-    base: string;
-    body: string;
-    head: string;
-    title: string;
-  },
-): string {
-  return createPlatformPullRequest(cwd, options, _config.runtime);
-}
-
-export function editPullRequest(
-  cwd: string,
-  prNumber: number,
-  options: {
-    base?: string;
-    body?: string;
-    title?: string;
-  },
-): void {
-  editPlatformPullRequest(cwd, prNumber, options, _config.runtime);
-}
-
-export function ensureBranchPushed(cwd: string, branch: string): void {
-  ensurePlatformBranchPushed(cwd, branch, _config.runtime);
-}
-
-export function ensureCleanWorktree(cwd: string): void {
-  ensurePlatformCleanWorktree(cwd, _config.runtime);
-}
-
-export function fetchOrigin(cwd: string): void {
-  fetchPlatformOrigin(cwd, _config.runtime);
-}
-
-export function findOpenPullRequest(
-  cwd: string,
-  branch: string,
-): PullRequestSummary | undefined {
-  return findPlatformOpenPullRequest(cwd, branch, _config.runtime);
-}
-
-export function hasMergedPullRequestForBranch(
-  cwd: string,
-  branch: string,
-): boolean {
-  return hasPlatformMergedPullRequestForBranch(cwd, branch, _config.runtime);
-}
-
-export function listCommitSubjectsBetween(
-  cwd: string,
-  reviewedHeadSha: string,
-  currentHeadSha: string,
-  maxCount: number,
-): string[] {
-  return listPlatformCommitSubjectsBetween(
-    cwd,
-    reviewedHeadSha,
-    currentHeadSha,
-    maxCount,
-    _config.runtime,
-  );
-}
+export type PlatformAdapters = {
+  addWorktree: (
+    cwd: string,
+    worktreePath: string,
+    branch: string,
+    baseBranch: string,
+  ) => void;
+  bootstrapWorktreeIfNeeded: (worktreePath: string) => Promise<void>;
+  createPullRequest: (
+    cwd: string,
+    options: {
+      base: string;
+      body: string;
+      head: string;
+      title: string;
+    },
+  ) => CreatePullRequestResult;
+  editPullRequest: (
+    cwd: string,
+    prNumber: number,
+    options: {
+      base?: string;
+      body?: string;
+      title?: string;
+    },
+  ) => void;
+  ensureBranchPushed: (cwd: string, branch: string) => void;
+  ensureCleanWorktree: (cwd: string) => void;
+  fetchOrigin: (cwd: string) => void;
+  findOpenPullRequest: (
+    cwd: string,
+    branch: string,
+  ) => PullRequestSummary | undefined;
+  hasMergedPullRequestForBranch: (cwd: string, branch: string) => boolean;
+  listCommitSubjectsBetween: (
+    cwd: string,
+    reviewedHeadSha: string,
+    currentHeadSha: string,
+    maxCount: number,
+  ) => string[];
+  readCommitSubject: (cwd: string, sha: string) => string;
+  readCurrentBranch: (cwd: string) => string;
+  readHeadSha: (cwd: string) => string;
+  readLatestCommitSubject: (cwd: string) => string;
+  readMergeBase: (
+    cwd: string,
+    branch: string,
+    previousBranch: string,
+  ) => string;
+  rebaseOnto: (cwd: string, rebaseTarget: string, oldBase: string) => void;
+  rebaseOntoDefaultBranch: (cwd: string, defaultBranch: string) => void;
+  replyToReviewThreadForOrchestrator: (
+    worktreePath: string,
+    databaseId: number,
+    body: string,
+  ) => void;
+  resolveGitHubRepoForOrchestrator: (
+    cwd: string,
+  ) => { defaultBranch: string; name: string; owner: string } | undefined;
+  resolveReviewThread: (worktreePath: string, threadId: string) => string;
+  resolveStandalonePullRequest: (
+    cwd: string,
+    prNumber?: number,
+  ) => StandalonePullRequest;
+  runProcess: (cwd: string, cmd: string[]) => string;
+  runProcessResult: (
+    cwd: string,
+    cmd: string[],
+  ) => {
+    exitCode: number;
+    stderr: string;
+    stdout: string;
+  };
+  updatePullRequestBody: (state: DeliveryState, ticket: TicketState) => void;
+  updateStandalonePullRequestBody: (
+    cwd: string,
+    pullRequest: StandalonePullRequest,
+    result: StandaloneAiReviewResult,
+  ) => void;
+};
 
 export function parsePullRequestNumber(prUrl: string): number {
   const match = prUrl.match(/\/pull\/(\d+)$/);
@@ -130,132 +132,154 @@ export function parsePullRequestNumber(prUrl: string): number {
   return Number(match[1]);
 }
 
-export function readCommitSubject(cwd: string, sha: string): string {
-  return readPlatformCommitSubject(cwd, sha, _config.runtime);
-}
+export function createPlatformAdapters(
+  config: ResolvedOrchestratorConfig,
+): PlatformAdapters {
+  const repoCacheByWorktree = new Map<
+    string,
+    ReturnType<typeof resolvePlatformGitHubRepo>
+  >();
 
-export function readCurrentBranch(cwd: string): string {
-  return readPlatformCurrentBranch(cwd, _config.runtime);
-}
+  const adapters: PlatformAdapters = {
+    addWorktree(cwd, worktreePath, branch, baseBranch) {
+      addPlatformWorktree(
+        cwd,
+        worktreePath,
+        branch,
+        baseBranch,
+        config.runtime,
+      );
+    },
+    async bootstrapWorktreeIfNeeded(worktreePath) {
+      await bootstrapPlatformWorktreeIfNeeded(
+        worktreePath,
+        config.packageManager,
+        config.runtime,
+      );
+    },
+    createPullRequest(cwd, options) {
+      const url = createPlatformPullRequest(cwd, options, config.runtime);
+      return {
+        number: parsePullRequestNumber(url),
+        url,
+      };
+    },
+    editPullRequest(cwd, prNumber, options) {
+      editPlatformPullRequest(cwd, prNumber, options, config.runtime);
+    },
+    ensureBranchPushed(cwd, branch) {
+      ensurePlatformBranchPushed(cwd, branch, config.runtime);
+    },
+    ensureCleanWorktree(cwd) {
+      ensurePlatformCleanWorktree(cwd, config.runtime);
+    },
+    fetchOrigin(cwd) {
+      fetchPlatformOrigin(cwd, config.runtime);
+    },
+    findOpenPullRequest(cwd, branch) {
+      return findPlatformOpenPullRequest(cwd, branch, config.runtime);
+    },
+    hasMergedPullRequestForBranch(cwd, branch) {
+      return hasPlatformMergedPullRequestForBranch(cwd, branch, config.runtime);
+    },
+    listCommitSubjectsBetween(cwd, reviewedHeadSha, currentHeadSha, maxCount) {
+      return listPlatformCommitSubjectsBetween(
+        cwd,
+        reviewedHeadSha,
+        currentHeadSha,
+        maxCount,
+        config.runtime,
+      );
+    },
+    readCommitSubject(cwd, sha) {
+      return readPlatformCommitSubject(cwd, sha, config.runtime);
+    },
+    readCurrentBranch(cwd) {
+      return readPlatformCurrentBranch(cwd, config.runtime);
+    },
+    readHeadSha(cwd) {
+      return readPlatformHeadSha(cwd, config.runtime);
+    },
+    readLatestCommitSubject(cwd) {
+      return readPlatformLatestCommitSubject(cwd, config.runtime);
+    },
+    readMergeBase(cwd, branch, previousBranch) {
+      return readPlatformMergeBase(cwd, branch, previousBranch, config.runtime);
+    },
+    rebaseOnto(cwd, rebaseTarget, oldBase) {
+      rebasePlatformOnto(cwd, rebaseTarget, oldBase, config.runtime);
+    },
+    rebaseOntoDefaultBranch(cwd, defaultBranch) {
+      rebasePlatformOntoDefaultBranch(cwd, defaultBranch, config.runtime);
+    },
+    resolveGitHubRepoForOrchestrator(cwd) {
+      return resolvePlatformGitHubRepo(cwd, config.runtime);
+    },
+    replyToReviewThreadForOrchestrator(worktreePath, databaseId, body) {
+      const cached = repoCacheByWorktree.get(worktreePath);
+      const repo =
+        cached ?? resolvePlatformGitHubRepo(worktreePath, config.runtime);
+      if (!repo) {
+        return;
+      }
+      if (!cached) {
+        repoCacheByWorktree.set(worktreePath, repo);
+      }
 
-export function readHeadSha(cwd: string): string {
-  return readPlatformHeadSha(cwd, _config.runtime);
-}
+      try {
+        replyPlatformToReviewComment(
+          worktreePath,
+          repo.owner,
+          repo.name,
+          databaseId,
+          body,
+          config.runtime,
+        );
+      } catch {
+        // Best-effort; thread resolution still proceeds.
+      }
+    },
+    resolveReviewThread(worktreePath, threadId) {
+      return resolvePlatformReviewThread(
+        worktreePath,
+        threadId,
+        config.runtime,
+      );
+    },
+    resolveStandalonePullRequest(cwd, prNumber) {
+      return resolvePlatformStandalonePullRequest(
+        cwd,
+        config.runtime,
+        prNumber,
+      );
+    },
+    runProcess(cwd, cmd) {
+      return runPlatformProcess(cwd, cmd, config.runtime);
+    },
+    runProcessResult(cwd, cmd) {
+      return runPlatformProcessResult(cwd, cmd, config.runtime);
+    },
+    updatePullRequestBody(state, ticket) {
+      return updatePrMetadataPullRequestBody(state, ticket, {
+        editPullRequest: adapters.editPullRequest,
+        listCommitSubjectsBetween: adapters.listCommitSubjectsBetween,
+        readHeadSha: adapters.readHeadSha,
+        resolveGitHubRepo: adapters.resolveGitHubRepoForOrchestrator,
+      });
+    },
+    updateStandalonePullRequestBody(cwd, pullRequest, result) {
+      return updateStandalonePrMetadataPullRequestBody(
+        cwd,
+        pullRequest,
+        result,
+        {
+          editPullRequest: adapters.editPullRequest,
+          listCommitSubjectsBetween: adapters.listCommitSubjectsBetween,
+          resolveGitHubRepo: adapters.resolveGitHubRepoForOrchestrator,
+        },
+      );
+    },
+  };
 
-export function readLatestCommitSubject(cwd: string): string {
-  return readPlatformLatestCommitSubject(cwd, _config.runtime);
-}
-
-export function readMergeBase(
-  cwd: string,
-  branch: string,
-  previousBranch: string,
-): string {
-  return readPlatformMergeBase(cwd, branch, previousBranch, _config.runtime);
-}
-
-export function rebaseOnto(
-  cwd: string,
-  rebaseTarget: string,
-  oldBase: string,
-): void {
-  rebasePlatformOnto(cwd, rebaseTarget, oldBase, _config.runtime);
-}
-
-export function rebaseOntoDefaultBranch(
-  cwd: string,
-  defaultBranch: string,
-): void {
-  rebasePlatformOntoDefaultBranch(cwd, defaultBranch, _config.runtime);
-}
-
-export function resolveGitHubRepoForOrchestrator(cwd: string) {
-  return resolvePlatformGitHubRepo(cwd, _config.runtime);
-}
-
-const REPO_CACHE_BY_WORKTREE = new Map<
-  string,
-  ReturnType<typeof resolveGitHubRepoForOrchestrator>
->();
-
-export function replyToReviewThreadForOrchestrator(
-  worktreePath: string,
-  databaseId: number,
-  body: string,
-): void {
-  const cached = REPO_CACHE_BY_WORKTREE.get(worktreePath);
-  const repo =
-    cached ?? resolvePlatformGitHubRepo(worktreePath, _config.runtime);
-  if (!repo) {
-    return;
-  }
-  if (!cached) {
-    REPO_CACHE_BY_WORKTREE.set(worktreePath, repo);
-  }
-
-  try {
-    replyPlatformToReviewComment(
-      worktreePath,
-      repo.owner,
-      repo.name,
-      databaseId,
-      body,
-      _config.runtime,
-    );
-  } catch {
-    // Best-effort; thread resolution still proceeds.
-  }
-}
-
-export function resolveReviewThread(
-  worktreePath: string,
-  threadId: string,
-): string {
-  return resolvePlatformReviewThread(worktreePath, threadId, _config.runtime);
-}
-
-export function resolveStandalonePullRequest(
-  cwd: string,
-  prNumber?: number,
-): StandalonePullRequest {
-  return resolvePlatformStandalonePullRequest(cwd, _config.runtime, prNumber);
-}
-
-export function runProcess(cwd: string, cmd: string[]): string {
-  return runPlatformProcess(cwd, cmd, _config.runtime);
-}
-
-export function runProcessResult(
-  cwd: string,
-  cmd: string[],
-): {
-  exitCode: number;
-  stderr: string;
-  stdout: string;
-} {
-  return runPlatformProcessResult(cwd, cmd, _config.runtime);
-}
-
-export function updatePullRequestBody(
-  state: DeliveryState,
-  ticket: TicketState,
-): void {
-  return updatePrMetadataPullRequestBody(state, ticket, {
-    editPullRequest,
-    listCommitSubjectsBetween,
-    readHeadSha,
-    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
-  });
-}
-
-export function updateStandalonePullRequestBody(
-  cwd: string,
-  pullRequest: StandalonePullRequest,
-  result: StandaloneAiReviewResult,
-): void {
-  return updateStandalonePrMetadataPullRequestBody(cwd, pullRequest, result, {
-    editPullRequest,
-    listCommitSubjectsBetween,
-    resolveGitHubRepo: resolveGitHubRepoForOrchestrator,
-  });
+  return adapters;
 }

@@ -449,7 +449,7 @@ export function openPullRequest(
         head: string;
         title: string;
       },
-    ) => string;
+    ) => { number: number; url: string };
     editPullRequest: (
       cwd: string,
       prNumber: number,
@@ -464,7 +464,6 @@ export function openPullRequest(
       cwd: string,
       branch: string,
     ) => PullRequestSummary | undefined;
-    parsePullRequestNumber: (prUrl: string) => number;
     readLatestCommitSubject: (cwd: string) => string;
     reportProgress?: (message: string) => void;
     resolveGitHubRepo?: (
@@ -550,13 +549,14 @@ export function openPullRequest(
     prNumber = existingPullRequest.number;
   } else {
     dependencies.reportProgress?.('open-pr: creating PR on GitHub...');
-    prUrl = dependencies.createPullRequest(target.worktreePath, {
+    const pullRequest = dependencies.createPullRequest(target.worktreePath, {
       base: target.baseBranch,
       body,
       head: target.branch,
       title,
     });
-    prNumber = dependencies.parsePullRequestNumber(prUrl);
+    prUrl = pullRequest.url;
+    prNumber = pullRequest.number;
   }
 
   dependencies.reportProgress?.(`open-pr: PR ready ${prUrl}`);

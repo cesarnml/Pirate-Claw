@@ -751,13 +751,15 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
       assertReviewerFacingMarkdown: () => {},
       buildPullRequestBody: () => 'body',
       buildPullRequestTitle: () => 'feat: example [P3.01]',
-      createPullRequest: () => 'https://example.test/pull/23',
+      createPullRequest: () => ({
+        number: 23,
+        url: 'https://example.test/pull/23',
+      }),
       editPullRequest: () => {
         throw new Error('should not edit existing PR');
       },
       ensureBranchPushed: () => {},
       findOpenPullRequest: () => undefined,
-      parsePullRequestNumber: () => 23,
       readLatestCommitSubject: () => 'feat: example',
       reportProgress: (message) => progress.push(message),
     });
@@ -814,7 +816,6 @@ describe('EE8.02 — codex preflight command, status, and gate', () => {
         state: 'OPEN',
         url: 'https://example.test/pull/23',
       }),
-      parsePullRequestNumber: () => 23,
       readLatestCommitSubject: () => 'feat: example',
       reportProgress: (message) => progress.push(message),
     });

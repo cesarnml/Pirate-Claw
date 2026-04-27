@@ -1,11 +1,12 @@
 import {
   createOptions,
+  createPlatformAdapters,
+  type DeliveryPlatformAdapters,
   formatStatus,
   initOrchestratorConfig,
   loadOrchestratorConfig,
   loadState,
   resolveOrchestratorConfig,
-  runProcessResult,
   saveState,
 } from './orchestrator';
 import type { DeliveryState, TicketState } from './types';
@@ -105,6 +106,19 @@ export function getCloseoutTicketChain(state: DeliveryState): TicketState[] {
 
 function getUsage(): string {
   return 'Usage: bun run closeout-stack --plan <plan-path>';
+}
+
+let closeoutPlatform: DeliveryPlatformAdapters | undefined;
+
+function runProcessResult(
+  cwd: string,
+  cmd: string[],
+): ReturnType<DeliveryPlatformAdapters['runProcessResult']> {
+  if (!closeoutPlatform) {
+    throw new Error('closeout-stack platform adapters are not initialized.');
+  }
+
+  return closeoutPlatform.runProcessResult(cwd, cmd);
 }
 
 function runProcess(cwd: string, cmd: string[]): string {
@@ -309,6 +323,7 @@ export async function runCloseoutStack(
     const rawConfig = await loadOrchestratorConfig(cwd);
     const config = resolveOrchestratorConfig(rawConfig, cwd);
     initOrchestratorConfig(config);
+    closeoutPlatform = createPlatformAdapters(config);
     const options = createOptions({ planPath: parsed.planPath });
     const state = await loadState(cwd, options);
     const tickets = getCloseoutTicketChain(state);

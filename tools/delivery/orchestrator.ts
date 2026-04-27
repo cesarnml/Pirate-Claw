@@ -96,7 +96,14 @@ export {
   findExistingBranch,
 } from './planning';
 export { materializeTicketContext } from './ticket-flow';
-export { runProcessResult } from './platform-adapters';
+export {
+  createPlatformAdapters,
+  parsePullRequestNumber,
+} from './platform-adapters';
+export type {
+  CreatePullRequestResult,
+  PlatformAdapters as DeliveryPlatformAdapters,
+} from './platform-adapters';
 export { parseDotEnv } from './env';
 export {
   applyAdvanceBoundaryMode,
