@@ -35,6 +35,7 @@ Supported owner actions:
 - Package Center manual install for DSM 7.1 Docker systems
 - Container Manager Project import for DSM 7.2+ systems
 - File Station actions when a fallback folder step is unavoidable
+- Docker GUI image tarball import and volume mount actions when DSM 7.1 needs a GUI-only fallback path
 - DSM Main Menu / Package Center launch
 - Pirate Claw browser setup at `http://<nas-ip>:8888`
 
@@ -49,6 +50,8 @@ Unsupported in the owner path:
 - manual `.env` edits
 - manual Docker container assembly
 
+If the DSM 7.1 `.spk` cannot directly orchestrate Docker containers, a documented fallback may use multiple DSM GUI-only Docker image tarball import and volume mount steps. The fallback remains inside the product contract only if every step is performed through DSM UI and avoids terminal commands, hand-edited files, and owner-visible secrets.
+
 Legacy hand-built Docker deployments remain possible for developers and advanced operators, but they are outside the DSM-first owner install contract.
 
 ## Supported Synology Paths
@@ -62,7 +65,7 @@ The release-critical path is the real NAS baseline already used by the project:
 - legacy DSM `Docker` package
 - Package Center manual install of `pirate-claw.spk`
 
-After the P27.01 DSM 7.1 spike, the validated `.spk` path is a Package Center launcher/artifact package plus DSM Docker GUI fallback. Package Center hooks must not be treated as the Docker orchestration boundary unless later validation proves that path. The fallback remains supported only while all Docker image/import/volume steps are performed through DSM GUI and do not require SSH, Docker CLI, hand-edited files, or owner-visible secrets.
+After the P27.01 DSM 7.1 spike, the validated `.spk` path is a Package Center launcher/artifact package plus DSM Docker GUI fallback. Package Center hooks must not be treated as the Docker orchestration boundary unless later validation proves that path. The fallback remains supported only while all Docker image tarball import and volume steps are performed through DSM GUI and do not require SSH, Docker CLI, hand-edited files, or owner-visible secrets.
 
 ### Modern Path: DSM 7.2+ Container Manager Project
 
@@ -82,7 +85,10 @@ Phase 27 should produce a Synology release bundle:
 
 ```text
 pirate-claw-synology-vX.Y.Z.zip
-  pirate-claw.spk
+  images/
+    pirate-claw-image-vX.Y.Z.tar
+    pirate-claw-web-image-vX.Y.Z.tar
+    transmission-image-vX.Y.Z.tar
   compose.synology.yml
   README-synology-install.md
   install-dsm-7.1-docker.md
@@ -229,7 +235,6 @@ The release bundle also contains the DSM 7.2+ Compose Project artifact with expl
 - OpenVPN bridge and `gluetun` topology (Phase 29)
 - WireGuard support (v2)
 - direct Docker socket / Container Manager mutation from the web app
-- offline image tarball install
 - arbitrary custom install paths
 - BYO Transmission browser setup
 - exposing Transmission web UI by default

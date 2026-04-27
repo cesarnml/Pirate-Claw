@@ -11,7 +11,6 @@ node_modules/
 pirate-claw.config.json
 pirate-claw.*.db
 .pirate-claw/
-!.pirate-claw/synology-release/*.zip
 .env
 notes/private/
 .cursor/

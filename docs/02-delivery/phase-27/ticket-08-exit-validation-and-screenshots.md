@@ -16,6 +16,7 @@ Codex + Computer Use against `https://100.108.117.42:5001/` executes and documen
 - Package installs and appears in Package Center
 - DSM Main Menu Pirate Claw icon appears
 - DSM Docker package shows `pirate-claw-web`, `pirate-claw-daemon`, `transmission` containers running
+- DSM Docker Image view imports `pirate-claw-phase27`, `pirate-claw-web-phase27`, and bundled Transmission from release bundle tarballs, not old Phase 26 saved containers or remote registry assumptions
 
 **First-run flow:**
 
@@ -30,6 +31,7 @@ Codex + Computer Use against `https://100.108.117.42:5001/` executes and documen
 - Third-party package confirmation (if present)
 - Package Center showing Pirate Claw installed
 - DSM Main Menu with Pirate Claw icon visible
+- Docker Image view showing the imported Pirate Claw image tarballs
 - DSM Docker package showing all three containers running
 - Browser at `:8888` showing install health panel passing
 - Browser at `:8888` showing config onboarding steps accessible
@@ -53,4 +55,8 @@ All required DSM 7.1 screenshots are captured and committed. The full install fl
 
 ## Rationale
 
-_To be completed after validation run._
+Manual DSM validation found that existing `pirate-claw:latest` and `pirate-claw-web:latest` images on the DS918+ were tied to Phase 26 saved containers, so they could not prove the Phase 27 release bundle. The approved DSM 7.1 fallback now includes GUI-importable, Phase 27-named Pirate Claw image tarballs plus the bundled Transmission image tarball in the release bundle. The DSM guide now explicitly says Transmission must be imported from `transmission-phase27-image-vX.Y.Z.tar` for Phase 27 validation, even though DSM displays that imported image as `lscr.io/linuxserver/transmission:latest`. That keeps the operator contract inside DSM Package Center, File Station, and Docker GUI while removing external image availability assumptions and avoiding old image/container name conflicts.
+
+Manual daemon-container setup showed the DSM Docker wizard needs more precise wording for bind mounts and commands. The guide now states that DSM's `pirate-claw` shared folder maps to container path `/volume1/pirate-claw`, that EntryPoint stays `bun run dist/cli.js`, and that Command is exactly `daemon --config /volume1/pirate-claw/config/pirate-claw.config.json`.
+
+Manual first-run validation reached the web app and all three containers were running, but install health reported Transmission HTTP 403. That proved the bundled Transmission RPC answered but rejected the daemon container's bridge-network client due to Transmission RPC auth or whitelist configuration. The DSM guide and compose artifacts now use the Transmission image's no-auth default and set `WHITELIST=*.*.*.*` through the container environment. This keeps RPC private at the Docker network boundary because no Transmission ports are published to the NAS host, while avoiding owner-visible Transmission credentials.

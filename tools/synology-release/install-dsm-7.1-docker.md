@@ -41,12 +41,13 @@ Use the Docker package GUI only.
 3. Use Add from file or Import and select `images/pirate-claw-image-v1.0.0.tar` from this bundle.
 4. Use Add from file or Import again and select `images/pirate-claw-web-image-v1.0.0.tar`.
 5. Use Add from file or Import again and select `images/transmission-image-v1.0.0.tar`.
+
+   Do not pull Transmission from Registry for the Phase 27 validation path. Import only from the bundled tarball. DSM may display the image using its upstream registry tag, `lscr.io/linuxserver/transmission:latest`, after import — that is expected.
+
 6. Confirm these images are present:
    - `pirate-claw:latest`
    - `pirate-claw-web:latest`
    - `lscr.io/linuxserver/transmission:latest`
-
-   The Transmission name is expected: it is the label inside the bundled tarball, not an instruction to use the Docker Registry.
 
 7. Create a user-defined Docker network named `pirate-claw`.
 8. Create the Transmission container:
@@ -54,6 +55,11 @@ Use the Docker package GUI only.
    - Container name: `transmission`
    - Network: `pirate-claw`
    - **Remove all default port mappings.** DSM pre-fills `9091/tcp`, `51413/tcp`, and `51413/udp` — delete all three. Publishing these ports is not required and exposes Transmission to the network.
+   - Set environment values through Docker's GUI fields:
+     - `PUID` = `0`
+     - `PGID` = `0`
+     - `TZ` = `UTC`
+   - Do not set Transmission `USER`, `PASS`, or `WHITELIST`. Leave those unset so the RPC stays auth-free inside the private Docker network.
    - Map `/volume1/pirate-claw/transmission/config` to `/config`.
    - Map `/volume1/pirate-claw/downloads` to `/downloads`.
    - Map `/volume1/pirate-claw/downloads/complete` to `/downloads/complete`.

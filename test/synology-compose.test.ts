@@ -20,6 +20,9 @@ describe('Synology compose artifacts', () => {
       expect(content).toContain(
         'PIRATE_CLAW_TRANSMISSION_URL: http://transmission:9091/transmission/rpc',
       );
+      expect(content).toContain('PUID: ${PIRATE_CLAW_TRANSMISSION_PUID:-0}');
+      expect(content).toContain('PGID: ${PIRATE_CLAW_TRANSMISSION_PGID:-0}');
+      expect(content).not.toContain('WHITELIST:');
     });
 
     it(`${name} exposes only the Pirate Claw web port`, () => {

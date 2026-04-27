@@ -370,10 +370,14 @@ export async function runCli(argv: string[]): Promise<number> {
     if (command === 'daemon') {
       const configPath = parseConfigPath(rest);
       const resolvedConfigPath = resolveConfigPath(configPath);
-      await ensureFirstStartupBootstrap({
+      const bootstrap = await ensureFirstStartupBootstrap({
         installRoot: process.env.PIRATE_CLAW_INSTALL_ROOT,
         configPath: resolvedConfigPath,
       });
+      if (bootstrap && !process.env.PIRATE_CLAW_API_WRITE_TOKEN) {
+        const token = await Bun.file(bootstrap.daemonApiWriteTokenPath).text();
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = token.trim();
+      }
       await ensureStarterConfig(resolvedConfigPath);
       let config = await loadConfig(resolvedConfigPath);
       const configuredInstallRoot = config.runtime.installRoot;

@@ -1876,9 +1876,12 @@ function writeConfigAtomically(
   path: string,
   config: Record<string, unknown>,
 ): void {
+  const withoutStarter = Object.fromEntries(
+    Object.entries(config).filter(([k]) => k !== '_starter'),
+  );
   const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, {
+    writeFileSync(tempPath, `${JSON.stringify(withoutStarter, null, 2)}\n`, {
       encoding: 'utf8',
       flag: 'wx',
     });

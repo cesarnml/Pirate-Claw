@@ -11,7 +11,9 @@ The DSM 7.1 path is the Phase 27 validation baseline for DS918+ on DSM 7.1.1-429
 
 ## Bundle Contents
 
-- `pirate-claw.spk`: Package Center launcher and install-root artifact package.
+- `images/pirate-claw-image-vX.Y.Z.tar`: Pirate Claw daemon image for DSM Docker GUI import.
+- `images/pirate-claw-web-image-vX.Y.Z.tar`: Pirate Claw web image for DSM Docker GUI import.
+- `images/transmission-image-vX.Y.Z.tar`: bundled Transmission image for DSM Docker GUI import. After import, DSM may display the image using its upstream registry tag, `lscr.io/linuxserver/transmission:latest`.
 - `compose.synology.cm.yml`: Container Manager Project artifact for DSM 7.2+.
 - `install-dsm-7.1-docker.md`: DSM 7.1 Docker GUI install guide.
 - `install-dsm-7.2-container-manager.md`: DSM 7.2+ Container Manager guide.

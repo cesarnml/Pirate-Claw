@@ -119,6 +119,7 @@
     <script>
       const host = window.location.hostname || window.location.host;
       const target = `http://${host}:8888/`;
+      window.location.replace(target);
       const link = document.getElementById('open-pirate-claw');
       link.href = target;
       link.target = '_blank';
