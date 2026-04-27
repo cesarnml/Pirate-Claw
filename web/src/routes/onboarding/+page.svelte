@@ -115,6 +115,7 @@
 
 	let readinessState = $state<ReadinessState>('not_ready');
 	let readinessInterval: ReturnType<typeof setInterval> | undefined;
+	let pollCount = $state(0);
 
 	$effect(() => {
 		if (!showDoneStep) return;
@@ -126,6 +127,7 @@
 				if (res.ok) {
 					const json = (await res.json()) as { state: ReadinessState };
 					readinessState = json.state;
+					pollCount++;
 					if (json.state === 'ready' && readinessInterval !== undefined) {
 						clearInterval(readinessInterval);
 						readinessInterval = undefined;
@@ -1007,7 +1009,7 @@
 						</a>
 					</div>
 
-					{#if readinessState !== 'ready' && readinessState !== 'ready_pending_restart'}
+					{#if pollCount > 0 && readinessState !== 'ready' && readinessState !== 'ready_pending_restart'}
 						<div class="border-border/60 bg-background/40 rounded-xl border p-4">
 							<p class="text-muted-foreground text-sm">
 								Setup looks complete but readiness is stuck. Re-apply your config to clear the
@@ -1021,7 +1023,12 @@
 									Re-apply config
 								</button>
 							</form>
-							{#if (form as { reapplyMessage?: string } | undefined)?.reapplyMessage}
+							{#if (form as { reapplySuccess?: boolean; reapplyMessage?: string } | undefined)?.reapplySuccess}
+								<p class="text-muted-foreground mt-2 text-xs">
+									{(form as { reapplyMessage?: string }).reapplyMessage ??
+										'Config re-applied successfully.'}
+								</p>
+							{:else if (form as { reapplyMessage?: string } | undefined)?.reapplyMessage}
 								<p class="text-muted-foreground mt-2 text-xs">
 									{(form as { reapplyMessage?: string }).reapplyMessage}
 								</p>
