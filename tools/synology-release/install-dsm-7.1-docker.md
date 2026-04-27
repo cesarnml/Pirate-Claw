@@ -11,12 +11,13 @@ Validated baseline: Synology DS918+, DSM 7.1.1-42962 Update 9, legacy Docker pac
 ## Prepare The DSM Folders
 
 1. Open Control Panel → Shared Folder and confirm `pirate-claw` exists, or create it.
-2. Open File Station and navigate into `pirate-claw`.
-3. In File Station, right-click the `pirate-claw` folder → Properties → Permission tab.
-4. Click Create. Set User or group to `Everyone`, Type to `Allow`, Permission to `Read & Write`.
-5. Check **Apply to this folder, sub-folders and files**.
-6. Click Save.
-7. Create these folders inside `pirate-claw`:
+2. In the Shared Folder list, select `pirate-claw` → Edit → Permissions tab. Confirm your user account has Read/Write checked. If not, check it and click Save. Without this, the File Station permission steps below will fail.
+3. Open File Station and navigate into `pirate-claw`.
+4. In File Station, right-click the `pirate-claw` folder → Properties → Permission tab.
+5. Click Create. Set User or group to `Everyone`, Type to `Allow`, Permission to `Read & Write`.
+6. Check **Apply to this folder, sub-folders and files**.
+7. Click Save.
+8. Create these folders inside `pirate-claw`:
    - `config`
    - `data`
    - `downloads`
