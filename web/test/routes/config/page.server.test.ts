@@ -449,6 +449,97 @@ describe('config page server actions', () => {
 		});
 	});
 
+	describe('saveTmdb', () => {
+		it('returns fail(400) when tmdbIfMatch is missing', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+
+			const body = new URLSearchParams();
+			body.set('tmdbCacheTtlDays', '7');
+			body.set('tmdbNegativeCacheTtlDays', '1');
+
+			const result = await actions.saveTmdb({
+				request: new Request('http://localhost/config', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect((result as { data?: { tmdbMessage?: string } }).data?.tmdbMessage).toContain(
+				'Missing config revision'
+			);
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('returns fail(400) when TTLs are invalid', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+
+			const body = new URLSearchParams();
+			body.set('tmdbIfMatch', '"rev-1"');
+			body.set('tmdbCacheTtlDays', '0');
+			body.set('tmdbNegativeCacheTtlDays', '1');
+
+			const result = await actions.saveTmdb({
+				request: new Request('http://localhost/config', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { status?: number }).status).toBe(400);
+			expect((result as { data?: { tmdbMessage?: string } }).data?.tmdbMessage).toContain(
+				'cacheTtlDays'
+			);
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('saves TMDB settings and sends the API key only when provided', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-2"' } })
+			);
+
+			const body = new URLSearchParams();
+			body.set('tmdbIfMatch', '"rev-1"');
+			body.set('tmdbApiKey', 'new-key');
+			body.set('tmdbCacheTtlDays', '7');
+			body.set('tmdbNegativeCacheTtlDays', '1');
+
+			const result = await actions.saveTmdb({
+				request: new Request('http://localhost/config', {
+					method: 'POST',
+					headers: { 'content-type': 'application/x-www-form-urlencoded' },
+					body
+				})
+			} as never);
+
+			expect((result as { tmdbSuccess?: boolean }).tmdbSuccess).toBe(true);
+			expect((result as { tmdbEtag?: string }).tmdbEtag).toBe('"rev-2"');
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/config/tmdb',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({
+						apiKey: 'new-key',
+						cacheTtlDays: 7,
+						negativeCacheTtlDays: 1
+					})
+				})
+			);
+		});
+	});
+
 	describe('restartDaemon', () => {
 		it('returns 401 when write token is not configured', async () => {
 			vi.doMock('$env/dynamic/private', () => ({

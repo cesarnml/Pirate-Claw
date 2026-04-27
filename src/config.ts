@@ -651,15 +651,21 @@ function expectString(input: unknown, path: string): string {
   return input;
 }
 
-function validateOptionalTmdb(
-  input: unknown,
+export function validateTmdbConfig(
+  tmdb: Record<string, unknown>,
   path: string,
-): TmdbConfig | undefined {
-  if (input === undefined) {
-    return undefined;
+): TmdbConfig {
+  for (const key of Object.keys(tmdb)) {
+    if (
+      key !== 'apiKey' &&
+      key !== 'cacheTtlDays' &&
+      key !== 'negativeCacheTtlDays'
+    ) {
+      throw new ConfigError(
+        `Config file "${path} tmdb" has unknown key "${key}"; expected only "apiKey", "cacheTtlDays", and "negativeCacheTtlDays".`,
+      );
+    }
   }
-
-  const tmdb = expectRecord(input, `${path} tmdb`);
 
   const apiKey =
     tmdb.apiKey === undefined
@@ -686,6 +692,17 @@ function validateOptionalTmdb(
     cacheTtlDays,
     negativeCacheTtlDays,
   };
+}
+
+function validateOptionalTmdb(
+  input: unknown,
+  path: string,
+): TmdbConfig | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  return validateTmdbConfig(expectRecord(input, `${path} tmdb`), path);
 }
 
 function validateOptionalTmdbDayCount(

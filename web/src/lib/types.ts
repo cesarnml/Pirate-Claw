@@ -173,6 +173,12 @@ export type PlexConfig = {
 	refreshIntervalMinutes: number;
 };
 
+export type TmdbConfig = {
+	apiKey?: string;
+	cacheTtlDays?: number;
+	negativeCacheTtlDays?: number;
+};
+
 export type PlexAuthState =
 	| 'not_connected'
 	| 'connecting'
@@ -197,6 +203,7 @@ export type AppConfig = {
 	movies?: MoviePolicy;
 	transmission: TransmissionConfig;
 	runtime: RuntimeConfig;
+	tmdb?: TmdbConfig;
 	plex?: PlexConfig;
 };
 

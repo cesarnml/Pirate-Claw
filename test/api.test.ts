@@ -2490,6 +2490,131 @@ describe('PUT /api/config/movies', () => {
   });
 });
 
+describe('PUT /api/config/tmdb', () => {
+  it('persists TMDB settings and redacts the response key', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'pirate-claw-api-config-tmdb-'),
+      );
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      const holder = { current: loaded };
+      const deps = createDeps();
+      deps.config = loaded;
+      deps.configHolder = holder;
+      deps.configPath = configPath;
+
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const put = await handler(
+        new Request('http://localhost/api/config/tmdb', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            apiKey: 'tmdb-api-key',
+            cacheTtlDays: 7,
+            negativeCacheTtlDays: 1,
+          }),
+        }),
+      );
+
+      expect(put.status).toBe(200);
+      expect(await put.json()).toMatchObject({
+        tmdb: {
+          apiKey: '[redacted]',
+          cacheTtlDays: 7,
+          negativeCacheTtlDays: 1,
+        },
+      });
+      expect(holder.current.tmdb).toEqual({
+        apiKey: 'tmdb-api-key',
+        cacheTtlDays: 7,
+        negativeCacheTtlDays: 1,
+      });
+
+      const disk = await Bun.file(configPath).json();
+      expect(disk.tmdb).toEqual({
+        apiKey: 'tmdb-api-key',
+        cacheTtlDays: 7,
+        negativeCacheTtlDays: 1,
+      });
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
+  it('preserves existing TMDB fields when a partial update omits them', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'pirate-claw-api-config-tmdb-preserve-'),
+      );
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const doc = (await Bun.file(configPath).json()) as Record<
+        string,
+        unknown
+      >;
+      doc.tmdb = {
+        apiKey: 'existing-api-key',
+        cacheTtlDays: 7,
+        negativeCacheTtlDays: 1,
+      };
+      await Bun.write(configPath, `${JSON.stringify(doc, null, 2)}\n`);
+      const loaded = await loadConfig(configPath);
+      const deps = createDeps();
+      deps.config = loaded;
+      deps.configPath = configPath;
+
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const put = await handler(
+        new Request('http://localhost/api/config/tmdb', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            cacheTtlDays: 14,
+          }),
+        }),
+      );
+
+      expect(put.status).toBe(200);
+      const disk = await Bun.file(configPath).json();
+      expect(disk.tmdb).toEqual({
+        apiKey: 'existing-api-key',
+        cacheTtlDays: 14,
+        negativeCacheTtlDays: 1,
+      });
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+});
+
 describe('PUT /api/config/transmission/download-dirs', () => {
   async function makeDownloadDirsHandler() {
     const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;

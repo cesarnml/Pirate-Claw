@@ -46,6 +46,11 @@ const mockConfig: AppConfig = {
 		reconcileIntervalSeconds: 30,
 		artifactDir: '.pirate-claw/runtime',
 		artifactRetentionDays: 7
+	},
+	tmdb: {
+		apiKey: '[redacted]',
+		cacheTtlDays: 7,
+		negativeCacheTtlDays: 1
 	}
 };
 
@@ -81,6 +86,7 @@ describe('/config', () => {
 		expect(screen.getByRole('heading', { name: 'TV Configuration' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Movie Policy' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Transmission Protocol' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'TMDB Metadata' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Plex Connection' })).toBeInTheDocument();
 		expect(screen.getByLabelText('Plex Media Server URL')).toHaveValue('http://localhost:32400');
 		expect(screen.getByRole('link', { name: 'Connect in browser' })).toBeInTheDocument();
@@ -92,6 +98,7 @@ describe('/config', () => {
 		expect(screen.queryByRole('button', { name: 'Save shows' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Save TV defaults' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Save movies policy' })).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Save TMDB' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
 		expect(screen.queryByText('Storage Pool')).not.toBeInTheDocument();
@@ -323,6 +330,7 @@ describe('/config', () => {
 
 		expect(screen.getByRole('heading', { name: 'Transmission Protocol' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'RSS Feeds' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'TMDB Metadata' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'TV Configuration' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Movie Policy' })).toBeInTheDocument();
 	});
@@ -342,6 +350,7 @@ describe('/config', () => {
 		expect(screen.queryByRole('button', { name: 'Save movies policy' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Save shows' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Save TMDB' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Add year' })).toBeDisabled();

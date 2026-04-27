@@ -16,6 +16,7 @@
 	import MoviePolicyCard from './components/MoviePolicyCard.svelte';
 	import RemoveMovieYearModal from './components/RemoveMovieYearModal.svelte';
 	import ShowWatchlistEditor from './components/ShowWatchlistEditor.svelte';
+	import TmdbPanel from './components/TmdbPanel.svelte';
 	import TransmissionCard from './components/TransmissionCard.svelte';
 	import TvConfigCard from './components/TvConfigCard.svelte';
 
@@ -31,6 +32,7 @@
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 	const currentEtag = $derived(
 		form?.feedsEtag ??
+			form?.tmdbEtag ??
 			form?.moviesEtag ??
 			form?.tvDefaultsEtag ??
 			form?.showsEtag ??
@@ -488,6 +490,23 @@
 		};
 	};
 
+	const enhanceSaveTmdb: SubmitFunction = () => {
+		return async ({ result, update }) => {
+			if (result.type === 'success') {
+				toast('Saved', 'success');
+			} else if (result.type === 'failure') {
+				if (result.status === 409) {
+					toast('Config changed elsewhere — reload and try again', 'error');
+				} else {
+					const detail =
+						typeof result.data?.tmdbMessage === 'string' ? result.data.tmdbMessage : undefined;
+					toast('Save failed — see errors above', 'error', detail);
+				}
+			}
+			await update({ reset: false });
+		};
+	};
+
 	const enhanceRestartDaemon: SubmitFunction = () => {
 		restarting = true;
 		return async ({ result, update }) => {
@@ -591,6 +610,15 @@
 				onNewFeedNameChange={(value) => (newFeedName = value)}
 				onNewFeedUrlChange={(value) => (newFeedUrl = value)}
 				onNewFeedMediaTypeChange={(value) => (newFeedMediaType = value)}
+			/>
+
+			<TmdbPanel
+				tmdb={data.config.tmdb}
+				{canWrite}
+				{currentEtag}
+				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+				tmdbMessage={form?.tmdbMessage}
+				{enhanceSaveTmdb}
 			/>
 
 			<div class="space-y-5">

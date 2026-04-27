@@ -104,6 +104,20 @@ function validateRuntimeBounds(
 	return { ok: true };
 }
 
+function validateTmdbDays(
+	field: string,
+	value: number | undefined
+): { ok: true } | { ok: false; message: string } {
+	if (value === undefined) return { ok: false, message: `Field "${field}" is required.` };
+	if (!Number.isInteger(value) || value <= 0 || value > 3650) {
+		return {
+			ok: false,
+			message: `Field "${field}" must be a whole number between 1 and 3650.`
+		};
+	}
+	return { ok: true };
+}
+
 export const actions: Actions = {
 	savePlex: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
@@ -476,6 +490,75 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[config] saveMovies failed:', error);
 			return fail(500, { moviesMessage: 'Could not save movies policy.' });
+		}
+	},
+
+	saveTmdb: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { tmdbMessage: 'Config writes are disabled.' });
+		}
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('tmdbIfMatch') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, { tmdbMessage: 'Missing config revision. Reload and try again.' });
+		}
+
+		const apiKey = String(formData.get('tmdbApiKey') ?? '').trim();
+		const cacheTtlDays = parseOptionalInt(formData.get('tmdbCacheTtlDays'));
+		const negativeCacheTtlDays = parseOptionalInt(formData.get('tmdbNegativeCacheTtlDays'));
+		if (Number.isNaN(cacheTtlDays) || Number.isNaN(negativeCacheTtlDays)) {
+			return fail(400, { tmdbMessage: 'TMDB cache TTLs must be whole numbers.' });
+		}
+
+		for (const [field, value] of [
+			['cacheTtlDays', cacheTtlDays],
+			['negativeCacheTtlDays', negativeCacheTtlDays]
+		] as const) {
+			const result = validateTmdbDays(field, value);
+			if (!result.ok) {
+				return fail(400, { tmdbMessage: result.message });
+			}
+		}
+
+		try {
+			const response = await apiRequest('/api/config/tmdb', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify({
+					...(apiKey ? { apiKey } : {}),
+					cacheTtlDays,
+					negativeCacheTtlDays
+				})
+			});
+
+			if (!response.ok) {
+				let tmdbMessage = `Save failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) tmdbMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, {
+					tmdbMessage,
+					tmdbEtag: response.headers.get('etag')
+				});
+			}
+
+			return {
+				tmdbSuccess: true,
+				tmdbMessage: 'TMDB settings saved.',
+				tmdbEtag: response.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[config] saveTmdb failed:', error);
+			return fail(500, { tmdbMessage: 'Could not save TMDB settings.' });
 		}
 	},
 

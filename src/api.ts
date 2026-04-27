@@ -23,6 +23,7 @@ import {
   validateConfig,
   validateFeed,
   validateMoviePolicy,
+  validateTmdbConfig,
   loadConfigEnv,
 } from './config';
 import type { MovieBreakdown } from './movie-api-types';
@@ -1113,6 +1114,77 @@ export function createApiFetch(
             resolutions: movies.resolutions,
             codecs: movies.codecs,
             codecPolicy: movies.codecPolicy,
+          },
+        };
+
+        const validated = validateConfig(
+          merged,
+          'config',
+          await loadConfigEnv(configPath),
+        );
+        writeConfigAtomically(configPath, merged);
+        activeConfig = validated;
+        if (configHolder) {
+          configHolder.current = validated;
+        }
+
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch (error) {
+        if (error instanceof ConfigError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
+        }
+        return json500();
+      }
+    }
+
+    if (path === '/api/config/tmdb' && request.method === 'PUT') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const etagError = checkEtag(request, activeConfig);
+      if (etagError) return etagError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      try {
+        const patch = expectRecord(body, 'request body');
+        const baseOnDisk = await readConfigFileRecord(configPath);
+        const currentTmdb = isRecord(baseOnDisk.tmdb) ? baseOnDisk.tmdb : {};
+        const apiKey =
+          typeof patch.apiKey === 'string' && patch.apiKey.trim().length > 0
+            ? patch.apiKey.trim()
+            : currentTmdb.apiKey;
+        const nextTmdbInput = {
+          ...currentTmdb,
+          ...patch,
+          ...(apiKey === undefined ? {} : { apiKey }),
+        };
+        const tmdbPatch = validateTmdbConfig(nextTmdbInput, 'request body');
+
+        const merged = {
+          ...baseOnDisk,
+          tmdb: {
+            ...currentTmdb,
+            ...(tmdbPatch.apiKey === undefined
+              ? {}
+              : { apiKey: tmdbPatch.apiKey }),
+            ...(tmdbPatch.cacheTtlDays === undefined
+              ? {}
+              : { cacheTtlDays: tmdbPatch.cacheTtlDays }),
+            ...(tmdbPatch.negativeCacheTtlDays === undefined
+              ? {}
+              : { negativeCacheTtlDays: tmdbPatch.negativeCacheTtlDays }),
           },
         };
 
