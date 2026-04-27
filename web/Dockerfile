@@ -17,11 +17,14 @@ WORKDIR /app
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
+COPY web/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
 
-EXPOSE 3001
+EXPOSE 8888
 
 ENV NODE_ENV=production
-ENV PORT=3001
+ENV PORT=8888
 ENV HOST=0.0.0.0
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "build"]

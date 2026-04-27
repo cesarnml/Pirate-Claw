@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+if [ -n "$PIRATE_CLAW_DAEMON_TOKEN_FILE" ] && [ -f "$PIRATE_CLAW_DAEMON_TOKEN_FILE" ]; then
+  PIRATE_CLAW_API_WRITE_TOKEN=$(cat "$PIRATE_CLAW_DAEMON_TOKEN_FILE")
+  export PIRATE_CLAW_API_WRITE_TOKEN
+fi
+
+exec "$@"
