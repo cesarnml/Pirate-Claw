@@ -424,17 +424,17 @@ export const actions: Actions = {
 			return fail(403, { reapplyMessage: 'Config writes are disabled.' });
 		}
 
-		const configResponse = await apiRequest('/api/config');
-		if (!configResponse.ok) {
-			return fail(500, { reapplyMessage: 'Could not load config.' });
-		}
-		const config = (await configResponse.json()) as AppConfig;
-		const etag = configResponse.headers.get('etag');
-		if (!etag) {
-			return fail(500, { reapplyMessage: 'Missing config revision.' });
-		}
-
 		try {
+			const configResponse = await apiRequest('/api/config');
+			if (!configResponse.ok) {
+				return fail(500, { reapplyMessage: 'Could not load config.' });
+			}
+			const config = (await configResponse.json()) as AppConfig;
+			const etag = configResponse.headers.get('etag');
+			if (!etag) {
+				return fail(500, { reapplyMessage: 'Missing config revision.' });
+			}
+
 			const response = await apiRequest('/api/config/feeds', {
 				method: 'PUT',
 				headers: {
@@ -456,7 +456,7 @@ export const actions: Actions = {
 				return fail(response.status, { reapplyMessage });
 			}
 
-			return { reapplySuccess: true };
+			return { reapplySuccess: true, reapplyMessage: 'Config re-applied successfully.' };
 		} catch (error) {
 			console.error('[onboarding] reapplyConfig failed:', error);
 			return fail(500, { reapplyMessage: 'Could not re-apply config.' });
