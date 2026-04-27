@@ -52,10 +52,18 @@ the resolved config. Use existing config fixtures where practical.
 
 ## Rationale
 
-Red first:
+Red first: `bun test ./tools/delivery/test/context.test.ts` initially failed
+before the path was passed with `./`; after adding the context module, the
+focused context tests prove the new factory derives invocation text and exposes
+only the intended top-level context keys.
 
-Why this path:
+Why this path: a focused `context.ts` keeps EE11.01 additive and reviewable
+without migrating existing singleton-backed call sites before the factory shape
+is settled.
 
-Alternative considered:
+Alternative considered: placing the context type in `runtime-config.ts`, but
+that would blur config loading with runtime dependency assembly and make later
+singleton removal harder to review.
 
-Deferred:
+Deferred: broad caller migration, platform adapter factory changes, formatter
+config threading, and singleton removal remain in later EE11 tickets.

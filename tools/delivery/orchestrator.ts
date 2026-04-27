@@ -1,4 +1,6 @@
 export { parseGitWorktreeList } from './platform';
+export { createDeliveryOrchestratorContext } from './context';
+export type { DeliveryOrchestratorContext, PlatformAdapters } from './context';
 export {
   assertReviewerFacingMarkdown,
   buildExternalAiReviewSection,
