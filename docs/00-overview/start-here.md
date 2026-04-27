@@ -67,6 +67,7 @@ Current planning focus:
 - see [`roadmap.md`](./roadmap.md) for numbered phases and what is implemented on `main`
 - use the roadmap to confirm whether the request is a bounded standalone change or needs a new approved phase/epic planning pass
 - treat the current Phase 07 config surface and the current extracted delivery-orchestrator module boundaries as the baseline for future work
+- for delivery-tooling architecture work, EE11 is the approved follow-up plan to replace the orchestrator `_config` singleton with an explicit context object and platform adapter factory; see [`engineering-epic-11/implementation-plan.md`](../02-delivery/engineering-epic-11/implementation-plan.md)
 - the next product-completion planning buckets are Phase 27 (Synology DSM-first stack and cold start), Phase 28 (owner web security), and Phase 29 (OpenVPN bridge for bundled Transmission)
 - treat the shipped Phase 25 browser proof as a follow-on to the Phase 24 restart contract, not as a replacement for the persisted Plex auth/device boundary
 - treat the shipped Phase 26 Mac `launchd` path as a parallel supported deployment contract alongside the reviewed Synology runbook, not as a reason to merge those operator runbooks together

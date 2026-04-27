@@ -16,3 +16,5 @@ notes/private/
 .cursor/
 web/
 docs/*.sh
+.claude/**/*
+.codex-clone*/**/*

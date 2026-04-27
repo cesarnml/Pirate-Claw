@@ -74,6 +74,8 @@ Execution plans, issue conventions, and ticket breakdowns.
 - `engineering-epic-04/implementation-plan.md`: runnable ticket stack for reviewer-facing PR body and thread hygiene polish in delivery tooling
 - `engineering-epic-08/implementation-plan.md`: runnable ticket stack for codex preflight review gate in the delivery orchestrator
 - `engineering-epic-09/implementation-plan.md`: runnable ticket stack for review-policy enforcement and doc-only consolidation in the delivery orchestrator
+- `engineering-epic-10/implementation-plan.md`: completed ticket stack for delivery tooling module decomposition
+- `engineering-epic-11/implementation-plan.md`: approved ticket stack for delivery tooling explicit context, adapter factory, formatter config, and command helper split
 - `engineering-epic-07/implementation-plan.md`: runnable ticket stack for configurable ticket-boundary modes in Son-of-Anton delivery
 - `phase-01/implementation-plan.md`: ordered delivery plan for phase 01
 - `phase-01/ticket-*.md`: one file per ticket
@@ -114,6 +116,8 @@ Cross-cutting engineering rules that apply beyond a single phase.
 - `epic-07-configurable-ticket-boundary-modes-for-son-of-anton.md`: ticket-boundary modes for Son-of-Anton delivery
 - `epic-08-codex-preflight-review-gate.md`: Codex preflight stage, gate, and review policy introduction
 - `epic-09-review-policy-enforcement-and-doc-only-consolidation.md`: policy enforcement semantics, doc-only consolidation, and default posture
+- `epic-10-delivery-tooling-module-decomposition.md`: delivery orchestrator module decomposition into focused source modules
+- `epic-11-delivery-tooling-context-object.md`: explicit context object, platform adapter factory, formatter config, and command helper architecture
 - `sqlite-schema.md`: current local SQLite tables, identities, and persistence invariants
 - `son-of-anton.md`: the dev-facing doctrine for this repo's AI-assisted delivery workflow
 - `tdd-workflow.md`: red-green-refactor workflow for this repo
