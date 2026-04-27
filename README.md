@@ -1,322 +1,158 @@
 # Pirate Claw
 
-Pirate Claw is a local CLI for pulling media candidates from RSS feeds, matching them against your rules, and queueing approved downloads in Transmission.
+Pirate Claw is a local media intake app for people who run their own Plex and Transmission setup. It watches your RSS feeds, finds movies and TV episodes that match your rules, queues approved downloads in Transmission, and gives you a browser dashboard for setup, monitoring, and day-to-day control.
 
-Phases **01–27** shipped the current core product: the CLI/runtime stack, Obsidian Tide dashboard, zero-file-edit bootstrap, browser-only setup flow, the dashboard Transmission layer (Torrent Manager pause/resume/remove/remove-with-delete, missing-torrent disposition, Feed Event Log with failed-enqueue **Queue** retries, and matching daemon routes), browser-managed Plex auth with durable device identity plus best-effort silent renewal, Synology restart durability, browser-visible restart round-trip proof, Mac first-class always-on deployment, and the DSM-first Synology owner install path validated on DS918+ / DSM 7.1.1. The current release-blocking planning sequence is **Phase 28** owner web security, **Phase 29** OpenVPN bridge for bundled Transmission, **Phase 30** UX/UI polish, then the **Phase 31** v1.0.0 / schema-versioning release ceremony (`schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, tagged release). See `docs/01-product/`.
+It is built for a personal NAS or always-on Mac. The app stays local, works with your existing media stack, and is designed so a normal owner can install it, connect services, and manage intake from the browser.
 
-It currently supports:
+## What Pirate Claw Delivers
 
-- RSS feeds for TV and movies
-- title normalization into media metadata
-- TV matching with per-title rules
-- compact TV config via `tv.defaults + tv.shows` with per-show overrides
-- movie matching with global year, resolution, and codec preferences
-- local dedupe and run history in SQLite
-- queueing through Transmission RPC
-- status inspection and retry of failed submissions
-- effective config inspection via `pirate-claw config show`
-- env-backed Transmission credentials via process env or `.env`
-- daemon HTTP API with read endpoints and bounded config writes when `runtime.apiPort` is set
-- optional TMDB-backed posters, ratings, and metadata when a `tmdb` API key is configured
-- optional Plex-backed library status, watch counts, and last-watched timestamps when a `plex` server is configured
-- browser-managed Plex connect / reconnect from onboarding or `/config`, with durable device identity stored in SQLite and the current usable Plex credential persisted back into `plex.token`
-- browser dashboard (`web/`) with Obsidian Tide styling, starter-mode bootstrap, browser-only onboarding/setup, sidebar navigation, unified config editing, in-context daemon controls, poster-forward TV/movie views, live Transmission stats, dashboard panels for active downlinks and feed outcomes, Torrent Manager context actions (pause/resume/remove/remove-with-delete), missing-torrent disposition, and the failed-enqueue event log with **Queue** retries (deduped matched candidates whose Transmission enqueue failed and are still retryable)
+Pirate Claw turns a folder of feed links and media preferences into a managed queue:
 
-## Commands
+- **Guided first boot**: open the browser, connect Transmission and Plex, add feeds, and define what you want to track without hand-editing config files.
+- **TV and movie matching**: match feed items against title, season, episode, year, resolution, codec, and per-show preferences.
+- **Transmission control**: queue approved items, inspect active downloads, retry failed submissions, pause or resume torrents, and remove downloads when needed.
+- **Plex awareness**: see whether matched titles are already in your library, whether episodes have been watched, and when Plex last reported them.
+- **Dashboard-first operation**: manage feeds, TV targets, movie policy, Plex connection, runtime controls, failed enqueue retries, and torrent lifecycle actions from the web UI.
+- **Always-on deployment**: run continuously on a Synology NAS or Mac so short-lived feeds are checked on schedule.
+- **Local ownership**: Pirate Claw stores state locally in SQLite and talks directly to your Transmission and Plex services. It is not a hosted indexing service.
 
-- `pirate-claw run`
-- `pirate-claw daemon`
-- `pirate-claw status`
-- `pirate-claw retry-failed`
-- `pirate-claw reconcile`
-- `pirate-claw plex-refresh` (when `plex` is configured: re-query Plex and update the SQLite library cache)
-- `pirate-claw config show`
+## Who It Is For
 
-## First Boot (Zero File Editing)
+Pirate Claw is a good fit if you:
 
-Pirate Claw creates its own starter config on first boot. No SSH, no vim, no hand-edited files are required to reach the browser or complete initial setup.
+- run Plex Media Server and Transmission at home
+- use RSS feeds as your intake source
+- want repeatable rules instead of manually scanning feeds
+- prefer a local tool over a hosted service
+- are comfortable operating a home server, NAS, or always-on Mac
 
-### Mac (supported `launchd` daemon path)
+It is not a media server, indexer, VPN provider, or file-renaming system. It manages intake and download lifecycle around the services you already run.
 
-**Plex prerequisite:** Plex Media Server **1.43.0 or later**. Download the current release from [plex.tv/media-server-downloads](https://www.plex.tv/media-server-downloads/). Install as a normal Mac app and confirm it is running before starting Pirate Claw.
+## How It Works
 
-Supported always-on Mac deployment now uses a per-user `launchd` agent under a
-dedicated always-logged-in operator account. The operator-facing guide is
-[`docs/mac-runbook.md`](./docs/mac-runbook.md). The narrower supervisor
-contract and reference artifact remain in
-[`docs/mac-launchd-reference.md`](./docs/mac-launchd-reference.md).
+Pirate Claw runs as a local daemon with a browser dashboard:
 
-**First-boot sequence:**
+1. You add RSS feeds for TV and movies.
+2. You define the shows, movies, and quality preferences you care about.
+3. Pirate Claw polls feeds on a schedule and normalizes each candidate.
+4. Matching candidates are deduplicated and sent to Transmission.
+5. The dashboard shows queue status, downloader state, Plex library state, and any items that need attention.
 
-1. Install dependencies: `bun install`
-2. Start Transmission and enable remote access (RPC on port 9091)
-3. Start the daemon:
+Transmission remains the downloader. Plex remains the media library. Pirate Claw coordinates the intake workflow between them.
+
+## Getting Started
+
+The recommended setup path is browser-first. A fresh install starts in starter mode, creates the needed local config, and guides setup from the dashboard.
+
+### Synology NAS
+
+Use the Synology owner install guide:
+
+- [docs/synology-install.md](./docs/synology-install.md)
+
+The Synology path is designed for DSM-first installation. You start the Pirate Claw stack, open `http://<nas-ip>:8888`, and complete setup in the browser.
+
+### Mac
+
+Use the Mac always-on runbook:
+
+- [docs/mac-runbook.md](./docs/mac-runbook.md)
+
+For a first local run from the repo:
 
 ```bash
+bun install
 bun run daemon
 ```
 
-4. Open the dashboard:
+In another terminal, start the dashboard:
 
 ```bash
 bun install --cwd web
 bun run --cwd web dev
 ```
 
-5. Open **http://localhost:5173** — Pirate Claw will guide you through the browser-only setup flow from starter mode to an ingestion-ready config. No config file was needed.
+Then open [http://localhost:5173](http://localhost:5173).
 
-For the supported always-on daemon path after first boot:
+## Prerequisites
 
-```bash
-sh docs/mac-reference-pirate-claw-launch-agent.sh install \
-  --install-dir "$(pwd)"
-```
+Pirate Claw expects:
 
-Browser-triggered restart on Mac now follows the same truthful restart-proof
-vocabulary as Synology, but the supervisor is `launchd` instead of Docker.
+- Transmission with RPC access enabled
+- Plex Media Server 1.43.0 or later
+- RSS feeds for the media sources you want to monitor
+- Bun when running from source
 
-### Synology NAS (production)
+For Synology installs, use the Synology guide for the supported container and package flow. For Mac installs, use the Mac runbook for the supported `launchd` path.
 
-**Owner install guide:** [`docs/synology-install.md`](./docs/synology-install.md)
+## Daily Use
 
-Phase 27 ships a DSM-first owner install path validated on DS918+ / DSM 7.1.1-42962 Update 9. The owner path stays entirely inside DSM GUI screens — Package Center, File Station, Docker, and the Pirate Claw browser page. No SSH, terminal commands, or hand-edited config files are required.
+Most owner tasks happen in the dashboard:
 
-Download the release bundle (see `docs/synology-install.md` for the link), follow [`tools/synology-release/install-dsm-7.1-docker.md`](./tools/synology-release/install-dsm-7.1-docker.md) for DSM 7.1 or [`tools/synology-release/install-dsm-7.2-container-manager.md`](./tools/synology-release/install-dsm-7.2-container-manager.md) for DSM 7.2+, then open `http://<nas-ip>:8888` to complete setup in the browser.
+- add or remove feeds
+- add TV shows and movie preferences
+- connect or reconnect Plex
+- inspect matched TV and movie candidates
+- watch active Transmission progress
+- retry failed queue attempts
+- pause, resume, remove, or delete managed torrents
+- restart the local daemon and confirm it came back online
 
-When `PIRATE_CLAW_INSTALL_ROOT` or `runtime.installRoot` is configured, daemon startup creates the Synology install tree if it is missing and writes generated app secrets under `config/generated/`. Existing directories and generated secret files are left untouched on later starts.
-
-**Plex prerequisite:** Plex Media Server **1.43.0 or later**. Check your installed version in **Package Center → Installed → Plex Media Server → Details**. On the reviewed `DS918+ / DSM 7.1.1-42962 Update 9` baseline, Synology Package Center can lag below that floor. If it does, use Package Center's manual install path with a newer Plex package from Plex's DSM 7 download page before connecting Plex in Pirate Claw.
-
-**First-boot sequence:**
-
-1. Start the Pirate Claw container or process on the NAS
-2. Open a browser at `http://<nas-ip>:8888`
-3. Pirate Claw opens in starter mode and guides setup through the browser. No config editing is required.
-
-### Operator promise
-
-A fresh install reaches browser-visible starter mode and can be completed through the browser without the operator touching any config file. The starter config is written automatically on first boot. Editing `pirate-claw.config.json` remains an optional parallel path.
-
-## Quick Start (Manual Config)
-
-To configure Pirate Claw from scratch instead of the zero-edit first-boot path:
-
-1. Install dependencies: `bun install`
-2. Copy [`pirate-claw.config.example.json`](./pirate-claw.config.example.json) to `pirate-claw.config.json` and edit your feeds, TV/movie rules, and Transmission credentials
-3. Start Transmission and enable local RPC access
-4. Run:
+The CLI is still available for local operation and troubleshooting:
 
 ```bash
-./bin/pirate-claw run --config ./pirate-claw.config.json
+pirate-claw daemon
+pirate-claw run
+pirate-claw status
+pirate-claw retry-failed
+pirate-claw reconcile
+pirate-claw plex-refresh
+pirate-claw config show
 ```
-
-Check state with `pirate-claw status`. Retry failed submissions with `pirate-claw retry-failed`. Reconcile tracked torrents from Transmission with `pirate-claw reconcile`.
 
 ## Configuration
 
-Config file: `pirate-claw.config.json` (see [`pirate-claw.config.example.json`](./pirate-claw.config.example.json)).
+The browser setup flow is the primary path. Pirate Claw writes and updates `pirate-claw.config.json` for you.
 
-- `feeds` — RSS sources; optional `pollIntervalMinutes` per feed
-- `tv` — compact `defaults + shows` object or legacy per-show array
-- `movies` — global year, resolution, codec, and `codecPolicy` (`"prefer"` or `"require"`)
-- `transmission` — RPC URL, credentials, optional `downloadDirs` per media type
-- `runtime` — daemon scheduling and artifacts; `apiPort` enables HTTP API; `apiHost` controls the API bind address; `apiWriteToken` enables config writes; `installRoot` or `PIRATE_CLAW_INSTALL_ROOT` enables Synology first-startup directory and secret bootstrap; `tmdbRefreshIntervalMinutes` controls background TMDB refresh (default 360, `0` disables)
-- `tmdb` — optional `apiKey` (or env `PIRATE_CLAW_TMDB_API_KEY`) and cache TTL overrides
-- `plex` — optional operator-managed `url`, the current usable `token` (normally browser-managed after Connect Plex; env override via `PIRATE_CLAW_PLEX_TOKEN` still works), and `refreshIntervalMinutes` for library/watch refresh cadence
+Manual configuration remains available for advanced users. Start from:
 
-```json
-{
-  "feeds": [
-    {
-      "name": "EZTV",
-      "url": "https://myrss.org/eztv",
-      "mediaType": "tv"
-    },
-    {
-      "name": "Atlas Movies",
-      "url": "https://atlas.rssly.org/feed",
-      "mediaType": "movie"
-    }
-  ],
-  "tv": {
-    "defaults": {
-      "resolutions": ["720p"],
-      "codecs": ["x265"]
-    },
-    "shows": [
-      "Beyond the Gates",
-      {
-        "name": "The Daily Show",
-        "matchPattern": "daily show",
-        "resolutions": ["1080p"]
-      }
-    ]
-  },
-  "movies": {
-    "years": [2026],
-    "resolutions": ["1080p"],
-    "codecs": ["x265"],
-    "codecPolicy": "prefer"
-  },
-  "transmission": {
-    "url": "http://localhost:9091/transmission/rpc",
-    "downloadDirs": {
-      "movie": "/data/movies",
-      "tv": "/data/tv"
-    }
-  },
-  "runtime": {
-    "runIntervalMinutes": 15,
-    "reconcileIntervalSeconds": 30,
-    "artifactDir": ".pirate-claw/runtime",
-    "artifactRetentionDays": 7,
-    "apiPort": 5555
-  },
-  "plex": {
-    "url": "http://192.168.1.10:32400",
-    "token": "YOUR_PLEX_TOKEN",
-    "refreshIntervalMinutes": 30
-  }
-}
-```
+- [pirate-claw.config.example.json](./pirate-claw.config.example.json)
 
-## Transmission Setup
+The main configuration areas are:
 
-1. Open Transmission and enable remote access
-2. Confirm the RPC port matches your config (default `9091`)
-3. Set credentials inline in `transmission.username`/`password`, or via env `PIRATE_CLAW_TRANSMISSION_USERNAME`/`PIRATE_CLAW_TRANSMISSION_PASSWORD` (loaded from process env or a `.env` next to your config)
-4. If Transmission restricts allowed hosts, keep `127.0.0.1` or `localhost` allowed
+- feeds
+- TV defaults and show-specific overrides
+- movie quality policy
+- Transmission connection and download directories
+- Plex connection
+- daemon runtime settings
 
-Pirate Claw sends `movie`/`tv` labels at queue time. If Transmission rejects labels it retries without them.
+## Privacy And Network Boundary
 
-## Local Runtime Files
+Pirate Claw is intended to run on your own trusted network. Its state is local, and its core integrations are your configured RSS feeds, Transmission, Plex, and optional metadata lookups.
 
-These stay untracked:
+If you expose Pirate Claw outside your home network, put it behind the same care you would use for any owner-only home service.
 
-- `pirate-claw.config.json`
-- `pirate-claw.db`
-- `.pirate-claw/runtime/poll-state.json` — feed poll timestamps
-- `.pirate-claw/runtime/cycles/` — JSON/Markdown cycle artifacts, pruned to 7 days
+## More Documentation
 
-Run the daemon for continuous scheduled operation:
-
-```bash
-./bin/pirate-claw daemon --config ./pirate-claw.config.json
-```
-
-The daemon runs in the foreground (run cycles every 30 min, reconcile every 1 min). Stop with `Ctrl+C`.
-
-## Daemon HTTP API
-
-Set `runtime.apiPort` to start an HTTP JSON API alongside the daemon:
-
-```json
-{ "runtime": { "apiPort": 5555 } }
-```
-
-### Endpoints
-
-| Endpoint                                           | Description                                                                                                                                              |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                                  | Uptime, start time, last run/reconcile snapshots                                                                                                         |
-| `GET /api/daemon/restart-status`                   | Durable restart-proof status for the current browser-visible round trip (`idle`, `requested`, `back_online`)                                             |
-| `GET /api/status`                                  | Recent run summaries                                                                                                                                     |
-| `GET /api/candidates`                              | All tracked candidate state records                                                                                                                      |
-| `GET /api/shows`                                   | TV candidates grouped by show → season → episode, with Plex status/watch fields                                                                          |
-| `GET /api/movies`                                  | Movie candidates sorted by title, with Plex status/watch fields                                                                                          |
-| `GET /api/feeds`                                   | Feed config with poll state and `isDue`                                                                                                                  |
-| `GET /api/config`                                  | Effective config (credentials redacted); returns `ETag`                                                                                                  |
-| `PUT /api/config`                                  | Bounded runtime + tv.shows write (token + `If-Match` required)                                                                                           |
-| `PUT /api/config/feeds`                            | Replace feeds array (token + `If-Match` required)                                                                                                        |
-| `PUT /api/config/movies`                           | Replace movie policy (token + `If-Match` required)                                                                                                       |
-| `PUT /api/config/plex`                             | Update the operator-managed Plex Media Server URL (token + `If-Match` required)                                                                          |
-| `PUT /api/config/tv/defaults`                      | Replace TV defaults (token + `If-Match` required)                                                                                                        |
-| `GET /api/plex/auth/status`                        | Current Plex auth state (`not_connected`, `connecting`, `connected`, `renewing`, reconnect-required variants)                                            |
-| `POST /api/plex/auth/start`                        | Begin the hosted Plex browser sign-in flow (token required)                                                                                              |
-| `POST /api/plex/auth/finalize`                     | Finalize the hosted Plex browser sign-in and persist the current Plex credential (token required)                                                        |
-| `POST /api/plex/auth/disconnect`                   | Clear the current Plex credential and cancel pending auth work (token + `If-Match` required)                                                             |
-| `POST /api/shows/:slug/tmdb/refresh`               | Refresh TMDB metadata for one TV show (token required)                                                                                                   |
-| `GET /api/transmission/session`                    | Transmission session stats                                                                                                                               |
-| `GET /api/transmission/torrents`                   | Live stats for torrents referenced by tracked candidates (progress, speed, ETA)                                                                          |
-| `GET /api/outcomes`                                | Dashboard enqueue failures (`?status=failed_enqueue`; legacy alias `skipped_no_match`): deduped rows per matched candidate still in `failed` state       |
-| `POST /api/transmission/torrent/pause`             | Pause a managed torrent (`{ "hash": "<transmission hash>" }`, bearer token)                                                                              |
-| `POST /api/transmission/torrent/resume`            | Resume a managed torrent (JSON body + bearer token)                                                                                                      |
-| `POST /api/transmission/torrent/remove`            | Remove torrent from Transmission (JSON body + bearer token)                                                                                              |
-| `POST /api/transmission/torrent/remove-and-delete` | Remove torrent and delete local data (JSON + bearer)                                                                                                     |
-| `POST /api/transmission/torrent/dispose`           | Mark a missing torrent as removed or deleted (`hash`, `disposition`, bearer)                                                                             |
-| `POST /api/candidates/:id/requeue`                 | Re-submit a failed candidate’s download URL to Transmission (bearer token); requires daemon API to be started with an in-process Transmission downloader |
-
-Write rules: set `runtime.apiWriteToken` (or env `PIRATE_CLAW_API_WRITE_TOKEN`). Every mutating request uses `Authorization: Bearer <token>`. Config file updates (`PUT /api/config`, `PUT /api/config/feeds`, `PUT /api/config/movies`, `PUT /api/config/tv/defaults`) also require an `If-Match` header equal to the latest `GET /api/config` `ETag`; those writes are atomic file updates. Torrent lifecycle actions, candidate requeue, TMDB refresh, Transmission ping, and daemon restart use the bearer token only (no config `If-Match`).
-
-## SvelteKit Dashboard (`web/`)
-
-The dashboard is a SvelteKit app backed by shadcn-svelte and Tailwind CSS 4. All data loads server-side from the daemon API; the browser never talks to Transmission or SQLite directly. No login — use on trusted networks only.
-
-### Setup
-
-1. Set `runtime.apiPort` and run the daemon
-2. Copy `web/.env.example` to `web/.env` and set `PIRATE_CLAW_API_URL=http://localhost:5555`
-
-### Dev server
-
-```bash
-bun install --cwd web
-bun run --cwd web dev
-```
-
-Opens at **http://localhost:5173** by default.
-
-### Production build
-
-```bash
-bun run --cwd web build
-cd web && PIRATE_CLAW_API_URL=http://localhost:5555 PORT=5174 node build/index.js
-```
-
-## Current Scope
-
-Pirate Claw is a local operator tool for a personal NAS. The roadmap now targets **Phase 28** owner web security, **Phase 29** OpenVPN bridge for bundled Transmission, **Phase 30** UX/UI polish, and **Phase 31** release/versioning.
-
-**Implemented (Phases 01–27):** RSS ingestion, policy matching, Transmission queuing, lifecycle reconciliation, TMDB enrichment, read dashboard, unified config editing from the UI, post-save daemon restart and Transmission ping controls, full feed and target management, onboarding/resume flow, explicit empty states across the dashboard and key routes, optional Plex Media Server enrichment, the Phase 19 Obsidian Tide redesign with sidebar navigation, dashboard consolidation, poster-forward layouts, movie backdrops, Plex chips, a TMDB refresh control on TV detail, **Phase 20** dashboard Transmission controls, **Phase 23** browser-managed Plex connect / reconnect with durable device identity and best-effort silent renewal, **Phase 24** Synology restart supervision truthfulness with restart durability proof plus truthful Plex-on-Synology guidance, **Phase 25** in-browser restart round-trip proof with bounded `failed_to_return` UX, **Phase 26** Mac first-class always-on deployment with a reviewed `launchd` reference path, and **Phase 27** DSM-first Synology owner install validated on DS918+ / DSM 7.1.1 with a three-container stack (pirate-claw, pirate-claw-web, Transmission) deployed through DSM GUI only.
-
-**Implemented (Phase 20):** Dashboard Torrent Manager actions (pause, resume, remove, remove-with-delete), missing-torrent disposition, Transmission failures / requeue, related daemon JSON endpoints, and the `pirateClawDisposition` + derived display-state model (see `docs/01-product/phase-20-dashboard-torrent-actions.md`).
-
-**Planned (Phases 28–29):** local owner web auth, and OpenVPN bridge for bundled Transmission.
-
-**Planned (Phase 31):** v1.0.0 release ceremony — config `schemaVersion`, SQLite `PRAGMA user_version`, `VERSIONING.md`, CHANGELOG, and tagged release (see `docs/01-product/phase-31-v1-release-and-schema-versioning.md`).
-
-Not in scope through v1:
-
-- remote feed capture or hosted persistence
-- post-completion file handling or download renaming
-- Jellyfin / Emby / Kodi integration (Plex is implemented; other providers are v2)
-- multi-user access beyond the planned single-owner web auth boundary
-- broader ingestion redesign
+- [docs/README.md](./docs/README.md): documentation index
+- [docs/00-overview/start-here.md](./docs/00-overview/start-here.md): project state and contributor orientation
+- [docs/00-overview/roadmap.md](./docs/00-overview/roadmap.md): phase history and future planning notes
+- [docs/synology-install.md](./docs/synology-install.md): Synology owner install guide
+- [docs/mac-runbook.md](./docs/mac-runbook.md): Mac always-on runbook
 
 ## Development
 
-```
+For contributors working from source:
+
+```bash
 bun test
-bun run test:coverage
-bun run verify          # root + web/ format, lint, svelte-check
-bun run ci              # verify + test + test:web (same as GitHub Actions)
-bun run ci:quiet        # same as ci; quiet on success (pre-push hook uses this)
-bun run hooks:install   # once per clone: use .githooks so pre-push runs ci:quiet
+bun run verify
+bun run ci
 ```
 
-Use `bun run verify:quiet` for the fast local inner loop. Before `open-pr` or any push for a non-doc code change, run `bun run ci:quiet` so the final local gate matches the pre-push hook and CI.
-
-Delivery commands (for contributors working the stacked PR workflow):
-
-```
-bun run deliver --plan <plan-path> start
-bun run deliver --plan <plan-path> poll-review
-bun run deliver ai-review
-bun run closeout-stack --plan <plan-path>
-```
-
-See [`docs/00-overview/start-here.md`](./docs/00-overview/start-here.md) and [`docs/03-engineering/delivery-orchestrator.md`](./docs/03-engineering/delivery-orchestrator.md) for the full delivery workflow.
+Delivery workflow details live in [docs/03-engineering/delivery-orchestrator.md](./docs/03-engineering/delivery-orchestrator.md).
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](./LICENSE).
+See [LICENSE](./LICENSE).
