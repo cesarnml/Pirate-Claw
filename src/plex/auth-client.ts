@@ -40,7 +40,9 @@ export async function startPlexPinAuth(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`Plex PIN start failed with HTTP ${response.status}. ${text}`);
+    throw new Error(
+      `Plex PIN start failed with HTTP ${response.status}. ${text}`,
+    );
   }
 
   const body = (await response.json()) as {
@@ -95,7 +97,9 @@ export async function exchangePlexPinForAuthToken(input: {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(`Plex PIN exchange failed with HTTP ${response.status}. ${text}`);
+      throw new Error(
+        `Plex PIN exchange failed with HTTP ${response.status}. ${text}`,
+      );
     }
 
     const body = (await response.json()) as { authToken?: string | null };
