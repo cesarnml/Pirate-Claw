@@ -44,6 +44,10 @@ export type TransmissionConfig = {
   downloadDirs?: { movie?: string; tv?: string };
 };
 
+/** Inside Transmission: per-type targets when `downloadDirs` / `downloadDir` are unset (Synology bundle mounts `media` at `/media`). */
+export const DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV = '/media/shows' as const;
+export const DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE = '/media/movies' as const;
+
 export type RuntimeConfig = {
   runIntervalMinutes: number;
   reconcileIntervalSeconds: number;

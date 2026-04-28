@@ -202,6 +202,7 @@ describe('pirate-claw run', () => {
       method: 'torrent-add',
       arguments: {
         filename: 'https://example.test/downloads/example-movie.torrent',
+        'download-dir': '/media/movies',
         labels: ['movie'],
       },
     });
@@ -209,6 +210,7 @@ describe('pirate-claw run', () => {
       method: 'torrent-add',
       arguments: {
         filename: 'https://example.test/downloads/example-movie.torrent',
+        'download-dir': '/media/movies',
       },
     });
   });
@@ -1259,17 +1261,23 @@ function startTransmissionServer(): { url: string; requestCount: number } {
   };
 }
 
+type LabelRejectTorrentAddArguments = {
+  filename?: string;
+  labels?: string[];
+  'download-dir'?: string;
+};
+
 function startLabelRejectingTransmissionServer(): {
   url: string;
   requestBodies: Array<{
     method?: string;
-    arguments?: { filename?: string; labels?: string[] };
+    arguments?: LabelRejectTorrentAddArguments;
   }>;
 } {
   const state = {
     requestBodies: [] as Array<{
       method?: string;
-      arguments?: { filename?: string; labels?: string[] };
+      arguments?: LabelRejectTorrentAddArguments;
     }>,
   };
   const server = Bun.serve({
@@ -1290,7 +1298,7 @@ function startLabelRejectingTransmissionServer(): {
 
         const body = (await request.json()) as {
           method?: string;
-          arguments?: { filename?: string; labels?: string[] };
+          arguments?: LabelRejectTorrentAddArguments;
         };
         state.requestBodies.push(body);
 

@@ -1,4 +1,10 @@
-import type { AppConfig, FeedConfig, TransmissionConfig } from './config';
+import {
+  type AppConfig,
+  type FeedConfig,
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE,
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
+  type TransmissionConfig,
+} from './config';
 import { fetchFeed, type RawFeedItem } from './feed';
 import { getMovieNoMatchReason, matchMovieItem } from './movie-match';
 import { normalizeFeedItem, type NormalizedFeedItem } from './normalize';
@@ -225,7 +231,11 @@ function matchTorrent(
 
 function createDownloadDirResolver(
   transmission: TransmissionConfig,
-): (mediaType: 'tv' | 'movie') => string | undefined {
+): (mediaType: 'tv' | 'movie') => string {
   return (mediaType) =>
-    transmission.downloadDirs?.[mediaType] ?? transmission.downloadDir;
+    transmission.downloadDirs?.[mediaType] ??
+    transmission.downloadDir ??
+    (mediaType === 'tv'
+      ? DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV
+      : DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE);
 }

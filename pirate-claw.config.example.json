@@ -34,8 +34,8 @@
   "transmission": {
     "url": "http://localhost:9091/transmission/rpc",
     "downloadDirs": {
-      "movie": "/data/movies",
-      "tv": "/data/tv"
+      "movie": "/media/movies",
+      "tv": "/media/shows"
     }
   },
   "runtime": {

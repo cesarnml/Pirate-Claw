@@ -16,7 +16,9 @@
 	const ALL_CODECS = ['x264', 'x265'];
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	let selectedPath = $state<'tv' | 'movie' | 'both'>(browser ? readOnboardingPath() : 'tv');
+	let selectedPath = $state<'tv' | 'movie'>(
+		browser && readOnboardingPath() === 'movie' ? 'movie' : 'tv'
+	);
 	let feedMediaType = $state<'tv' | 'movie'>('tv');
 	let tvResolutions = $state<string[]>([]);
 	let tvCodecs = $state<string[]>([]);
@@ -387,7 +389,9 @@
 				>
 					<h2 class="text-lg font-semibold tracking-tight">{mediaDirsStepLabel}</h2>
 					<p class="text-muted-foreground text-sm">
-						Set per-media-type download directories. Leave blank to use the Transmission default.
+						Set per-media-type download directories inside Transmission. Leave blank to use the
+						built-in defaults (<code class="text-foreground/90">/media/shows</code> for TV,
+						<code class="text-foreground/90">/media/movies</code> for movies).
 					</p>
 					<form method="POST" action="?/saveDownloadDirs" class="space-y-4">
 						<input type="hidden" name="ifMatch" value={data.etag ?? ''} />
@@ -398,7 +402,7 @@
 									id="tv-dir"
 									name="tvDir"
 									type="text"
-									placeholder="/data/tv"
+									placeholder="/media/shows"
 									value={data.config?.transmission?.downloadDirs?.tv ?? ''}
 									class="border-input bg-background/70 ring-offset-background placeholder:text-muted-foreground/70 h-11 w-full rounded-xl border px-4 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								/>
@@ -409,7 +413,7 @@
 									id="movie-dir"
 									name="movieDir"
 									type="text"
-									placeholder="/data/movies"
+									placeholder="/media/movies"
 									value={data.config?.transmission?.downloadDirs?.movie ?? ''}
 									class="border-input bg-background/70 ring-offset-background placeholder:text-muted-foreground/70 h-11 w-full rounded-xl border px-4 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								/>
@@ -457,17 +461,9 @@
 							<input type="radio" bind:group={selectedPath} value="movie" />
 							<span>Movie</span>
 						</label>
-						<label
-							class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
-						>
-							<input type="radio" bind:group={selectedPath} value="both" />
-							<span>Both</span>
-						</label>
 					</div>
 					<p class="text-muted-foreground text-sm">
-						{selectedPath === 'both'
-							? 'Both is supported. Save one feed first, then onboarding will guide TV and movie targets in order.'
-							: `Your first feed will default to ${feedMediaType.toUpperCase()}.`}
+						{`Your first feed will default to ${feedMediaType.toUpperCase()}. After onboarding, add more feeds and targets on the /config page.`}
 					</p>
 				</div>
 
@@ -574,17 +570,9 @@
 							<input type="radio" bind:group={selectedPath} value="movie" />
 							<span>Movie</span>
 						</label>
-						<label
-							class="border-border bg-background/55 hover:bg-muted/80 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm transition-colors"
-						>
-							<input type="radio" bind:group={selectedPath} value="both" />
-							<span>Both</span>
-						</label>
 					</div>
 					<p class="text-muted-foreground text-sm">
-						{selectedPath === 'both'
-							? 'Both is supported. Save one feed first, then onboarding will guide TV and movie targets in order.'
-							: `Your first feed will default to ${feedMediaType.toUpperCase()}.`}
+						{`Your first feed will default to ${feedMediaType.toUpperCase()}. After onboarding, add more feeds and targets on the /config page.`}
 					</p>
 				</div>
 

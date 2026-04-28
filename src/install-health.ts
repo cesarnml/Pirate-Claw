@@ -5,6 +5,10 @@ import { join } from 'node:path';
 
 import type { AppConfig } from './config';
 import {
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE,
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
+} from './config';
+import {
   DAEMON_API_WRITE_TOKEN_FILE,
   DEFAULT_SYNOLOGY_INSTALL_ROOT,
   GENERATED_CONFIG_DIRECTORY,
@@ -27,8 +31,6 @@ export type InstallHealthResponse = {
 };
 
 const DEFAULT_TRANSMISSION_DOWNLOADS_PATH = '/downloads';
-const DEFAULT_TRANSMISSION_MOVIES_PATH = '/media/movies';
-const DEFAULT_TRANSMISSION_SHOWS_PATH = '/media/shows';
 
 export async function getInstallHealth(
   config: AppConfig,
@@ -114,7 +116,7 @@ export async function getInstallHealth(
     config,
     path:
       config.transmission.downloadDirs?.movie ??
-      DEFAULT_TRANSMISSION_MOVIES_PATH,
+      DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE,
     transmissionReady,
     remediation:
       'Open Docker and confirm the Transmission container has the Pirate Claw movie media folder mounted at /media/movies with read/write access.',
@@ -124,7 +126,8 @@ export async function getInstallHealth(
     key: 'transmissionShowsWritable',
     config,
     path:
-      config.transmission.downloadDirs?.tv ?? DEFAULT_TRANSMISSION_SHOWS_PATH,
+      config.transmission.downloadDirs?.tv ??
+      DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
     transmissionReady,
     remediation:
       'Open Docker and confirm the Transmission container has the Pirate Claw show media folder mounted at /media/shows with read/write access.',

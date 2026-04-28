@@ -4,7 +4,12 @@ import { mkdtemp as createTempDir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { type AppConfig, DEFAULT_RUNTIME_CONFIG } from '../src/config';
+import {
+  type AppConfig,
+  DEFAULT_RUNTIME_CONFIG,
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE,
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
+} from '../src/config';
 import { FeedError } from '../src/feed';
 import { MOVIE_CODEC_POLICY_REQUIRE_MISSING_MESSAGE } from '../src/movie-match';
 import { retryFailedCandidates, runPipeline } from '../src/pipeline';
@@ -360,6 +365,97 @@ describe('runPipeline', () => {
 
     expect(submissions).toHaveLength(1);
     expect(submissions[0]!.downloadDir).toBe('/downloads/movies');
+  });
+
+  it('uses built-in media download directories when transmission paths are omitted', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const submissions: SubmitDownloadInput[] = [];
+
+    await runPipeline({
+      config: createConfig({
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+      repository,
+      downloader: {
+        submit: async (input) => {
+          submissions.push(input);
+          return {
+            ok: true as const,
+            status: 'queued' as const,
+            torrentId: 7,
+            torrentName: 'Example Show S01E02',
+            torrentHash: 'abcdef123456',
+          };
+        },
+      },
+      fetchFeed: async () => [
+        {
+          feedName: 'TV Feed',
+          guidOrLink: 'https://example.test/releases/example-show',
+          rawTitle: 'Example.Show.S01E02.1080p.WEB.x265-GROUP',
+          publishedAt: '2026-03-30T00:00:00.000Z',
+          downloadUrl: 'https://example.test/downloads/example-show.torrent',
+        },
+      ],
+    });
+
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]!.downloadDir).toBe(
+      DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
+    );
+  });
+
+  it('uses built-in movie download directory when transmission paths are omitted', async () => {
+    const repository = createTestRepository(await createDatabasePath());
+    const submissions: SubmitDownloadInput[] = [];
+
+    await runPipeline({
+      config: createConfig({
+        feeds: [
+          {
+            name: 'Movie Feed',
+            url: 'https://example.test/movies.rss',
+            mediaType: 'movie',
+          },
+        ],
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+      }),
+      repository,
+      downloader: {
+        submit: async (input) => {
+          submissions.push(input);
+          return {
+            ok: true as const,
+            status: 'queued' as const,
+            torrentId: 8,
+            torrentName: 'Great Movie 2024',
+            torrentHash: 'movie123hash',
+          };
+        },
+      },
+      fetchFeed: async () => [
+        {
+          feedName: 'Movie Feed',
+          guidOrLink: 'https://example.test/releases/great-movie',
+          rawTitle: 'Great.Movie.2024.1080p.WEB.x265-GROUP',
+          publishedAt: '2026-03-30T00:00:00.000Z',
+          downloadUrl: 'https://example.test/downloads/great-movie.torrent',
+        },
+      ],
+    });
+
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]!.downloadDir).toBe(
+      DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE,
+    );
   });
 });
 
