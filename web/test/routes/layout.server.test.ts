@@ -49,9 +49,10 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = await load({} as never);
+		const result = await load({ locals: { user: null } } as never);
 
 		expect(result).toEqual({
+			user: null,
 			health: { uptime: 1, startedAt: '2024-01-01T00:00:00Z' },
 			transmissionSession: {
 				version: '3.0',
@@ -100,7 +101,10 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = (await load({} as never)) as { setupState: string; readinessState: string };
+		const result = (await load({ locals: { user: null } } as never)) as {
+			setupState: string;
+			readinessState: string;
+		};
 		expect(result.setupState).toBe('starter');
 		expect(result.readinessState).toBe('not_ready');
 	});
@@ -135,7 +139,7 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = (await load({} as never)) as { setupState: string };
+		const result = (await load({ locals: { user: null } } as never)) as { setupState: string };
 		expect(result.setupState).toBe('partially_configured');
 	});
 
@@ -169,7 +173,7 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = (await load({} as never)) as { readinessState: string };
+		const result = (await load({ locals: { user: null } } as never)) as { readinessState: string };
 		expect(result.readinessState).toBe('not_ready');
 	});
 
@@ -187,9 +191,10 @@ describe('layout server load', () => {
 				.mockRejectedValueOnce(new Error('install health down'))
 				.mockRejectedValueOnce(new Error('plex auth down'));
 
-			const result = await load({} as never);
+			const result = await load({ locals: { user: null } } as never);
 
 			expect(result).toEqual({
+				user: null,
 				health: null,
 				transmissionSession: null,
 				plexAuthState: 'unavailable',

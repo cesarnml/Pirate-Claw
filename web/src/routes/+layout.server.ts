@@ -32,7 +32,7 @@ function normalizePlexAuthState(
 	return authState ?? 'not_connected';
 }
 
-export const load: LayoutServerLoad = async () => {
+export const load: LayoutServerLoad = async ({ locals }) => {
 	const [
 		healthResult,
 		sessionResult,
@@ -87,6 +87,7 @@ export const load: LayoutServerLoad = async () => {
 		plexAuthResult.status === 'fulfilled' ? plexAuthResult.value.state : undefined;
 
 	return {
+		user: locals.user ?? null,
 		health: healthResult.status === 'fulfilled' ? healthResult.value : null,
 		transmissionSession: sessionResult.status === 'fulfilled' ? sessionResult.value : null,
 		plexAuthState: normalizePlexAuthState(configHasPlex, plexAuthState),

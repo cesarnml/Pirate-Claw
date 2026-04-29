@@ -48,7 +48,12 @@
 	const transmissionConnected = $derived(data.transmissionSession !== null);
 	const plexAuthState = $derived(data.plexAuthState ?? 'unavailable');
 	const isOnboarding = $derived($page.url.pathname === '/onboarding');
-	const showSidebar = $derived(!isOnboarding);
+	const isAuthPage = $derived(
+		$page.url.pathname === '/setup' ||
+			$page.url.pathname === '/login' ||
+			$page.url.pathname === '/logout'
+	);
+	const showSidebar = $derived(!isOnboarding && !isAuthPage);
 	const setupState = $derived(data.setupState ?? 'partially_configured');
 	const readinessState = $derived(data.readinessState ?? 'not_ready');
 	const isStarter = $derived(setupState === 'starter' && !isOnboarding);
@@ -167,6 +172,18 @@
 			{transmissionConnected}
 			{plexAuthState}
 		/>
+		{#if data.user}
+			<div class="border-border shrink-0 border-t px-3 py-2">
+				<form method="POST" action="/logout" use:enhance>
+					<button
+						type="submit"
+						class="text-muted-foreground hover:text-foreground w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors"
+					>
+						Sign out
+					</button>
+				</form>
+			</div>
+		{/if}
 	</div>
 {/snippet}
 
