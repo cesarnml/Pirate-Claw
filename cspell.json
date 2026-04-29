@@ -31,6 +31,7 @@
     "gluetun",
     "greptile",
     "HEALTHCHECK",
+    "HMAC",
     "homelab",
     "hostnames",
     "IDAT",
