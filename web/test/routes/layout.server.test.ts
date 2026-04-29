@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiFetchMock = vi.fn();
 vi.mock('$lib/server/api', () => ({
-	apiFetch: apiFetchMock
+	apiFetch: apiFetchMock,
+	apiRequest: vi.fn().mockRejectedValue(new Error('auth state not available in layout tests'))
 }));
 
 const mockUser = { username: 'admin' };
@@ -51,10 +52,16 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = await load({ locals: { user: mockUser } } as never);
+		const result = await load({
+			locals: { user: mockUser },
+			url: new URL('http://localhost:5173/')
+		} as never);
 
 		expect(result).toEqual({
 			user: mockUser,
+			// auth/state not fetched in test env (no write token) — origin flagged as untrusted
+			untrustedOrigin: 'http://localhost:5173',
+			networkPosture: null,
 			health: { uptime: 1, startedAt: '2024-01-01T00:00:00Z' },
 			transmissionSession: {
 				version: '3.0',
@@ -79,7 +86,10 @@ describe('layout server load', () => {
 		// Unauthenticated: only /api/setup/state is fetched
 		apiFetchMock.mockResolvedValueOnce({ state: 'starter' });
 
-		const result = (await load({ locals: { user: null } } as never)) as {
+		const result = (await load({
+			locals: { user: null },
+			url: new URL('http://localhost:5173/')
+		} as never)) as {
 			setupState: string;
 			readinessState: string;
 		};
@@ -118,7 +128,10 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = (await load({ locals: { user: mockUser } } as never)) as { setupState: string };
+		const result = (await load({
+			locals: { user: mockUser },
+			url: new URL('http://localhost:5173/')
+		} as never)) as { setupState: string };
 		expect(result.setupState).toBe('partially_configured');
 	});
 
@@ -152,7 +165,10 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = (await load({ locals: { user: mockUser } } as never)) as {
+		const result = (await load({
+			locals: { user: mockUser },
+			url: new URL('http://localhost:5173/')
+		} as never)) as {
 			readinessState: string;
 		};
 		expect(result.readinessState).toBe('not_ready');
@@ -166,10 +182,15 @@ describe('layout server load', () => {
 			// For unauthenticated: only setup/state is fetched, and it rejects
 			apiFetchMock.mockRejectedValueOnce(new Error('setup state down'));
 
-			const result = await load({ locals: { user: null } } as never);
+			const result = await load({
+				locals: { user: null },
+				url: new URL('http://localhost:5173/')
+			} as never);
 
 			expect(result).toEqual({
 				user: null,
+				untrustedOrigin: null,
+				networkPosture: null,
 				health: null,
 				transmissionSession: null,
 				plexAuthState: 'unavailable',

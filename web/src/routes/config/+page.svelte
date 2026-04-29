@@ -10,6 +10,7 @@
 	import { toast } from '$lib/toast';
 	import type { FeedConfig, RestartStatus } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
+	import NetworkPostureBanner from '$lib/components/NetworkPostureBanner.svelte';
 	import ConfigPageHeader from './components/ConfigPageHeader.svelte';
 	import DeleteShowModal from './components/DeleteShowModal.svelte';
 	import FeedsCard from './components/FeedsCard.svelte';
@@ -543,6 +544,10 @@
 
 <section class="space-y-6">
 	<ConfigPageHeader {canWrite} onboarding={data.onboarding} />
+
+	{#if data.networkPosture === 'unacknowledged'}
+		<NetworkPostureBanner />
+	{/if}
 
 	{#if data.error}
 		<ApiUnavailableAlert message={data.error} />

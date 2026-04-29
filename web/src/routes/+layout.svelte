@@ -15,6 +15,7 @@
 	import SidebarNav from './components/SidebarNav.svelte';
 	import SidebarStatusFooter from './components/SidebarStatusFooter.svelte';
 	import MobileNav from './components/MobileNav.svelte';
+	import TrustOriginBanner from '$lib/components/TrustOriginBanner.svelte';
 	import type { NavLink } from './components/SidebarNav.svelte';
 	import { page } from '$app/stores';
 	import { toast } from '$lib/toast';
@@ -308,6 +309,11 @@
 							</button>
 						</div>
 					</form>
+				{/if}
+				{#if data.untrustedOrigin}
+					<div class="mb-6">
+						<TrustOriginBanner origin={data.untrustedOrigin} />
+					</div>
 				{/if}
 				{@render children()}
 			{/if}

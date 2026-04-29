@@ -16,6 +16,8 @@ const configWithTvDefaultsFixture = configWithTvDefaults as AppConfig;
 
 const sharedLayoutData = {
 	user: null,
+	untrustedOrigin: null,
+	networkPosture: null,
 	health: null,
 	transmissionSession: null,
 	plexAuthState: 'unavailable' as const,
