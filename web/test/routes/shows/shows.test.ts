@@ -4,6 +4,7 @@ import Page from '../../../src/routes/shows/+page.svelte';
 import type { ShowBreakdown, TorrentStatSnapshot } from '$lib/types';
 
 const sharedLayoutData = {
+	user: null,
 	health: null,
 	transmissionSession: null,
 	plexAuthState: 'unavailable' as const,

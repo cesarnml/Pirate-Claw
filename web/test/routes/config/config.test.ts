@@ -54,7 +54,12 @@ const mockConfig: AppConfig = {
 	}
 };
 
-const sharedLayoutData = { health: null, transmissionSession: null, plexAuthState: 'unavailable' };
+const sharedLayoutData = {
+	user: null,
+	health: null,
+	transmissionSession: null,
+	plexAuthState: 'unavailable'
+};
 
 function renderPage(data: Record<string, unknown>) {
 	return render(Page, {

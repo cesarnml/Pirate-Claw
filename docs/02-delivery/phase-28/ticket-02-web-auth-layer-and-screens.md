@@ -66,4 +66,10 @@ Owner setup creates an account, issues a session, and lands on the app. Login wo
 
 ## Rationale
 
-_To be completed during delivery._
+JWT signed with Web Crypto API (HMAC-SHA256) rather than a third-party library — Bun's runtime exposes `crypto.subtle` natively, keeping the dependency surface minimal. The `b64url` helper was widened to accept `ArrayBuffer | Uint8Array` to satisfy TypeScript's strict SubtleCrypto typings (TS requires `ArrayBuffer` for `importKey`, `Uint8Array<ArrayBuffer>` for `verify`).
+
+The auth guard in `hooks.server.ts` checks the daemon's `/api/auth/state` only for unauthenticated requests needing a redirect target (setup vs. login). Authenticated requests never call the daemon — the JWT is self-contained. Response uses snake_case `owner_exists` per the daemon JSON contract.
+
+The "setup incomplete with valid session" redirect was intentionally omitted: the daemon equates `setup_complete === owner_exists`, so a valid session implies the owner exists and setup is complete by definition.
+
+`SameSite=Strict` without `secure: true` is intentional for v1 — the appliance runs on a local LAN without HTTPS. The v1 threat model accepts this; HTTPS termination is a post-v1 concern.

@@ -6,6 +6,7 @@ import type { PageData } from '../../../src/routes/movies/$types';
 
 const sharedLayoutData: Pick<
 	PageData,
+	| 'user'
 	| 'health'
 	| 'transmissionSession'
 	| 'plexAuthState'
@@ -13,6 +14,7 @@ const sharedLayoutData: Pick<
 	| 'readinessState'
 	| 'installHealthState'
 > = {
+	user: null,
 	health: null,
 	transmissionSession: null,
 	plexAuthState: 'unavailable',

@@ -62,6 +62,7 @@ const mockSession: SessionInfo = {
 };
 
 const sharedLayoutData = {
+	user: null,
 	installHealthState: null
 };
 

@@ -15,6 +15,7 @@ const configWithMoviesFixture = configWithMovies as AppConfig;
 const configWithTvDefaultsFixture = configWithTvDefaults as AppConfig;
 
 const sharedLayoutData = {
+	user: null,
 	health: null,
 	transmissionSession: null,
 	plexAuthState: 'unavailable' as const,
