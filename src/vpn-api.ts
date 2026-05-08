@@ -1,7 +1,9 @@
 import { mkdir, rename } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
+
+const MAX_OVPN_BYTES = 2 * 1024 * 1024; // 2 MB — guards against OOM on hardware
 
 import { fetchSessionInfo } from './transmission';
 import type { TransmissionConfig } from './config';
@@ -212,9 +214,26 @@ async function handleProfileUpload(
   configDir: string,
   configPath: string,
 ): Promise<Response> {
+  const contentLength = request.headers.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > MAX_OVPN_BYTES) {
+    return Response.json(
+      {
+        error: `Profile file too large (max ${String(MAX_OVPN_BYTES)} bytes).`,
+      },
+      { status: 400 },
+    );
+  }
   const bytes = await request.arrayBuffer();
   if (bytes.byteLength === 0) {
     return Response.json({ error: 'Request body is empty.' }, { status: 400 });
+  }
+  if (bytes.byteLength > MAX_OVPN_BYTES) {
+    return Response.json(
+      {
+        error: `Profile file too large (max ${String(MAX_OVPN_BYTES)} bytes).`,
+      },
+      { status: 400 },
+    );
   }
   const text = new TextDecoder()
     .decode(new Uint8Array(bytes).slice(0, 16))
@@ -242,21 +261,27 @@ async function handleProfileUpload(
   await writeVpnManifest(configDir, manifest);
 
   // update config downloaderNetwork
-  const baseOnDisk = await readConfigFileRecord(configPath);
-  const existingDn =
-    baseOnDisk.downloaderNetwork &&
-    typeof baseOnDisk.downloaderNetwork === 'object' &&
-    !Array.isArray(baseOnDisk.downloaderNetwork)
-      ? (baseOnDisk.downloaderNetwork as Record<string, unknown>)
-      : {};
-  writeConfigAtomically(configPath, {
-    ...baseOnDisk,
-    downloaderNetwork: {
-      ...existingDn,
-      mode: 'vpn_bridge',
-      status: 'pending_verify',
-    },
-  });
+  try {
+    const baseOnDisk = await readConfigFileRecord(configPath);
+    const existingDn =
+      baseOnDisk.downloaderNetwork &&
+      typeof baseOnDisk.downloaderNetwork === 'object' &&
+      !Array.isArray(baseOnDisk.downloaderNetwork)
+        ? (baseOnDisk.downloaderNetwork as Record<string, unknown>)
+        : {};
+    writeConfigAtomically(configPath, {
+      ...baseOnDisk,
+      downloaderNetwork: {
+        ...existingDn,
+        mode: 'vpn_bridge',
+        status: 'pending_verify',
+      },
+    });
+  } catch (err) {
+    console.log(
+      `[vpn] config update failed — ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   await generateComposeArtifact(configDir);
   console.log(
@@ -301,7 +326,10 @@ async function handleCredentialsSave(
   await mkdir(vpnDir(configDir), { recursive: true });
   const credsPath = credentialsPath(configDir);
   const credsContent = `${username}\n${password}\n`;
-  writeFileSync(credsPath, credsContent, { encoding: 'utf8', mode: 0o600 });
+  // atomic write: write to temp, then rename — prevents partial file on crash
+  const credsTempPath = `${credsPath}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(credsTempPath, credsContent, { encoding: 'utf8', mode: 0o600 });
+  await rename(credsTempPath, credsPath);
 
   const existingManifest = await readVpnManifest(configDir);
   const manifest: VpnManifest = {
@@ -357,8 +385,14 @@ async function handleVerify(
     const gluetunRes = await fetch(GLUETUN_HEALTH_URL, {
       signal: AbortSignal.timeout(10_000),
     });
-    gluetunOk = gluetunRes.ok;
-    if (!gluetunOk) gluetunDetail = `http ${String(gluetunRes.status)}`;
+    if (gluetunRes.ok) {
+      const gluetunBody = (await gluetunRes.json()) as { status?: string };
+      gluetunOk = gluetunBody.status === 'running';
+      if (!gluetunOk)
+        gluetunDetail = `tunnel stopped (status: ${gluetunBody.status ?? 'unknown'})`;
+    } else {
+      gluetunDetail = `http ${String(gluetunRes.status)}`;
+    }
   } catch (err) {
     gluetunDetail = `error: ${err instanceof Error ? err.message : String(err)}`;
   }
@@ -390,7 +424,7 @@ export async function handleVpnRoute(
   deps: VpnApiDeps,
 ): Promise<Response | null> {
   const { configPath, writeToken, transmissionConfig } = deps;
-  const configDir = configPath.replace(/\/[^/]+$/, '');
+  const configDir = dirname(configPath);
   const url = new URL(request.url);
   const path = url.pathname;
 

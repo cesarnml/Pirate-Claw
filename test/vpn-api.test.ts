@@ -469,3 +469,92 @@ describe('compose artifact ALLOWED_ORIGINS wiring', () => {
     expect(composeText).toContain('http://192.168.1.100:8888');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gluetun body gate: status field must be "running"
+// ---------------------------------------------------------------------------
+
+describe('POST /api/vpn/verify gluetun body check', () => {
+  it('returns vpn_bridge_unreachable when gluetun returns 200 but status is "stopped"', async () => {
+    await apiFetch(
+      new Request('http://localhost/api/vpn/profile', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: VALID_OVPN,
+      }),
+    );
+    await apiFetch(
+      new Request('http://localhost/api/vpn/credentials', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'u', password: 'p' }),
+      }),
+    );
+
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (
+      input: RequestInfo | URL,
+    ) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('gluetun') || url.includes('8000')) {
+        // 200 but tunnel is not up
+        return Response.json({ status: 'stopped' });
+      }
+      throw new Error('unexpected call');
+    }) as typeof fetch);
+
+    const res = await apiFetch(
+      new Request('http://localhost/api/vpn/verify', {
+        method: 'POST',
+        headers: authHeaders(),
+      }),
+    );
+    fetchSpy.mockRestore();
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe('vpn_bridge_unreachable');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Config file update on profile save
+// ---------------------------------------------------------------------------
+
+describe('POST /api/vpn/profile config update', () => {
+  it('writes downloaderNetwork.mode=vpn_bridge to pirate-claw.config.json', async () => {
+    await apiFetch(
+      new Request('http://localhost/api/vpn/profile', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: VALID_OVPN,
+      }),
+    );
+
+    const config = (await Bun.file(configPath).json()) as {
+      downloaderNetwork?: { mode?: string; status?: string };
+    };
+    expect(config.downloaderNetwork?.mode).toBe('vpn_bridge');
+    expect(config.downloaderNetwork?.status).toBe('pending_verify');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/vpn/compose requires no auth
+// ---------------------------------------------------------------------------
+
+describe('GET /api/vpn/compose auth', () => {
+  it('serves compose without write auth header (public endpoint)', async () => {
+    await apiFetch(
+      new Request('http://localhost/api/vpn/profile', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: VALID_OVPN,
+      }),
+    );
+
+    const res = await apiFetch(
+      new Request('http://localhost/api/vpn/compose', { method: 'GET' }),
+    );
+    expect(res.status).toBe(200);
+  });
+});
