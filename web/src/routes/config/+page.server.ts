@@ -55,10 +55,6 @@ export const load: PageServerLoad = async () => {
 		console.error('[config] failed to load plex auth status');
 	}
 
-	console.log(
-		`[config] load — canWrite=${canWrite} config=${config !== null} etag=${etag ?? 'none'} plexAuth=${plexAuth?.state ?? 'unavailable'} onboarding=${onboarding?.state ?? 'none'}`
-	);
-
 	return {
 		config,
 		etag,
@@ -125,10 +121,8 @@ function validateTmdbDays(
 export const actions: Actions = {
 	savePlex: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] savePlex: no write-token');
+		if (!writeToken)
 			return fail(403, { plexMessage: 'Config writes are disabled.', plexMessageTone: 'error' });
-		}
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -157,7 +151,6 @@ export const actions: Actions = {
 				body: JSON.stringify({ url: plexUrl })
 			});
 
-			console.log('[config] savePlex: daemon status', response.status);
 			if (!response.ok) {
 				let plexMessage = `Save failed (${response.status}).`;
 				try {
@@ -186,10 +179,8 @@ export const actions: Actions = {
 
 	disconnectPlex: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] disconnectPlex: no write-token');
+		if (!writeToken)
 			return fail(403, { plexMessage: 'Config writes are disabled.', plexMessageTone: 'error' });
-		}
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -209,7 +200,6 @@ export const actions: Actions = {
 				}
 			});
 
-			console.log('[config] disconnectPlex: daemon status', response.status);
 			if (!response.ok) {
 				let plexMessage = `Disconnect failed (${response.status}).`;
 				try {
@@ -241,10 +231,7 @@ export const actions: Actions = {
 
 	saveShows: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] saveShows: no write-token');
-			return fail(500, { showsMessage: 'Server write token is not configured.' });
-		}
+		if (!writeToken) return fail(500, { showsMessage: 'Server write token is not configured.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -269,12 +256,6 @@ export const actions: Actions = {
 				body: JSON.stringify({ runtime: {}, tv: { shows: showNames } })
 			});
 
-			console.log(
-				'[config] saveShows: daemon status',
-				response.status,
-				'— shows:',
-				showNames.length
-			);
 			if (!response.ok) {
 				let showsMessage = `Save failed (${response.status}).`;
 				try {
@@ -299,10 +280,7 @@ export const actions: Actions = {
 
 	saveRuntime: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] saveRuntime: no write-token');
-			return fail(500, { runtimeMessage: 'Server write token is not configured.' });
-		}
+		if (!writeToken) return fail(500, { runtimeMessage: 'Server write token is not configured.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('runtimeIfMatch') ?? '').trim();
@@ -366,7 +344,6 @@ export const actions: Actions = {
 				body: JSON.stringify(payload)
 			});
 
-			console.log('[config] saveRuntime: daemon status', response.status);
 			if (!response.ok) {
 				let runtimeMessage = `Save failed (${response.status}).`;
 				try {
@@ -391,10 +368,7 @@ export const actions: Actions = {
 
 	saveTvDefaults: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] saveTvDefaults: no write-token');
-			return fail(403, { tvDefaultsMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { tvDefaultsMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('tvDefaultsIfMatch') ?? '').trim();
@@ -418,7 +392,6 @@ export const actions: Actions = {
 				body: JSON.stringify(payload)
 			});
 
-			console.log('[config] saveTvDefaults: daemon status', response.status);
 			if (!response.ok) {
 				let tvDefaultsMessage = `Save failed (${response.status}).`;
 				try {
@@ -446,10 +419,7 @@ export const actions: Actions = {
 
 	saveMovies: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] saveMovies: no write-token');
-			return fail(403, { moviesMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { moviesMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('moviesIfMatch') ?? '').trim();
@@ -488,7 +458,6 @@ export const actions: Actions = {
 				body: JSON.stringify(payload)
 			});
 
-			console.log('[config] saveMovies: daemon status', response.status);
 			if (!response.ok) {
 				let moviesMessage = `Save failed (${response.status}).`;
 				try {
@@ -516,10 +485,7 @@ export const actions: Actions = {
 
 	saveTmdb: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] saveTmdb: no write-token');
-			return fail(403, { tmdbMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { tmdbMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('tmdbIfMatch') ?? '').trim();
@@ -559,7 +525,6 @@ export const actions: Actions = {
 				})
 			});
 
-			console.log('[config] saveTmdb: daemon status', response.status);
 			if (!response.ok) {
 				let tmdbMessage = `Save failed (${response.status}).`;
 				try {
@@ -587,15 +552,9 @@ export const actions: Actions = {
 
 	restartDaemon: async () => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (writeToken === undefined || writeToken === null) {
-			console.error('[config] restartDaemon: write-token not configured');
+		if (writeToken === undefined || writeToken === null)
 			return fail(401, { restartError: 'Write token not configured.' });
-		}
-		if (!writeToken) {
-			console.error('[config] restartDaemon: write-token empty');
-			return fail(403, { restartError: 'Config writes are disabled.' });
-		}
-		console.log('[config] restartDaemon: initiating');
+		if (!writeToken) return fail(403, { restartError: 'Config writes are disabled.' });
 
 		try {
 			const response = await apiRequest('/api/daemon/restart', {
@@ -605,7 +564,6 @@ export const actions: Actions = {
 				}
 			});
 
-			console.log('[config] restartDaemon: daemon status', response.status);
 			if (!response.ok) {
 				let restartError = `Restart failed (${response.status}).`;
 				try {
@@ -618,7 +576,6 @@ export const actions: Actions = {
 			}
 
 			const body = (await response.json()) as { restartStatus?: RestartStatus };
-			console.log('[config] restartDaemon: restartStatus', body.restartStatus ?? 'none');
 			return { restarted: true, restartStatus: body.restartStatus ?? null };
 		} catch (error) {
 			console.error('[config] restartDaemon failed:', error);
@@ -628,10 +585,8 @@ export const actions: Actions = {
 
 	testConnection: async () => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] testConnection: no write-token');
+		if (!writeToken)
 			return fail(403, { pingError: 'write token not configured; cannot test connection' });
-		}
 
 		try {
 			const [pingResponse, statusResponse] = await Promise.all([
@@ -646,12 +601,6 @@ export const actions: Actions = {
 				? ((await statusResponse.json()) as TransmissionStatusResponse)
 				: null;
 
-			console.log(
-				'[config] testConnection: ping status',
-				pingResponse.status,
-				'transmission-status status',
-				statusResponse.status
-			);
 			if (!pingResponse.ok) {
 				let pingError = `Ping failed (${pingResponse.status}).`;
 				try {
@@ -668,9 +617,6 @@ export const actions: Actions = {
 			}
 
 			const data = (await pingResponse.json()) as { version: string };
-			console.log(
-				`[config] testConnection: ok version=${data.version} compatibility=${status?.compatibility ?? 'compatible'}`
-			);
 			return {
 				pingOk: true,
 				version: data.version,
@@ -685,10 +631,7 @@ export const actions: Actions = {
 
 	saveFeeds: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			console.error('[config] saveFeeds: no write-token');
-			return fail(403, { feedsMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { feedsMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('feedsIfMatch') ?? '').trim();
@@ -729,12 +672,6 @@ export const actions: Actions = {
 				body: JSON.stringify(feeds)
 			});
 
-			console.log(
-				'[config] saveFeeds: daemon status',
-				response.status,
-				'— feed count:',
-				feeds.length
-			);
 			if (!response.ok) {
 				let errorText = `Save failed (${response.status}).`;
 				try {
