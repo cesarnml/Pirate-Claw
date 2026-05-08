@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,7 +14,7 @@ import {
   parsePlan,
   pollReview,
   reconcileLateReview,
-  recordPostVerifySelfAudit,
+  recordPostVerify,
   recordReview,
   resolvePlanPathForBranch,
   resolveReviewFetcher,
@@ -81,9 +81,8 @@ const baseConfig: ResolvedOrchestratorConfig = {
   packageManager: 'bun',
   ticketBoundaryMode: 'cook',
   reviewPolicy: {
-    selfAudit: 'skip_doc_only',
-    codexPreflight: 'skip_doc_only',
-    externalReview: 'skip_doc_only',
+    subagentReview: 'skip_doc_only',
+    prReview: 'skip_doc_only',
   },
 };
 
@@ -119,7 +118,7 @@ describe('delivery orchestrator', () => {
 
 ## Exit Condition
 `,
-      'docs/02-delivery/phase-02/implementation-plan.md',
+      'docs/product/delivery/phase-02/implementation-plan.md',
     );
 
     expect(tickets).toEqual([
@@ -128,25 +127,69 @@ describe('delivery orchestrator', () => {
         title: 'Enclosure-First Feed Parsing',
         slug: 'enclosure-first-feed-parsing',
         ticketFile:
-          'docs/02-delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
+          'docs/product/delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
       },
       {
         id: 'P2.02',
         title: 'Movie Matcher Allows Missing Codec',
         slug: 'movie-matcher-allows-missing-codec',
         ticketFile:
-          'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+          'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
       },
     ]);
+  });
+
+  it('parses ticket scope relative to the provided repo root', async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), 'pr-title-scope-'));
+    const planDir = join(repoRoot, 'docs/product/delivery/phase-99');
+
+    try {
+      await mkdir(planDir, { recursive: true });
+      await writeFile(
+        join(planDir, 'ticket-01-fix-relative-scope.md'),
+        ['# P9.01 Relative Scope', '', 'Scope: CLI', ''].join('\n'),
+      );
+
+      const tickets = parsePlan(
+        `
+# Phase 99 Implementation Plan
+
+## Ticket Order
+
+1. \`P9.01 Relative Scope\`
+
+## Ticket Files
+
+- \`ticket-01-fix-relative-scope.md\`
+
+## Exit Condition
+`,
+        'docs/product/delivery/phase-99/implementation-plan.md',
+        repoRoot,
+      );
+
+      expect(tickets).toEqual([
+        {
+          id: 'P9.01',
+          title: 'Relative Scope',
+          slug: 'relative-scope',
+          scope: 'cli',
+          ticketFile:
+            'docs/product/delivery/phase-99/ticket-01-fix-relative-scope.md',
+        },
+      ]);
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
   });
 
   it('builds options from a plan path', () => {
     expect(
       createOptions({
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       }),
     ).toMatchObject({
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       planKey: 'phase-03',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
@@ -160,7 +203,7 @@ describe('delivery orchestrator', () => {
     const parsed = parseCliArgs(
       [
         '--plan',
-        'docs/02-delivery/phase-03/implementation-plan.md',
+        'docs/product/delivery/phase-03/implementation-plan.md',
         '--boundary-mode',
         'gated',
         'status',
@@ -172,7 +215,7 @@ describe('delivery orchestrator', () => {
       command: 'status',
       positionals: [],
       flags: new Set<string>(),
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       prNumber: undefined,
       boundaryMode: 'gated',
     });
@@ -183,7 +226,7 @@ describe('delivery orchestrator', () => {
       parseCliArgs(
         [
           '--plan',
-          'docs/02-delivery/phase-03/implementation-plan.md',
+          'docs/product/delivery/phase-03/implementation-plan.md',
           '--boundary-mode',
           'sprint',
           'status',
@@ -198,7 +241,7 @@ describe('delivery orchestrator', () => {
       parseCliArgs(
         [
           '--plan',
-          'docs/02-delivery/phase-03/implementation-plan.md',
+          'docs/product/delivery/phase-03/implementation-plan.md',
           '--boundary-mode',
         ],
         getUsage('bun run deliver'),
@@ -212,7 +255,7 @@ describe('delivery orchestrator', () => {
         {
           planKey: 'engineering-epic-07',
           planPath:
-            'docs/02-delivery/engineering-epic-07/implementation-plan.md',
+            'docs/product/delivery/engineering-epic-07/implementation-plan.md',
           statePath: '.agents/delivery/engineering-epic-07/state.json',
           reviewsDirPath: '.agents/delivery/engineering-epic-07/reviews',
           handoffsDirPath: '.agents/delivery/engineering-epic-07/handoffs',
@@ -227,9 +270,8 @@ describe('delivery orchestrator', () => {
           packageManager: 'bun',
           ticketBoundaryMode: 'glide',
           reviewPolicy: {
-            selfAudit: 'skip_doc_only',
-            codexPreflight: 'skip_doc_only',
-            externalReview: 'skip_doc_only',
+            subagentReview: 'skip_doc_only',
+            prReview: 'skip_doc_only',
           },
         },
       ),
@@ -238,7 +280,7 @@ describe('delivery orchestrator', () => {
 
   it('syncs state while preserving runtime metadata and inferred branch chaining', () => {
     const options = createOptions({
-      planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-02/implementation-plan.md',
     });
     const existing: DeliveryState = {
       planKey: 'phase-02',
@@ -254,7 +296,7 @@ describe('delivery orchestrator', () => {
           title: 'Enclosure-First Feed Parsing',
           slug: 'enclosure-first-feed-parsing',
           ticketFile:
-            'docs/02-delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
+            'docs/product/delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
           status: 'done',
           branch: 'agents/p2-01-enclosure-first-feed-parsing',
           baseBranch: 'main',
@@ -275,14 +317,14 @@ describe('delivery orchestrator', () => {
           title: 'Enclosure-First Feed Parsing',
           slug: 'enclosure-first-feed-parsing',
           ticketFile:
-            'docs/02-delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
+            'docs/product/delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
         },
         {
           id: 'P2.02',
           title: 'Movie Matcher Allows Missing Codec',
           slug: 'movie-matcher-allows-missing-codec',
           ticketFile:
-            'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+            'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
         },
       ],
       '/workspace/test_project',
@@ -303,7 +345,7 @@ describe('delivery orchestrator', () => {
     const handoff = buildTicketHandoff(
       {
         planKey: 'phase-02',
-        planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-02/implementation-plan.md',
         statePath: '.agents/delivery/phase-02/state.json',
         reviewsDirPath: '.agents/delivery/phase-02/reviews',
         handoffsDirPath: '.agents/delivery/phase-02/handoffs',
@@ -315,7 +357,7 @@ describe('delivery orchestrator', () => {
             title: 'Enclosure-First Feed Parsing',
             slug: 'enclosure-first-feed-parsing',
             ticketFile:
-              'docs/02-delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
+              'docs/product/delivery/phase-02/ticket-01-enclosure-first-feed-parsing.md',
             status: 'done',
             branch: 'agents/p2-01-enclosure-first-feed-parsing',
             baseBranch: 'main',
@@ -331,7 +373,7 @@ describe('delivery orchestrator', () => {
             title: 'Movie Matcher Allows Missing Codec',
             slug: 'movie-matcher-allows-missing-codec',
             ticketFile:
-              'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+              'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
             status: 'pending',
             branch: 'agents/p2-02-movie-matcher-allows-missing-codec',
             baseBranch: 'agents/p2-01-enclosure-first-feed-parsing',
@@ -343,7 +385,7 @@ describe('delivery orchestrator', () => {
         id: 'P2.02',
         title: 'Movie Matcher Allows Missing Codec',
         ticketFile:
-          'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+          'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
         branch: 'agents/p2-02-movie-matcher-allows-missing-codec',
         baseBranch: 'agents/p2-01-enclosure-first-feed-parsing',
         worktreePath: '/tmp/p2_02',
@@ -352,7 +394,7 @@ describe('delivery orchestrator', () => {
 
     expect(handoff).toContain('# Ticket Handoff');
     expect(handoff).toContain('## Required Reads');
-    expect(handoff).toContain('docs/00-overview/start-here.md');
+    expect(handoff).toContain('docs/template/overview/start-here.md');
     expect(handoff).toContain('Start from the current repository state');
     expect(handoff).toContain('Previous PR: https://example.test/pull/14');
     expect(handoff).toContain('Review outcome: `patched`');
@@ -363,7 +405,7 @@ describe('delivery orchestrator', () => {
 
   it('derives plan keys from implementation plan directories', () => {
     expect(
-      derivePlanKey('docs/02-delivery/phase-03/implementation-plan.md'),
+      derivePlanKey('docs/product/delivery/phase-03/implementation-plan.md'),
     ).toBe('phase-03');
     expect(derivePlanKey('./plans/custom/implementation-plan.md')).toBe(
       'custom',
@@ -401,7 +443,7 @@ describe('delivery orchestrator', () => {
       findTicketByBranch(
         {
           planKey: 'phase-03',
-          planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+          planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
           statePath: '.agents/delivery/phase-03/state.json',
           reviewsDirPath: '.agents/delivery/phase-03/reviews',
           handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -413,7 +455,7 @@ describe('delivery orchestrator', () => {
               title: 'Persist Transmission Identity For Queued Torrents',
               slug: 'persist-transmission-identity-for-queued-torrents',
               ticketFile:
-                'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+                'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
               status: 'done',
               branch:
                 'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -425,7 +467,7 @@ describe('delivery orchestrator', () => {
               title: 'Reconcile Torrent Lifecycle From Transmission',
               slug: 'reconcile-torrent-lifecycle-from-transmission',
               ticketFile:
-                'docs/02-delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
+                'docs/product/delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
               status: 'in_review',
               branch:
                 'agents/p3-02-reconcile-torrent-lifecycle-from-transmission',
@@ -445,33 +487,33 @@ describe('delivery orchestrator', () => {
       resolvePlanPathForBranch(
         [
           {
-            planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
+            planPath: 'docs/product/delivery/phase-02/implementation-plan.md',
             tickets: [
               {
                 id: 'P2.02',
                 title: 'Movie Matcher Allows Missing Codec',
                 slug: 'movie-matcher-allows-missing-codec',
                 ticketFile:
-                  'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+                  'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
               },
             ],
           },
           {
-            planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+            planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
             tickets: [
               {
                 id: 'P3.02',
                 title: 'Reconcile Torrent Lifecycle From Transmission',
                 slug: 'reconcile-torrent-lifecycle-from-transmission',
                 ticketFile:
-                  'docs/02-delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
+                  'docs/product/delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
               },
             ],
           },
         ],
         'agents/p3-02-reconcile-torrent-lifecycle-from-transmission',
       ),
-    ).toBe('docs/02-delivery/phase-03/implementation-plan.md');
+    ).toBe('docs/product/delivery/phase-03/implementation-plan.md');
   });
 
   it('fails plan inference cleanly when no plan matches the current branch', () => {
@@ -479,14 +521,14 @@ describe('delivery orchestrator', () => {
       resolvePlanPathForBranch(
         [
           {
-            planPath: 'docs/02-delivery/phase-02/implementation-plan.md',
+            planPath: 'docs/product/delivery/phase-02/implementation-plan.md',
             tickets: [
               {
                 id: 'P2.02',
                 title: 'Movie Matcher Allows Missing Codec',
                 slug: 'movie-matcher-allows-missing-codec',
                 ticketFile:
-                  'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+                  'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
               },
             ],
           },
@@ -505,7 +547,7 @@ describe('delivery orchestrator', () => {
         title: 'Movie Matcher Allows Missing Codec',
         slug: 'movie-matcher-allows-missing-codec',
         ticketFile:
-          'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+          'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
         status: 'reviewed',
         branch: 'agents/p2-02-movie-matcher-missing-codec',
         baseBranch: 'agents/p2-01-enclosure-first-feed-parsing',
@@ -520,7 +562,7 @@ describe('delivery orchestrator', () => {
         title: 'Movie Matcher Allows Missing Codec',
         slug: 'movie-matcher-allows-missing-codec',
         ticketFile:
-          'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+          'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
         status: 'reviewed',
         branch: 'agents/p2-02-movie-matcher-missing-codec',
         baseBranch: 'agents/p2-01-enclosure-first-feed-parsing',
@@ -535,7 +577,7 @@ describe('delivery orchestrator', () => {
         title: 'Movie Matcher Allows Missing Codec',
         slug: 'movie-matcher-allows-missing-codec',
         ticketFile:
-          'docs/02-delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
+          'docs/product/delivery/phase-02/ticket-02-movie-matcher-allows-missing-codec.md',
         status: 'reviewed',
         branch: 'agents/p2-02-movie-matcher-missing-codec',
         baseBranch: 'agents/p2-01-enclosure-first-feed-parsing',
@@ -547,35 +589,54 @@ describe('delivery orchestrator', () => {
 
   it('uses the repo delivery PR title format', () => {
     expect(
-      buildPullRequestTitle(
-        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
-        'feat: add torrent lifecycle reconciliation',
-      ),
-    ).toBe('feat: add torrent lifecycle reconciliation [P3.02]');
-    expect(
-      buildPullRequestTitle(
-        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
-        'feat: add torrent lifecycle reconciliation [P3.02]',
-      ),
-    ).toBe('feat: add torrent lifecycle reconciliation [P3.02]');
-    expect(
-      buildPullRequestTitle(
-        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
-        'fix: tighten review provenance [self-audit]',
-      ),
-    ).toBe('fix: tighten review provenance [P3.02]');
-    expect(
-      buildPullRequestTitle(
-        { id: 'P3.02', title: 'Reconcile Torrent Lifecycle From Transmission' },
-        'fix: tighten review provenance [codexPreflight]',
-      ),
-    ).toBe('fix: tighten review provenance [P3.02]');
+      buildPullRequestTitle({
+        id: 'P3.02',
+        title: 'Reconcile Torrent Lifecycle From Transmission',
+        ticketFile: 'ticket-02-feat-torrent-lifecycle.md',
+      }),
+    ).toBe('feat: reconcile torrent lifecycle from transmission [P3.02]');
     expect(
       buildPullRequestTitle({
         id: 'P3.02',
         title: 'Reconcile Torrent Lifecycle From Transmission',
+        ticketFile: 'ticket-02-feat-torrent-lifecycle.md',
+        scope: 'transmission',
       }),
-    ).toBe('feat: reconcile torrent lifecycle from transmission [P3.02]');
+    ).toBe(
+      'feat(transmission): reconcile torrent lifecycle from transmission [P3.02]',
+    );
+  });
+
+  it('derives PR title from ticket filename type and scope field', () => {
+    expect(
+      buildPullRequestTitle({
+        id: 'P1.01',
+        title: 'Fix state.json sync in advance',
+        ticketFile: 'ticket-01-fix-state-sync.md',
+        scope: 'cli',
+      }),
+    ).toBe('fix(cli): fix state.json sync in advance [P1.01]');
+    expect(
+      buildPullRequestTitle({
+        id: 'P1.01',
+        title: 'Fix state.json sync in advance',
+        ticketFile: 'ticket-01-fix-state-sync.md',
+      }),
+    ).toBe('fix: fix state.json sync in advance [P1.01]');
+    expect(
+      buildPullRequestTitle({
+        id: 'P1.01',
+        title: 'Fix state.json sync in advance',
+        ticketFile: 'ticket-01-FIX-state-sync.md',
+      }),
+    ).toBe('feat: fix state.json sync in advance [P1.01]');
+    expect(
+      buildPullRequestTitle({
+        id: 'P1.01',
+        title: 'Fix state.json sync in advance',
+        ticketFile: 'no-convention-here.md',
+      }),
+    ).toBe('feat: fix state.json sync in advance [P1.01]');
   });
 
   it('resolves the notifier from Telegram env vars', () => {
@@ -880,7 +941,7 @@ describe('delivery orchestrator', () => {
         state: {
           planKey: 'engineering-epic-02',
           planPath:
-            'docs/02-delivery/engineering-epic-02/implementation-plan.md',
+            'docs/product/delivery/engineering-epic-02/implementation-plan.md',
           statePath: '.agents/delivery/engineering-epic-02/state.json',
           reviewsDirPath: '.agents/delivery/engineering-epic-02/reviews',
           handoffsDirPath: '.agents/delivery/engineering-epic-02/handoffs',
@@ -892,10 +953,10 @@ describe('delivery orchestrator', () => {
           id: 'E2.05',
           title: 'Shared Review Metadata Refresh Adapter',
           ticketFile:
-            'docs/02-delivery/engineering-epic-02/ticket-05-shared-review-metadata-refresh-adapter.md',
+            'docs/product/delivery/engineering-epic-02/ticket-05-shared-review-metadata-refresh-adapter.md',
           baseBranch: 'agents/e2-04-shared-clean-and-timeout-recording-core',
-          postVerifySelfAuditCompletedAt: '2026-04-07T00:00:00.000Z',
-          selfAuditOutcome: 'clean',
+          verifiedAt: '2026-04-07T00:00:00.000Z',
+          verifyOutcome: 'clean',
           reviewActionSummary: reviewState.actionSummary,
           reviewIncompleteAgents: undefined,
           reviewComments: reviewState.comments,
@@ -934,7 +995,7 @@ describe('delivery orchestrator', () => {
       '- delivery ticket: `E2.05 Shared Review Metadata Refresh Adapter`',
     );
     expect(ticketBody).toContain(
-      '- self-audit: outcome `clean` completed at 2026-04-07 00:00 UTC',
+      '- post-verify: outcome `clean` completed at 2026-04-07 00:00 UTC',
     );
     expect(ticketBody).toContain(expectedReviewSection);
     expect(standaloneBody).toContain('- preserve this author-owned context');
@@ -958,7 +1019,8 @@ describe('delivery orchestrator', () => {
     const body = buildPullRequestBody(
       {
         planKey: 'engineering-epic-08',
-        planPath: 'docs/02-delivery/engineering-epic-08/implementation-plan.md',
+        planPath:
+          'docs/product/delivery/engineering-epic-08/implementation-plan.md',
         statePath: '.agents/delivery/engineering-epic-08/state.json',
         reviewsDirPath: '.agents/delivery/engineering-epic-08/reviews',
         handoffsDirPath: '.agents/delivery/engineering-epic-08/handoffs',
@@ -970,26 +1032,26 @@ describe('delivery orchestrator', () => {
         id: 'EE8.04',
         title: 'PR body internal review observability',
         ticketFile:
-          'docs/02-delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
+          'docs/product/delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
         baseBranch: 'main',
-        postVerifySelfAuditCompletedAt: '2026-04-14T08:33:00.000Z',
-        selfAuditOutcome: 'patched',
-        selfAuditPatchCommits: [
+        verifiedAt: '2026-04-14T08:33:00.000Z',
+        verifyOutcome: 'patched',
+        verifyPatchCommits: [
           {
             sha: 'aaaaaaaaaaaa1111111111111111111111111111',
-            subject: 'fix: clarify PR body review state [self-audit]',
+            subject: 'fix: clarify PR body review state [post-verify]',
           },
         ],
-        codexPreflightCompletedAt: '2026-04-14T08:48:00.000Z',
-        codexPreflightOutcome: 'patched',
-        codexPreflightPatchCommits: [
+        subagentReviewCompletedAt: '2026-04-14T08:48:00.000Z',
+        subagentReviewOutcome: 'patched',
+        subagentReviewPatchCommits: [
           {
             sha: 'bbbbbbbbbbbb2222222222222222222222222222',
             subject:
-              'fix: surface codex preflight patch commits [codexPreflight]',
+              'fix: surface subagent review patch commits [subagent-review]',
           },
         ],
-        status: 'codex_preflight_complete',
+        status: 'subagent_review_complete',
       },
       {
         githubRepo: {
@@ -1001,18 +1063,18 @@ describe('delivery orchestrator', () => {
     );
 
     expect(body).toContain(
-      '- self-audit: outcome `patched` completed at 2026-04-14 08:33 UTC',
+      '- post-verify: outcome `patched` completed at 2026-04-14 08:33 UTC',
     );
     expect(body).toContain(
-      '- codexPreflight: outcome `patched` completed at 2026-04-14 08:48 UTC',
+      '- subagentReview: outcome `patched` completed at 2026-04-14 08:48 UTC',
     );
-    expect(body).toContain('### Self-Audit Patch Commits');
-    expect(body).toContain('### Codex Preflight Patch Commits');
+    expect(body).toContain('### Post-Verify Patch Commits');
+    expect(body).toContain('### Subagent Review Patch Commits');
     expect(body).toContain(
-      '[`aaaaaaaaaaaa`](https://github.com/cesarnml/Test-Project/commit/aaaaaaaaaaaa1111111111111111111111111111) fix: clarify PR body review state [self-audit]',
+      '[`aaaaaaaaaaaa`](https://github.com/cesarnml/Test-Project/commit/aaaaaaaaaaaa1111111111111111111111111111) fix: clarify PR body review state [post-verify]',
     );
     expect(body).toContain(
-      '[`bbbbbbbbbbbb`](https://github.com/cesarnml/Test-Project/commit/bbbbbbbbbbbb2222222222222222222222222222) fix: surface codex preflight patch commits [codexPreflight]',
+      '[`bbbbbbbbbbbb`](https://github.com/cesarnml/Test-Project/commit/bbbbbbbbbbbb2222222222222222222222222222) fix: surface subagent review patch commits [subagent-review]',
     );
   });
 
@@ -1022,7 +1084,7 @@ describe('delivery orchestrator', () => {
         {
           planKey: 'engineering-epic-08',
           planPath:
-            'docs/02-delivery/engineering-epic-08/implementation-plan.md',
+            'docs/product/delivery/engineering-epic-08/implementation-plan.md',
           statePath: '.agents/delivery/engineering-epic-08/state.json',
           reviewsDirPath: '.agents/delivery/engineering-epic-08/reviews',
           handoffsDirPath: '.agents/delivery/engineering-epic-08/handoffs',
@@ -1034,22 +1096,23 @@ describe('delivery orchestrator', () => {
           id: 'EE8.04',
           title: 'PR body internal review observability',
           ticketFile:
-            'docs/02-delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
+            'docs/product/delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
           baseBranch: 'main',
-          postVerifySelfAuditCompletedAt: '2026-04-14T08:33:00.000Z',
-          selfAuditOutcome: 'patched',
-          selfAuditPatchCommits: [],
-          status: 'post_verify_self_audit_complete',
+          verifiedAt: '2026-04-14T08:33:00.000Z',
+          verifyOutcome: 'patched',
+          verifyPatchCommits: [],
+          status: 'verified',
         },
       ),
-    ).toThrow(/Self-audit PR metadata requires recorded patch commits/);
+    ).toThrow(/Post-verify PR metadata requires recorded patch commits/);
   });
 
   it('tolerates legacy patched internal review states with no recorded patch commits', () => {
     const body = buildPullRequestBody(
       {
         planKey: 'engineering-epic-08',
-        planPath: 'docs/02-delivery/engineering-epic-08/implementation-plan.md',
+        planPath:
+          'docs/product/delivery/engineering-epic-08/implementation-plan.md',
         statePath: '.agents/delivery/engineering-epic-08/state.json',
         reviewsDirPath: '.agents/delivery/engineering-epic-08/reviews',
         handoffsDirPath: '.agents/delivery/engineering-epic-08/handoffs',
@@ -1061,25 +1124,25 @@ describe('delivery orchestrator', () => {
         id: 'EE8.04',
         title: 'PR body internal review observability',
         ticketFile:
-          'docs/02-delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
+          'docs/product/delivery/engineering-epic-08/ticket-04-pr-body-internal-review-observability.md',
         baseBranch: 'main',
-        postVerifySelfAuditCompletedAt: '2026-04-14T08:33:00.000Z',
-        selfAuditOutcome: 'patched',
-        status: 'post_verify_self_audit_complete',
+        verifiedAt: '2026-04-14T08:33:00.000Z',
+        verifyOutcome: 'patched',
+        status: 'verified',
       },
     );
 
     expect(body).toContain(
-      '- self-audit: outcome `patched` completed at 2026-04-14 08:33 UTC',
+      '- post-verify: outcome `patched` completed at 2026-04-14 08:33 UTC',
     );
-    expect(body).not.toContain('### Self-Audit Patch Commits');
+    expect(body).not.toContain('### Post-Verify Patch Commits');
   });
 
   it('does not include external summary-only noise in the ticket pr body', () => {
     const body = buildPullRequestBody(
       {
         planKey: 'phase-03',
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1091,7 +1154,7 @@ describe('delivery orchestrator', () => {
         id: 'P3.01',
         title: 'Persist Transmission Identity For Queued Torrents',
         ticketFile:
-          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
         baseBranch: 'main',
         status: 'reviewed',
         reviewOutcome: 'clean',
@@ -1115,7 +1178,7 @@ describe('delivery orchestrator', () => {
     const body = buildPullRequestBody(
       {
         planKey: 'phase-03',
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1127,7 +1190,7 @@ describe('delivery orchestrator', () => {
         id: 'P3.01',
         title: 'Persist Transmission Identity For Queued Torrents',
         ticketFile:
-          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
         baseBranch: 'main',
         status: 'reviewed',
         reviewOutcome: 'skipped',
@@ -1157,7 +1220,7 @@ describe('delivery orchestrator', () => {
     const body = buildPullRequestBody(
       {
         planKey: 'phase-03',
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1169,7 +1232,7 @@ describe('delivery orchestrator', () => {
         id: 'P3.01',
         title: 'Persist Transmission Identity For Queued Torrents',
         ticketFile:
-          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
         baseBranch: 'main',
         reviewActionSummary: 'Patched 1 finding comment.',
         reviewComments: [
@@ -1336,7 +1399,7 @@ describe('delivery orchestrator', () => {
     const body = buildPullRequestBody(
       {
         planKey: 'phase-03',
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1348,7 +1411,7 @@ describe('delivery orchestrator', () => {
         id: 'P3.01',
         title: 'Persist Transmission Identity For Queued Torrents',
         ticketFile:
-          'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+          'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
         baseBranch: 'main',
         reviewActionSummary: 'Patched 1 finding comment.',
         reviewComments: [
@@ -1400,7 +1463,7 @@ describe('delivery orchestrator', () => {
     const message = formatReviewWindowMessage(
       {
         planKey: 'phase-03',
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1412,7 +1475,7 @@ describe('delivery orchestrator', () => {
             title: 'Persist Transmission Identity For Queued Torrents',
             slug: 'persist-transmission-identity-for-queued-torrents',
             ticketFile:
-              'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+              'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
             status: 'in_review',
             branch:
               'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -1440,7 +1503,7 @@ describe('delivery orchestrator', () => {
   it('maps orchestrator commands to notification events', () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1452,7 +1515,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -1468,7 +1531,7 @@ describe('delivery orchestrator', () => {
           title: 'Reconcile Torrent Lifecycle From Transmission',
           slug: 'reconcile-torrent-lifecycle-from-transmission',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
+            'docs/product/delivery/phase-03/ticket-02-reconcile-torrent-lifecycle-from-transmission.md',
           status: 'pending',
           branch: 'agents/p3-02-reconcile-torrent-lifecycle-from-transmission',
           baseBranch:
@@ -1555,7 +1618,7 @@ describe('delivery orchestrator', () => {
     const changes = summarizeStateDifferences(
       {
         planKey: 'phase-03',
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1567,7 +1630,7 @@ describe('delivery orchestrator', () => {
             title: 'Persist Transmission Identity For Queued Torrents',
             slug: 'persist-transmission-identity-for-queued-torrents',
             ticketFile:
-              'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+              'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
             status: 'in_review',
             branch:
               'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -1579,7 +1642,7 @@ describe('delivery orchestrator', () => {
       },
       {
         planKey: 'phase-03',
-        planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
         statePath: '.agents/delivery/phase-03/state.json',
         reviewsDirPath: '.agents/delivery/phase-03/reviews',
         handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1591,7 +1654,7 @@ describe('delivery orchestrator', () => {
             title: 'Persist Transmission Identity For Queued Torrents',
             slug: 'persist-transmission-identity-for-queued-torrents',
             ticketFile:
-              'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+              'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
             status: 'pending',
             branch:
               'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -1830,10 +1893,10 @@ describe('delivery orchestrator', () => {
     });
   });
 
-  it('records post-verify self-audit before opening a PR', async () => {
+  it('records post-verify before opening a PR', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1845,7 +1908,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_progress',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -1855,17 +1918,15 @@ describe('delivery orchestrator', () => {
       ],
     };
 
-    const nextState = await recordPostVerifySelfAudit(
+    const nextState = await recordPostVerify(
       state,
       'P3.01',
       undefined,
       baseConfig,
     );
 
-    expect(nextState.tickets[0]?.status).toBe(
-      'post_verify_self_audit_complete',
-    );
-    expect(nextState.tickets[0]?.postVerifySelfAuditCompletedAt).toBeTruthy();
+    expect(nextState.tickets[0]?.status).toBe('verified');
+    expect(nextState.tickets[0]?.verifiedAt).toBeTruthy();
   });
 
   it('normalizes legacy persisted ticket status and timestamps', () => {
@@ -1892,10 +1953,8 @@ describe('delivery orchestrator', () => {
       ],
     };
     const next = normalizeDeliveryStateFromPersisted(raw);
-    expect(next.tickets[0]?.status).toBe('post_verify_self_audit_complete');
-    expect(next.tickets[0]?.postVerifySelfAuditCompletedAt).toBe(
-      '2026-01-01T00:00:00.000Z',
-    );
+    expect(next.tickets[0]?.status).toBe('verified');
+    expect(next.tickets[0]?.verifiedAt).toBe('2026-01-01T00:00:00.000Z');
   });
 
   it('rejects pr bodies that contain literal escaped newlines', () => {
@@ -1968,10 +2027,10 @@ describe('delivery orchestrator', () => {
     ).not.toThrow();
   });
 
-  it('requires post-verify self-audit before opening a ticket-linked PR', async () => {
+  it('requires post-verify before opening a ticket-linked PR', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -1983,7 +2042,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_progress',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -1996,7 +2055,7 @@ describe('delivery orchestrator', () => {
     await expect(
       openPullRequest(state, '/tmp/test_project', testContext(), 'P3.01'),
     ).rejects.toThrow(
-      'Ticket P3.01 must complete post-verify self-audit before opening a PR.',
+      'Ticket P3.01 is at status in_progress. Complete post-verify before opening a PR.',
     );
   });
 
@@ -2031,7 +2090,7 @@ describe('delivery orchestrator', () => {
   it('waits for all detected agents before triage and saves the artifact', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2043,7 +2102,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2184,7 +2243,7 @@ describe('delivery orchestrator', () => {
   it('records patched review outcomes immediately when the triager resolves them', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2196,7 +2255,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2279,7 +2338,7 @@ describe('delivery orchestrator', () => {
   it('extends review polling by one interval when an agent is still in flight', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2291,7 +2350,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2354,7 +2413,7 @@ describe('delivery orchestrator', () => {
   it('auto-records clean when no ai review appears by the final check', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2366,7 +2425,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2426,7 +2485,7 @@ describe('delivery orchestrator', () => {
   it('preserves patched as the cumulative outcome when a later poll is clean', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2438,7 +2497,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2504,7 +2563,7 @@ describe('delivery orchestrator', () => {
   it('preserves patched as the cumulative outcome when a later poll finds no ai review', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2516,7 +2575,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2570,7 +2629,7 @@ describe('delivery orchestrator', () => {
   it('matches standalone cumulative patched semantics when a later review pass is clean', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2582,7 +2641,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2666,7 +2725,7 @@ describe('delivery orchestrator', () => {
   it('matches standalone cumulative patched semantics when no later ai review appears', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2678,7 +2737,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -2748,7 +2807,7 @@ describe('delivery orchestrator', () => {
   it('matches standalone timeout note semantics when agents stay in flight without findings', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -2760,7 +2819,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3047,7 +3106,7 @@ describe('delivery orchestrator', () => {
   it('uses the normal polling cadence when prOpenedAt is missing', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3059,7 +3118,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3117,7 +3176,7 @@ describe('delivery orchestrator', () => {
   it('reconcile-late-review keeps done status when triage resolves to needs_patch', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3129,7 +3188,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'done',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3216,7 +3275,7 @@ describe('delivery orchestrator', () => {
   it('reconcile-late-review rejects when the ticket is not done', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3228,7 +3287,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'in_review',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3259,7 +3318,7 @@ describe('delivery orchestrator', () => {
   it('reconcile-late-review keeps done and preserves prior artifacts on clean timeout', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3271,7 +3330,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'done',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3332,7 +3391,7 @@ describe('delivery orchestrator', () => {
   it('preserves the triage note when recording a final review outcome without a new note', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3344,7 +3403,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'needs_patch',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3415,7 +3474,7 @@ describe('delivery orchestrator', () => {
   it('does not downgrade a patched review outcome when recording clean later', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3427,7 +3486,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'operator_input_needed',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3470,7 +3529,7 @@ describe('delivery orchestrator', () => {
   it('does not reuse a stale unresolved note when recording clean after operator input', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3482,7 +3541,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'operator_input_needed',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3526,7 +3585,7 @@ describe('delivery orchestrator', () => {
   it('reuses existing thread resolutions instead of resolving twice', async () => {
     const state: DeliveryState = {
       planKey: 'phase-03',
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
       statePath: '.agents/delivery/phase-03/state.json',
       reviewsDirPath: '.agents/delivery/phase-03/reviews',
       handoffsDirPath: '.agents/delivery/phase-03/handoffs',
@@ -3538,7 +3597,7 @@ describe('delivery orchestrator', () => {
           title: 'Persist Transmission Identity For Queued Torrents',
           slug: 'persist-transmission-identity-for-queued-torrents',
           ticketFile:
-            'docs/02-delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
+            'docs/product/delivery/phase-03/ticket-01-persist-transmission-identity-for-queued-torrents.md',
           status: 'needs_patch',
           branch:
             'agents/p3-01-persist-transmission-identity-for-queued-torrents',
@@ -3699,6 +3758,94 @@ describe('delivery orchestrator', () => {
     }
   });
 
+  it('prefers subtree review hooks when the repo also has its own .agents directory', async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), 'review-hooks-'));
+    const originalCwd = process.cwd();
+    const originalFetcher = process.env.AI_CODE_REVIEW_FETCHER;
+    const originalTriager = process.env.AI_CODE_REVIEW_TRIAGER;
+
+    try {
+      delete process.env.AI_CODE_REVIEW_FETCHER;
+      delete process.env.AI_CODE_REVIEW_TRIAGER;
+      await mkdir(join(repoRoot, '.agents/skills/pr-review/scripts'), {
+        recursive: true,
+      });
+      await mkdir(
+        join(repoRoot, '.son-of-anton/.agents/skills/pr-review/scripts'),
+        { recursive: true },
+      );
+      await writeFile(
+        join(
+          repoRoot,
+          '.son-of-anton/.agents/skills/pr-review/scripts/fetch_pr_review_comments.sh',
+        ),
+        '#!/usr/bin/env bash\n',
+      );
+      await writeFile(
+        join(
+          repoRoot,
+          '.son-of-anton/.agents/skills/pr-review/scripts/triage_pr_review.sh',
+        ),
+        '#!/usr/bin/env bash\n',
+      );
+
+      process.chdir(repoRoot);
+
+      expect(resolveReviewFetcher()).toBe(
+        '.son-of-anton/.agents/skills/pr-review/scripts/fetch_pr_review_comments.sh',
+      );
+      expect(resolveReviewTriager()).toBe(
+        '.son-of-anton/.agents/skills/pr-review/scripts/triage_pr_review.sh',
+      );
+    } finally {
+      process.chdir(originalCwd);
+      if (typeof originalFetcher === 'undefined') {
+        delete process.env.AI_CODE_REVIEW_FETCHER;
+      } else {
+        process.env.AI_CODE_REVIEW_FETCHER = originalFetcher;
+      }
+      if (typeof originalTriager === 'undefined') {
+        delete process.env.AI_CODE_REVIEW_TRIAGER;
+      } else {
+        process.env.AI_CODE_REVIEW_TRIAGER = originalTriager;
+      }
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to source-repo review hooks when no subtree exists', async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), 'source-review-hooks-'));
+    const originalCwd = process.cwd();
+    const originalFetcher = process.env.AI_CODE_REVIEW_FETCHER;
+    const originalTriager = process.env.AI_CODE_REVIEW_TRIAGER;
+
+    try {
+      delete process.env.AI_CODE_REVIEW_FETCHER;
+      delete process.env.AI_CODE_REVIEW_TRIAGER;
+      process.chdir(repoRoot);
+
+      expect(resolveReviewFetcher()).toBe(
+        '.agents/skills/pr-review/scripts/fetch_pr_review_comments.sh',
+      );
+      expect(resolveReviewTriager()).toBe(
+        '.agents/skills/pr-review/scripts/triage_pr_review.sh',
+      );
+    } finally {
+      process.chdir(originalCwd);
+      if (typeof originalFetcher === 'undefined') {
+        delete process.env.AI_CODE_REVIEW_FETCHER;
+      } else {
+        process.env.AI_CODE_REVIEW_FETCHER = originalFetcher;
+      }
+      if (typeof originalTriager === 'undefined') {
+        delete process.env.AI_CODE_REVIEW_TRIAGER;
+      } else {
+        process.env.AI_CODE_REVIEW_TRIAGER = originalTriager;
+      }
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   it('renders npm deliver invocations with a separator', () => {
     expect(generateRunDeliverInvocation('npm')).toBe('npm run deliver --');
     expect(generateRunDeliverInvocation('bun')).toBe('bun run deliver');
@@ -3806,13 +3953,13 @@ describe('delivery orchestrator', () => {
       branch: 'agents/p1-01-foo',
       baseBranch: 'main',
       slug: 'foo',
-      ticketFile: 'docs/02-delivery/phase-01/ticket-01-foo.md',
+      ticketFile: 'docs/product/delivery/phase-01/ticket-01-foo.md',
       worktreePath: '/tmp/p1_01',
     };
 
     const reviewedState: DeliveryState = {
       planKey: 'phase-1',
-      planPath: 'docs/02-delivery/phase-01/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-01/implementation-plan.md',
       statePath: '.agents/delivery/phase-1/state.json',
       reviewsDirPath: '.agents/delivery/phase-1/reviews',
       handoffsDirPath: '.agents/delivery/phase-1/handoffs',
@@ -3830,7 +3977,7 @@ describe('delivery orchestrator', () => {
           id: 'P1.02',
           title: 'Ticket Two',
           slug: 'bar',
-          ticketFile: 'docs/02-delivery/phase-01/ticket-02-bar.md',
+          ticketFile: 'docs/product/delivery/phase-01/ticket-02-bar.md',
           branch: 'agents/p1-02-bar',
           baseBranch: 'agents/p1-01-foo',
           worktreePath: '/tmp/p1_02',
@@ -3859,18 +4006,27 @@ describe('delivery orchestrator', () => {
         ),
       };
 
-      await expect(
-        advanceToNextTicket(noReviewedState, '/tmp', {
+      try {
+        await advanceToNextTicket(noReviewedState, '/tmp', {
           updatePullRequestBody: () => {},
-        }),
-      ).rejects.toThrow('No reviewed ticket is ready to advance.');
+        });
+        throw new Error('Expected advanceToNextTicket to reject.');
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: 'workflow.advance.requires_reviewed_ticket',
+        });
+        expect((error as Error).message).toContain(
+          'No reviewed ticket is ready to advance.',
+        );
+      }
     });
   });
 
   describe('applyAdvanceBoundaryMode (EE7 cook continuation)', () => {
     const baseState: DeliveryState = {
       planKey: 'engineering-epic-07',
-      planPath: 'docs/02-delivery/engineering-epic-07/implementation-plan.md',
+      planPath:
+        'docs/product/delivery/engineering-epic-07/implementation-plan.md',
       statePath: '.agents/delivery/engineering-epic-07/state.json',
       reviewsDirPath: '.agents/delivery/engineering-epic-07/reviews',
       handoffsDirPath: '.agents/delivery/engineering-epic-07/handoffs',
@@ -3882,7 +4038,7 @@ describe('delivery orchestrator', () => {
           title: 'Boundary policy plumbing and visibility',
           slug: 'boundary-policy-plumbing-and-visibility',
           ticketFile:
-            'docs/02-delivery/engineering-epic-07/ticket-01-boundary-policy-plumbing-and-visibility.md',
+            'docs/product/delivery/engineering-epic-07/ticket-01-boundary-policy-plumbing-and-visibility.md',
           status: 'reviewed',
           branch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',
           baseBranch: 'main',
@@ -3894,7 +4050,7 @@ describe('delivery orchestrator', () => {
           title: 'Gated boundary semantics and resume prompt',
           slug: 'gated-boundary-semantics-and-resume-prompt',
           ticketFile:
-            'docs/02-delivery/engineering-epic-07/ticket-02-gated-boundary-semantics-and-resume-prompt.md',
+            'docs/product/delivery/engineering-epic-07/ticket-02-gated-boundary-semantics-and-resume-prompt.md',
           status: 'pending',
           branch: 'agents/ee7-02-gated-boundary-semantics-and-resume-prompt',
           baseBranch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',

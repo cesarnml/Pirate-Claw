@@ -1,0 +1,16 @@
+{
+  "defaultBranch": "main",
+  "planRoot": "docs",
+  "runtime": "bun",
+  "packageManager": "bun",
+  "ticketBoundaryMode": "gated",
+  "reviewPolicy": {
+    "subagentReview": "disabled",
+    "prReview": "required"
+  },
+  "reviewSubagentOverride": "codex:codex-rescue",
+  "prReviewAgents": [
+    { "login": "coderabbitai", "name": "coderabbit" },
+    { "login": "qodo-merge", "name": "qodo" }
+  ]
+}

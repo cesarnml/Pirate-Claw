@@ -1,11 +1,11 @@
 ---
-name: son-of-anton-ethos
+name: soa-son-of-anton-ethos
 description: Execute approved multi-ticket phase/epic work or standalone (non-ticketed) PR delivery through the repo orchestrator with strong continuation bias. Use automatically when a user asks to execute, begin, start, deliver, implement, continue, resume, run, drive, carry, or work on a phase, epic, or standalone PR, or explicitly mentions son of anton or son-of-anton ethos.
 ---
 
 # Son Of Anton Ethos
 
-**Before executing a single command:** Read `docs/01-delivery/delivery-orchestrator.md` in full. Every orchestrator action — for both ticket stacks (`start`, `post-verify-self-audit`, `codex-preflight`, `open-pr`, `poll-review`, `record-review`, `advance`) and standalone PRs (`ai-review`) — is defined there with exact sequencing and policy. That document is the authoritative command surface. Your own reasoning about what the flow "probably" is does not override it.
+**Before executing a single command:** Read `docs/template/delivery/delivery-orchestrator.md` in full. Every orchestrator action — for both ticket stacks (`start`, `post-verify`, `subagent-review`, `open-pr`, `poll-review`, `record-review`, `advance`) and standalone PRs (`ai-review`) — is defined there with exact sequencing and policy. That document is the authoritative command surface. Your own reasoning about what the flow "probably" is does not override it.
 
 Son of Anton drives approved work to completion. How ticket boundaries are handled is governed by `ticketBoundaryMode` in `orchestrator.config.json`. The orchestrator does not seek repeated permission between tickets — but it honors the boundary contract precisely as configured.
 
@@ -15,7 +15,7 @@ Son of Anton drives approved work to completion. How ticket boundaries are handl
 
 1. **Entrypoint.** Use `bun run deliver`.
 2. **When to use.** Smaller bounded changes ship as standalone PRs without a new phase/epic. Use `bun run deliver ai-review [--pr <number>]` — not the ticketed stacked flow (`--plan …`, `poll-review`, `advance`, etc.).
-3. **Review discipline.** Complete implement → fast verification (`bun run verify:quiet` + scoped tests as needed) → final publication gate (`bun run ci:quiet` for non-doc code changes) → named self-audit (re-read diff, second-pass risky areas). Standalone PRs do not use the ticket-only `post-verify-self-audit` or `codex-preflight` recorders because the flow is stateless, so these remain expected preflight behaviors rather than orchestrator-enforced gates.
+3. **Review discipline.** Complete implement → fast verification (`bun run verify:quiet` + scoped tests as needed) → final publication gate (`bun run ci:quiet` for non-doc code changes) → named self-audit (re-read diff, second-pass risky areas). Standalone PRs do not use the ticket-only `post-verify` or `subagent-review` recorders because the flow is stateless, so these remain expected preflight behaviors rather than orchestrator-enforced gates.
    - Self-audit is required for every standalone PR.
    - For non-trivial code changes, invoke `codex:codex-rescue` via the Agent tool (subagent_type: "codex:codex-rescue") before `ai-review`; doc-only or genuinely trivial changes may skip it.
    - Standalone `ai-review` is the only orchestrator-visible review gate on this path.
@@ -51,10 +51,10 @@ Commit the delivery plan and all ticket docs to the default branch before creati
    1. Implement
    2. Build / verify — use the repo's fast verify command for the inner loop, then the full CI command before `open-pr` on code tickets
    3. Update ticket rationale for behavior or tradeoff changes
-   4. Self-audit — `post-verify-self-audit [clean|patched]`
-      - Under `selfAudit: "skip_doc_only"`: doc-only tickets auto-record `skipped`
-      - Under `selfAudit: "required"`: doc-only tickets still need an explicit `clean` or `patched`
-   5. Codex preflight — if `codexPreflight` is not `"disabled"` (see [Codex Preflight](#codex-preflight))
+   4. Self-audit — `post-verify [clean|patched]`
+      - Under `subagentReview: "skip_doc_only"`: doc-only tickets auto-record `skipped`
+      - Under `subagentReview: "required"`: doc-only tickets still need an explicit `clean` or `patched`
+   5. Subagent review — if `subagentReview` is not `"disabled"` (see [Subagent Review](#subagent-review))
    6. Open / refresh PR — `open-pr`
    7. Run AI-review polling — `poll-review` (see [External Review](#external-review))
    8. Patch prudent findings
@@ -86,29 +86,29 @@ Reset context (/clear), then resume with:
 /soa resume phase-<NN>
 ```
 
-### Codex Preflight
+### Subagent Review
 
 **Role split:**
 
-- **Claude** executes and patches (build mode and self-audit).
-- **Codex** reviews and patches its own findings autonomously — a second AI pass before the PR is published. Claude does not triage Codex output; Codex acts on what it finds.
-- **External AI vendors** (CodeRabbit, Qodo, Greptile, SonarQube) review post-publication via `poll-review`.
+- **Primary agent** executes and patches (build mode and post-verify).
+- **Review subagent** (configured via `reviewSubagentOverride`, e.g. `"codex:codex-rescue"`) reviews and patches its own findings autonomously — a second AI pass before the PR is published. The primary agent does not triage subagent output; the subagent acts on what it finds.
+- **External AI vendors** (e.g. CodeRabbit, Qodo) review post-publication via `poll-review`.
 
-**When `codexPreflight` is `"required"`:**
+**When `subagentReview` is `"required"`:**
 
-1. Invoke Codex via the Agent tool with `subagent_type: "codex:codex-rescue"`. Codex will patch what it finds autonomously.
-2. **Stay idle. No read-ahead.** Wait for the Codex subagent to complete before doing anything else — same discipline as the external review window.
-3. Record: `bun run deliver --plan <plan> codex-preflight [clean|patched]`
+1. Invoke the review subagent via the Agent tool using the `reviewSubagentOverride` value (e.g. `subagent_type: "codex:codex-rescue"`). The subagent will patch what it finds autonomously.
+2. **Stay idle. No read-ahead.** Wait for the subagent to complete before doing anything else — same discipline as the external review window.
+3. Record: `bun run deliver --plan <plan> subagent-review [clean|patched]`
 
-The CLI is a state recorder only — never invoke Codex from within the CLI.
+The CLI is a state recorder only — never invoke the subagent from within the CLI.
 
-**Codex scope contract:** Codex reviews and patches implementation code only. Ticket doc files under `docs/02-delivery/` — including `## Rationale` sections written by Claude during implementation — are part of the ticket deliverable and must not be reverted by Codex. Brief the Codex subagent to skip ticket doc files when invoking it.
+**Subagent scope contract:** The review subagent reviews and patches implementation code only. Ticket doc files under `docs/product/delivery/` — including `## Rationale` sections written during implementation — are part of the ticket deliverable and must not be reverted by the subagent. Brief the subagent to skip ticket doc files when invoking it.
 
-**When `codexPreflight` is `"skip_doc_only"`** (repo default): code tickets still require the Codex step before `open-pr`; doc-only tickets auto-record `skipped`.
+**When `subagentReview` is `"skip_doc_only"`** (repo default): code tickets still require the subagent step before `open-pr`; doc-only tickets auto-record `skipped`.
 
-**When `codexPreflight` is `"disabled"`**: skip the step entirely.
+**When `subagentReview` is `"disabled"`**: skip the step entirely.
 
-If `codex-plugin-cc` is unavailable, set `codexPreflight: "disabled"` in `orchestrator.config.json` to bypass the gate.
+If the configured subagent is unavailable, set `subagentReview: "disabled"` in `orchestrator.config.json` to bypass the gate.
 
 ---
 
@@ -158,4 +158,4 @@ If not blocked, keep executing.
 
 ## On Phase or Epic Completion
 
-Write the retrospective to `notes/public/<plan-path>-retrospective.md` using `.agents/skills/write-retrospective/SKILL.md` for section structure and placement conventions.
+Write the retrospective to `notes/public/<plan-path>-retrospective.md` using the `soa-write-retrospective` skill at `.agents/skills/write-retrospective/SKILL.md` for section structure and placement conventions.

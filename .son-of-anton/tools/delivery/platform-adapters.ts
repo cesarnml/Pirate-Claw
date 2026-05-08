@@ -8,11 +8,11 @@ import {
   fetchOrigin as fetchPlatformOrigin,
   findOpenPullRequest as findPlatformOpenPullRequest,
   hasMergedPullRequestForBranch as hasPlatformMergedPullRequestForBranch,
+  hasLocalBranchCommits as hasPlatformLocalBranchCommits,
   listCommitSubjectsBetween as listPlatformCommitSubjectsBetween,
   readCommitSubject as readPlatformCommitSubject,
   readCurrentBranch as readPlatformCurrentBranch,
   readHeadSha as readPlatformHeadSha,
-  readFirstCommitSubject as readPlatformFirstCommitSubject,
   readLatestCommitSubject as readPlatformLatestCommitSubject,
   readMergeBase as readPlatformMergeBase,
   rebaseOnto as rebasePlatformOnto,
@@ -76,6 +76,7 @@ export type PlatformAdapters = {
     branch: string,
   ) => PullRequestSummary | undefined;
   hasMergedPullRequestForBranch: (cwd: string, branch: string) => boolean;
+  hasLocalBranchCommits: (cwd: string, baseBranch: string) => boolean;
   listCommitSubjectsBetween: (
     cwd: string,
     reviewedHeadSha: string,
@@ -85,7 +86,6 @@ export type PlatformAdapters = {
   readCommitSubject: (cwd: string, sha: string) => string;
   readCurrentBranch: (cwd: string) => string;
   readHeadSha: (cwd: string) => string;
-  readFirstCommitSubject: (cwd: string, baseBranch: string) => string;
   readLatestCommitSubject: (cwd: string) => string;
   readMergeBase: (
     cwd: string,
@@ -184,6 +184,9 @@ export function createPlatformAdapters(
     hasMergedPullRequestForBranch(cwd, branch) {
       return hasPlatformMergedPullRequestForBranch(cwd, branch, config.runtime);
     },
+    hasLocalBranchCommits(cwd, baseBranch) {
+      return hasPlatformLocalBranchCommits(cwd, baseBranch, config.runtime);
+    },
     listCommitSubjectsBetween(cwd, reviewedHeadSha, currentHeadSha, maxCount) {
       return listPlatformCommitSubjectsBetween(
         cwd,
@@ -201,9 +204,6 @@ export function createPlatformAdapters(
     },
     readHeadSha(cwd) {
       return readPlatformHeadSha(cwd, config.runtime);
-    },
-    readFirstCommitSubject(cwd, baseBranch) {
-      return readPlatformFirstCommitSubject(cwd, baseBranch, config.runtime);
     },
     readLatestCommitSubject(cwd) {
       return readPlatformLatestCommitSubject(cwd, config.runtime);

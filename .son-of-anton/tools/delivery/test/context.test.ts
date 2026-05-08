@@ -13,9 +13,8 @@ const baseConfig: ResolvedOrchestratorConfig = {
   packageManager: 'bun',
   ticketBoundaryMode: 'cook',
   reviewPolicy: {
-    selfAudit: 'skip_doc_only',
-    codexPreflight: 'disabled',
-    externalReview: 'disabled',
+    subagentReview: 'skip_doc_only',
+    prReview: 'disabled',
   },
 };
 

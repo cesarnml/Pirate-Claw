@@ -4,6 +4,7 @@ import {
   inferPackageManager,
   VALID_REVIEW_POLICY_STAGE_VALUES,
   type OrchestratorConfig,
+  type PrReviewAgent,
   type ResolvedOrchestratorConfig,
   type ResolvedReviewPolicy,
   type ReviewPolicy,
@@ -12,6 +13,7 @@ import {
 
 export type {
   OrchestratorConfig,
+  PrReviewAgent,
   ResolvedOrchestratorConfig,
   ResolvedReviewPolicy,
   ReviewPolicy,

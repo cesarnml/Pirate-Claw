@@ -5,11 +5,27 @@
   "type": "module",
   "scripts": {
     "deliver": "bun run ./scripts/deliver.ts",
-    "closeout-stack": "bun run ./scripts/closeout-stack.ts"
+    "closeout-stack": "bun run ./scripts/closeout-stack.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:quiet": "eslint . --quiet",
+    "spellcheck": "cspell --no-progress \"**/*\"",
+    "spellcheck:quiet": "cspell --no-progress --no-summary \"**/*\"",
+    "verify": "bun run format:check && bun run lint && bun run spellcheck",
+    "verify:quiet": "prettier --check . --log-level warn && bun run lint:quiet && bun run spellcheck:quiet",
+    "ci": "bun run verify && bun test",
+    "ci:quiet": "bun run verify:quiet && bun test"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/bun": "latest",
-    "typescript": "^5.0.0"
+    "cspell": "^8.19.4",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.59.2"
   },
   "engines": {
     "bun": ">=1.0.0"

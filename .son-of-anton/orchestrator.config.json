@@ -1,12 +1,12 @@
 {
   "defaultBranch": "main",
-  "planRoot": "../docs",
-  "runtime": "node",
-  "packageManager": "pnpm",
-  "ticketBoundaryMode": "gated",
+  "planRoot": "docs",
+  "runtime": "bun",
+  "packageManager": "bun",
+  "ticketBoundaryMode": "cook",
   "reviewPolicy": {
-    "selfAudit": "skip_doc_only",
-    "codexPreflight": "disabled",
-    "externalReview": "disabled"
-  }
+    "subagentReview": "skip_doc_only",
+    "prReview": "skip_doc_only"
+  },
+  "prReviewAgents": [{ "login": "coderabbitai", "name": "coderabbit" }]
 }

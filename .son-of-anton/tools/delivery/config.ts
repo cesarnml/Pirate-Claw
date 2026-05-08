@@ -16,15 +16,21 @@ export type ReviewPolicyStageValue =
   (typeof VALID_REVIEW_POLICY_STAGE_VALUES)[number];
 
 export type ReviewPolicy = {
-  selfAudit?: ReviewPolicyStageValue;
-  codexPreflight?: ReviewPolicyStageValue;
+  subagentReview?: ReviewPolicyStageValue;
+  prReview?: ReviewPolicyStageValue;
+  /** @deprecated Use prReview instead. Accepted for migration; maps to prReview. */
   externalReview?: ReviewPolicyStageValue;
 };
 
 export type ResolvedReviewPolicy = {
-  selfAudit: ReviewPolicyStageValue;
-  codexPreflight: ReviewPolicyStageValue;
-  externalReview: ReviewPolicyStageValue;
+  subagentReview: ReviewPolicyStageValue;
+  prReview: ReviewPolicyStageValue;
+};
+
+export type PrReviewAgent = {
+  name: string;
+  login: string;
+  resolveThreads: boolean;
 };
 
 export type OrchestratorConfig = {
@@ -34,6 +40,8 @@ export type OrchestratorConfig = {
   packageManager?: 'bun' | 'npm' | 'pnpm' | 'yarn';
   ticketBoundaryMode?: TicketBoundaryMode;
   reviewPolicy?: ReviewPolicy;
+  reviewSubagentOverride?: string;
+  prReviewAgents?: PrReviewAgent[];
 };
 
 export type ResolvedOrchestratorConfig = {
@@ -43,6 +51,8 @@ export type ResolvedOrchestratorConfig = {
   packageManager: 'bun' | 'npm' | 'pnpm' | 'yarn';
   ticketBoundaryMode: TicketBoundaryMode;
   reviewPolicy: ResolvedReviewPolicy;
+  reviewSubagentOverride?: string;
+  prReviewAgents?: PrReviewAgent[];
 };
 
 const VALID_RUNTIMES = ['bun', 'node'] as const;
@@ -109,6 +119,29 @@ export async function loadOrchestratorConfig(
       ? parseReviewPolicy(raw.reviewPolicy)
       : undefined;
 
+  const reviewSubagentOverride = optionalNonBlankString(
+    raw.reviewSubagentOverride,
+    'reviewSubagentOverride',
+    'orchestrator.config.json',
+  );
+
+  const resolvedPrReview =
+    reviewPolicy?.prReview ?? reviewPolicy?.externalReview ?? undefined;
+  const prReviewAgents =
+    raw.prReviewAgents !== undefined
+      ? parsePrReviewAgents(raw.prReviewAgents)
+      : undefined;
+
+  if (
+    resolvedPrReview !== undefined &&
+    resolvedPrReview !== 'disabled' &&
+    prReviewAgents === undefined
+  ) {
+    throw new Error(
+      'orchestrator.config.json: prReviewAgents is required when reviewPolicy.prReview is not "disabled". Add a prReviewAgents array or set prReview to "disabled".',
+    );
+  }
+
   return {
     defaultBranch,
     planRoot,
@@ -117,6 +150,8 @@ export async function loadOrchestratorConfig(
     ticketBoundaryMode:
       raw.ticketBoundaryMode as OrchestratorConfig['ticketBoundaryMode'],
     reviewPolicy,
+    reviewSubagentOverride,
+    prReviewAgents,
   };
 }
 
@@ -141,10 +176,14 @@ export function resolveOrchestratorConfig(
     packageManager: raw.packageManager ?? inferPackageManager(cwd),
     ticketBoundaryMode: raw.ticketBoundaryMode ?? 'cook',
     reviewPolicy: {
-      selfAudit: raw.reviewPolicy?.selfAudit ?? 'skip_doc_only',
-      codexPreflight: raw.reviewPolicy?.codexPreflight ?? 'skip_doc_only',
-      externalReview: raw.reviewPolicy?.externalReview ?? 'skip_doc_only',
+      subagentReview: raw.reviewPolicy?.subagentReview ?? 'skip_doc_only',
+      prReview:
+        raw.reviewPolicy?.prReview ??
+        raw.reviewPolicy?.externalReview ??
+        'skip_doc_only',
     },
+    reviewSubagentOverride: raw.reviewSubagentOverride,
+    prReviewAgents: raw.prReviewAgents,
   };
 }
 
@@ -168,7 +207,20 @@ function parseReviewPolicy(raw: unknown): ReviewPolicy {
 
   const obj = raw as Record<string, unknown>;
   const result: ReviewPolicy = {};
-  const KNOWN_KEYS = ['selfAudit', 'codexPreflight', 'externalReview'] as const;
+
+  // Hard error for retired keys — must be caught before the unknown-key guard.
+  if ('selfAudit' in obj) {
+    throw new Error(
+      'orchestrator.config.json: reviewPolicy.selfAudit has been removed. Use reviewPolicy.subagentReview instead.',
+    );
+  }
+  if ('codexPreflight' in obj) {
+    throw new Error(
+      'orchestrator.config.json: reviewPolicy.codexPreflight has been removed. Use reviewPolicy.subagentReview instead.',
+    );
+  }
+
+  const KNOWN_KEYS = ['subagentReview', 'prReview', 'externalReview'] as const;
 
   for (const unknownKey of Object.keys(obj)) {
     if (!KNOWN_KEYS.includes(unknownKey as (typeof KNOWN_KEYS)[number])) {
@@ -199,6 +251,42 @@ function parseReviewPolicy(raw: unknown): ReviewPolicy {
   }
 
   return result;
+}
+
+function parsePrReviewAgents(raw: unknown): PrReviewAgent[] {
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      'orchestrator.config.json: prReviewAgents must be an array.',
+    );
+  }
+
+  return raw.map((item: unknown, index: number) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      throw new Error(
+        `orchestrator.config.json: prReviewAgents[${index}] must be an object.`,
+      );
+    }
+
+    const obj = item as Record<string, unknown>;
+
+    if (typeof obj['name'] !== 'string' || obj['name'].trim() === '') {
+      throw new Error(
+        `orchestrator.config.json: prReviewAgents[${index}].name must be a non-blank string.`,
+      );
+    }
+
+    if (typeof obj['login'] !== 'string' || obj['login'].trim() === '') {
+      throw new Error(
+        `orchestrator.config.json: prReviewAgents[${index}].login must be a non-blank string.`,
+      );
+    }
+
+    return {
+      name: obj['name'].trim(),
+      login: obj['login'].trim(),
+      resolveThreads: obj['resolveThreads'] === true,
+    };
+  });
 }
 
 function optionalNonBlankString(

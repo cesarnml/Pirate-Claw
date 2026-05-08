@@ -18,9 +18,8 @@ const baseConfig: ResolvedOrchestratorConfig = {
   packageManager: 'bun',
   ticketBoundaryMode: 'cook',
   reviewPolicy: {
-    selfAudit: 'skip_doc_only',
-    codexPreflight: 'skip_doc_only',
-    externalReview: 'skip_doc_only',
+    subagentReview: 'skip_doc_only',
+    prReview: 'skip_doc_only',
   },
 };
 
@@ -176,9 +175,8 @@ describe('orchestrator config', () => {
         packageManager: 'npm',
         ticketBoundaryMode: 'cook',
         reviewPolicy: {
-          selfAudit: 'skip_doc_only',
-          codexPreflight: 'skip_doc_only',
-          externalReview: 'skip_doc_only',
+          subagentReview: 'skip_doc_only',
+          prReview: 'skip_doc_only',
         },
       });
     } finally {
@@ -271,7 +269,7 @@ describe('orchestrator config', () => {
       defaultBranch: 'develop',
     };
     const options = createOptions({
-      planPath: 'docs/02-delivery/phase-03/implementation-plan.md',
+      planPath: 'docs/product/delivery/phase-03/implementation-plan.md',
     });
 
     const synced = syncStateFromScratch(
@@ -280,7 +278,8 @@ describe('orchestrator config', () => {
           id: 'P3.01',
           title: 'First Ticket',
           slug: 'first-ticket',
-          ticketFile: 'docs/02-delivery/phase-03/ticket-01-first-ticket.md',
+          ticketFile:
+            'docs/product/delivery/phase-03/ticket-01-first-ticket.md',
         },
       ],
       '/workspace/test',
@@ -289,5 +288,66 @@ describe('orchestrator config', () => {
     );
 
     expect(synced.tickets[0]?.baseBranch).toBe('develop');
+  });
+});
+
+describe('P2.01 — subagentReview schema, prReview, and prReviewAgents validation', () => {
+  it('throws when selfAudit key is present in reviewPolicy', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'p2-cfg-selfaudit-'));
+    try {
+      await writeFile(
+        join(tempDir, 'orchestrator.config.json'),
+        JSON.stringify({ reviewPolicy: { selfAudit: 'disabled' } }),
+      );
+      await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+        /selfAudit/,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true });
+    }
+  });
+
+  it('throws when codexPreflight key is present in reviewPolicy', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'p2-cfg-codexpreflight-'));
+    try {
+      await writeFile(
+        join(tempDir, 'orchestrator.config.json'),
+        JSON.stringify({ reviewPolicy: { codexPreflight: 'disabled' } }),
+      );
+      await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+        /codexPreflight/,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true });
+    }
+  });
+
+  it('throws when prReview is required but prReviewAgents is missing', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'p2-cfg-prreviewagents-'));
+    try {
+      await writeFile(
+        join(tempDir, 'orchestrator.config.json'),
+        JSON.stringify({ reviewPolicy: { prReview: 'required' } }),
+      );
+      await expect(loadOrchestratorConfig(tempDir)).rejects.toThrow(
+        /prReviewAgents/,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true });
+    }
+  });
+
+  it('succeeds when prReview is disabled without prReviewAgents', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'p2-cfg-prreview-disabled-'));
+    try {
+      await writeFile(
+        join(tempDir, 'orchestrator.config.json'),
+        JSON.stringify({ reviewPolicy: { prReview: 'disabled' } }),
+      );
+      const config = await loadOrchestratorConfig(tempDir);
+      expect(config.reviewPolicy?.prReview).toBe('disabled');
+    } finally {
+      await rm(tempDir, { recursive: true });
+    }
   });
 });

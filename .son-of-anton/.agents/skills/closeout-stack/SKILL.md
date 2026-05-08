@@ -1,5 +1,5 @@
 ---
-name: closeout-stack
+name: soa-closeout-stack
 description: Merge a completed stacked PR phase onto main. Use when the developer approves closeout after a multi-ticket delivery is fully reviewed.
 ---
 
@@ -27,7 +27,7 @@ Before `closeout-stack` (or any command you run from the primary checkout), mirr
 - **`state.json`:** copy from the **ticket worktree where the final ticket was advanced to `done`** (or whichever worktree last wrote state). That file is the single control-plane index; earlier worktrees hold stale partial state.
 - **`reviews/` and `handoffs/`:** copy **from every ticket worktree** used during the phase into the primary tree’s `.agents/delivery/<plan-key>/`, **merging** into existing `reviews/` and `handoffs/` directories (per-ticket filenames normally do not collide). Goal: **all** review fetch/triage artifacts and **all** handoff markdown files exist on `main`, not only the set generated in the final worktree.
 
-If you skip this, `closeout-stack` may see wrong PR numbers, and the primary checkout loses local review and handoff evidence that never left an older worktree. See `docs/01-delivery/delivery-orchestrator.md` (State file and primary checkout).
+If you skip this, `closeout-stack` may see wrong PR numbers, and the primary checkout loses local review and handoff evidence that never left an older worktree. See `docs/template/delivery/delivery-orchestrator.md` (State file and primary checkout).
 
 Example (adjust paths and plan key):
 

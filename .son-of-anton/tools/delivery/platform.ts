@@ -458,21 +458,6 @@ export function readLatestCommitSubject(cwd: string, runtime: Runtime): string {
   return runProcess(cwd, ['git', 'log', '-1', '--pretty=%s'], runtime).trim();
 }
 
-export function readFirstCommitSubject(
-  cwd: string,
-  baseBranch: string,
-  runtime: Runtime,
-): string {
-  const subject = runProcess(
-    cwd,
-    ['git', 'log', '--reverse', '--pretty=%s', `${baseBranch}..HEAD`],
-    runtime,
-  )
-    .split('\n')
-    .find((line) => line.trim().length > 0);
-  return subject?.trim() ?? readLatestCommitSubject(cwd, runtime);
-}
-
 export function readCommitSubject(
   cwd: string,
   sha: string,
@@ -737,6 +722,27 @@ export function isLocalBranchDocOnly(
       .map((f) => f.trim())
       .filter(Boolean);
     return files.length > 0 && files.every((f) => f.endsWith('.md'));
+  } catch {
+    return false;
+  }
+}
+
+export function hasLocalBranchCommits(
+  cwd: string,
+  baseBranch: string,
+  runtime: Runtime,
+  runProcessOverride?: (cwd: string, cmd: string[]) => string,
+): boolean {
+  try {
+    const runner =
+      runProcessOverride ?? ((c, cmd) => runProcess(c, cmd, runtime));
+    const stdout = runner(cwd, [
+      'git',
+      'rev-list',
+      '--count',
+      `origin/${baseBranch}..HEAD`,
+    ]);
+    return Number.parseInt(stdout.trim(), 10) > 0;
   } catch {
     return false;
   }

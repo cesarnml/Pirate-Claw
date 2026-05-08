@@ -1,3 +1,6 @@
+import { existsSync, realpathSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { getUsage, parseCliArgs, resolveOptionsForCommand } from './cli';
 import { ensureEnvReady as ensureEnvReadyImpl } from './env';
 import {
@@ -77,6 +80,7 @@ import {
   formatStandaloneAiReviewResult,
   formatStatus,
   resolveEffectiveAdvanceBoundaryMode,
+  resolveNextCommand,
   type RepairStateResult,
 } from './format';
 import {
@@ -89,13 +93,69 @@ import {
 } from './review';
 import {
   advanceToNextTicket,
+  createWorkflowContractError,
   materializeTicketContext,
   openPullRequest as openPullRequestImpl,
-  recordCodexPreflight as recordCodexPreflightImpl,
-  recordPostVerifySelfAudit as recordPostVerifySelfAuditImpl,
+  recordSubagentReview as recordSubagentReviewImpl,
+  recordPostVerify as recordPostVerifyImpl,
   restackTicket as restackTicketImpl,
   startTicket as startTicketImpl,
 } from './ticket-flow';
+
+export const WORKTREE_EXEMPT = new Set(['status', 'sync', 'start']);
+
+export function assertWorktreeGuard(
+  cwd: string,
+  command: string,
+  positionals: string[],
+  state: DeliveryState,
+  config: ResolvedOrchestratorConfig,
+): void {
+  if (WORKTREE_EXEMPT.has(command)) return;
+
+  const activeTicket =
+    state.tickets.find((t) => t.status === 'in_progress') ??
+    state.tickets.find((t) => t.status === 'verified') ??
+    state.tickets.find((t) => t.status === 'subagent_review_complete') ??
+    state.tickets.find((t) => t.status === 'in_review') ??
+    state.tickets.find((t) => t.status === 'needs_patch') ??
+    state.tickets.find((t) => t.status === 'operator_input_needed') ??
+    state.tickets.find((t) => t.status === 'reviewed');
+
+  if (!activeTicket) return;
+
+  const resolvedCwd = cwd;
+  const expectedPath = (() => {
+    try {
+      return realpathSync(activeTicket.worktreePath);
+    } catch {
+      return resolve(activeTicket.worktreePath);
+    }
+  })();
+
+  if (resolvedCwd !== expectedPath) {
+    const invoke = generateRunDeliverInvocation(config.packageManager);
+    const recoveryArgs = [command, ...positionals].join(' ');
+    const recovery = `cd ${expectedPath} && ${invoke} --plan ${state.planPath} ${recoveryArgs}`;
+    const nextCommand = resolveNextCommand(
+      activeTicket.status,
+      config,
+      state.planPath,
+      activeTicket.id,
+    );
+    const nextCommandHint = nextCommand
+      ? `\nNext command from worktree: ${nextCommand}`
+      : '';
+    throw createWorkflowContractError(
+      'workflow.worktree_guard.wrong_worktree',
+      `Command '${command}' for ticket ${activeTicket.id} must be run from its worktree.\n` +
+        `Current directory: ${resolvedCwd}\n` +
+        `Expected worktree: ${expectedPath}\n` +
+        `Recovery: ${recovery}` +
+        nextCommandHint,
+    );
+  }
+}
 
 export async function runDeliveryOrchestrator(
   argv: string[],
@@ -174,6 +234,15 @@ export async function runDeliveryOrchestrator(
 
     const state = await loadState(cwd, options, context.config);
 
+    const resolvedCwd = await realpath(cwd).catch(() => cwd);
+    assertWorktreeGuard(
+      resolvedCwd,
+      parsed.command,
+      parsed.positionals,
+      state,
+      context.config,
+    );
+
     switch (parsed.command) {
       case 'sync': {
         await saveState(cwd, state);
@@ -200,18 +269,12 @@ export async function runDeliveryOrchestrator(
         );
         return 0;
       }
-      case 'post-verify-self-audit':
-      case 'internal-review': {
-        if (parsed.command === 'internal-review') {
-          console.error(
-            'Note: `internal-review` is deprecated; use `post-verify-self-audit`.',
-          );
-        }
+      case 'post-verify': {
         const { auditOutcome, auditTicketId, auditPatchCommitArgs } =
-          parseSelfAuditArgs(parsed.positionals);
+          parsePostVerifyArgs(parsed.positionals);
         if (auditOutcome !== 'patched' && auditPatchCommitArgs.length > 0) {
           throw new Error(
-            'Self-audit patch commits are only allowed when outcome is `patched`.',
+            'Post-verify patch commits are only allowed when outcome is `patched`.',
           );
         }
         const auditPatchCommits =
@@ -226,74 +289,64 @@ export async function runDeliveryOrchestrator(
                 )?.worktreePath ?? cwd,
                 context,
                 auditPatchCommitArgs,
-                '[self-audit]',
-                'Self-audit',
+                '[post-verify]',
+                'Post-verify',
               )
             : undefined;
-        const nextState = await recordPostVerifySelfAudit(
+        const nextState = await recordPostVerify(
           state,
           auditTicketId,
           auditOutcome,
           context.config,
-          {},
+          { hasLocalBranchCommits: context.platform.hasLocalBranchCommits },
           auditPatchCommits,
         );
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState, context.config));
         return 0;
       }
-      case 'codex-preflight': {
-        const preflightPositional = parsed.positionals[0];
-        const preflightOutcome =
-          preflightPositional === 'clean' || preflightPositional === 'patched'
-            ? preflightPositional
-            : undefined;
-        const preflightTarget = state.tickets.find(
-          (t) => t.status === 'post_verify_self_audit_complete',
-        );
-        const isDocOnly = preflightTarget
+      case 'subagent-review': {
+        const {
+          auditOutcome: subagentOutcome,
+          auditPatchCommitArgs: subagentPatchCommitArgs,
+          auditTicketId: subagentTicketId,
+        } = parsePostVerifyArgs(parsed.positionals);
+        const subagentTarget =
+          (subagentTicketId
+            ? state.tickets.find((t) => t.id === subagentTicketId)
+            : state.tickets.find((t) => t.status === 'verified')) ?? undefined;
+        const isDocOnly = subagentTarget
           ? isPlatformLocalBranchDocOnly(
-              preflightTarget.worktreePath,
-              preflightTarget.baseBranch,
+              subagentTarget.worktreePath,
+              subagentTarget.baseBranch,
               context.config.runtime,
             )
           : false;
-        const preflightNote =
-          preflightOutcome === 'clean' ? parsed.positionals[1] : undefined;
-        if (preflightOutcome === 'clean' && !isDocOnly && !preflightNote) {
-          throw new Error(
-            'codex-preflight clean requires a note summarizing what Codex reviewed and concluded. Usage: codex-preflight clean "<note>"',
-          );
-        }
-        if (preflightOutcome === 'patched' && parsed.positionals.length > 1) {
-          throw new Error(
-            'Codex preflight patch commits are only allowed when outcome is `patched`.',
-          );
-        }
-        const nextState = recordCodexPreflight(
+        const nextState = recordSubagentReview(
           state,
-          preflightOutcome,
+          subagentOutcome,
           isDocOnly,
-          context.config.reviewPolicy.codexPreflight,
-          preflightOutcome === 'patched'
+          context.config.reviewPolicy.subagentReview,
+          subagentOutcome === 'patched'
             ? resolveInternalReviewPatchCommits(
-                preflightTarget?.worktreePath ?? cwd,
+                subagentTarget?.worktreePath ?? cwd,
                 context,
-                parsed.positionals.slice(1),
-                '[codexPreflight]',
-                'Codex preflight',
+                subagentPatchCommitArgs,
+                '[subagent-review]',
+                'Subagent review',
               )
             : undefined,
-          preflightNote,
+          context.config.reviewSubagentOverride,
+          subagentTicketId,
         );
-        const justRecordedPreflight = nextState.tickets.find(
+        const justRecorded = nextState.tickets.find(
           (t) =>
-            t.status === 'codex_preflight_complete' &&
+            t.status === 'subagent_review_complete' &&
             state.tickets.find((prev) => prev.id === t.id)?.status ===
-              'post_verify_self_audit_complete',
+              'verified',
         );
-        if (justRecordedPreflight?.codexPreflightOutcome === 'skipped') {
-          console.log('Doc-only ticket — Codex preflight auto-skipped.');
+        if (justRecorded?.subagentReviewOutcome === 'skipped') {
+          console.log('Doc-only ticket — subagent review auto-skipped.');
         }
         await saveState(cwd, nextState);
         console.log(formatStatus(nextState, context.config));
@@ -331,18 +384,18 @@ export async function runDeliveryOrchestrator(
         if (
           pollTarget &&
           shouldAutoRecordReviewSkippedForPollReview(
-            context.config.reviewPolicy.externalReview,
+            context.config.reviewPolicy.prReview,
             pollTarget,
           )
         ) {
           const skipNote =
-            context.config.reviewPolicy.externalReview === 'disabled'
-              ? 'external AI review disabled by policy'
-              : 'doc-only PR; external AI review skipped by policy';
+            context.config.reviewPolicy.prReview === 'disabled'
+              ? 'PR review disabled by policy'
+              : 'doc-only PR; PR review skipped by policy';
           console.log(
-            context.config.reviewPolicy.externalReview === 'disabled'
-              ? `externalReview=disabled for ${pollTarget.id}: skipping AI review window, recording skipped`
-              : `doc_only=true for ${pollTarget.id} under externalReview=skip_doc_only: skipping AI review window, recording skipped`,
+            context.config.reviewPolicy.prReview === 'disabled'
+              ? `prReview=disabled for ${pollTarget.id}: skipping AI review window, recording skipped`
+              : `doc_only=true for ${pollTarget.id} under prReview=skip_doc_only: skipping AI review window, recording skipped`,
           );
           const docOnlyState = await recordReview(
             state,
@@ -448,6 +501,9 @@ export async function runDeliveryOrchestrator(
           context,
         );
         await saveState(cwd, nextState);
+        await syncStateToPrimaryIfNeeded(cwd, nextState, (wt) =>
+          findPrimaryWorktreePath(wt, context.config),
+        );
         console.log(formatStatus(nextState, context.config));
         const boundaryGuidance = formatAdvanceBoundaryGuidance(
           state,
@@ -512,8 +568,9 @@ export function findPrimaryWorktreePath(
 export function parsePlan(
   markdown: string,
   planPath: string,
+  cwd?: string,
 ): TicketDefinition[] {
-  return parsePlanImpl(markdown, planPath);
+  return parsePlanImpl(markdown, planPath, cwd);
 }
 
 export function syncStateFromScratch(
@@ -558,7 +615,9 @@ export function resolveReviewFetcher(): string {
     return process.env.AI_CODE_REVIEW_FETCHER;
   }
 
-  return '.agents/skills/ai-code-review/scripts/fetch_ai_pr_comments.sh';
+  return resolveSonOfAntonSkillScript(
+    'pr-review/scripts/fetch_pr_review_comments.sh',
+  );
 }
 
 export function resolveReviewTriager(): string {
@@ -566,7 +625,16 @@ export function resolveReviewTriager(): string {
     return process.env.AI_CODE_REVIEW_TRIAGER;
   }
 
-  return '.agents/skills/ai-code-review/scripts/triage_ai_review.sh';
+  return resolveSonOfAntonSkillScript('pr-review/scripts/triage_pr_review.sh');
+}
+
+function resolveSonOfAntonSkillScript(scriptPath: string): string {
+  const subtreePath = `.son-of-anton/.agents/skills/${scriptPath}`;
+  if (existsSync(resolve(process.cwd(), subtreePath))) {
+    return subtreePath;
+  }
+
+  return `.agents/skills/${scriptPath}`;
 }
 
 export function createOptions(input: {
@@ -632,6 +700,34 @@ export async function saveState(
   await saveStateImpl(cwd, state);
 }
 
+export async function syncStateToPrimaryIfNeeded(
+  cwd: string,
+  state: DeliveryState,
+  findPrimaryPath: (cwd: string) => string | undefined,
+): Promise<void> {
+  const primaryPath = findPrimaryPath(cwd);
+  if (!primaryPath) {
+    return;
+  }
+
+  const canonicalizePath = async (path: string): Promise<string> => {
+    try {
+      return await realpath(path);
+    } catch {
+      return resolve(path);
+    }
+  };
+
+  const [primaryCanonicalPath, cwdCanonicalPath] = await Promise.all([
+    canonicalizePath(primaryPath),
+    canonicalizePath(cwd),
+  ]);
+
+  if (primaryCanonicalPath !== cwdCanonicalPath) {
+    await saveState(primaryPath, state);
+  }
+}
+
 export function summarizeStateDifferences(
   existing: DeliveryState,
   repaired: DeliveryState,
@@ -652,6 +748,8 @@ async function startTicket(
     copyLocalBootstrapFilesIfPresent,
     materializeTicketContext,
     relativeToRepo,
+    subagentReviewPolicy: context.config.reviewPolicy.subagentReview,
+    ticketBoundaryMode: context.config.ticketBoundaryMode,
   });
 }
 
@@ -672,7 +770,7 @@ export async function copyLocalEnvIfPresent(
   await copyPlatformEnvIfPresent(sourceWorktreePath, targetWorktreePath);
 }
 
-export async function recordPostVerifySelfAudit(
+export async function recordPostVerify(
   state: DeliveryState,
   ticketId?: string,
   outcome?: ReviewOutcome,
@@ -683,12 +781,13 @@ export async function recordPostVerifySelfAudit(
       baseBranch: string,
       runtime: Runtime,
     ) => boolean;
-    selfAuditPolicy?: ReviewPolicyStageValue;
+    hasLocalBranchCommits?: (cwd: string, baseBranch: string) => boolean;
+    postVerifyPolicy?: ReviewPolicyStageValue;
   } = {},
   patchCommits?: InternalReviewPatchCommit[],
 ): Promise<DeliveryState> {
   if (!config) {
-    throw new Error('recordPostVerifySelfAudit requires explicit config.');
+    throw new Error('recordPostVerify requires explicit config.');
   }
 
   const target =
@@ -696,49 +795,68 @@ export async function recordPostVerifySelfAudit(
       ? state.tickets.find((ticket) => ticket.id === ticketId)
       : state.tickets.find((ticket) => ticket.status === 'in_progress')) ??
     undefined;
-  const selfAuditPolicy =
-    dependencies.selfAuditPolicy ?? config.reviewPolicy.selfAudit;
+  const subagentReviewPolicy =
+    dependencies.postVerifyPolicy ?? config.reviewPolicy.subagentReview;
   const isDocOnly =
     target &&
-    selfAuditPolicy !== 'disabled' &&
+    subagentReviewPolicy !== 'disabled' &&
     (dependencies.isLocalBranchDocOnly ?? isPlatformLocalBranchDocOnly)(
       target.worktreePath,
       target.baseBranch,
       config.runtime,
     );
 
-  if (selfAuditPolicy === 'skip_doc_only' && isDocOnly) {
-    return recordPostVerifySelfAuditImpl(state, ticketId, 'skipped', undefined);
+  if (isDocOnly && target && dependencies.hasLocalBranchCommits !== undefined) {
+    const hasCommits = dependencies.hasLocalBranchCommits(
+      target.worktreePath,
+      target.baseBranch,
+    );
+    if (!hasCommits) {
+      throw new Error(
+        `No commits on branch for doc-only ticket ${target.id}. Add or update documentation files before continuing.`,
+      );
+    }
   }
 
-  if (selfAuditPolicy === 'required' && isDocOnly && outcome === undefined) {
+  if (subagentReviewPolicy === 'skip_doc_only' && isDocOnly) {
+    return recordPostVerifyImpl(state, ticketId, 'skipped', undefined);
+  }
+
+  if (
+    subagentReviewPolicy === 'required' &&
+    isDocOnly &&
+    outcome === undefined
+  ) {
     throw new Error(
-      `Ticket ${target.id} requires an explicit self-audit outcome. Pass \`clean\` or \`patched\`.`,
+      `Ticket ${target.id} requires an explicit post-verify outcome. Pass \`clean\` or \`patched\`.`,
     );
   }
 
-  return recordPostVerifySelfAuditImpl(state, ticketId, outcome, patchCommits);
+  return recordPostVerifyImpl(state, ticketId, outcome, patchCommits);
 }
 
-export function recordCodexPreflight(
+export function recordSubagentReview(
   state: DeliveryState,
   outcome?: 'clean' | 'patched',
   isDocOnly?: boolean,
   policy?: ReviewPolicyStageValue,
   patchCommits?: InternalReviewPatchCommit[],
-  note?: string,
+  agentName?: string,
+  ticketId?: string,
 ): DeliveryState {
   if (!policy) {
-    throw new Error('recordCodexPreflight requires an explicit policy.');
+    throw new Error('recordSubagentReview requires an explicit policy.');
   }
 
-  return recordCodexPreflightImpl(
+  return recordSubagentReviewImpl(
     state,
     outcome,
     isDocOnly,
     policy,
     patchCommits,
-    note,
+    agentName,
+    undefined,
+    ticketId,
   );
 }
 
@@ -756,7 +874,7 @@ function normalizeUniquePatchCommitShas(rawShas: string[]): string[] {
   return [...new Set(rawShas.map((sha) => sha.trim()).filter(Boolean))];
 }
 
-function parseSelfAuditArgs(positionals: string[]): {
+function parsePostVerifyArgs(positionals: string[]): {
   auditOutcome?: ReviewOutcome;
   auditPatchCommitArgs: string[];
   auditTicketId?: string;
@@ -783,7 +901,7 @@ function resolveInternalReviewPatchCommits(
   cwd: string,
   context: DeliveryOrchestratorContext,
   rawShas: string[],
-  suffix: '[self-audit]' | '[codexPreflight]',
+  suffix: '[post-verify]' | '[subagent-review]',
   stageLabel: string,
 ): InternalReviewPatchCommit[] {
   const platform = context.platform;
@@ -810,12 +928,11 @@ export async function openPullRequest(
     assertReviewerFacingMarkdown,
     buildPullRequestBody,
     buildPullRequestTitle,
-    codexPreflightPolicy: context.config.reviewPolicy.codexPreflight,
+    subagentReviewPolicy: context.config.reviewPolicy.subagentReview,
     createPullRequest: platform.createPullRequest,
     editPullRequest: platform.editPullRequest,
     ensureBranchPushed: platform.ensureBranchPushed,
     findOpenPullRequest: platform.findOpenPullRequest,
-    readFirstCommitSubject: platform.readFirstCommitSubject,
     reportProgress: (message: string) => console.log(message),
     resolveGitHubRepo: platform.resolveGitHubRepoForOrchestrator,
   });

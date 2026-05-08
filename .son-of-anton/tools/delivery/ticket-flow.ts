@@ -14,15 +14,49 @@ import type { ReviewActionCommit } from './pr-metadata';
 import { saveState as saveStateImpl } from './state';
 import type { ReviewPolicyStageValue } from './config';
 import type {
-  CodexPreflightOutcome,
   DeliveryState,
   InternalReviewPatchCommit,
   ReviewOutcome,
+  SubagentReviewOutcome,
   TicketState,
 } from './types';
 
+type WorkflowContractCode =
+  | 'workflow.advance.requires_reviewed_ticket'
+  | 'workflow.open_pr.invalid_state'
+  | 'workflow.open_pr.requires_post_verify'
+  | 'workflow.open_pr.requires_subagent_review'
+  | 'workflow.worktree_guard.wrong_worktree';
+
+type WorkflowContractError = Error & { code: WorkflowContractCode };
+
+export function createWorkflowContractError(
+  code: WorkflowContractCode,
+  message: string,
+): WorkflowContractError {
+  return Object.assign(new Error(message), { code });
+}
+
+export async function runOptionalDependencyHook<TArgs extends unknown[]>(
+  hook: ((...args: TArgs) => Promise<void> | void) | undefined,
+  ...args: TArgs
+): Promise<void> {
+  if (!hook) {
+    return;
+  }
+
+  await hook(...args);
+}
+
+function runOptionalDependencyHookSync<TArgs extends unknown[]>(
+  hook: ((...args: TArgs) => void) | undefined,
+  ...args: TArgs
+): void {
+  hook?.(...args);
+}
+
 function validateInternalReviewPatchCommits(input: {
-  outcome: ReviewOutcome | CodexPreflightOutcome;
+  outcome: ReviewOutcome | SubagentReviewOutcome;
   patchCommits: InternalReviewPatchCommit[] | undefined;
   stageLabel: string;
 }): void {
@@ -69,16 +103,17 @@ export function buildTicketHandoff(
     'id' | 'title' | 'ticketFile' | 'branch' | 'baseBranch' | 'worktreePath'
   >,
   modifiedSectionsNote?: string,
+  options?: { ticketBoundaryMode?: string; subagentReviewPolicy?: string },
 ): string {
   const ticketIndex = state.tickets.findIndex(
     (candidate) => candidate.id === ticket.id,
   );
   const previous = ticketIndex > 0 ? state.tickets[ticketIndex - 1] : undefined;
   const requiredReads = [
-    'docs/00-overview/start-here.md',
+    'docs/template/overview/start-here.md',
     state.planPath,
     ticket.ticketFile,
-    'docs/01-delivery/delivery-orchestrator.md',
+    'docs/template/delivery/delivery-orchestrator.md',
   ];
   const lines = [
     '# Ticket Handoff',
@@ -147,6 +182,16 @@ export function buildTicketHandoff(
     '- Stop if the work requires a broader redesign beyond the ticket scope.',
   );
 
+  if (options?.ticketBoundaryMode === 'gated') {
+    const nextCommand =
+      options.subagentReviewPolicy === 'disabled' ||
+      options.subagentReviewPolicy === undefined
+        ? 'open-pr'
+        : 'subagent-review';
+    lines.push('', '## RESUME COMMAND', '');
+    lines.push(`\`bun run deliver --plan ${state.planPath} ${nextCommand}\``);
+  }
+
   return lines.join('\n') + '\n';
 }
 
@@ -156,6 +201,8 @@ export async function writeTicketHandoff(
   ticketId: string,
   dependencies: {
     relativeToRepo: (cwd: string, absolutePath: string) => string;
+    subagentReviewPolicy?: string;
+    ticketBoundaryMode?: string;
   },
 ): Promise<{ relativePath: string; generatedAt: string }> {
   const ticket = state.tickets.find((candidate) => candidate.id === ticketId);
@@ -178,7 +225,10 @@ export async function writeTicketHandoff(
   await mkdir(dirname(absolutePath), { recursive: true });
   await writeFile(
     absolutePath,
-    buildTicketHandoff(state, ticket, modifiedSectionsNote),
+    buildTicketHandoff(state, ticket, modifiedSectionsNote, {
+      ticketBoundaryMode: dependencies.ticketBoundaryMode,
+      subagentReviewPolicy: dependencies.subagentReviewPolicy,
+    }),
     'utf8',
   );
 
@@ -239,6 +289,8 @@ export async function startTicket(
       ticketId: string,
     ) => Promise<void>;
     relativeToRepo: (cwd: string, absolutePath: string) => string;
+    subagentReviewPolicy?: string;
+    ticketBoundaryMode?: string;
   },
 ): Promise<DeliveryState> {
   const active = state.tickets.find(
@@ -270,7 +322,12 @@ export async function startTicket(
   }
 
   if (target.status === 'in_progress') {
-    await dependencies.materializeTicketContext?.(state, cwd, target.id);
+    await runOptionalDependencyHook(
+      dependencies.materializeTicketContext,
+      state,
+      cwd,
+      target.id,
+    );
     return state;
   }
 
@@ -288,6 +345,8 @@ export async function startTicket(
 
   const handoff = await writeTicketHandoff(state, cwd, target.id, {
     relativeToRepo: dependencies.relativeToRepo,
+    subagentReviewPolicy: dependencies.subagentReviewPolicy,
+    ticketBoundaryMode: dependencies.ticketBoundaryMode,
   });
 
   const nextState: DeliveryState = {
@@ -304,12 +363,17 @@ export async function startTicket(
     ),
   };
 
-  await dependencies.materializeTicketContext?.(nextState, cwd, target.id);
+  await runOptionalDependencyHook(
+    dependencies.materializeTicketContext,
+    nextState,
+    cwd,
+    target.id,
+  );
 
   return nextState;
 }
 
-export function recordPostVerifySelfAudit(
+export function recordPostVerify(
   state: DeliveryState,
   ticketId?: string,
   outcome?: ReviewOutcome,
@@ -323,18 +387,16 @@ export function recordPostVerifySelfAudit(
     undefined;
 
   if (!target) {
-    throw new Error(
-      'No in-progress ticket found to mark post-verify self-audit complete.',
-    );
+    throw new Error('No in-progress ticket found to mark verified.');
   }
 
-  if (target.status === 'post_verify_self_audit_complete') {
+  if (target.status === 'verified') {
     return state;
   }
 
   if (target.status !== 'in_progress') {
     throw new Error(
-      `Ticket ${target.id} must be in progress before post-verify self-audit can be recorded.`,
+      `Ticket ${target.id} must be in progress before post-verify can be recorded.`,
     );
   }
 
@@ -343,7 +405,7 @@ export function recordPostVerifySelfAudit(
   validateInternalReviewPatchCommits({
     outcome: resolvedOutcome,
     patchCommits,
-    stageLabel: 'Self-audit',
+    stageLabel: 'Post-verify',
   });
 
   return {
@@ -352,40 +414,48 @@ export function recordPostVerifySelfAudit(
       ticket.id === target.id
         ? {
             ...ticket,
-            status: 'post_verify_self_audit_complete',
-            postVerifySelfAuditCompletedAt: completedAt,
-            selfAuditOutcome: resolvedOutcome,
-            selfAuditPatchCommits: patchCommits,
+            status: 'verified' as const,
+            verifiedAt: completedAt,
+            verifyOutcome: resolvedOutcome,
+            verifyPatchCommits: patchCommits,
           }
         : ticket,
     ),
   };
 }
 
-/** @deprecated Use `recordPostVerifySelfAudit`. */
-export const recordInternalReview = recordPostVerifySelfAudit;
-
-export function recordCodexPreflight(
+export function recordSubagentReview(
   state: DeliveryState,
   outcome?: 'clean' | 'patched',
   isDocOnly?: boolean,
   policy: ReviewPolicyStageValue = 'skip_doc_only',
   patchCommits?: InternalReviewPatchCommit[],
-  note?: string,
+  agentName?: string,
   now: () => string = () => new Date().toISOString(),
+  ticketId?: string,
 ): DeliveryState {
-  const target = state.tickets.find(
-    (ticket) => ticket.status === 'post_verify_self_audit_complete',
-  );
+  const target =
+    (ticketId
+      ? state.tickets.find((ticket) => ticket.id === ticketId)
+      : state.tickets.find((ticket) => ticket.status === 'verified')) ??
+    undefined;
 
   if (!target) {
     throw new Error(
-      'No ticket at post_verify_self_audit_complete status found to record Codex preflight.',
+      ticketId
+        ? `Unknown ticket ${ticketId}.`
+        : 'No ticket at verified status found to record subagent review.',
+    );
+  }
+
+  if (target.status !== 'verified') {
+    throw new Error(
+      `Ticket ${target.id} must be at verified status before subagent review can be recorded.`,
     );
   }
 
   const docOnly = isDocOnly ?? !!target.docOnly;
-  let resolvedOutcome: CodexPreflightOutcome;
+  let resolvedOutcome: SubagentReviewOutcome;
 
   if (policy === 'skip_doc_only' && docOnly) {
     resolvedOutcome = 'skipped';
@@ -393,13 +463,13 @@ export function recordCodexPreflight(
     resolvedOutcome = outcome;
   } else {
     throw new Error(
-      `Ticket ${target.id} requires a Codex preflight outcome. Pass \`clean\` or \`patched\`.`,
+      `Ticket ${target.id} requires a subagent review outcome. Pass \`clean\` or \`patched\`.`,
     );
   }
   validateInternalReviewPatchCommits({
     outcome: resolvedOutcome,
     patchCommits,
-    stageLabel: 'Codex preflight',
+    stageLabel: 'Subagent review',
   });
 
   const completedAt = now();
@@ -410,11 +480,11 @@ export function recordCodexPreflight(
       ticket.id === target.id
         ? {
             ...ticket,
-            status: 'codex_preflight_complete',
-            codexPreflightOutcome: resolvedOutcome,
-            codexPreflightCompletedAt: completedAt,
-            codexPreflightNote: note,
-            codexPreflightPatchCommits: patchCommits,
+            status: 'subagent_review_complete' as const,
+            subagentReviewOutcome: resolvedOutcome,
+            subagentReviewCompletedAt: completedAt,
+            subagentReviewPatchCommits: patchCommits,
+            subagentReviewAgent: agentName,
           }
         : ticket,
     ),
@@ -437,10 +507,9 @@ export function openPullRequest(
       },
     ) => string;
     buildPullRequestTitle: (
-      ticket: Pick<TicketState, 'id' | 'title'>,
-      commitSubject?: string,
+      ticket: Pick<TicketState, 'id' | 'title' | 'ticketFile' | 'scope'>,
     ) => string;
-    codexPreflightPolicy?: ReviewPolicyStageValue;
+    subagentReviewPolicy?: ReviewPolicyStageValue;
     createPullRequest: (
       cwd: string,
       options: {
@@ -464,7 +533,6 @@ export function openPullRequest(
       cwd: string,
       branch: string,
     ) => PullRequestSummary | undefined;
-    readFirstCommitSubject: (cwd: string, baseBranch: string) => string;
     reportProgress?: (message: string) => void;
     resolveGitHubRepo?: (
       cwd: string,
@@ -475,53 +543,56 @@ export function openPullRequest(
     (ticketId
       ? state.tickets.find((ticket) => ticket.id === ticketId)
       : (state.tickets.find(
-          (ticket) => ticket.status === 'codex_preflight_complete',
+          (ticket) => ticket.status === 'subagent_review_complete',
         ) ??
-        state.tickets.find(
-          (ticket) => ticket.status === 'post_verify_self_audit_complete',
-        ) ??
-        state.tickets.find((ticket) => ticket.status === 'in_review'))) ??
+        state.tickets.find((ticket) => ticket.status === 'verified') ??
+        state.tickets.find((ticket) => ticket.status === 'in_review') ??
+        state.tickets.find((ticket) => ticket.status === 'in_progress'))) ??
     undefined;
 
   if (!target) {
-    throw new Error('No ticket in a PR-openable state found to open as a PR.');
+    throw createWorkflowContractError(
+      'workflow.open_pr.invalid_state',
+      'No ticket in a PR-openable state found to open as a PR.',
+    );
   }
 
   if (target.status === 'in_progress') {
-    throw new Error(
-      `Ticket ${target.id} must complete post-verify self-audit before opening a PR.`,
+    throw createWorkflowContractError(
+      'workflow.open_pr.requires_post_verify',
+      `Ticket ${target.id} is at status in_progress. Complete post-verify before opening a PR.`,
     );
   }
 
   if (
-    target.status === 'post_verify_self_audit_complete' &&
-    dependencies.codexPreflightPolicy !== undefined &&
-    dependencies.codexPreflightPolicy !== 'disabled'
+    target.status === 'verified' &&
+    dependencies.subagentReviewPolicy !== undefined &&
+    dependencies.subagentReviewPolicy !== 'disabled'
   ) {
-    throw new Error(
-      `Ticket ${target.id} requires Codex preflight before opening a PR. Run \`bun run deliver codex-preflight <clean|patched>\` after completing the Codex review step. If codex-plugin-cc is unavailable, set codexPreflight to "disabled" in orchestrator.config.json to bypass.`,
+    throw createWorkflowContractError(
+      'workflow.open_pr.requires_subagent_review',
+      `Ticket ${target.id} is at status verified and requires subagent-review before opening a PR. Run \`bun run deliver --plan ${state.planPath} subagent-review <clean|patched>\` after completing the subagent review step. If the subagent is unavailable, set subagentReview to "disabled" in orchestrator.config.json to bypass.`,
     );
   }
 
   if (
-    target.status !== 'post_verify_self_audit_complete' &&
-    target.status !== 'codex_preflight_complete' &&
+    target.status !== 'verified' &&
+    target.status !== 'subagent_review_complete' &&
     target.status !== 'in_review'
   ) {
-    throw new Error(
+    throw createWorkflowContractError(
+      'workflow.open_pr.invalid_state',
       `Ticket ${target.id} is not in a PR-openable state. Current status: ${target.status}.`,
     );
   }
 
-  dependencies.reportProgress?.(
+  runOptionalDependencyHookSync(
+    dependencies.reportProgress,
     `open-pr: publishing branch ${target.branch} to origin (push hooks may take a bit)...`,
   );
   dependencies.ensureBranchPushed(target.worktreePath, target.branch);
 
-  const title = dependencies.buildPullRequestTitle(
-    target,
-    dependencies.readFirstCommitSubject(target.worktreePath, target.baseBranch),
-  );
+  const title = dependencies.buildPullRequestTitle(target);
   const body = dependencies.buildPullRequestBody(state, target, {
     githubRepo: dependencies.resolveGitHubRepo?.(target.worktreePath),
   });
@@ -534,7 +605,8 @@ export function openPullRequest(
   let prNumber: number;
 
   if (existingPullRequest) {
-    dependencies.reportProgress?.(
+    runOptionalDependencyHookSync(
+      dependencies.reportProgress,
       `open-pr: updating PR #${existingPullRequest.number} on GitHub...`,
     );
     dependencies.editPullRequest(
@@ -548,7 +620,10 @@ export function openPullRequest(
     prUrl = existingPullRequest.url;
     prNumber = existingPullRequest.number;
   } else {
-    dependencies.reportProgress?.('open-pr: creating PR on GitHub...');
+    runOptionalDependencyHookSync(
+      dependencies.reportProgress,
+      'open-pr: creating PR on GitHub...',
+    );
     const pullRequest = dependencies.createPullRequest(target.worktreePath, {
       base: target.baseBranch,
       body,
@@ -559,7 +634,10 @@ export function openPullRequest(
     prNumber = pullRequest.number;
   }
 
-  dependencies.reportProgress?.(`open-pr: PR ready ${prUrl}`);
+  runOptionalDependencyHookSync(
+    dependencies.reportProgress,
+    `open-pr: PR ready ${prUrl}`,
+  );
 
   const now = new Date().toISOString();
 
@@ -589,7 +667,23 @@ export async function advanceToNextTicket(
   const current = state.tickets.find((ticket) => ticket.status === 'reviewed');
 
   if (!current) {
-    throw new Error('No reviewed ticket is ready to advance.');
+    const activeTicket =
+      state.tickets.find((t) => t.status === 'in_progress') ??
+      state.tickets.find((t) => t.status === 'verified') ??
+      state.tickets.find((t) => t.status === 'subagent_review_complete') ??
+      state.tickets.find((t) => t.status === 'in_review') ??
+      state.tickets.find((t) => t.status === 'needs_patch') ??
+      state.tickets.find((t) => t.status === 'operator_input_needed');
+    if (activeTicket) {
+      throw createWorkflowContractError(
+        'workflow.advance.requires_reviewed_ticket',
+        `No reviewed ticket is ready to advance. Active ticket ${activeTicket.id} is at status ${activeTicket.status}.`,
+      );
+    }
+    throw createWorkflowContractError(
+      'workflow.advance.requires_reviewed_ticket',
+      'No reviewed ticket is ready to advance.',
+    );
   }
 
   if (!canAdvanceTicket(current)) {

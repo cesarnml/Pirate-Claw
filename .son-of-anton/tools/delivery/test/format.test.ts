@@ -4,6 +4,7 @@ import {
   formatAdvanceBoundaryGuidance,
   formatCurrentTicketStatus,
   resolveEffectiveAdvanceBoundaryMode,
+  resolveNextCommand,
 } from '../format';
 import type { ResolvedOrchestratorConfig } from '../runtime-config';
 import type { DeliveryState } from '../types';
@@ -15,16 +16,16 @@ const baseConfig: ResolvedOrchestratorConfig = {
   packageManager: 'bun',
   ticketBoundaryMode: 'cook',
   reviewPolicy: {
-    selfAudit: 'skip_doc_only',
-    codexPreflight: 'skip_doc_only',
-    externalReview: 'skip_doc_only',
+    subagentReview: 'skip_doc_only',
+    prReview: 'skip_doc_only',
   },
 };
 
 describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
   const baseState: DeliveryState = {
     planKey: 'engineering-epic-07',
-    planPath: 'docs/02-delivery/engineering-epic-07/implementation-plan.md',
+    planPath:
+      'docs/product/delivery/engineering-epic-07/implementation-plan.md',
     statePath: '.agents/delivery/engineering-epic-07/state.json',
     reviewsDirPath: '.agents/delivery/engineering-epic-07/reviews',
     handoffsDirPath: '.agents/delivery/engineering-epic-07/handoffs',
@@ -36,7 +37,7 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
         title: 'Boundary policy plumbing and visibility',
         slug: 'boundary-policy-plumbing-and-visibility',
         ticketFile:
-          'docs/02-delivery/engineering-epic-07/ticket-01-boundary-policy-plumbing-and-visibility.md',
+          'docs/product/delivery/engineering-epic-07/ticket-01-boundary-policy-plumbing-and-visibility.md',
         status: 'reviewed',
         branch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',
         baseBranch: 'main',
@@ -48,7 +49,7 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
         title: 'Gated boundary semantics and resume prompt',
         slug: 'gated-boundary-semantics-and-resume-prompt',
         ticketFile:
-          'docs/02-delivery/engineering-epic-07/ticket-02-gated-boundary-semantics-and-resume-prompt.md',
+          'docs/product/delivery/engineering-epic-07/ticket-02-gated-boundary-semantics-and-resume-prompt.md',
         status: 'pending',
         branch: 'agents/ee7-02-gated-boundary-semantics-and-resume-prompt',
         baseBranch: 'agents/ee7-01-boundary-policy-plumbing-and-visibility',
@@ -81,7 +82,7 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
     expect(output).toContain('GATED BOUNDARY before starting EE7.02.');
     expect(output).toContain('Prefer /clear for minimum token use');
     expect(output).toContain(
-      'resume_prompt=Immediately execute `bun run deliver --plan docs/02-delivery/engineering-epic-07/implementation-plan.md start`, read the locally materialized handoff artifact in the started worktree as the source of truth for context, and implement EE7.02.',
+      'resume_prompt=Immediately execute `bun run deliver --plan docs/product/delivery/engineering-epic-07/implementation-plan.md start`, read the locally materialized handoff artifact in the started worktree as the source of truth for context, and implement EE7.02.',
     );
   });
 
@@ -148,7 +149,7 @@ describe('formatAdvanceBoundaryGuidance (EE7 boundary output)', () => {
 describe('formatCurrentTicketStatus (EE6: findings block)', () => {
   const baseState: DeliveryState = {
     planKey: 'phase-15',
-    planPath: 'docs/02-delivery/phase-15/implementation-plan.md',
+    planPath: 'docs/product/delivery/phase-15/implementation-plan.md',
     statePath: '.agents/delivery/phase-15/state.json',
     reviewsDirPath: '.agents/delivery/phase-15/reviews',
     handoffsDirPath: '.agents/delivery/phase-15/handoffs',
@@ -160,7 +161,7 @@ describe('formatCurrentTicketStatus (EE6: findings block)', () => {
         title: 'Unmatched Candidates View',
         slug: 'unmatched-candidates-view',
         ticketFile:
-          'docs/02-delivery/phase-15/ticket-06-unmatched-candidates-view.md',
+          'docs/product/delivery/phase-15/ticket-06-unmatched-candidates-view.md',
         branch: 'agents/p15-06-unmatched-candidates-view',
         baseBranch: 'agents/p15-05-movies-view',
         worktreePath: '/tmp/p15_06',
@@ -330,4 +331,112 @@ it('resolves glide to gated as the effective advance boundary mode', () => {
   expect(resolveEffectiveAdvanceBoundaryMode('cook')).toBe('cook');
   expect(resolveEffectiveAdvanceBoundaryMode('gated')).toBe('gated');
   expect(resolveEffectiveAdvanceBoundaryMode('glide')).toBe('gated');
+});
+
+describe('resolveNextCommand (P3.01)', () => {
+  const planPath = 'docs/product/delivery/phase-03/implementation-plan.md';
+  const ticketId = 'P3.01';
+
+  const configSubagentEnabled: ResolvedOrchestratorConfig = {
+    ...baseConfig,
+    reviewPolicy: {
+      subagentReview: 'skip_doc_only',
+      prReview: 'skip_doc_only',
+    },
+  };
+
+  const configSubagentDisabled: ResolvedOrchestratorConfig = {
+    ...baseConfig,
+    reviewPolicy: { subagentReview: 'disabled', prReview: 'skip_doc_only' },
+  };
+
+  it('in_progress → post-verify', () => {
+    expect(
+      resolveNextCommand('in_progress', configSubagentEnabled, planPath),
+    ).toBe(
+      'bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md post-verify',
+    );
+  });
+
+  it('verified + subagentReview disabled → open-pr', () => {
+    expect(
+      resolveNextCommand('verified', configSubagentDisabled, planPath),
+    ).toBe(
+      'bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md open-pr',
+    );
+  });
+
+  it('verified + subagentReview enabled → subagent-review', () => {
+    expect(
+      resolveNextCommand('verified', configSubagentEnabled, planPath),
+    ).toBe(
+      'bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md subagent-review',
+    );
+  });
+
+  it('subagent_review_complete → open-pr', () => {
+    expect(
+      resolveNextCommand(
+        'subagent_review_complete',
+        configSubagentEnabled,
+        planPath,
+      ),
+    ).toBe(
+      'bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md open-pr',
+    );
+  });
+
+  it('in_review → poll-review', () => {
+    expect(
+      resolveNextCommand('in_review', configSubagentEnabled, planPath),
+    ).toBe(
+      'bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md poll-review',
+    );
+  });
+
+  it('needs_patch → record-review <ticketId> patched', () => {
+    expect(
+      resolveNextCommand(
+        'needs_patch',
+        configSubagentEnabled,
+        planPath,
+        ticketId,
+      ),
+    ).toBe(
+      `bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md record-review ${ticketId} patched`,
+    );
+  });
+
+  it('operator_input_needed → record-review <ticketId> operator_input_needed', () => {
+    expect(
+      resolveNextCommand(
+        'operator_input_needed',
+        configSubagentEnabled,
+        planPath,
+        ticketId,
+      ),
+    ).toBe(
+      `bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md record-review ${ticketId} operator_input_needed`,
+    );
+  });
+
+  it('reviewed → advance', () => {
+    expect(
+      resolveNextCommand('reviewed', configSubagentEnabled, planPath),
+    ).toBe(
+      'bun run deliver --plan docs/product/delivery/phase-03/implementation-plan.md advance',
+    );
+  });
+
+  it('done → null', () => {
+    expect(
+      resolveNextCommand('done', configSubagentEnabled, planPath),
+    ).toBeNull();
+  });
+
+  it('pending → null', () => {
+    expect(
+      resolveNextCommand('pending', configSubagentEnabled, planPath),
+    ).toBeNull();
+  });
 });

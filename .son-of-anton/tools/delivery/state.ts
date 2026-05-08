@@ -22,10 +22,11 @@ import type {
 /** Persisted tickets may use legacy status and timestamp keys until re-saved. */
 type PersistedTicketFields = Partial<TicketState> & {
   internalReviewCompletedAt?: string;
+  postVerifySelfAuditCompletedAt?: string;
   status?: string;
 };
 
-function pickPostVerifySelfAuditCompletedAt(
+function pickVerifiedAt(
   ticket: PersistedTicketFields | undefined,
 ): string | undefined {
   if (!ticket) {
@@ -33,13 +34,22 @@ function pickPostVerifySelfAuditCompletedAt(
   }
 
   return (
-    ticket.postVerifySelfAuditCompletedAt ?? ticket.internalReviewCompletedAt
+    ticket.verifiedAt ??
+    ticket.postVerifySelfAuditCompletedAt ??
+    ticket.internalReviewCompletedAt
   );
 }
 
 function normalizeLegacyTicketStatus(status: string | undefined): TicketStatus {
-  if (status === 'internally_reviewed') {
-    return 'post_verify_self_audit_complete';
+  if (
+    status === 'internally_reviewed' ||
+    status === 'post_verify_self_audit_complete'
+  ) {
+    return 'verified';
+  }
+
+  if (status === 'codex_preflight_complete') {
+    return 'subagent_review_complete';
   }
 
   if (status === undefined) {
@@ -64,7 +74,9 @@ export function normalizeDeliveryStateFromPersisted(
     const next: Record<string, unknown> = { ...t };
     delete next.internalReviewCompletedAt;
     next.status = normalizeLegacyTicketStatus(t.status);
-    next.postVerifySelfAuditCompletedAt = pickPostVerifySelfAuditCompletedAt(t);
+    next.verifiedAt = pickVerifiedAt(t);
+    delete next.postVerifySelfAuditCompletedAt;
+    delete next.internalReviewCompletedAt;
     return next;
   });
 
@@ -294,26 +306,22 @@ function syncStateWithPlan(
         handoffPath: previous?.handoffPath ?? inferredTicket?.handoffPath,
         handoffGeneratedAt:
           previous?.handoffGeneratedAt ?? inferredTicket?.handoffGeneratedAt,
-        postVerifySelfAuditCompletedAt:
-          pickPostVerifySelfAuditCompletedAt(previous) ??
-          pickPostVerifySelfAuditCompletedAt(
-            inferredTicket as PersistedTicketFields | undefined,
-          ),
-        selfAuditOutcome:
-          previous?.selfAuditOutcome ?? inferredTicket?.selfAuditOutcome,
-        selfAuditPatchCommits:
-          previous?.selfAuditPatchCommits ??
-          inferredTicket?.selfAuditPatchCommits,
+        verifiedAt:
+          pickVerifiedAt(previous) ??
+          pickVerifiedAt(inferredTicket as PersistedTicketFields | undefined),
+        verifyOutcome: previous?.verifyOutcome ?? inferredTicket?.verifyOutcome,
+        verifyPatchCommits:
+          previous?.verifyPatchCommits ?? inferredTicket?.verifyPatchCommits,
         docOnly: (previous?.docOnly ?? inferredTicket?.docOnly) || undefined,
-        codexPreflightOutcome:
-          previous?.codexPreflightOutcome ??
-          inferredTicket?.codexPreflightOutcome,
-        codexPreflightCompletedAt:
-          previous?.codexPreflightCompletedAt ??
-          inferredTicket?.codexPreflightCompletedAt,
-        codexPreflightPatchCommits:
-          previous?.codexPreflightPatchCommits ??
-          inferredTicket?.codexPreflightPatchCommits,
+        subagentReviewOutcome:
+          previous?.subagentReviewOutcome ??
+          inferredTicket?.subagentReviewOutcome,
+        subagentReviewCompletedAt:
+          previous?.subagentReviewCompletedAt ??
+          inferredTicket?.subagentReviewCompletedAt,
+        subagentReviewPatchCommits:
+          previous?.subagentReviewPatchCommits ??
+          inferredTicket?.subagentReviewPatchCommits,
         prNumber: previous?.prNumber ?? inferredTicket?.prNumber,
         prUrl: previous?.prUrl ?? inferredTicket?.prUrl,
         prOpenedAt: previous?.prOpenedAt ?? inferredTicket?.prOpenedAt,
@@ -477,11 +485,11 @@ function inferStateFromRepo(
       worktreePath: dependencies.deriveWorktreePath(cwd, definition.id),
       handoffPath: undefined,
       handoffGeneratedAt: undefined,
-      selfAuditOutcome: undefined,
-      selfAuditPatchCommits: undefined,
-      codexPreflightOutcome: undefined,
-      codexPreflightCompletedAt: undefined,
-      codexPreflightPatchCommits: undefined,
+      verifyOutcome: undefined,
+      verifyPatchCommits: undefined,
+      subagentReviewOutcome: undefined,
+      subagentReviewCompletedAt: undefined,
+      subagentReviewPatchCommits: undefined,
       prNumber: pr?.number,
       prUrl: pr?.url,
       prOpenedAt: undefined,
@@ -511,7 +519,7 @@ async function loadPlanContext(
   dependencies: RepoInferenceDependencies,
 ): Promise<LoadPlanContextResult> {
   const planMarkdown = await readFile(resolve(cwd, options.planPath), 'utf8');
-  const ticketDefinitions = parsePlan(planMarkdown, options.planPath);
+  const ticketDefinitions = parsePlan(planMarkdown, options.planPath, cwd);
   const absoluteStatePath = resolve(cwd, options.statePath);
   const inferred = inferStateFromRepo(
     cwd,
@@ -562,9 +570,9 @@ function statusRank(status: TicketStatus): number {
       return 0;
     case 'in_progress':
       return 1;
-    case 'post_verify_self_audit_complete':
+    case 'verified':
       return 2;
-    case 'codex_preflight_complete':
+    case 'subagent_review_complete':
       return 3;
     case 'in_review':
       return 4;

@@ -12,7 +12,7 @@ function createTicket(overrides: Partial<TicketState>): TicketState {
     id: 'P1.01',
     title: 'Example Ticket',
     slug: 'example-ticket',
-    ticketFile: 'docs/02-delivery/phase-01/ticket-01-example.md',
+    ticketFile: 'docs/product/delivery/phase-01/ticket-01-example.md',
     status: 'done',
     branch: 'agents/p1-01-example-ticket',
     baseBranch: 'main',
@@ -26,7 +26,7 @@ function createTicket(overrides: Partial<TicketState>): TicketState {
 function createState(tickets: TicketState[]): DeliveryState {
   return {
     planKey: 'phase-01',
-    planPath: 'docs/02-delivery/phase-01/implementation-plan.md',
+    planPath: 'docs/product/delivery/phase-01/implementation-plan.md',
     statePath: '.agents/delivery/phase-01/state.json',
     reviewsDirPath: '.agents/delivery/phase-01/reviews',
     handoffsDirPath: '.agents/delivery/phase-01/handoffs',
@@ -54,10 +54,10 @@ describe('closeout-stack', () => {
       expect(
         parseCloseoutStackArgs([
           '--plan',
-          'docs/02-delivery/phase-07/implementation-plan.md',
+          'docs/product/delivery/phase-07/implementation-plan.md',
         ]),
       ).toEqual({
-        planPath: 'docs/02-delivery/phase-07/implementation-plan.md',
+        planPath: 'docs/product/delivery/phase-07/implementation-plan.md',
       });
     });
   });
