@@ -26,6 +26,12 @@ Manual validation checklist on DS918+ / DSM 7.1.1:
 
 Record findings in the ticket rationale. If any item fails, open a follow-up before closing this ticket.
 
+## Known Issues / P29 Follow-ups
+
+- **Plex PIN callback redirect**: after Plex OAuth flow completes, user is redirected back to Plex sign-in page instead of `/onboarding` or dashboard. Plex API returns `{code: 1004, message: "login is missing"}` — callback route likely not handling post-auth redirect correctly. Defer to P29.
+- **Origin trust + CSRF gap**: secondary origin (e.g. direct WAN IP) shows trust banner but form actions fail SvelteKit CSRF since `ORIGIN` is pinned to one address. P29 should wire `allowedOrigins` dynamically from `trusted-origins.json` or document secondary origins as read-only.
+- **`isStarter` layout guard**: layout showed "not yet configured" splash on `/setup` because `isAuthPage` was not excluded from `isStarter`. Fixed in this branch (`fb13084`) — new web image required for deploy.
+
 ## Out Of Scope
 
 - New feature work
