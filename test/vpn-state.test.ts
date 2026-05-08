@@ -103,4 +103,10 @@ describe('validateDownloaderNetwork', () => {
     expect(() => validateDownloaderNetwork('passthrough')).toThrow();
     expect(() => validateDownloaderNetwork(null)).toThrow();
   });
+
+  it('throws ConfigError on unknown keys', () => {
+    expect(() =>
+      validateDownloaderNetwork({ mode: 'passthrough', typo: true }),
+    ).toThrow('unknown key');
+  });
 });

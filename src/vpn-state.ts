@@ -90,6 +90,14 @@ export function validateDownloaderNetwork(
     );
   }
   const obj = raw as Record<string, unknown>;
+  const allowedKeys = new Set(['mode', 'provider', 'profile', 'status']);
+  for (const key of Object.keys(obj)) {
+    if (!allowedKeys.has(key)) {
+      throw new ConfigError(
+        `downloaderNetwork has unknown key "${key}"; allowed keys are: mode, provider, profile, status.`,
+      );
+    }
+  }
   const mode = obj.mode;
   if (!VALID_MODES.includes(mode as DownloaderNetworkMode)) {
     throw new ConfigError(

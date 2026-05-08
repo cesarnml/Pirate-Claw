@@ -181,7 +181,7 @@ function validateOptionalDownloaderNetwork(
   input: unknown,
   path: string,
 ): DownloaderNetworkConfig | undefined {
-  if (input === undefined || input === null) return undefined;
+  if (input === undefined) return undefined;
   try {
     return validateDownloaderNetwork(input);
   } catch (err) {

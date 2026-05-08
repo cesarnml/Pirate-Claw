@@ -1051,6 +1051,34 @@ describe('validateConfig', () => {
       ),
     );
   });
+
+  it('accepts optional downloaderNetwork block', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      downloaderNetwork: { mode: 'passthrough' },
+    });
+    expect(config.downloaderNetwork).toEqual({ mode: 'passthrough' });
+  });
+
+  it('omits downloaderNetwork when absent', () => {
+    const config = validateConfig(createMinimalConfig());
+    expect(config.downloaderNetwork).toBeUndefined();
+  });
+
+  it('fails when downloaderNetwork is null', () => {
+    expect(() =>
+      validateConfig({ ...createMinimalConfig(), downloaderNetwork: null }),
+    ).toThrow();
+  });
+
+  it('fails when downloaderNetwork has an unknown key', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        downloaderNetwork: { mode: 'vpn_bridge', typo: true },
+      }),
+    ).toThrow('unknown key');
+  });
 });
 
 function createMinimalConfig() {
