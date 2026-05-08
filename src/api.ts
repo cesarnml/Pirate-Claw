@@ -72,6 +72,7 @@ import {
   startPlexPinAuth,
 } from './plex/auth-client';
 import { readRestartStatus, recordRestartRequested } from './restart-proof';
+import { handleVpnRoute } from './vpn-api';
 
 export type CycleSnapshot = {
   status: CycleResult['status'];
@@ -445,6 +446,15 @@ export function createApiFetch(
         lastRunCycle: health.lastRunCycle,
         lastReconcileCycle: health.lastReconcileCycle,
       });
+    }
+
+    if (path.startsWith('/api/vpn/')) {
+      const vpnResponse = await handleVpnRoute(request, {
+        configPath,
+        writeToken: activeConfig.runtime.apiWriteToken,
+        transmissionConfig: activeConfig.transmission,
+      });
+      if (vpnResponse) return vpnResponse;
     }
 
     if (path === '/api/setup/state' && request.method === 'GET') {
@@ -2212,7 +2222,7 @@ function ifMatchMatches(ifMatch: string, currentEtag: string): boolean {
   return parts.includes('*') || parts.includes(currentEtag);
 }
 
-async function readConfigFileRecord(
+export async function readConfigFileRecord(
   path: string,
 ): Promise<Record<string, unknown>> {
   const file = Bun.file(path);
@@ -2222,7 +2232,7 @@ async function readConfigFileRecord(
 
 class ConfigWriteError extends Error {}
 
-function writeConfigAtomically(
+export function writeConfigAtomically(
   path: string,
   config: Record<string, unknown>,
 ): void {

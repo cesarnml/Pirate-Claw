@@ -98,10 +98,16 @@ Run `bun run ci` and confirm new tests fail. Commit: `test(P29.04): vpn daemon e
 
 ## Rationale
 
-> Append here (do not edit above) when behavior or trade-offs change during implementation.
+Red first: `POST /api/vpn/profile` without auth returned 404 (route not registered) — confirmed all 13 tests failed as expected before implementation.
 
-Red first: [what test failed first]
-Why this path: [why this implementation was the smallest acceptable]
-Alternative considered: [one rejected alternative and why]
-Deferred: [what was intentionally left out of this ticket]
-Contract note: record any deviation from the ticket metadata contract here, including missing/incorrect `Type:` or non-compliant `Scope:` fields, and why it happened.
+Why this path: `src/vpn-api.ts` is a standalone module exporting `handleVpnRoute(request, deps)` and `generateComposeArtifact(configDir)`. `api.ts` checks `path.startsWith('/api/vpn/')` and delegates, keeping the VPN surface isolated. `readConfigFileRecord` and `writeConfigAtomically` were exported from `api.ts` (previously private) so the VPN module can update `pirate-claw.config.json` atomically without duplicating the write logic.
+
+Alternative considered: Embedding all VPN handlers inline in `api.ts` like all other routes — rejected because `api.ts` is already 2400+ lines and the VPN surface is cohesive enough to stand alone. The module boundary also makes test isolation easier.
+
+Deferred: In-memory `configHolder` update after profile/credentials save — the daemon reads config from disk periodically, so the status field (`pending_verify` → `verified`) will be picked up on the next read. Immediate in-process refresh would require threading `configHolder` into `VpnApiDeps`, adding coupling not justified by the ticket scope.
+
+Gluetun health endpoint confirmed: `GET http://gluetun:8000/v1/openvpn/status`. The gluetun HTTP control server API exposes `/v1/openvpn/status` for OpenVPN connection state (returns `{ status: 'running' | 'stopped' }`). The more general `/v1/vpn/status` was added in a later gluetun version and covers WireGuard — reserved for v2 when WireGuard support lands.
+
+Compose artifact: single `compose.synology.yml` written to `<configDir>/vpn/compose.synology.yml` on every profile or credentials save. The static repo-root `compose.synology.yml` remains the no-VPN artifact; the generated one in the VPN dir is the gluetun stack artifact. The `GET /api/vpn/compose` endpoint serves the generated file for DSM 7.2+ Container Manager apply.
+
+Contract note: `vpnManifestPath` was imported in `vpn-api.ts` initially but unused (manifest writing is done via `writeVpnManifest`). Removed before lint pass.

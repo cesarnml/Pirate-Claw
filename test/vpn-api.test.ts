@@ -1,13 +1,20 @@
-import { Database } from 'bun:sqlite';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 
-import { type ApiFetchDeps, createApiFetch, createHealthState } from '../src/api';
+import {
+  type ApiFetchDeps,
+  createApiFetch,
+  createHealthState,
+} from '../src/api';
 import type { AppConfig } from '../src/config';
-import { createRepository, ensureSchema, openDatabase } from '../src/repository';
-import { activeProfilePath, credentialsPath, vpnDir, vpnManifestPath } from '../src/vpn-state';
+import {
+  activeProfilePath,
+  credentialsPath,
+  vpnDir,
+  vpnManifestPath,
+} from '../src/vpn-state';
 import type { PollState } from '../src/poll-state';
 import type { Repository } from '../src/repository';
 
@@ -43,12 +50,17 @@ const emptyPollState: PollState = { feeds: {} };
 
 let tempDir: string;
 let configPath: string;
-let apiFetch: (req: Request) => Promise<Response>;
+let apiFetch: (req: Request) => Promise<Response> | Response;
 
 const baseConfig: AppConfig = {
   feeds: [],
   tv: [],
-  movies: { years: [2024], resolutions: ['1080p'], codecs: ['x265'], codecPolicy: 'prefer' },
+  movies: {
+    years: [2024],
+    resolutions: ['1080p'],
+    codecs: ['x265'],
+    codecPolicy: 'prefer',
+  },
   transmission: {
     url: 'http://transmission:9091/transmission/rpc',
     username: 'user',
@@ -70,7 +82,8 @@ beforeEach(async () => {
   await mkdir(join(tempDir, 'web'), { recursive: true });
   await writeFile(
     join(tempDir, 'web', 'trusted-origins.json'),
-    JSON.stringify(['http://192.168.1.100:8888', 'http://100.64.0.1:8888']) + '\n',
+    JSON.stringify(['http://192.168.1.100:8888', 'http://100.64.0.1:8888']) +
+      '\n',
   );
 
   const config: AppConfig = { ...baseConfig };
@@ -114,7 +127,10 @@ describe('POST /api/vpn/profile', () => {
     const res = await apiFetch(
       new Request('http://localhost/api/vpn/profile', {
         method: 'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'application/octet-stream',
+        },
         body: '',
       }),
     );
@@ -343,38 +359,42 @@ describe('POST /api/vpn/verify', () => {
       }),
     );
 
-    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-      (async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('gluetun') || url.includes('8000')) {
-          return Response.json({ status: 'running' });
-        }
-        // transmission RPC
-        const body = JSON.parse(String(init?.body ?? '{}')) as {
-          method?: string;
-          arguments?: { path?: string };
-        };
-        if (body.method === 'session-get') {
-          return Response.json({
-            result: 'success',
-            arguments: { version: '4.0.0' },
-          });
-        }
-        if (body.method === 'session-stats') {
-          return Response.json({
-            result: 'success',
-            arguments: {
-              'download-speed': 0,
-              'upload-speed': 0,
-              'active-torrent-count': 0,
-              'cumulative-stats': { downloadedBytes: 0, uploadedBytes: 0 },
-              'current-stats': { downloadedBytes: 0, uploadedBytes: 0 },
-            },
-          });
-        }
-        return Response.json({ result: 'unknown', arguments: {} }, { status: 500 });
-      }) as typeof fetch,
-    );
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('gluetun') || url.includes('8000')) {
+        return Response.json({ status: 'running' });
+      }
+      // transmission RPC
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        method?: string;
+        arguments?: { path?: string };
+      };
+      if (body.method === 'session-get') {
+        return Response.json({
+          result: 'success',
+          arguments: { version: '4.0.0' },
+        });
+      }
+      if (body.method === 'session-stats') {
+        return Response.json({
+          result: 'success',
+          arguments: {
+            'download-speed': 0,
+            'upload-speed': 0,
+            'active-torrent-count': 0,
+            'cumulative-stats': { downloadedBytes: 0, uploadedBytes: 0 },
+            'current-stats': { downloadedBytes: 0, uploadedBytes: 0 },
+          },
+        });
+      }
+      return Response.json(
+        { result: 'unknown', arguments: {} },
+        { status: 500 },
+      );
+    }) as typeof fetch);
 
     const res = await apiFetch(
       new Request('http://localhost/api/vpn/verify', {
@@ -405,15 +425,15 @@ describe('POST /api/vpn/verify', () => {
       }),
     );
 
-    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-      (async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('gluetun') || url.includes('8000')) {
-          return Response.json({ status: 'running' });
-        }
-        throw new Error('transmission unreachable');
-      }) as typeof fetch,
-    );
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (
+      input: RequestInfo | URL,
+    ) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('gluetun') || url.includes('8000')) {
+        return Response.json({ status: 'running' });
+      }
+      throw new Error('transmission unreachable');
+    }) as typeof fetch);
 
     const res = await apiFetch(
       new Request('http://localhost/api/vpn/verify', {
