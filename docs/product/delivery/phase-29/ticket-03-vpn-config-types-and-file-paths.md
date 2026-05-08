@@ -21,7 +21,7 @@ Scope: daemon-vpn-schema
   - `vpnManifestPath(configDir)` returns `<configDir>/vpn/manifest.json`
   - `readVpnManifest` returns `null` when the file does not exist
   - `writeVpnManifest` writes a valid manifest JSON and `readVpnManifest` reads it back
-  - `validateDownloaderNetwork` rejects an object missing `mode`; accepts a valid `downloaderNetwork` block
+  - `validateDownloaderNetwork` rejects an object missing `mode`; accepts a valid `downloaderNetwork` block with `mode: 'passthrough'` or `mode: 'vpn_bridge'`
 - Run `bun run ci` and confirm all new tests fail (module does not exist yet)
 - Commit: `test(P29.03): vpn-state types and file helpers [red]`
 
@@ -53,9 +53,10 @@ export async function writeVpnManifest(
 ): Promise<void>;
 
 // downloaderNetwork config shape (non-secret posture only — no credentials)
-export type DownloaderNetworkMode = 'direct' | 'vpn_bridge';
+// 'passthrough' = gluetun in stack, no credentials saved; 'vpn_bridge' = credentials saved and verified
+export type DownloaderNetworkMode = 'passthrough' | 'vpn_bridge';
 export type DownloaderNetworkStatus =
-  | 'pending_apply'
+  | 'pending_verify'
   | 'verified'
   | 'unreachable';
 

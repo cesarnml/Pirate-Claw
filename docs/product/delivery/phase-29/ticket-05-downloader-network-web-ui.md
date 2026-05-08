@@ -6,14 +6,15 @@ Scope: web-vpn
 
 ## Outcome
 
-- The "Config → Downloader Network" section (or a new `/config/downloader-network` route) presents the full VPN setup flow
+- A persistent "VPN not configured" banner is shown on the dashboard when `downloaderNetwork.mode === 'passthrough'`; queueing is disabled until `vpn_bridge_active`
+- The "Config → Downloader Network" page (standalone settings page, not wizard) presents the full VPN setup flow
 - Owner can upload an `.ovpn` profile file — form action hits `POST /api/vpn/profile`
 - Owner can enter VPN credentials (username + password) — form action hits `POST /api/vpn/credentials`
-- Owner can download the VPN Compose artifact (`compose.synology.vpn.yml`) and the rollback artifact (`compose.synology.direct.yml`)
-- Apply instructions are shown inline: DSM 7.1 path (per P29.01 findings) and DSM 7.2+ Container Manager Project path
-- Owner can click "Verify VPN connection" — action hits `POST /api/vpn/verify`; result badge shows `vpn_bridge_active`, `vpn_bridge_unreachable`, or `direct_mode`
+- Owner can download `compose.synology.yml` (single artifact, for DSM 7.2+ Container Manager Project apply reference)
+- Apply instructions shown inline: DSM 7.1 individual container creation path (Docker GUI, gluetun first) and DSM 7.2+ Container Manager Project path
+- Owner can click "Verify VPN connection" — action hits `POST /api/vpn/verify`; result badge shows `vpn_bridge_active`, `vpn_bridge_unreachable`, or `passthrough`
 - "Try again" affordance shown when status is `vpn_bridge_unreachable`
-- Direct-mode acknowledgement state (P28 baseline) is preserved and visible
+- Owner can clear credentials (return to passthrough) — no compose teardown required; UI reflects passthrough state
 - All existing web CI tests continue to pass; new tests cover the form actions and verify round-trip
 
 ## Red
@@ -22,9 +23,11 @@ Write tests in `web/test/routes/config/downloader-network.test.ts`:
 
 - Profile upload form action: renders upload input; on submit with a valid file, calls the correct API endpoint
 - Credentials form action: renders username + password inputs; on submit, calls `POST /api/vpn/credentials`
-- Compose download links: when VPN manifest exists (`hasProfile: true`), both download links are rendered; when `hasProfile: false`, download links show a disabled/unavailable state with a clear message
-- Verify button: clicking it triggers `POST /api/vpn/verify`; a `vpn_bridge_active` response renders the active status badge; a `vpn_bridge_unreachable` response renders the "Try again" affordance
-- DSM 7.1 instructions block is present in the page output (content depends on P29.01 findings — use a placeholder string in the test)
+- "VPN not configured" banner: rendered on dashboard when `mode === 'passthrough'`; absent when `mode === 'vpn_bridge'` and status `verified`
+- Compose download link: when `hasProfile: true`, download link rendered; when `hasProfile: false`, link is disabled with a clear message ("Upload a VPN profile first")
+- Verify button: clicking it triggers `POST /api/vpn/verify`; `vpn_bridge_active` → active badge; `vpn_bridge_unreachable` → "Try again" affordance; `passthrough` → neutral "No credentials saved" message
+- DSM 7.1 instructions block: individual container creation steps (gluetun first, then Transmission and pirate-claw attached)
+- DSM 7.2+ instructions block: Container Manager Project apply steps
 
 Run `bun run ci` from `web/` and confirm new tests fail. Commit: `test(P29.05): downloader-network web ui [red]`
 
@@ -53,24 +56,29 @@ Run `bun run ci` from `web/` and confirm new tests fail. Commit: `test(P29.05): 
 - On error: show the daemon error message
 - **Never echo the password back** to the page in any form value or error message
 
-**Compose download buttons:**
+**Compose download button:**
 
-- "Download VPN Compose" → `GET /api/vpn/compose/vpn` with `download` attribute
-- "Download Rollback Compose" → `GET /api/vpn/compose/direct` with `download` attribute
-- Both disabled (with explanatory text: "Upload a VPN profile first") when `hasProfile` is false
+- "Download Compose (`compose.synology.yml`)" → `GET /api/vpn/compose` with `download` attribute
+- Disabled (with explanatory text: "Upload a VPN profile first") when `hasProfile` is false
+- No rollback artifact download — rollback is clearing credentials in the UI
 
 **Apply instructions:**
 
-- DSM 7.1 block: conditional on `dsm71ApplyFeasible` flag (set from P29.01 findings). If GUI-feasible: step-by-step GUI instructions. If SSH-fallback: SSH commands block with a "DSM 7.1 requires manual apply" heading
-- DSM 7.2+ block: Container Manager Project → Import/Update steps (static content)
-- Both blocks are always visible so the operator can compare paths
+- DSM 7.1 block (static): individual container creation steps — pull gluetun image, create gluetun container (establishes bridge network), create/recreate Transmission container attached to gluetun network, create/recreate pirate-claw containers
+- DSM 7.2+ block (static): Container Manager Project → Import/Update with `compose.synology.yml` — same as current project update flow
+- Both blocks always visible
 
 **Verify section:**
 
 - "Verify VPN connection" button triggers `POST /api/vpn/verify` as a form action
-- Status badge: `vpn_bridge_active` (green), `vpn_bridge_unreachable` (red + "Try again" button), `direct_mode` (neutral)
+- Status badge: `vpn_bridge_active` (green), `vpn_bridge_unreachable` (red + "Try again" button), `passthrough` (neutral — "No credentials saved")
 - "Try again" re-submits the verify action
 - Emit from form action: `[web] vpn-verify action — result: <status>`
+
+**Clear credentials:**
+
+- "Clear credentials" action — removes the credentials file, resets `downloaderNetwork.mode` to `passthrough`; gluetun stays in stack
+- Confirm prompt before clearing
 
 ## Refactor
 
@@ -80,11 +88,12 @@ Run `bun run ci` from `web/` and confirm new tests fail. Commit: `test(P29.05): 
 ## Review Focus
 
 - **Password never echoes back** — assert in tests that the credentials form action does not set a `password` field value on error or redirect; this is a security requirement
-- **`hasProfile: false` state** — download buttons must be visually disabled and carry a message; an operator who has not yet uploaded a profile should not see broken download links or a misleading verify button
+- **"VPN not configured" banner** — must be present and prominent on the dashboard when `mode === 'passthrough'`; queueing must be visually disabled; this is the primary driver to the Downloader Network page
+- **`hasProfile: false` state** — download button must be visually disabled and carry a message; an operator who has not yet uploaded a profile should not see broken download links or a misleading verify button
 - **Debug logging coverage** — page load and verify form action must both emit structured log lines; these are the first thing to check in P29.06 hardware validation when something doesn't work
-- **DSM 7.1 / DSM 7.2+ instructions** — both blocks must be present and accurate per P29.01 findings before P29.05 PR is merged; the P29.01 ticket must be closed first
+- **DSM 7.1 individual container creation steps** — must be accurate before P29.05 PR merges; the steps must match the DSM 7.1 Docker GUI flow confirmed in P29.01
 - **Verify status persistence** — the verify status does not need to persist across page reloads at v1 (stateless button); confirm this is the intended behavior and note it as deferred if the developer wants persistence
-- **`direct_mode` status**: shown when `POST /api/vpn/verify` returns `direct_mode` — this is not an error; display it neutrally as "Bundled Transmission: Direct (VPN bridge not configured)"
+- **`passthrough` status**: shown when `POST /api/vpn/verify` returns `passthrough` — this is not an error; display neutrally as "Gluetun running (no credentials configured)"
 
 ## Rationale
 

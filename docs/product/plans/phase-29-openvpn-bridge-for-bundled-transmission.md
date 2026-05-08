@@ -13,12 +13,13 @@ Phase 29 hardens the bundled downloader network path. Pirate Claw should be usab
 - P28 carry-over fixes: CSRF/`allowedOrigins` wiring, Plex PIN callback redirect, `isStarter` routing cleanup
 - Multi-origin support: both LAN IP and Tailscale mesh IP as full-write trusted origins
 - Debug logging in SvelteKit server and daemon for fresh-install validation
-- DSM 7.1 VPN apply path feasibility spike; fallback: documented SSH steps if GUI apply is not possible
+- Gluetun as first-class install-stack service — always present, single compose artifact, no post-install network migration
+- DSM 7.1 VPN apply path spike finding: no Network tab in Docker GUI Edit dialog, no Compose Project support in legacy Docker package; install-time container creation is the correct model
 - OpenVPN profile upload and VPN credential storage (mounted file, never in Compose YAML)
-- `gluetun` bridge with daemon-generated `compose.synology.vpn.yml`
+- `gluetun` bridge — passthrough until VPN credentials saved and verified; UI shows "VPN not configured" banner and disables queueing
 - Operator-triggered VPN verification: gluetun health + Transmission RPC
-- Rollback artifact (`compose.synology.direct.yml`) for operator-controlled revert via DSM GUI
 - DSM 7.2+ Container Manager Compose Project path for VPN topology apply
+- DSM 7.1 individual container creation path via legacy Docker GUI (fresh install only; no compose Project tab)
 
 **Defers:** WireGuard (v2), arbitrary BYO Transmission VPN management, public VPN-provider account automation, direct Docker socket mutation from Pirate Claw web, VPN exit IP attribution check (v2).
 
@@ -34,10 +35,11 @@ Phase 29 should leave Pirate Claw in a state where:
 - The owner can upload an OpenVPN profile from the browser
 - VPN credentials are stored in daemon-owned secret state (mounted file), never in JSON config or Compose YAML
 - VPN bridge applies only to the bundled Transmission stack via a daemon-generated Compose artifact
-- DSM 7.1: VPN topology is applied via DSM Docker GUI (feasibility confirmed by spike) or documented SSH steps as accepted fallback
-- DSM 7.2+: VPN topology is applied via Container Manager Project update through DSM GUI
-- After applying in DSM GUI, the owner clicks "Verify VPN connection" and Pirate Claw confirms gluetun health + Transmission RPC reachability
-- Rollback to direct bundled Transmission is explicit, operator-controlled, via a downloadable `compose.synology.direct.yml` artifact
+- Gluetun is always in the install stack — Transmission and daemon are reachable immediately after fresh install (gluetun passthrough); UI shows "VPN not configured" banner and disables queueing until credentials are saved and verified
+- DSM 7.1: operator creates containers individually via the legacy Docker GUI (gluetun first to establish the bridge network, then Transmission and pirate-claw containers attached) — no post-install network migration, no SSH required
+- DSM 7.2+: operator applies `compose.synology.yml` via Container Manager Projects; single compose includes gluetun always
+- After install, the owner enters VPN credentials in the Downloader Network settings page, clicks "Verify VPN connection", and Pirate Claw confirms gluetun health + Transmission RPC reachability
+- Rollback = clear VPN credentials in UI; gluetun continues running in passthrough; no second compose artifact
 - Direct downloader mode remains available with explicit risk acknowledgement (P28 baseline)
 - SvelteKit server and daemon emit structured debug logs sufficient to diagnose fresh-install failures without SSH access
 - Plex PIN callback redirects to the correct post-auth destination
@@ -78,21 +80,20 @@ Phase 29 should leave Pirate Claw in a state where:
 
 ### Compose Artifact Generation
 
-- Daemon generates `compose.synology.vpn.yml` with `gluetun` service, bind-mounted VPN profile and credential file
-- Daemon generates `compose.synology.direct.yml` (rollback artifact) with direct Transmission topology
-- Both artifacts downloadable from the browser
-- Generated artifacts live under:
+- Daemon generates a single `compose.synology.yml` — always includes gluetun; gluetun idles in passthrough until VPN credentials are configured
+- Artifact downloadable from the browser (reference for DSM 7.2+ Container Manager Project apply)
+- Generated artifact lives under:
   ```text
   /volume1/pirate-claw/config/generated/
-    compose.synology.direct.yml
-    compose.synology.vpn.yml
+    compose.synology.yml
   ```
+- No `compose.synology.direct.yml` rollback artifact — "direct mode" is gluetun passthrough (clear credentials in UI)
 
 ### DSM 7.1 Apply Path
 
-- **P29.01 feasibility spike:** Validate whether DSM 7.1 Docker GUI can recreate a container with a new `--network` configuration without terminal access. Spike is the first deliverable; answer gates the remaining DSM 7.1 UI work.
-- **If GUI apply is feasible:** release-bundle update path; operator recreates containers via DSM Docker GUI; no SSH required
-- **If GUI apply requires terminal:** accepted fallback — documented SSH steps for DSM 7.1 operators only; clearly communicated in the UI as "DSM 7.1: manual apply required"; DSM 7.2+ owners are unaffected
+- **P29.01 spike finding (recorded):** DSM 7.1 legacy Docker package Edit dialog has only General / Port / Volume tabs — no Network tab. Compose Project support is not present in the legacy Docker package. Post-install network migration via GUI is not possible.
+- **Correct model:** gluetun is part of the install stack from the outset. Operator creates all containers fresh via the legacy Docker GUI — gluetun first (which establishes the bridge network), then Transmission and pirate-claw containers attached to it. Network is specified at container creation time, which the GUI does support.
+- No SSH fallback required. No compose Project tab required. Fresh install only — no in-place migration.
 
 ### DSM 7.2+ Apply Path
 
@@ -101,13 +102,15 @@ Phase 29 should leave Pirate Claw in a state where:
 
 ### Runtime Topology
 
-Direct mode:
+Gluetun is always in the stack. Runtime topology has two states:
+
+Passthrough (VPN credentials absent or unverified):
 
 ```text
-pirate-claw-daemon -> bundled Transmission
+pirate-claw-daemon -> gluetun (passthrough) -> bundled Transmission
 ```
 
-VPN bridge mode:
+VPN bridge (credentials saved and verified):
 
 ```text
 pirate-claw-daemon -> gluetun VPN bridge -> bundled Transmission
@@ -115,8 +118,8 @@ pirate-claw-daemon -> gluetun VPN bridge -> bundled Transmission
 
 The owner never sees or edits raw service hostnames. The UI shows:
 
-- **Bundled Transmission: Direct**
-- **Bundled Transmission: VPN Bridge**
+- **VPN not configured** (banner, queueing disabled) — until credentials saved and verified
+- **Bundled Transmission: VPN Bridge** — after `vpn_bridge_active` verified
 
 ### Verification Contract
 
@@ -131,10 +134,10 @@ IP attribution / exit IP check deferred to v2.
 
 ### Rollback
 
-- Operator downloads `compose.synology.direct.yml` from the browser
-- Applies via DSM GUI (same apply flow as VPN, in reverse)
-- No automatic rollback; no daemon-triggered container mutation
-- If VPN bridge is unreachable, torrents pause until the operator acts — this is the correct behavior; the operator is in control
+- Operator clears VPN credentials in the Downloader Network settings page
+- Gluetun continues running in passthrough; Transmission remains reachable
+- No compose teardown, no second compose artifact, no SSH required
+- If VPN bridge is unreachable, queueing is disabled until the operator acts — this is the correct behavior; the operator is in control
 
 ## Explicit Deferrals
 
@@ -151,11 +154,11 @@ IP attribution / exit IP check deferred to v2.
 A DSM-first owner on either DSM 7.1 or DSM 7.2+ can:
 
 1. Open Pirate Claw in a browser from both their LAN IP and Tailscale mesh IP — form submissions work from both
-2. Upload an `.ovpn` profile, enter VPN credentials, and save without exposing secrets in any config file or Compose YAML
-3. Download a generated VPN Compose artifact and apply it via DSM GUI with no terminal commands (or via documented SSH steps on DSM 7.1 if GUI apply is not feasible)
-4. Click "Verify VPN connection" and see `vpn_bridge_active` when gluetun and Transmission RPC are healthy
-5. Download a rollback artifact and revert to direct mode via DSM GUI if needed
-6. Complete a full fresh-install validation on DSM 7.1 (DS918+) — the last DSM 7.1 hardware validation before upgrading to DSM 7.2.1
+2. Complete a fresh install with gluetun in the stack — Transmission and daemon are reachable immediately; UI shows "VPN not configured" banner
+3. Upload an `.ovpn` profile, enter VPN credentials, and save without exposing secrets in any config file or Compose YAML
+4. Click "Verify VPN connection" and see `vpn_bridge_active` when gluetun and Transmission RPC are healthy; queueing enabled
+5. Clear VPN credentials to return to passthrough (gluetun stays in stack; no compose teardown needed)
+6. Complete a full fresh-install validation on DS918+ DSM 7.1 — the last DSM 7.1 hardware gate before upgrading to DSM 7.2.1
 
 ## Retrospective
 
@@ -200,6 +203,19 @@ A DSM-first owner can configure an OpenVPN bridge for bundled Transmission witho
 - automatic Docker/Container Manager mutation through a privileged web app
 - public-internet Pirate Claw support
 - mandatory VPN enforcement before any queueing
+
+## Reshape Rationale (post-approval, pre-P29.02)
+
+P29.01 hardware spike on DS918+ DSM 7.1.1 confirmed: the legacy Docker GUI Edit dialog has no Network tab — network cannot be changed on an existing container. The original plan assumed a post-install compose migration that was blocked by this DSM limitation.
+
+Grill-me decisions locked during reshape:
+
+- **Gluetun always in stack** — single compose artifact; gluetun always present; passthrough until credentials configured. No opt-in branching at install time.
+- **Transmission in passthrough until VPN verified** — stack is immediately reachable after install; UI shows "VPN not configured" banner and disables queueing.
+- **No migration path** — single operator, always fresh install. Upgrade compat not a concern for P29.
+- **VPN config = standalone settings page** — not in setup wizard; "VPN not configured" banner drives operator there when ready.
+- **No rollback artifact** — `compose.synology.direct.yml` dropped; rollback = clear credentials in UI; gluetun idles in passthrough.
+- **P29.06 exit validation scope** — fresh install on DSM 7.1, gluetun stack up, credentials saved, verify returns `vpn_bridge_active`, download queued. Last DSM 7.1 gate before upgrade.
 
 ## Rationale
 

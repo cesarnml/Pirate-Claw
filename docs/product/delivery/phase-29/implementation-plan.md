@@ -12,15 +12,20 @@ Phase 29 is a standalone phase. It closes the P28 CSRF gap, delivers the VPN bri
 
 ## Grill-Me decisions locked
 
-- **CSRF/`allowedOrigins` wiring → env var in generated Compose YAML.** Daemon reads `trusted-origins.json` at VPN config save and writes `ALLOWED_ORIGINS` (space-separated) into the generated compose artifacts. SvelteKit reads it at container start. Restart required to pick up new origins — this is documented behavior. No custom hooks I/O; compose encodes the runtime contract.
-- **DSM 7.1 spike → pure research gate (P29.01).** No code changes. Findings documented in ticket rationale. DSM 7.1 UI copy (GUI-apply path or SSH-fallback path) is written in P29.05 after the answer is known.
+- **CSRF/`allowedOrigins` wiring → env var in generated Compose YAML.** Daemon reads `trusted-origins.json` at VPN config save and writes `ALLOWED_ORIGINS` (space-separated) into the generated compose artifact. SvelteKit reads it at container start. Restart required to pick up new origins — this is documented behavior. No custom hooks I/O; compose encodes the runtime contract.
+- **DSM 7.1 spike → finding recorded (P29.01).** No code changes. Finding: legacy Docker GUI Edit dialog has no Network tab; no Compose Project support. Post-install migration via GUI is not possible. Correct model: gluetun is part of the install stack from the outset; containers created fresh at install time. SSH fallback concern is moot.
+- **Gluetun always in stack — single compose artifact.** `compose.synology.yml` always includes gluetun. No `compose.synology.direct.yml` rollback artifact. VPN mode is runtime state (credentials present/absent), not a different compose.
+- **Passthrough until VPN verified.** Gluetun idles in passthrough until credentials are saved and verified. Transmission is reachable immediately after fresh install. UI shows "VPN not configured" banner and disables queueing until `vpn_bridge_active`.
+- **Rollback = clear credentials in UI.** No compose teardown, no second artifact. Gluetun returns to passthrough.
+- **VPN config = standalone settings page.** Not part of setup wizard. "VPN not configured" banner on dashboard drives operator to Downloader Network page when ready.
 - **VPN credential storage → two separate endpoints.** `POST /api/vpn/profile` handles `.ovpn` upload; `POST /api/vpn/credentials` handles username/password. Independent update paths so credentials can be rotated without re-uploading the profile.
-- **Compose artifact generation → on save.** Daemon generates both `compose.synology.vpn.yml` and `compose.synology.direct.yml` on every profile or credential save. `GET /api/vpn/compose/vpn` and `GET /api/vpn/compose/direct` serve the pre-generated files; 404 if no profile has been saved yet.
+- **Compose artifact generation → on save.** Daemon generates `compose.synology.yml` (single artifact, gluetun always present) on every profile or credential save. `GET /api/vpn/compose` serves the pre-generated file; 404 if no profile has been saved yet.
 - **VPN verification → one-shot synchronous.** `POST /api/vpn/verify` checks gluetun health + Transmission RPC reachability in a single HTTP response (10s timeout). "Try again" is the operator's responsibility if gluetun is slow to start. Consistent with the existing `GET /api/install-health` pattern.
 - **Carry-overs → single bundled prerequisite PR (P29.02).** CSRF wiring, Plex PIN callback, `isStarter` routing, and debug logging ship as one coherent "P28 debt closure" PR. All VPN tickets gate on it.
 - **Daemon VPN → schema ticket then endpoint ticket.** P29.03 delivers config types and file path helpers (no HTTP surface). P29.04 depends on it and delivers all HTTP endpoints + compose generation.
-- **Web VPN UI → single full-page ticket (P29.05).** The complete Downloader Network route (form, save, download, verify, status) ships as one coherent user story.
+- **Web VPN UI → single full-page ticket (P29.05).** The complete Downloader Network page (credential upload, save, verify, status, "VPN not configured" passthrough banner) ships as one coherent user story. No compose download button for rollback; single compose download for DSM 7.2+ apply.
 - **Debug logging → mandatory on all critical paths.** P29.02, P29.04, and P29.05 each carry an explicit Review Focus requirement: every critical path (CSRF origin wiring, VPN file writes, compose generation, gluetun health check, Transmission RPC verify) must emit a structured log line at key decision points so P29.06 hardware validation can surface failures without SSH access.
+- **P29.06 scope → fresh install hardware gate.** Fresh install on DS918+ DSM 7.1: gluetun stack up, credentials saved, verify returns `vpn_bridge_active`, download queued. Last DSM 7.1 gate before upgrading to DSM 7.2.1.
 
 ## Ticket Order
 
@@ -47,11 +52,11 @@ Phase 29 is a standalone phase. It closes the P28 CSRF gap, delivers the VPN bri
 A DSM-first owner on either DSM 7.1 or DSM 7.2+ can:
 
 1. Open Pirate Claw from both their LAN IP and Tailscale mesh IP — form submissions work from both (CSRF gap closed)
-2. Upload an `.ovpn` profile and enter VPN credentials without those credentials appearing in any JSON config file or Compose YAML
-3. Download a daemon-generated VPN Compose artifact and apply it via DSM GUI with no terminal commands (or via documented SSH steps on DSM 7.1 if GUI apply is not feasible)
-4. Click "Verify VPN connection" and see `vpn_bridge_active` when gluetun and Transmission RPC are healthy
-5. Download a rollback artifact (`compose.synology.direct.yml`) and revert to direct mode via DSM GUI
-6. Complete a full fresh-install validation on DS918+ DSM 7.1 — the last DSM 7.1 hardware validation before upgrading to DSM 7.2.1
+2. Complete a fresh install with gluetun in the stack — Transmission and daemon reachable immediately; UI shows "VPN not configured" banner; queueing disabled
+3. Upload an `.ovpn` profile and enter VPN credentials without those credentials appearing in any JSON config file or Compose YAML
+4. Click "Verify VPN connection" and see `vpn_bridge_active` when gluetun and Transmission RPC are healthy; queueing enabled
+5. Clear VPN credentials to return to passthrough — no compose teardown, no SSH, gluetun stays in stack
+6. Complete a full fresh-install validation on DS918+ DSM 7.1 — the last DSM 7.1 hardware gate before upgrading to DSM 7.2.1
 
 ## CI Baseline
 
@@ -83,9 +88,9 @@ Run `bun run ci` on `main` to confirm before starting P29.02.
 ## Stop Conditions
 
 - Broken CI that cannot be resolved within the ticket scope
-- DSM 7.1 spike (P29.01) reveals that GUI apply is impossible AND a workable SSH fallback is unclear — surface before writing DSM 7.1 UI copy
 - Gluetun API contract differs materially from the health endpoint assumed in P29.04 — spike the actual endpoint before implementing verify
 - Any discovery that the CSRF `ALLOWED_ORIGINS` env var approach is not supported by the SvelteKit version in use — surface immediately, do not work around silently
+- DSM 7.1 hardware validation (P29.06) reveals a blocking incompatibility with the gluetun network bridge at the Docker engine level — surface before marking P29.06 done
 
 ## Phase Closeout
 

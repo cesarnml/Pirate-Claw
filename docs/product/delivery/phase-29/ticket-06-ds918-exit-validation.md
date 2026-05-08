@@ -49,27 +49,37 @@ Run through every checklist item on DS918+ DSM 7.1.1. Check each item off as it 
 - [ ] Open `config/vpn/credentials` on the NAS — confirm it contains `username\npassword\n` (gluetun format) with mode `0o600`
 - [ ] Open `compose.synology.vpn.yml` — confirm credentials do NOT appear anywhere in the file
 
-**Compose Artifacts (P29.04 + P29.05):**
+**Compose Artifact (P29.04 + P29.05):**
 
-- [ ] Download `compose.synology.vpn.yml` from the browser — file downloads correctly; contains `gluetun` service and `ALLOWED_ORIGINS` env var for the web service
-- [ ] Download `compose.synology.direct.yml` from the browser — file downloads correctly; contains `transmission` service and `ALLOWED_ORIGINS` env var
-- [ ] Grep both files — confirm no credential values appear
+- [ ] Download `compose.synology.yml` from the browser — file downloads correctly; contains `gluetun` service and `ALLOWED_ORIGINS` env var for the web service
+- [ ] Grep file — confirm no credential values appear
 
-**DSM Apply (P29.01 findings):**
+**Fresh Install with Gluetun Stack (P29.04 + P29.05):**
 
-- [ ] Apply `compose.synology.vpn.yml` via the DSM path confirmed in P29.01 (GUI or SSH fallback)
-- [ ] Confirm pirate-claw-web and transmission containers restart on the gluetun bridge network
-- [ ] Confirm gluetun container comes up and shows a healthy status in DSM
+- [ ] Perform fresh install: wipe `config/` volume contents; create containers in order via DSM 7.1 Docker GUI — gluetun first (establishes bridge network), then transmission and pirate-claw containers attached
+- [ ] All containers come up healthy in DSM Docker GUI
+- [ ] Navigate to Pirate Claw — "VPN not configured" banner visible; queueing disabled
+- [ ] Grep daemon logs for startup log lines in clean state (config load, trusted-origins load, auth state read)
+
+**VPN Profile and Credentials (P29.04 + P29.05):**
+
+- [ ] Navigate to Config → Downloader Network
+- [ ] Upload a valid `.ovpn` profile — "Profile saved" confirmation shown
+- [ ] Grep daemon logs for `[vpn] profile saved` — confirm size and compose regeneration logged
+- [ ] Enter VPN username and password — "Credentials saved" confirmation shown
+- [ ] Grep daemon logs for `[vpn] credentials saved` — confirm username is logged, password is NOT logged
+- [ ] Open `config/vpn/credentials` on the NAS — confirm it contains `username\npassword\n` with mode `0o600`
+- [ ] Open `compose.synology.yml` — confirm credentials do NOT appear anywhere in the file
 
 **VPN Verification (P29.04 + P29.05):**
 
-- [ ] Click "Verify VPN connection" — status badge shows `vpn_bridge_active`
+- [ ] Click "Verify VPN connection" — status badge shows `vpn_bridge_active`; "VPN not configured" banner gone; queueing enabled
 - [ ] Grep daemon logs for `[vpn] verify` — confirm gluetun and Transmission both logged as `ok`
 
 **Rollback (P29.04 + P29.05):**
 
-- [ ] Apply `compose.synology.direct.yml` via DSM GUI
-- [ ] Click "Verify VPN connection" — status badge shows `direct_mode`
+- [ ] Clear credentials via UI — confirm page shows passthrough state; gluetun container remains running in DSM
+- [ ] Click "Verify VPN connection" — status badge shows `passthrough` ("Gluetun running, no credentials configured")
 
 **Fresh Install Validation:**
 
