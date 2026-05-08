@@ -549,6 +549,20 @@
 		<NetworkPostureBanner />
 	{/if}
 
+	<div
+		class="border-border/70 bg-card/80 flex flex-wrap items-center justify-between gap-3 rounded-3xl border p-4 shadow-sm"
+	>
+		<div>
+			<p class="text-sm font-semibold">Downloader Network</p>
+			<p class="text-muted-foreground text-sm">
+				Upload OpenVPN profiles, save bridge credentials, and verify bundled Transmission.
+			</p>
+		</div>
+		<Button href="/config/downloader-network" variant="outline" class="rounded-full">
+			Open Downloader Network
+		</Button>
+	</div>
+
 	{#if data.error}
 		<ApiUnavailableAlert message={data.error} />
 	{:else if data.config}
