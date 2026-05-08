@@ -9,8 +9,10 @@ export const GET: RequestHandler = async ({ url }) => {
 		throw redirect(303, '/config?plexAuthError=Config+writes+are+disabled.');
 	}
 
-	const forwardUrl = `${url.origin}/plex/connect/callback`;
 	const returnTo = url.searchParams.get('returnTo') ?? '/config';
+	const callbackUrl = new URL(`${url.origin}/plex/connect/callback`);
+	callbackUrl.searchParams.set('returnTo', returnTo);
+	const forwardUrl = callbackUrl.toString();
 
 	const response = await apiRequest('/api/plex/auth/start', {
 		method: 'POST',

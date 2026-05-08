@@ -27,11 +27,11 @@ describe('GET /plex/connect', () => {
 		const event = {
 			url,
 			request: new Request(url),
-			locals: {} as App.Locals,
+			locals: {} as never,
 			cookies: { get: vi.fn() }
 		};
 
-		await GET(event as never).catch(() => {});
+		await Promise.resolve(GET(event as never)).catch(() => {});
 
 		expect(apiRequestMock).toHaveBeenCalledWith(
 			'/api/plex/auth/start',
@@ -63,11 +63,11 @@ describe('GET /plex/connect', () => {
 		const event = {
 			url,
 			request: new Request(url),
-			locals: {} as App.Locals,
+			locals: {} as never,
 			cookies: { get: vi.fn() }
 		};
 
-		await GET(event as never).catch(() => {});
+		await Promise.resolve(GET(event as never)).catch(() => {});
 
 		const callBody = JSON.parse(apiRequestMock.mock.calls[0][1].body as string) as {
 			forwardUrl: string;

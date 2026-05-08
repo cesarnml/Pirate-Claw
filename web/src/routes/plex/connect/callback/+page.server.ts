@@ -5,13 +5,15 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ url }) => {
 	const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 	const sessionId = url.searchParams.get('session');
+	// URL param is authoritative — it survives Plex's redirect round-trip
+	const returnToFromUrl = url.searchParams.get('returnTo') ?? '/config';
 
 	if (!writeToken || !sessionId) {
 		return {
 			ok: false,
 			pending: false,
 			message: 'Missing Plex auth session. Start the connect flow again.',
-			returnTo: '/config',
+			returnTo: returnToFromUrl,
 			expiresAt: null
 		};
 	}
@@ -37,7 +39,7 @@ export const load: PageServerLoad = async ({ url }) => {
 				ok: false,
 				pending: true,
 				message: body.error ?? 'Plex sign-in is still completing.',
-				returnTo: body.returnTo ?? '/config',
+				returnTo: returnToFromUrl,
 				expiresAt: body.expiresAt ?? null
 			};
 		}
@@ -45,17 +47,18 @@ export const load: PageServerLoad = async ({ url }) => {
 			ok: false,
 			pending: false,
 			message: body.error ?? 'Could not complete Plex auth.',
-			returnTo: '/config',
+			returnTo: returnToFromUrl,
 			expiresAt: null
 		};
 	}
 
-	const body = (await response.json()) as { returnTo?: string | null };
+	await response.json();
+	console.log({ event: 'plex_callback_redirect', returnTo: returnToFromUrl });
 	return {
 		ok: true,
 		pending: false,
 		message: 'Plex connected successfully.',
-		returnTo: body.returnTo ?? '/config',
+		returnTo: returnToFromUrl,
 		expiresAt: null
 	};
 };

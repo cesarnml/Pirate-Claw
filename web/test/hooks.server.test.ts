@@ -194,7 +194,7 @@ describe('handle — CSRF validation', () => {
 			}),
 			url: new URL(`http://localhost${pathname}`),
 			cookies: { get: vi.fn().mockReturnValue(undefined) },
-			locals: {} as App.Locals
+			locals: {} as never
 		};
 	}
 
@@ -237,7 +237,7 @@ describe('handle — CSRF validation', () => {
 			}),
 			url: new URL('http://localhost/'),
 			cookies: { get: vi.fn().mockReturnValue(undefined) },
-			locals: {} as App.Locals
+			locals: {} as never
 		};
 		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
 
