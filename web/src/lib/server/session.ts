@@ -56,26 +56,25 @@ export async function verifyJwt(
 	token: string,
 	secret: string
 ): Promise<{ username: string } | null> {
-	const parts = token.split('.');
-	if (parts.length !== 3) return null;
-	const [header, payload, sigB64] = parts;
-	const data = `${header}.${payload}`;
-	const key = await hmacKey(secret);
-	const sigBytes = b64urlDecode(sigB64);
-	const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(data));
-	if (!valid) return null;
-	let claims: { sub?: unknown; exp?: unknown };
 	try {
-		claims = JSON.parse(new TextDecoder().decode(b64urlDecode(payload))) as {
+		const parts = token.split('.');
+		if (parts.length !== 3) return null;
+		const [header, payload, sigB64] = parts;
+		const data = `${header}.${payload}`;
+		const key = await hmacKey(secret);
+		const sigBytes = b64urlDecode(sigB64);
+		const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(data));
+		if (!valid) return null;
+		const claims = JSON.parse(new TextDecoder().decode(b64urlDecode(payload))) as {
 			sub?: unknown;
 			exp?: unknown;
 		};
+		if (typeof claims.sub !== 'string' || claims.sub.length === 0) return null;
+		if (typeof claims.exp !== 'number' || claims.exp < Math.floor(Date.now() / 1000)) return null;
+		return { username: claims.sub };
 	} catch {
 		return null;
 	}
-	if (typeof claims.sub !== 'string') return null;
-	if (typeof claims.exp !== 'number' || claims.exp < Math.floor(Date.now() / 1000)) return null;
-	return { username: claims.sub };
 }
 
 export function issueSessionCookie(cookies: Cookies, token: string): void {

@@ -33,6 +33,9 @@ function normalizePlexAuthState(
 }
 
 export const load: LayoutServerLoad = async ({ locals }) => {
+	// Skip sensitive API fetches for unauthenticated requests (auth pages: /setup, /login)
+	const authenticated = locals.user !== null;
+
 	const [
 		healthResult,
 		sessionResult,
@@ -42,24 +45,32 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		installHealthResult,
 		plexAuthResult
 	] = await Promise.allSettled([
-		apiFetch<DaemonHealth>('/api/health'),
-		apiFetch<SessionInfo>('/api/transmission/session'),
-		apiFetch<AppConfig>('/api/config'),
+		authenticated ? apiFetch<DaemonHealth>('/api/health') : Promise.reject('unauthenticated'),
+		authenticated
+			? apiFetch<SessionInfo>('/api/transmission/session')
+			: Promise.reject('unauthenticated'),
+		authenticated ? apiFetch<AppConfig>('/api/config') : Promise.reject('unauthenticated'),
 		apiFetch<{ state: SetupState }>('/api/setup/state'),
-		apiFetch<ReadinessResponse>('/api/setup/readiness'),
-		apiFetch<InstallHealthResponse>('/api/setup/install-health'),
-		apiFetch<PlexAuthStatusResponse>('/api/plex/auth/status')
+		authenticated
+			? apiFetch<ReadinessResponse>('/api/setup/readiness')
+			: Promise.reject('unauthenticated'),
+		authenticated
+			? apiFetch<InstallHealthResponse>('/api/setup/install-health')
+			: Promise.reject('unauthenticated'),
+		authenticated
+			? apiFetch<PlexAuthStatusResponse>('/api/plex/auth/status')
+			: Promise.reject('unauthenticated')
 	]);
 
-	if (healthResult.status === 'rejected') {
+	if (authenticated && healthResult.status === 'rejected') {
 		console.error('[layout] failed to load /api/health:', healthResult.reason);
 	}
 
-	if (sessionResult.status === 'rejected') {
+	if (authenticated && sessionResult.status === 'rejected') {
 		console.error('[layout] failed to load /api/transmission/session:', sessionResult.reason);
 	}
 
-	if (configResult.status === 'rejected') {
+	if (authenticated && configResult.status === 'rejected') {
 		console.error('[layout] failed to load /api/config:', configResult.reason);
 	}
 
@@ -67,15 +78,15 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		console.error('[layout] failed to load /api/setup/state:', setupStateResult.reason);
 	}
 
-	if (readinessResult.status === 'rejected') {
+	if (authenticated && readinessResult.status === 'rejected') {
 		console.error('[layout] failed to load /api/setup/readiness:', readinessResult.reason);
 	}
 
-	if (installHealthResult.status === 'rejected') {
+	if (authenticated && installHealthResult.status === 'rejected') {
 		console.error('[layout] failed to load /api/setup/install-health:', installHealthResult.reason);
 	}
 
-	if (plexAuthResult.status === 'rejected') {
+	if (authenticated && plexAuthResult.status === 'rejected') {
 		console.error('[layout] failed to load /api/plex/auth/status:', plexAuthResult.reason);
 	}
 

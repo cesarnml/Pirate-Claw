@@ -56,10 +56,10 @@
 	const showSidebar = $derived(!isOnboarding && !isAuthPage);
 	const setupState = $derived(data.setupState ?? 'partially_configured');
 	const readinessState = $derived(data.readinessState ?? 'not_ready');
-	const isStarter = $derived(setupState === 'starter' && !isOnboarding);
-	const isPartiallyConfigured = $derived(setupState === 'partially_configured');
+	const isStarter = $derived(setupState === 'starter' && !isOnboarding && !isAuthPage);
+	const isPartiallyConfigured = $derived(setupState === 'partially_configured' && !isAuthPage);
 	const isReadyPendingRestart = $derived(
-		readinessState === 'ready_pending_restart' && !isOnboarding
+		readinessState === 'ready_pending_restart' && !isOnboarding && !isAuthPage
 	);
 	let restartingFromBanner = $state(false);
 	let restartBannerPhase = $state<

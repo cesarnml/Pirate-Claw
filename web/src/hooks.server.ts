@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, isRedirect, type Handle } from '@sveltejs/kit';
 import {
 	initSessionSecret,
 	getSessionSecret,
@@ -50,19 +50,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	const secret = getSessionSecret();
-	if (!secret) {
-		event.locals.user = null;
-		return resolve(event);
-	}
-
-	const token = event.cookies.get(SESSION_COOKIE_NAME);
-	if (token) {
-		const user = await verifyJwt(token, secret);
+	const sessionToken = secret ? event.cookies.get(SESSION_COOKIE_NAME) : undefined;
+	if (secret && sessionToken) {
+		const user = await verifyJwt(sessionToken, secret);
 		if (user) {
 			event.locals.user = user;
 			return resolve(event);
 		}
 	}
+	event.locals.user = null;
 
 	// API routes return 401 rather than redirecting
 	if (path.startsWith('/api/')) {
@@ -85,7 +81,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 					redirect(302, '/setup');
 				}
 			}
-		} catch {
+		} catch (err) {
+			if (isRedirect(err)) throw err;
 			// daemon unreachable; fall through to /login
 		}
 	}

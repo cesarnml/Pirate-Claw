@@ -5,6 +5,8 @@ vi.mock('$lib/server/api', () => ({
 	apiFetch: apiFetchMock
 }));
 
+const mockUser = { username: 'admin' };
+
 describe('layout server load', () => {
 	beforeEach(() => {
 		apiFetchMock.mockReset();
@@ -49,10 +51,10 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = await load({ locals: { user: null } } as never);
+		const result = await load({ locals: { user: mockUser } } as never);
 
 		expect(result).toEqual({
-			user: null,
+			user: mockUser,
 			health: { uptime: 1, startedAt: '2024-01-01T00:00:00Z' },
 			transmissionSession: {
 				version: '3.0',
@@ -71,41 +73,18 @@ describe('layout server load', () => {
 		});
 	});
 
-	it('returns setupState=starter when readiness reports starter configState', async () => {
+	it('returns setupState=starter when setup/state reports starter (unauthenticated)', async () => {
 		const { load } = await import('../../src/routes/+layout.server');
 
-		apiFetchMock
-			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
-			.mockResolvedValueOnce({
-				version: '3.0',
-				downloadSpeed: 0,
-				uploadSpeed: 0,
-				activeTorrentCount: 0
-			})
-			.mockResolvedValueOnce({
-				plex: { url: 'http://localhost:32400', token: '', refreshIntervalMinutes: 30 }
-			})
-			.mockResolvedValueOnce({ state: 'starter' })
-			.mockResolvedValueOnce({
-				state: 'not_ready',
-				configState: 'starter',
-				transmissionReachable: false,
-				daemonLive: true
-			})
-			.mockResolvedValueOnce(null)
-			.mockResolvedValueOnce({
-				state: 'connected',
-				plexUrl: 'http://localhost:32400',
-				hasToken: true,
-				tokenSource: 'config',
-				returnTo: null
-			});
+		// Unauthenticated: only /api/setup/state is fetched
+		apiFetchMock.mockResolvedValueOnce({ state: 'starter' });
 
 		const result = (await load({ locals: { user: null } } as never)) as {
 			setupState: string;
 			readinessState: string;
 		};
 		expect(result.setupState).toBe('starter');
+		// Readiness not fetched for unauthenticated — always not_ready
 		expect(result.readinessState).toBe('not_ready');
 	});
 
@@ -139,7 +118,7 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = (await load({ locals: { user: null } } as never)) as { setupState: string };
+		const result = (await load({ locals: { user: mockUser } } as never)) as { setupState: string };
 		expect(result.setupState).toBe('partially_configured');
 	});
 
@@ -173,7 +152,9 @@ describe('layout server load', () => {
 				returnTo: null
 			});
 
-		const result = (await load({ locals: { user: null } } as never)) as { readinessState: string };
+		const result = (await load({ locals: { user: mockUser } } as never)) as {
+			readinessState: string;
+		};
 		expect(result.readinessState).toBe('not_ready');
 	});
 
@@ -182,14 +163,8 @@ describe('layout server load', () => {
 		try {
 			const { load } = await import('../../src/routes/+layout.server');
 
-			apiFetchMock
-				.mockRejectedValueOnce(new Error('health down'))
-				.mockRejectedValueOnce(new Error('tx down'))
-				.mockRejectedValueOnce(new Error('config down'))
-				.mockRejectedValueOnce(new Error('setup state down'))
-				.mockRejectedValueOnce(new Error('readiness down'))
-				.mockRejectedValueOnce(new Error('install health down'))
-				.mockRejectedValueOnce(new Error('plex auth down'));
+			// For unauthenticated: only setup/state is fetched, and it rejects
+			apiFetchMock.mockRejectedValueOnce(new Error('setup state down'));
 
 			const result = await load({ locals: { user: null } } as never);
 

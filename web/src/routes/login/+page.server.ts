@@ -34,7 +34,12 @@ export const actions: Actions = {
 		}
 
 		if (!res.ok) return fail(502, { error: 'Login service unavailable — try again' });
-		const body = (await res.json()) as { ok: boolean };
+		let body: { ok: boolean };
+		try {
+			body = (await res.json()) as { ok: boolean };
+		} catch {
+			return fail(502, { error: 'Login service unavailable — try again' });
+		}
 		if (!body.ok) return fail(401, { error: 'Invalid username or password' });
 
 		const secret = getSessionSecret();
