@@ -80,7 +80,9 @@ describe('Synology release bundle', () => {
     const combined = docs.join('\n');
 
     expect(combined).toContain('File Station');
-    expect(combined).toContain('Import `images/pirate-claw-image-v');
+    expect(combined).toContain('`images/pirate-claw-image-v');
+    expect(combined).toContain('`images/pirate-claw-web-image-v');
+    expect(combined).toContain('`images/transmission-image-v');
     expect(combined).toContain('Enable auto-restart.');
     expect(combined).toContain(
       'Do not use phase-specific image tags for Phase 28 validation.',
