@@ -875,13 +875,13 @@ function normalizeUniquePatchCommitShas(rawShas: string[]): string[] {
 }
 
 function parsePostVerifyArgs(positionals: string[]): {
-  auditOutcome?: ReviewOutcome;
+  auditOutcome?: 'clean' | 'patched';
   auditPatchCommitArgs: string[];
   auditTicketId?: string;
 } {
   const positional0 = positionals[0];
   const positional1 = positionals[1];
-  const auditOutcome: ReviewOutcome | undefined =
+  const auditOutcome: 'clean' | 'patched' | undefined =
     positional0 === 'clean' || positional0 === 'patched'
       ? positional0
       : positional1 === 'clean' || positional1 === 'patched'

@@ -13,6 +13,8 @@ export default tseslint.config(
       'web/',
       '.claude/',
       '.claude/**/*',
+      '.son-of-anton/',
+      '.son-of-anton/**/*',
       '.codex-clone-*/',
       '.codex-clone-*/**/*',
       '.codex-worktrees/',
