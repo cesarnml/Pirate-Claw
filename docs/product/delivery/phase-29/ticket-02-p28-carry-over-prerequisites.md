@@ -64,8 +64,12 @@ Scope: web-daemon
 
 > Append here (do not edit above) when behavior or trade-offs change during implementation.
 
-Red first: [what test failed first]
-Why this path: [why this implementation was the smallest acceptable]
-Alternative considered: [one rejected alternative and why]
-Deferred: [what was intentionally left out of this ticket]
-Contract note: record any deviation from the ticket metadata contract here, including missing/incorrect `Type:` or non-compliant `Scope:` fields, and why it happened.
+Red first: CSRF handle test failed (got 200, expected 403) because the old `handle` had no origin check. Plex connect test failed because `forwardUrl` had no `returnTo` query param.
+
+Why this path: Disabled SvelteKit's built-in CSRF (`csrf: { checkOrigin: false }`) and implemented a custom check in `handle`. This is the only approach that is unit-testable without running a full SvelteKit server. Setting `process.env.ALLOWED_ORIGINS` in `init()` would be too late — the adapter-node reads it at import time, before `init()` runs.
+
+Alternative considered: Setting `process.env.ALLOWED_ORIGINS` at `init()` time. Rejected because `@sveltejs/adapter-node` parses ALLOWED_ORIGINS at module load time, not per-request, so the env var is read before the init hook fires.
+
+Deferred: Daemon-side structured logging (startup config load, API request receipt) is not included here — the ticket scope was the web/SvelteKit side. The `PIRATE_CLAW_TRUSTED_ORIGINS_FILE` env var must be wired into the compose artifacts in P29.04 for deployed instances.
+
+Contract note: No deviations from ticket metadata.
