@@ -45,3 +45,5 @@ Why this path: DSM 7.1 GUI capabilities are not documented for network reconfigu
 Alternative considered: assuming SSH fallback without testing — rejected because the product plan explicitly commits to GUI apply if feasible; operators should not need terminal access for the happy path
 Deferred: DSM 7.2+ apply path is out of scope for this spike; DSM 7.2+ uses Container Manager Project update which is well-documented
 Contract note: `Type: chore` is correct for a research-only ticket with no code artifact
+
+**Status: red — hardware access pending. P29.02 proceeds in parallel per implementation plan.**
