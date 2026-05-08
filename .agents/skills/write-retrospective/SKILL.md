@@ -1,5 +1,5 @@
 ---
-name: write-retrospective
+name: soa-write-retrospective
 description: Write a phase or engineering epic retrospective. Use when completing a phase, epic, or significant standalone PR. Output goes to notes/public/<plan-path>-retrospective.md or notes/public/ee<N>-retrospective.md.
 ---
 

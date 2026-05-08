@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 
 import type {
   AiReviewComment,
@@ -37,13 +37,12 @@ type TicketReviewMetadataRefreshTarget = Pick<
   | 'title'
   | 'ticketFile'
   | 'baseBranch'
-  | 'postVerifySelfAuditCompletedAt'
-  | 'selfAuditOutcome'
-  | 'selfAuditPatchCommits'
-  | 'codexPreflightOutcome'
-  | 'codexPreflightCompletedAt'
-  | 'codexPreflightNote'
-  | 'codexPreflightPatchCommits'
+  | 'verifiedAt'
+  | 'verifyOutcome'
+  | 'verifyPatchCommits'
+  | 'subagentReviewOutcome'
+  | 'subagentReviewCompletedAt'
+  | 'subagentReviewPatchCommits'
   | 'reviewActionSummary'
   | 'reviewArtifactJsonPath'
   | 'reviewArtifactPath'
@@ -979,14 +978,14 @@ export function buildPullRequestBody(
     ticket.status === 'needs_patch' ||
     ticket.status === 'operator_input_needed';
   assertPatchedStageHasCommitEvidence({
-    outcome: ticket.selfAuditOutcome,
-    patchCommits: ticket.selfAuditPatchCommits,
-    stageLabel: 'Self-audit',
+    outcome: ticket.verifyOutcome,
+    patchCommits: ticket.verifyPatchCommits,
+    stageLabel: 'Post-verify',
   });
   assertPatchedStageHasCommitEvidence({
-    outcome: ticket.codexPreflightOutcome,
-    patchCommits: ticket.codexPreflightPatchCommits,
-    stageLabel: 'Codex preflight',
+    outcome: ticket.subagentReviewOutcome,
+    patchCommits: ticket.subagentReviewPatchCommits,
+    stageLabel: 'Subagent review',
   });
 
   const lines = [
@@ -1006,50 +1005,47 @@ export function buildPullRequestBody(
 
   lines.push(`- stacked base branch: \`${ticket.baseBranch}\``);
 
-  const selfAuditLine = buildInternalReviewStageLine({
-    completedAt: ticket.postVerifySelfAuditCompletedAt,
-    outcome: ticket.selfAuditOutcome,
-    stageLabel: 'self-audit',
+  const postVerifyLine = buildInternalReviewStageLine({
+    completedAt: ticket.verifiedAt,
+    outcome: ticket.verifyOutcome,
+    stageLabel: 'post-verify',
   });
-  if (selfAuditLine) {
-    lines.push(selfAuditLine);
+  if (postVerifyLine) {
+    lines.push(postVerifyLine);
   }
 
-  const codexPreflightLine = buildInternalReviewStageLine({
-    completedAt: ticket.codexPreflightCompletedAt,
-    outcome: ticket.codexPreflightOutcome,
-    stageLabel: 'codexPreflight',
+  const subagentReviewLine = buildInternalReviewStageLine({
+    completedAt: ticket.subagentReviewCompletedAt,
+    outcome: ticket.subagentReviewOutcome,
+    stageLabel: 'subagentReview',
   });
-  if (codexPreflightLine) {
-    lines.push(codexPreflightLine);
-    if (ticket.codexPreflightNote) {
-      lines.push(`  > ${ticket.codexPreflightNote}`);
-    }
+  if (subagentReviewLine) {
+    lines.push(subagentReviewLine);
   }
 
-  const selfAuditPatchCommitBullets = buildRecordedPatchCommitBullets(
-    ticket.selfAuditPatchCommits,
+  const postVerifyPatchCommitBullets = buildRecordedPatchCommitBullets(
+    ticket.verifyPatchCommits,
     options.githubRepo,
   );
-  if (selfAuditPatchCommitBullets.length > 0) {
+  if (postVerifyPatchCommitBullets.length > 0) {
     lines.push(
       '',
-      '### Self-Audit Patch Commits',
+      '### Post-Verify Patch Commits',
       '',
-      ...selfAuditPatchCommitBullets,
+      ...postVerifyPatchCommitBullets,
     );
   }
 
-  const codexPatchCommitBullets = buildRecordedPatchCommitBullets(
-    ticket.codexPreflightPatchCommits,
+  const subagentPatchCommitBullets = buildRecordedPatchCommitBullets(
+    ticket.subagentReviewPatchCommits,
     options.githubRepo,
   );
-  if (codexPatchCommitBullets.length > 0) {
+  if (subagentPatchCommitBullets.length > 0) {
     lines.push(
       '',
-      '### Codex Preflight Patch Commits',
+      '### Subagent Review Patch Commits',
       '',
-      ...codexPatchCommitBullets,
+      ...subagentPatchCommitBullets,
     );
   }
 
@@ -1169,24 +1165,13 @@ export function buildReviewMetadataRefreshBody(
 }
 
 export function buildPullRequestTitle(
-  ticket: Pick<TicketState, 'id' | 'title'>,
-  commitSubject?: string,
+  ticket: Pick<TicketState, 'id' | 'title' | 'ticketFile' | 'scope'>,
 ): string {
-  const fallbackSubject = `feat: ${ticket.title.toLowerCase()}`;
-  const normalizedSubject = (commitSubject?.trim() || '')
-    .replace(/\s+\[(?:self-audit|codexPreflight)\]$/i, '')
-    .replace(/\s+\[[A-Z0-9.]+\]$/, '');
-  const baseSubject = isConventionalCommitSubject(normalizedSubject)
-    ? normalizedSubject
-    : fallbackSubject;
-
-  return `${baseSubject} [${ticket.id}]`;
-}
-
-function isConventionalCommitSubject(subject: string): boolean {
-  return /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?:\s+\S/.test(
-    subject,
-  );
+  const typeMatch = basename(ticket.ticketFile).match(/^ticket-\d+-([a-z]+)-/);
+  const type = typeMatch?.[1] ?? 'feat';
+  const scopePart = ticket.scope ? `(${ticket.scope})` : '';
+  const subject = ticket.title.toLowerCase();
+  return `${type}${scopePart}: ${subject} [${ticket.id}]`;
 }
 
 export function updatePullRequestBody(

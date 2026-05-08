@@ -379,7 +379,7 @@ export function formatReviewWindowMessage(
     `- checks at: ${checks.join(', ')} minutes after PR open`,
     `- first check at: ${firstCheckAt}`,
     `- final check at: ${finalCheckAt}`,
-    '- if no actionable `ai-code-review` findings are captured by the final applicable check, the orchestrator records `clean` and continues',
+    '- if no actionable `pr-review` findings are captured by the final applicable check, the orchestrator records `clean` and continues',
   ].join('\n');
 }
 

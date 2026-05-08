@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -8,6 +8,7 @@ import { DEFAULT_REVIEW_POLLING_PROFILE } from './review-polling-profile';
 export function parsePlan(
   markdown: string,
   planPath: string,
+  cwd?: string,
 ): TicketDefinition[] {
   const ticketOrderSection = markdown.match(
     /## Ticket Order\s+([\s\S]*?)\n## Ticket Files/,
@@ -38,11 +39,15 @@ export function parsePlan(
 
   const planDir = dirname(planPath);
 
-  return titles.map((ticket, index) => ({
-    ...ticket,
-    slug: slugify(ticket.title),
-    ticketFile: join(planDir, files[index] ?? ''),
-  }));
+  return titles.map((ticket, index) => {
+    const ticketFile = join(planDir, files[index] ?? '');
+    return {
+      ...ticket,
+      slug: slugify(ticket.title),
+      scope: parseTicketScope(resolve(cwd ?? '', ticketFile)),
+      ticketFile,
+    };
+  });
 }
 
 export function derivePlanKey(planPath: string): string {
@@ -99,7 +104,7 @@ export async function inferPlanPathFromBranch(
     const markdown = await readFile(resolve(cwd, planPath), 'utf8');
     planIndex.push({
       planPath,
-      tickets: parsePlan(markdown, planPath),
+      tickets: parsePlan(markdown, planPath, cwd),
     });
   }
 
@@ -145,7 +150,7 @@ async function listImplementationPlans(
   cwd: string,
   planRoot: string,
 ): Promise<string[]> {
-  const deliveryRoot = resolve(cwd, planRoot, '02-delivery');
+  const deliveryRoot = resolve(cwd, planRoot, 'product/delivery');
   const entries = await readdir(deliveryRoot, { withFileTypes: true });
 
   return entries
@@ -158,6 +163,16 @@ async function listImplementationPlans(
     )
     .filter((planPath) => existsSync(resolve(cwd, planPath)))
     .sort();
+}
+
+function parseTicketScope(ticketFilePath: string): string | undefined {
+  try {
+    const content = readFileSync(ticketFilePath, 'utf8');
+    const match = content.match(/^Scope:\s*(.+)$/im);
+    return match ? match[1]!.trim().toLowerCase() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeRepoPath(value: string): string {

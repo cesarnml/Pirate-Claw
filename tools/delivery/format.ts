@@ -10,6 +10,7 @@ import type {
   DeliveryState,
   StandaloneAiReviewResult,
   TicketState,
+  TicketStatus,
 } from './types';
 
 export type RepairStateResult = {
@@ -18,6 +19,41 @@ export type RepairStateResult = {
   changes: string[];
   hadExistingState: boolean;
 };
+
+export function resolveNextCommand(
+  status: TicketStatus,
+  config: ResolvedOrchestratorConfig,
+  planPath: string,
+  ticketId?: string,
+): string | null {
+  const invoke = generateRunDeliverInvocation(config.packageManager);
+  const cmd = (subcommand: string) =>
+    `${invoke} --plan ${planPath} ${subcommand}`;
+
+  switch (status) {
+    case 'in_progress':
+      return cmd('post-verify');
+    case 'verified':
+      return config.reviewPolicy.subagentReview !== 'disabled'
+        ? cmd('subagent-review')
+        : cmd('open-pr');
+    case 'subagent_review_complete':
+      return cmd('open-pr');
+    case 'in_review':
+      return cmd('poll-review');
+    case 'needs_patch':
+      return cmd(`record-review ${ticketId ?? '<ticket-id>'} patched`);
+    case 'operator_input_needed':
+      return cmd(
+        `record-review ${ticketId ?? '<ticket-id>'} operator_input_needed`,
+      );
+    case 'reviewed':
+      return cmd('advance');
+    case 'done':
+    case 'pending':
+      return null;
+  }
+}
 
 export function resolveEffectiveAdvanceBoundaryMode(
   mode: TicketBoundaryMode,
@@ -68,6 +104,32 @@ export function formatStatus(
   state: DeliveryState,
   config: ResolvedOrchestratorConfig,
 ): string {
+  const allDone =
+    state.tickets.length > 0 && state.tickets.every((t) => t.status === 'done');
+
+  const activeTicket =
+    state.tickets.find((t) => t.status === 'in_progress') ??
+    state.tickets.find((t) => t.status === 'verified') ??
+    state.tickets.find((t) => t.status === 'subagent_review_complete') ??
+    state.tickets.find((t) => t.status === 'in_review') ??
+    state.tickets.find((t) => t.status === 'needs_patch') ??
+    state.tickets.find((t) => t.status === 'operator_input_needed') ??
+    state.tickets.find((t) => t.status === 'reviewed');
+
+  const nextCommandLine = allDone
+    ? 'Phase complete. Awaiting developer review.'
+    : activeTicket
+      ? (() => {
+          const next = resolveNextCommand(
+            activeTicket.status,
+            config,
+            state.planPath,
+            activeTicket.id,
+          );
+          return next ? `Next command: ${next}` : undefined;
+        })()
+      : undefined;
+
   return [
     'Delivery Orchestrator',
     `plan_key=${state.planKey}`,
@@ -77,7 +139,7 @@ export function formatStatus(
     `review_poll_interval_minutes=${state.reviewPollIntervalMinutes}`,
     `review_poll_max_wait_minutes=${state.reviewPollMaxWaitMinutes}`,
     `boundary_mode=${config.ticketBoundaryMode}`,
-    `review_policy=selfAudit:${config.reviewPolicy.selfAudit} codexPreflight:${config.reviewPolicy.codexPreflight} externalReview:${config.reviewPolicy.externalReview}`,
+    `review_policy=subagentReview:${config.reviewPolicy.subagentReview} prReview:${config.reviewPolicy.prReview}`,
     '',
     ...state.tickets.map((ticket) =>
       [
@@ -85,11 +147,11 @@ export function formatStatus(
         `title=${ticket.title}`,
         `worktree=${ticket.worktreePath}`,
         ticket.handoffPath ? `handoff=${ticket.handoffPath}` : undefined,
-        ticket.postVerifySelfAuditCompletedAt
-          ? `post_verify_self_audit=completed at ${ticket.postVerifySelfAuditCompletedAt}${ticket.selfAuditOutcome ? ` (${ticket.selfAuditOutcome})` : ''}`
+        ticket.verifiedAt
+          ? `post_verify=completed at ${ticket.verifiedAt}${ticket.verifyOutcome ? ` (${ticket.verifyOutcome})` : ''}`
           : undefined,
-        ticket.codexPreflightCompletedAt
-          ? `codex_preflight=completed at ${ticket.codexPreflightCompletedAt} (${ticket.codexPreflightOutcome ?? 'unknown'})`
+        ticket.subagentReviewCompletedAt
+          ? `subagent_review=completed at ${ticket.subagentReviewCompletedAt} (${ticket.subagentReviewOutcome ?? 'unknown'})`
           : undefined,
         ticket.prUrl ? `pr=${ticket.prUrl}` : undefined,
         ticket.reviewFetchArtifactPath
@@ -108,7 +170,10 @@ export function formatStatus(
         .filter((value): value is string => value !== undefined)
         .join('\n'),
     ),
-  ].join('\n');
+    nextCommandLine,
+  ]
+    .filter((value): value is string => value !== undefined)
+    .join('\n');
 }
 
 export function formatAdvanceBoundaryGuidance(

@@ -1,8 +1,8 @@
 export type TicketStatus =
   | 'pending'
   | 'in_progress'
-  | 'post_verify_self_audit_complete'
-  | 'codex_preflight_complete'
+  | 'verified'
+  | 'subagent_review_complete'
   | 'in_review'
   | 'needs_patch'
   | 'operator_input_needed'
@@ -15,7 +15,7 @@ export type ReviewResult =
   | 'needs_patch'
   | 'operator_input_needed';
 
-export type CodexPreflightOutcome = 'clean' | 'patched' | 'skipped';
+export type SubagentReviewOutcome = 'clean' | 'patched' | 'skipped';
 
 export type InternalReviewPatchCommit = {
   sha: string;
@@ -26,6 +26,7 @@ export type TicketDefinition = {
   id: string;
   title: string;
   slug: string;
+  scope?: string;
   ticketFile: string;
 };
 
@@ -84,13 +85,13 @@ export type TicketState = TicketDefinition & {
   worktreePath: string;
   handoffPath?: string;
   handoffGeneratedAt?: string;
-  postVerifySelfAuditCompletedAt?: string;
-  selfAuditOutcome?: ReviewOutcome;
-  selfAuditPatchCommits?: InternalReviewPatchCommit[];
-  codexPreflightOutcome?: CodexPreflightOutcome;
-  codexPreflightCompletedAt?: string;
-  codexPreflightNote?: string;
-  codexPreflightPatchCommits?: InternalReviewPatchCommit[];
+  verifiedAt?: string;
+  verifyOutcome?: ReviewOutcome;
+  verifyPatchCommits?: InternalReviewPatchCommit[];
+  subagentReviewOutcome?: SubagentReviewOutcome;
+  subagentReviewCompletedAt?: string;
+  subagentReviewPatchCommits?: InternalReviewPatchCommit[];
+  subagentReviewAgent?: string;
   docOnly?: boolean;
   prNumber?: number;
   prUrl?: string;
