@@ -19,7 +19,7 @@ Manual validation checklist on DS918+ / DSM 7.1.1:
 - [ ] Destructive actions (torrent pause, config write, daemon restart) blocked when logged out — requires browser interaction; covered by 401 check above
 - [ ] Destructive actions succeed after login — requires browser interaction; deferred to P29 fresh validate
 - [x] LAN origin access works without trust banner (auto-persisted during setup)
-- [ ] Tailscale access from a new origin → trust banner shown; one click trusts origin; banner gone on next load — requires browser; deferred to P29
+- [ ] Tailscale access from a new origin → trust banner shown; one click trusts origin; banner gone on next load — deferred to P29; secondary origin (76.91.95.34) shows banner but form actions fail SvelteKit CSRF since ORIGIN is pinned to Tailscale IP; P29 needs to either wire allowedOrigins dynamically from trusted-origins.json or document direct IP as read-only
 - [ ] Direct-mode acknowledgement banner appears in Config on first authenticated visit; disappears after any acknowledgement action — requires browser; deferred to P29
 - [x] Daemon restart preserves `session-secret` (existing JWT cookies remain valid)
 - [x] Fresh install (no `session-secret`) → daemon generates one on startup
