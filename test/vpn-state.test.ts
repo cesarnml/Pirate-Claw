@@ -90,10 +90,10 @@ describe('validateDownloaderNetwork', () => {
 
   it('accepts full valid downloaderNetwork block', () => {
     const input = {
-      mode: 'vpn_bridge',
+      mode: 'vpn_bridge' as const,
       provider: 'custom_openvpn',
       profile: 'active',
-      status: 'verified',
+      status: 'verified' as const,
     };
     const result = validateDownloaderNetwork(input);
     expect(result).toEqual(input);
