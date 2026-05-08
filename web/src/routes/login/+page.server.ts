@@ -19,14 +19,19 @@ export const actions: Actions = {
 		const writeToken = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) return fail(503, { error: 'Service unavailable' });
 
-		const res = await fetch(buildApiUrl('/api/auth/verify-login'), {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${writeToken}`
-			},
-			body: JSON.stringify({ username, password })
-		});
+		let res: Response;
+		try {
+			res = await fetch(buildApiUrl('/api/auth/verify-login'), {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${writeToken}`
+				},
+				body: JSON.stringify({ username, password })
+			});
+		} catch {
+			return fail(503, { error: 'Daemon unavailable — try again in a moment' });
+		}
 
 		if (!res.ok) return fail(502, { error: 'Login service unavailable — try again' });
 		const body = (await res.json()) as { ok: boolean };

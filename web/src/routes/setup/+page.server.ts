@@ -22,15 +22,20 @@ export const actions: Actions = {
 		const writeToken = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) return fail(503, { error: 'Service unavailable' });
 
-		const res = await fetch(buildApiUrl('/api/auth/setup-owner'), {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${writeToken}`,
-				Origin: request.headers.get('origin') ?? ''
-			},
-			body: JSON.stringify({ username, password })
-		});
+		let res: Response;
+		try {
+			res = await fetch(buildApiUrl('/api/auth/setup-owner'), {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${writeToken}`,
+					Origin: request.headers.get('origin') ?? ''
+				},
+				body: JSON.stringify({ username, password })
+			});
+		} catch {
+			return fail(503, { error: 'Daemon unavailable — try again in a moment' });
+		}
 
 		if (res.status === 409) return fail(409, { error: 'Owner already exists' });
 		if (!res.ok) return fail(502, { error: 'Setup failed — try again' });
