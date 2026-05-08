@@ -45,11 +45,16 @@ export const load: PageServerLoad = async () => {
 			? ((await plexAuthResponse.json()) as PlexAuthStatusResponse)
 			: null;
 
+		const onboarding = deriveOnboardingStatus(config, canWrite);
+		console.log(
+			`[onboarding] load — canWrite=${canWrite} readiness=${readinessState ?? 'unavailable'} plexAuth=${plexAuth?.state ?? 'unavailable'} state=${onboarding.state} hasFeeds=${onboarding.hasFeeds} hasTvTargets=${onboarding.hasTvTargets} hasMovieTargets=${onboarding.hasMovieTargets}`
+		);
+
 		return {
 			config,
 			etag,
 			canWrite,
-			onboarding: deriveOnboardingStatus(config, canWrite),
+			onboarding,
 			plexAuth,
 			readinessState,
 			error: null
@@ -109,6 +114,7 @@ export const actions: Actions = {
 	saveFeed: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
+			console.error('[onboarding] saveFeed: no write-token');
 			return fail(403, { feedsMessage: 'Config writes are disabled.' });
 		}
 
@@ -144,6 +150,7 @@ export const actions: Actions = {
 				body: JSON.stringify(feeds)
 			});
 
+			console.log('[onboarding] saveFeed: daemon status', response.status);
 			if (!response.ok) {
 				let feedsMessage = `Save failed (${response.status}).`;
 				try {
@@ -173,6 +180,7 @@ export const actions: Actions = {
 	saveTvTarget: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
+			console.error('[onboarding] saveTvTarget: no write-token');
 			return fail(403, { tvTargetMessage: 'Config writes are disabled.' });
 		}
 
@@ -207,6 +215,7 @@ export const actions: Actions = {
 				body: JSON.stringify({ resolutions, codecs })
 			});
 
+			console.log('[onboarding] saveTvTarget: tv/defaults status', defaultsResponse.status);
 			if (!defaultsResponse.ok) {
 				let tvTargetMessage = `Save failed (${defaultsResponse.status}).`;
 				try {
@@ -232,6 +241,7 @@ export const actions: Actions = {
 				body: JSON.stringify({ runtime: {}, tv: { shows: nextShows } })
 			});
 
+			console.log('[onboarding] saveTvTarget: config/shows status', showsResponse.status);
 			if (!showsResponse.ok) {
 				let tvTargetMessage = `Save failed (${showsResponse.status}).`;
 				try {
@@ -264,6 +274,7 @@ export const actions: Actions = {
 	saveMovieTarget: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
+			console.error('[onboarding] saveMovieTarget: no write-token');
 			return fail(403, { movieTargetMessage: 'Config writes are disabled.' });
 		}
 
@@ -319,6 +330,7 @@ export const actions: Actions = {
 				body: JSON.stringify(payload)
 			});
 
+			console.log('[onboarding] saveMovieTarget: daemon status', response.status);
 			if (!response.ok) {
 				let movieTargetMessage = `Save failed (${response.status}).`;
 				try {
@@ -348,14 +360,19 @@ export const actions: Actions = {
 	testTransmission: async () => {
 		try {
 			const response = await apiRequest('/api/setup/transmission/status');
+			console.log('[onboarding] testTransmission: daemon status', response.status);
 			const status = response.ok ? ((await response.json()) as TransmissionStatusResponse) : null;
 			const compatibility: TransmissionCompatibility = status?.compatibility ?? 'not_reachable';
+			console.log(
+				`[onboarding] testTransmission: reachable=${status?.reachable ?? false} compatibility=${compatibility}`
+			);
 			return {
 				transmissionReachable: status?.reachable ?? false,
 				transmissionCompatibility: compatibility,
 				transmissionAdvisory: status?.advisory ?? null
 			};
-		} catch {
+		} catch (err) {
+			console.error('[onboarding] testTransmission: daemon unreachable:', String(err));
 			return {
 				transmissionReachable: false,
 				transmissionCompatibility: 'not_reachable' as TransmissionCompatibility,
@@ -367,6 +384,7 @@ export const actions: Actions = {
 	saveDownloadDirs: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
+			console.error('[onboarding] saveDownloadDirs: no write-token');
 			return fail(403, { downloadDirsMessage: 'Config writes are disabled.' });
 		}
 
@@ -393,6 +411,7 @@ export const actions: Actions = {
 				body: JSON.stringify(downloadDirs)
 			});
 
+			console.log('[onboarding] saveDownloadDirs: daemon status', response.status);
 			if (!response.ok) {
 				let downloadDirsMessage = `Save failed (${response.status}).`;
 				try {

@@ -10,13 +10,24 @@ const VALID_STATES: NetworkPostureState[] = [
 ];
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.user) error(401, 'Unauthorized');
+	if (!locals.user) {
+		console.warn('[network-posture] unauthenticated request rejected');
+		error(401, 'Unauthorized');
+	}
 
 	const writeToken = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
-	if (!writeToken) error(503, 'Service unavailable');
+	if (!writeToken) {
+		console.error('[network-posture] no write-token');
+		error(503, 'Service unavailable');
+	}
 
 	const { state } = (await request.json()) as { state: NetworkPostureState };
-	if (!VALID_STATES.includes(state)) error(400, 'Invalid state');
+	if (!VALID_STATES.includes(state)) {
+		console.warn('[network-posture] invalid state received:', state);
+		error(400, 'Invalid state');
+	}
+
+	console.log('[network-posture] acknowledging state:', state, 'for user:', locals.user.username);
 
 	const res = await apiRequest('/api/auth/acknowledge-network-posture', {
 		method: 'POST',
@@ -27,6 +38,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		body: JSON.stringify({ state })
 	});
 
+	console.log('[network-posture] daemon status:', res.status);
 	if (!res.ok) error(res.status as 400 | 500, 'Failed to acknowledge network posture');
 	return json({ ok: true });
 };
