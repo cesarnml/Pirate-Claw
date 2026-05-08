@@ -1,10 +1,15 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { init } from '../src/hooks.server';
+import { init, resolveUnauthenticatedPageRedirect } from '../src/hooks.server';
 import { getSessionSecret, initSessionSecret } from '../src/lib/server/session';
+import { apiRequest } from '../src/lib/server/api';
+
+vi.mock('../src/lib/server/api', () => ({
+	apiRequest: vi.fn()
+}));
 
 const savedEnv: Record<string, string | undefined> = {};
 let tmpDir: string;
@@ -20,6 +25,7 @@ beforeEach(() => {
 	delete process.env.PIRATE_CLAW_DAEMON_TOKEN_FILE;
 	delete process.env.PIRATE_CLAW_SESSION_SECRET;
 	delete process.env.PIRATE_CLAW_SESSION_SECRET_FILE;
+	vi.mocked(apiRequest).mockReset();
 	// reset module-level secret before each test
 	initSessionSecret('');
 	tmpDir = mkdtempSync(join(tmpdir(), 'pc-hook-test-'));
@@ -128,5 +134,29 @@ describe('hooks.server init — session secret', () => {
 		init();
 
 		expect(getSessionSecret()).toBeFalsy();
+	});
+});
+
+describe('resolveUnauthenticatedPageRedirect', () => {
+	it('returns /setup when daemon auth state says no owner exists', async () => {
+		vi.mocked(apiRequest).mockResolvedValue(
+			new Response(JSON.stringify({ owner_exists: false }), { status: 200 })
+		);
+
+		await expect(resolveUnauthenticatedPageRedirect('write-token')).resolves.toBe('/setup');
+	});
+
+	it('returns /login when daemon auth state says owner exists', async () => {
+		vi.mocked(apiRequest).mockResolvedValue(
+			new Response(JSON.stringify({ owner_exists: true }), { status: 200 })
+		);
+
+		await expect(resolveUnauthenticatedPageRedirect('write-token')).resolves.toBe('/login');
+	});
+
+	it('returns /login when daemon auth state cannot be reached', async () => {
+		vi.mocked(apiRequest).mockRejectedValue(new Error('offline'));
+
+		await expect(resolveUnauthenticatedPageRedirect('write-token')).resolves.toBe('/login');
 	});
 });

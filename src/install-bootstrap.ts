@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import { ensureSessionSecret } from './auth-state';
 
 export const DEFAULT_SYNOLOGY_INSTALL_ROOT = '/volume1/pirate-claw';
+export const DEFAULT_SYNOLOGY_API_HOST = '0.0.0.0';
+export const DEFAULT_SYNOLOGY_API_PORT = 5555;
 
 export const INSTALL_ROOT_DIRECTORIES = [
   'config',

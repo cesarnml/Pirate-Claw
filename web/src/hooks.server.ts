@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { redirect, isRedirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle } from '@sveltejs/kit';
 import {
 	initSessionSecret,
 	getSessionSecret,
@@ -68,24 +68,25 @@ export const handle: Handle = async ({ event, resolve }) => {
 		});
 	}
 
-	// No valid session — check daemon auth state to decide where to redirect
-	const writeToken = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
-	if (writeToken) {
-		try {
-			const res = await apiRequest('/api/auth/state', {
-				headers: { Authorization: `Bearer ${writeToken}` }
-			});
-			if (res.ok) {
-				const state = (await res.json()) as { owner_exists: boolean };
-				if (!state.owner_exists) {
-					redirect(302, '/setup');
-				}
-			}
-		} catch (err) {
-			if (isRedirect(err)) throw err;
-			// daemon unreachable; fall through to /login
+	redirect(302, await resolveUnauthenticatedPageRedirect(process.env.PIRATE_CLAW_API_WRITE_TOKEN));
+};
+
+export async function resolveUnauthenticatedPageRedirect(
+	writeToken: string | undefined
+): Promise<'/setup' | '/login'> {
+	if (!writeToken) return '/login';
+
+	try {
+		const res = await apiRequest('/api/auth/state', {
+			headers: { Authorization: `Bearer ${writeToken}` }
+		});
+		if (res.ok) {
+			const state = (await res.json()) as { owner_exists: boolean };
+			return state.owner_exists ? '/login' : '/setup';
 		}
+	} catch {
+		// daemon unreachable; fall through to /login
 	}
 
-	redirect(302, '/login');
-};
+	return '/login';
+}

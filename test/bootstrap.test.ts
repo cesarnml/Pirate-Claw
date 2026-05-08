@@ -58,6 +58,95 @@ describe('ensureStarterConfig', () => {
     expect(() => validateConfig(written, path, env)).not.toThrow();
   });
 
+  it('persists Synology runtime defaults when provided for a new starter config', async () => {
+    const path = join(dir, 'pirate-claw.config.json');
+    await ensureStarterConfig(path, {
+      installRoot: '/volume1/pirate-claw',
+      apiHost: '0.0.0.0',
+      apiPort: 5555,
+    });
+
+    const written = await Bun.file(path).json();
+
+    expect(written.runtime).toEqual({
+      installRoot: '/volume1/pirate-claw',
+      apiHost: '0.0.0.0',
+      apiPort: 5555,
+    });
+    expect(() => validateConfig(written, path, {})).not.toThrow();
+  });
+
+  it('backfills missing Synology runtime defaults on an existing starter config', async () => {
+    const path = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        _starter: true,
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'admin',
+          password: 'admin',
+        },
+        plex: { url: 'http://localhost:32400', token: '' },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: [],
+        },
+        feeds: [],
+      }),
+    );
+
+    await ensureStarterConfig(path, {
+      installRoot: '/volume1/pirate-claw',
+      apiHost: '0.0.0.0',
+      apiPort: 5555,
+    });
+
+    const written = await Bun.file(path).json();
+
+    expect(written.runtime).toEqual({
+      installRoot: '/volume1/pirate-claw',
+      apiHost: '0.0.0.0',
+      apiPort: 5555,
+    });
+  });
+
+  it('preserves existing starter runtime values when backfilling defaults', async () => {
+    const path = join(dir, 'pirate-claw.config.json');
+    await Bun.write(
+      path,
+      JSON.stringify({
+        _starter: true,
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'admin',
+          password: 'admin',
+        },
+        plex: { url: 'http://localhost:32400', token: '' },
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x264'] },
+          shows: [],
+        },
+        feeds: [],
+        runtime: { apiPort: 7777 },
+      }),
+    );
+
+    await ensureStarterConfig(path, {
+      installRoot: '/volume1/pirate-claw',
+      apiHost: '0.0.0.0',
+      apiPort: 5555,
+    });
+
+    const written = await Bun.file(path).json();
+
+    expect(written.runtime).toEqual({
+      installRoot: '/volume1/pirate-claw',
+      apiHost: '0.0.0.0',
+      apiPort: 7777,
+    });
+  });
+
   it('empty compact tv shows array is valid', () => {
     const config = {
       transmission: {
