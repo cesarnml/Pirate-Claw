@@ -117,6 +117,19 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 		locals.user && !trustedOrigins.includes(requestOrigin) ? requestOrigin : null;
 	const networkPosture: NetworkPostureState | null = authState?.network_posture ?? null;
 
+	if (untrustedOrigin) {
+		console.log('[layout] untrusted origin detected:', untrustedOrigin, '— trust banner will show');
+	}
+	if (networkPosture === 'unacknowledged') {
+		console.log('[layout] network posture unacknowledged:', networkPosture);
+	}
+	if (authStateResult.status === 'rejected') {
+		console.warn('[layout] auth state unavailable:', authStateResult.reason);
+	}
+	console.log(
+		`[layout] load complete — user=${locals.user?.username ?? 'none'} setupState=${setupState} readiness=${readiness?.state ?? 'unknown'} untrustedOrigin=${untrustedOrigin ?? 'none'} networkPosture=${networkPosture ?? 'unknown'}`
+	);
+
 	return {
 		user: locals.user ?? null,
 		health: healthResult.status === 'fulfilled' ? healthResult.value : null,

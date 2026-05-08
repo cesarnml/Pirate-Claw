@@ -13,7 +13,11 @@ import {
   resolveConfigPath,
 } from './config';
 import { daemonOptionsFromConfig, runDaemonLoop } from './daemon';
-import { ensureFirstStartupBootstrap } from './install-bootstrap';
+import {
+  DEFAULT_SYNOLOGY_API_HOST,
+  DEFAULT_SYNOLOGY_API_PORT,
+  ensureFirstStartupBootstrap,
+} from './install-bootstrap';
 import {
   reconcileCandidates,
   retryFailedCandidates,
@@ -378,7 +382,16 @@ export async function runCli(argv: string[]): Promise<number> {
         const token = await Bun.file(bootstrap.daemonApiWriteTokenPath).text();
         process.env.PIRATE_CLAW_API_WRITE_TOKEN = token.trim();
       }
-      await ensureStarterConfig(resolvedConfigPath);
+      await ensureStarterConfig(resolvedConfigPath, {
+        installRoot: bootstrap?.installRoot,
+        apiHost: bootstrap
+          ? (process.env.PIRATE_CLAW_API_HOST ?? DEFAULT_SYNOLOGY_API_HOST)
+          : undefined,
+        apiPort: bootstrap
+          ? (parseOptionalApiPort(process.env.PIRATE_CLAW_API_PORT) ??
+            DEFAULT_SYNOLOGY_API_PORT)
+          : undefined,
+      });
       let config = await loadConfig(resolvedConfigPath);
       const configuredInstallRoot = config.runtime.installRoot;
 
@@ -598,6 +611,14 @@ function formatReconcileSummary(result: {
     `updated: ${result.updatedCount}`,
     `missing_from_transmission: ${result.missingCount}`,
   ].join('\n');
+}
+
+function parseOptionalApiPort(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535
+    ? parsed
+    : undefined;
 }
 
 function openInitializedWritableDatabase() {

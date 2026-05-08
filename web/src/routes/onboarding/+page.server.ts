@@ -45,11 +45,13 @@ export const load: PageServerLoad = async () => {
 			? ((await plexAuthResponse.json()) as PlexAuthStatusResponse)
 			: null;
 
+		const onboarding = deriveOnboardingStatus(config, canWrite);
+
 		return {
 			config,
 			etag,
 			canWrite,
-			onboarding: deriveOnboardingStatus(config, canWrite),
+			onboarding,
 			plexAuth,
 			readinessState,
 			error: null
@@ -108,9 +110,7 @@ function parseExistingYears(raw: string | File | null): number[] {
 export const actions: Actions = {
 	saveFeed: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { feedsMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { feedsMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -172,9 +172,7 @@ export const actions: Actions = {
 
 	saveTvTarget: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { tvTargetMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { tvTargetMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -263,9 +261,7 @@ export const actions: Actions = {
 
 	saveMovieTarget: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { movieTargetMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { movieTargetMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -366,9 +362,7 @@ export const actions: Actions = {
 
 	saveDownloadDirs: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { downloadDirsMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { downloadDirsMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();

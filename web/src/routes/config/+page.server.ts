@@ -121,9 +121,8 @@ function validateTmdbDays(
 export const actions: Actions = {
 	savePlex: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
+		if (!writeToken)
 			return fail(403, { plexMessage: 'Config writes are disabled.', plexMessageTone: 'error' });
-		}
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -180,9 +179,8 @@ export const actions: Actions = {
 
 	disconnectPlex: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
+		if (!writeToken)
 			return fail(403, { plexMessage: 'Config writes are disabled.', plexMessageTone: 'error' });
-		}
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -233,9 +231,7 @@ export const actions: Actions = {
 
 	saveShows: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(500, { showsMessage: 'Server write token is not configured.' });
-		}
+		if (!writeToken) return fail(500, { showsMessage: 'Server write token is not configured.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
@@ -284,9 +280,7 @@ export const actions: Actions = {
 
 	saveRuntime: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(500, { runtimeMessage: 'Server write token is not configured.' });
-		}
+		if (!writeToken) return fail(500, { runtimeMessage: 'Server write token is not configured.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('runtimeIfMatch') ?? '').trim();
@@ -374,9 +368,7 @@ export const actions: Actions = {
 
 	saveTvDefaults: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { tvDefaultsMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { tvDefaultsMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('tvDefaultsIfMatch') ?? '').trim();
@@ -427,9 +419,7 @@ export const actions: Actions = {
 
 	saveMovies: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { moviesMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { moviesMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('moviesIfMatch') ?? '').trim();
@@ -495,9 +485,7 @@ export const actions: Actions = {
 
 	saveTmdb: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { tmdbMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { tmdbMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('tmdbIfMatch') ?? '').trim();
@@ -564,12 +552,9 @@ export const actions: Actions = {
 
 	restartDaemon: async () => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (writeToken === undefined || writeToken === null) {
+		if (writeToken === undefined || writeToken === null)
 			return fail(401, { restartError: 'Write token not configured.' });
-		}
-		if (!writeToken) {
-			return fail(403, { restartError: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { restartError: 'Config writes are disabled.' });
 
 		try {
 			const response = await apiRequest('/api/daemon/restart', {
@@ -600,9 +585,8 @@ export const actions: Actions = {
 
 	testConnection: async () => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
+		if (!writeToken)
 			return fail(403, { pingError: 'write token not configured; cannot test connection' });
-		}
 
 		try {
 			const [pingResponse, statusResponse] = await Promise.all([
@@ -647,9 +631,7 @@ export const actions: Actions = {
 
 	saveFeeds: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			return fail(403, { feedsMessage: 'Config writes are disabled.' });
-		}
+		if (!writeToken) return fail(403, { feedsMessage: 'Config writes are disabled.' });
 
 		const formData = await request.formData();
 		const ifMatch = String(formData.get('feedsIfMatch') ?? '').trim();

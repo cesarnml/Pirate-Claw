@@ -25,6 +25,9 @@ EXPOSE 8888
 ENV NODE_ENV=production
 ENV PORT=8888
 ENV HOST=0.0.0.0
+ENV PIRATE_CLAW_API_URL=http://pirate-claw-daemon:5555
+ENV PIRATE_CLAW_DAEMON_TOKEN_FILE=/volume1/pirate-claw/config/generated/daemon-api-write-token
+ENV PIRATE_CLAW_SESSION_SECRET_FILE=/volume1/pirate-claw/config/auth/session-secret
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "build"]
