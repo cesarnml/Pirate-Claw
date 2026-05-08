@@ -41,8 +41,8 @@ services:
       - sh
       - -c
       - |
-        while [ ! -s "$$PIRATE_CLAW_DAEMON_TOKEN_FILE" ]; do sleep 1; done
-        while [ ! -s "$$PIRATE_CLAW_SESSION_SECRET_FILE" ]; do sleep 1; done
+        i=0; while [ ! -s "$$PIRATE_CLAW_DAEMON_TOKEN_FILE" ]; do i=$$((i+1)); [ $$i -ge 60 ] && { echo "timeout waiting for daemon token" >&2; exit 1; }; sleep 1; done
+        i=0; while [ ! -s "$$PIRATE_CLAW_SESSION_SECRET_FILE" ]; do i=$$((i+1)); [ $$i -ge 60 ] && { echo "timeout waiting for session secret" >&2; exit 1; }; sleep 1; done
         export PIRATE_CLAW_API_WRITE_TOKEN="$$(cat "$$PIRATE_CLAW_DAEMON_TOKEN_FILE")"
         exec node build
     restart: unless-stopped
@@ -68,8 +68,8 @@ services:
     image: lscr.io/linuxserver/transmission:latest
     restart: unless-stopped
     environment:
-      PUID: ${PIRATE_CLAW_TRANSMISSION_PUID:-0}
-      PGID: ${PIRATE_CLAW_TRANSMISSION_PGID:-0}
+      PUID: ${PIRATE_CLAW_TRANSMISSION_PUID:-1000}
+      PGID: ${PIRATE_CLAW_TRANSMISSION_PGID:-1000}
       TZ: UTC
     expose:
       - '9091'

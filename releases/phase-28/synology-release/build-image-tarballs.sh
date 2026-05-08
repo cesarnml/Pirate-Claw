@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 OUTPUT_DIR="$ROOT_DIR/.pirate-claw/phase-28/synology-release/images"
 VERSION="$(bun -e "console.log(require('$ROOT_DIR/package.json').version)" 2>/dev/null)"
+[[ -n "$VERSION" ]] || { echo "Error: could not read version from package.json" >&2; exit 1; }
 PLATFORM="${PIRATE_CLAW_DOCKER_PLATFORM:-linux/amd64}"
 
 mkdir -p "$OUTPUT_DIR"

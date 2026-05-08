@@ -6,6 +6,7 @@ SOURCE_DIR="$ROOT_DIR/releases/phase-28/synology-release"
 OUTPUT_DIR="$ROOT_DIR/.pirate-claw/phase-28/synology-release"
 BUILD_ROOT="$OUTPUT_DIR/build"
 VERSION="$(bun -e "console.log(require('$ROOT_DIR/package.json').version)" 2>/dev/null)"
+[[ -n "$VERSION" ]] || { echo "Error: could not read version from package.json" >&2; exit 1; }
 BUNDLE_NAME="pirate-claw-synology-v${VERSION}"
 BUNDLE_DIR="$BUILD_ROOT/$BUNDLE_NAME"
 ZIP_PATH="$OUTPUT_DIR/${BUNDLE_NAME}.zip"
