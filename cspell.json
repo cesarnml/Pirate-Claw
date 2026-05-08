@@ -114,7 +114,13 @@
     "worktree",
     "worktrees",
     "writeability",
-    "wrongpassword"
+    "wrongpassword",
+    "CREDS",
+    "creds",
+    "myuser",
+    "mypass",
+    "secretpass",
+    "qmcgaw"
   ],
   "ignoreWords": [],
   "import": []
