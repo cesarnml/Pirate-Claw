@@ -642,7 +642,12 @@ Goal:
 
 Current status:
 
-- product definition only; see [`docs/01-product/phase-28-owner-web-security.md`](../01-product/phase-28-owner-web-security.md)
+- implemented on `main` via `P28.01`–`P28.05` stacked delivery; validated on DS918+ / DSM 7.1.1-42962 Update 9
+- owner account creation on first launch; opaque session cookie (argon2id hash, BLAKE3 token); owner auth gates all web state and destructive actions
+- daemon owns all auth state (`owner_accounts`, `owner_sessions`, `trusted_origins`, `direct_mode_ack`) in SQLite — no secrets in config JSON
+- trusted-origin banner for LAN and Tailscale addresses; direct-mode acknowledgement as a Phase 29 placeholder
+- see [`docs/01-product/phase-28-owner-web-security.md`](../01-product/phase-28-owner-web-security.md)
+- see [`docs/synology-install.md`](../synology-install.md) for owner setup and security posture guidance
 
 ## Phase 29: OpenVPN Bridge for Bundled Transmission
 
@@ -710,7 +715,7 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 
 - product phases `01`–`19` are implemented in the current delivery stack; **Phase 19** is delivered via `P19.01`–`P19.08`
 - **Phase 20** (dashboard torrent proxy) is **shipped** on `main`
-- **Phases 21–27** are shipped on `main`; **Phases 28–29** are the release-blocking owner security and OpenVPN bridge planning sequence
+- **Phases 21–28** are shipped on `main`; **Phase 29** (OpenVPN bridge) is the next release-blocking sequence
 - **Phase 30** remains the release-critical UX/UI polish bucket after functional completion
 - **Phase 31** (v1.0.0 / schema versioning) remains the release/versioning ceremony after product-completion phases are done
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/03-engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
@@ -731,4 +736,4 @@ Working notes:
 - promote durable technical choices into ADRs
 - numbered phases are planning buckets, not a promise of strict implementation sequence when dependencies allow independent work
 
-Last verified against `README.md` and active delivery plans: 2026-04-27 (Phases 20–27 are delivered on `main`; Phases 28–29 are the current release-blocking product-planning sequence; Phase 30 is release-critical polish; Phase 31 remains the release/versioning phase).
+Last verified against `README.md` and active delivery plans: 2026-05-08 (Phases 20–28 are delivered on `main`; Phase 29 (OpenVPN bridge) is the current release-blocking sequence; Phase 30 is release-critical polish; Phase 31 remains the release/versioning phase).
