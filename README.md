@@ -136,8 +136,8 @@ If you expose Pirate Claw outside your home network, put it behind the same care
 ## More Documentation
 
 - [docs/README.md](./docs/README.md): documentation index
-- [docs/00-overview/start-here.md](./docs/00-overview/start-here.md): project state and contributor orientation
-- [docs/00-overview/roadmap.md](./docs/00-overview/roadmap.md): phase history and future planning notes
+- [docs/overview/start-here.md](./docs/overview/start-here.md): project state and contributor orientation
+- [docs/overview/roadmap.md](./docs/overview/roadmap.md): phase history and future planning notes
 - [docs/synology-install.md](./docs/synology-install.md): Synology owner install guide
 - [docs/mac-runbook.md](./docs/mac-runbook.md): Mac always-on runbook
 
@@ -151,7 +151,7 @@ bun run verify
 bun run ci
 ```
 
-Delivery workflow details live in [docs/03-engineering/delivery-orchestrator.md](./docs/03-engineering/delivery-orchestrator.md).
+Delivery workflow details live in [docs/engineering/delivery-orchestrator.md](./docs/engineering/delivery-orchestrator.md).
 
 ## License
 

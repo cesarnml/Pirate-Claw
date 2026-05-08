@@ -117,7 +117,7 @@ Start the web container.
 
 ## Phase 28 Validation Checklist
 
-Use `docs/02-delivery/phase-28/ticket-04-ds918-exit-validation.md` as the source of truth. At minimum, verify:
+Use `docs/product/delivery/phase-28/ticket-04-ds918-exit-validation.md` as the source of truth. At minimum, verify:
 
 - First visit with no owner shows setup only.
 - Owner creation issues a session and redirects into setup/dashboard.

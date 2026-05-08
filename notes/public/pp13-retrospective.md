@@ -33,7 +33,7 @@ Seven stacked PRs delivering bounded runtime writes behind bearer-token auth and
 
 ## What we'd do differently
 
-Copy `state.json` from the active delivery worktree to the `main` checkout after every `advance`. The P13 closeout incident was the concrete driver for this practice. It is now documented in `docs/03-engineering/delivery-orchestrator.md` and the `closeout-stack` skill.
+Copy `state.json` from the active delivery worktree to the `main` checkout after every `advance`. The P13 closeout incident was the concrete driver for this practice. It is now documented in `docs/engineering/delivery-orchestrator.md` and the `closeout-stack` skill.
 
 ---
 

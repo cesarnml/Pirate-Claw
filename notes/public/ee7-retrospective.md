@@ -24,7 +24,7 @@ The docs-only fast path is still split awkwardly. Repo policy is clear that mark
 
 ## Surprises
 
-The operator guide had drifted further than expected. `docs/03-engineering/delivery-orchestrator.md` was not just stale on EE6 compaction language; it also documented forward-looking review-policy config fields that do not exist in the shipped orchestrator. The docs ticket therefore had to correct both the boundary-mode story and the config surface, not just update examples.
+The operator guide had drifted further than expected. `docs/engineering/delivery-orchestrator.md` was not just stale on EE6 compaction language; it also documented forward-looking review-policy config fields that do not exist in the shipped orchestrator. The docs ticket therefore had to correct both the boundary-mode story and the config surface, not just update examples.
 
 Another surprise was that `EE7.03` could be functionally correct while still leaving a subtle selection divergence. The code resolved `nextPending` before deciding whether to auto-start in `cook`, but the original implementation still called `startTicket` without the resolved ticket id, relying on implicit selection. That would have stayed harmless until the selection logic changed; CodeRabbit surfaced it before it became a latent bug.
 

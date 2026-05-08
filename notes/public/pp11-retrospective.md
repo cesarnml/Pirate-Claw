@@ -17,7 +17,7 @@ Six stacked PRs across the TMDB enrichment stack. All six slices reached `done`;
 | [#98](https://github.com/cesarnml/Pirate-Claw/pull/98) | `p11-05` → `p11-04`        | Background TMDB refresh scheduler [P11.05]             |
 | [#99](https://github.com/cesarnml/Pirate-Claw/pull/99) | `p11-06` → `p11-05`        | Docs, roadmap, README exit alignment [P11.06]          |
 
-Merge strategy: `bun run closeout-stack --plan docs/02-delivery/phase-11/implementation-plan.md` after developer approval.
+Merge strategy: `bun run closeout-stack --plan docs/product/delivery/phase-11/implementation-plan.md` after developer approval.
 
 ---
 

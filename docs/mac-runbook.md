@@ -140,7 +140,7 @@ the daemon returns under `launchd` with:
 - the same restart-proof artifact
 - the same persisted Plex auth identity state
 
-See [`docs/02-delivery/phase-26/validation-evidence.md`](./02-delivery/phase-26/validation-evidence.md)
+See [`docs/product/delivery/phase-26/validation-evidence.md`](./02-delivery/phase-26/validation-evidence.md)
 for the recorded validation run.
 
 ## Logs And Inspection

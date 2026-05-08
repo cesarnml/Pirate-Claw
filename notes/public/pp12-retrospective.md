@@ -40,7 +40,7 @@ Eight stacked PRs (`P12.01–P12.08`) delivering a design system migration (shad
 
 ## What we'd do differently
 
-- **Document the approved shadcn bootstrap path.** Manual `components.json` + `bun x shadcn-svelte@latest add … -y` is the known-working headless path for this repo. Add this to `docs/03-engineering/` or the phase handoff template so no one fights the interactive `init` again.
+- **Document the approved shadcn bootstrap path.** Manual `components.json` + `bun x shadcn-svelte@latest add … -y` is the known-working headless path for this repo. Add this to `docs/engineering/` or the phase handoff template so no one fights the interactive `init` again.
 - **Specify new `+page.server.ts` files explicitly in ticket specs.** When a ticket introduces a new server load function, say so explicitly. "Preserve if present" implies conditional scope and creates ambiguity at implementation time.
 
 ---
@@ -53,7 +53,7 @@ Phase 12 delivered a coherent design system migration across all dashboard route
 
 ## Follow-up
 
-- **Document bootstrap path.** Add the manual `components.json` + add path to `docs/03-engineering/` or phase handoff template.
+- **Document bootstrap path.** Add the manual `components.json` + add path to `docs/engineering/` or phase handoff template.
 - **Orchestrator error messages.** When `record-review` fails because synced status is already `done`, emit a hint: "Ticket already complete per Git sync; use `deliver status`."
 - **Review batching.** Where safe, batch trivial Greptile/CodeRabbit fixes across one follow-up commit to reduce push → poll cycles. Do not mix unrelated product concerns.
 - **Ticket rationale + cspell pre-flight.** If a ticket doc mentions new product names, run `bun run spellcheck` before push or add words to `cspell.json` in the same PR.

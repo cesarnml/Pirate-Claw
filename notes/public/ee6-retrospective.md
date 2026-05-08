@@ -6,7 +6,7 @@ _Engineering Epic 06: Compaction Gate and Findings Surfacing — single standalo
 
 ## Scope delivered
 
-Single PR on branch `engineering/ee06-compaction-gate-and-findings-surfacing` covering both scope items from `docs/03-engineering/epic-06-compaction-gate-and-findings-surfacing.md`:
+Single PR on branch `engineering/ee06-compaction-gate-and-findings-surfacing` covering both scope items from `docs/engineering/epic-06-compaction-gate-and-findings-surfacing.md`:
 
 1. **Compaction gate** — `advance` no longer auto-starts the next ticket. Emits `compaction_required=true` and a human-readable directive. Stops. The model must call `start` (zero-arg) after compacting to initialize the next ticket's worktree, branch, and handoff.
 2. **Condensed findings block** — `formatCurrentTicketStatus` now appends a `findings (N):` block when the ticket has actionable `reviewComments` in state. Format: `[vendor] path:line — title`. Outdated and resolved findings suppressed. Model gets what it needs from `poll-review` stdout without reading the full `.txt` artifact.

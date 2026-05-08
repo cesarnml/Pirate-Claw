@@ -7,7 +7,7 @@ This is the advanced operator reference for Pirate Claw on Synology.
 This runbook covers the advanced operator deployment shape — expert-built container topology, NAS-side image rebuilds, Plex diagnostics, and manual config management. It is not the default first-time path for Phase 27 and beyond.
 
 The historical Phase 06 validation artifact still lives at
-`docs/02-delivery/phase-06/synology-runbook.md`. Keep that file for the
+`docs/product/delivery/phase-06/synology-runbook.md`. Keep that file for the
 original validated baseline and ticket rationale trail. Use this top-level
 document for current operational guidance.
 
@@ -361,7 +361,7 @@ host directory through:
 The historical Phase 06 runbook no longer matches the live NAS in several
 important ways:
 
-- the canonical runbook used to live under `docs/02-delivery/phase-06/`
+- the canonical runbook used to live under `docs/product/delivery/phase-06/`
 - production now includes a separate `pirate-claw-web` container
 - production now runs Transmission behind `gluetun`
 - the daemon runtime mount uses `/app/.pirate-claw/runtime`, not `/data/runtime`
@@ -546,6 +546,6 @@ ssh -p "$SSH_PORT" "$DEST" "curl -s -o /dev/null -w 'web:%{http_code}\n' http://
 
 For the original Phase 06 ticket-by-ticket validation record, use:
 
-- `docs/01-product/phase-06-synology-runbook.md`
-- `docs/02-delivery/phase-06/implementation-plan.md`
-- `docs/02-delivery/phase-06/synology-runbook.md`
+- `docs/product/plans/phase-06-synology-runbook.md`
+- `docs/product/delivery/phase-06/implementation-plan.md`
+- `docs/product/delivery/phase-06/synology-runbook.md`

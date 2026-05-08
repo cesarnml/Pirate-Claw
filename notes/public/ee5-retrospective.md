@@ -6,7 +6,7 @@ _Engineering Epic 05: Orchestrator Context Minimization — single standalone PR
 
 ## Scope delivered
 
-Single PR on branch `engineering/ee05-orchestrator-context-minimization` covering all five scope items from `docs/03-engineering/epic-05-orchestrator-context-minimization.md`:
+Single PR on branch `engineering/ee05-orchestrator-context-minimization` covering all five scope items from `docs/engineering/epic-05-orchestrator-context-minimization.md`:
 
 1. `verify:quiet` script
 2. `modified_sections` handoff field
