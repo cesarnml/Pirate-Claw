@@ -48,9 +48,34 @@ The zip is hosted externally. See the README for the download link.
 Once the containers are running:
 
 1. Open `http://<nas-ip>:8888` in a browser.
-2. Pirate Claw opens in starter mode and guides you through setup without requiring any config file editing.
-3. The onboarding page shows Synology install health. If a check fails, follow the DSM-language guidance shown on the page, then use Re-check.
+2. Pirate Claw redirects to `/setup` — create your owner account before doing anything else (see [Owner Account Setup](#owner-account-setup)).
+3. After creating the owner account you are redirected to onboarding. The onboarding page shows Synology install health. If a check fails, follow the DSM-language guidance shown on the page, then use Re-check.
 4. After install health passes, add at least one RSS feed and one TV show or movie year target to complete setup.
+
+## Owner Account Setup
+
+Phase 28 adds an owner auth layer. On first launch the web UI is in **starter mode** and requires owner account creation before any app state or controls are accessible.
+
+**Steps:**
+
+1. Open `http://<nas-ip>:8888`.
+2. You are redirected to `/setup`. Enter a username and password for the owner account.
+3. Submit the form. Pirate Claw creates the owner account and logs you in automatically.
+4. You are redirected to onboarding to complete install health and initial configuration.
+
+**Complete owner setup immediately after the first launch.** Until an owner account exists the web UI is unauthenticated. Do not leave Pirate Claw running on the network before this step is done.
+
+On subsequent visits open `http://<nas-ip>:8888` and log in at `/login` with the owner credentials you created.
+
+## Security Posture
+
+Pirate Claw v1 is designed for **LAN and Tailscale / private mesh access only**. It is not hardened for direct public internet exposure. Do not forward port `8888` to the public internet.
+
+**First-launch window:** Between container start and owner account creation the web UI has no auth. Complete owner setup before leaving the NAS unattended or accessible on a shared network segment.
+
+**Trusted origins:** Pirate Claw tracks trusted origins so the browser security banner clears for each access address you use (e.g. LAN IP `192.168.1.x`, Tailscale IP `100.x.x.x`). To add a new trusted origin navigate to the Pirate Claw web UI from the new address — the banner will appear. Click **Trust this origin** and the address is persisted to `trusted-origins.json`. Note: trusted-origins.json is separate from SvelteKit's CSRF protection, which is pinned to the `ORIGIN` environment variable set at container start. Form-submission flows from secondary addresses may still fail CSRF checks until P29 resolves the gap.
+
+**Direct-mode acknowledgement:** The Config page shows an acknowledgement banner when the daemon is running in direct mode (no VPN tunnel for Transmission traffic). Acknowledging it clears the banner and is persisted in the daemon database. This is a Phase 29 placeholder — the OpenVPN bridge is the eventual resolution.
 
 ## Owner Contract
 

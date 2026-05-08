@@ -10,7 +10,7 @@ Its job is to answer three questions quickly:
 
 ## Current Repo State
 
-Pirate Claw is implemented through **Phase 27**. The next release-blocking sequence is Phase 28 (owner web security), Phase 29 (OpenVPN bridge), Phase 30 (UX/UI polish), and Phase 31 (v1 release ceremony).
+Pirate Claw is implemented through **Phase 28**. The P28 owner auth layer is the current security baseline — a session-protected owner account gates all web state and destructive actions. The next release-blocking sequence is Phase 29 (OpenVPN bridge), Phase 30 (UX/UI polish), and Phase 31 (v1 release ceremony).
 
 For the full feature inventory and phase status, read [`README.md`](../../README.md) and [`roadmap.md`](./roadmap.md). Use the roadmap to confirm whether a request is a bounded standalone change or needs a new approved phase.
 

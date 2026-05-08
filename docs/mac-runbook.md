@@ -52,6 +52,17 @@ Mac-specific folders.
 The current Phase 26 contract is source-first: the supported launch agent runs
 `src/cli.ts` from the install directory rather than a packaged `.app`.
 
+## Owner Account Setup
+
+Phase 28 adds an owner auth layer. On first launch the web UI is in **starter mode** and requires owner account creation before any app state or controls are accessible.
+
+1. Start the daemon and open `http://127.0.0.1:5555` (or the configured port) in a browser.
+2. You are redirected to `/setup`. Enter a username and password for the owner account and submit.
+3. Pirate Claw creates the owner account and logs you in automatically.
+4. Complete onboarding or navigate to `/config` to continue setup.
+
+**Complete owner setup immediately after first launch.** Until an owner account exists the web UI has no auth. On subsequent visits log in at `/login` with the owner credentials you created.
+
 ## First Boot
 
 From the install directory:

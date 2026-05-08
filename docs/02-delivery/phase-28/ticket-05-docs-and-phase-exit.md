@@ -47,4 +47,4 @@ Owner-facing and overview docs are updated. Security posture is documented. Retr
 
 ## Rationale
 
-_To be completed during delivery._
+Documentation-close ticket for Phase 28. All owner-facing and overview docs were updated in a single pass to reflect the P28 security baseline: owner account creation on first launch, session-protected web UI, trusted-origin banner, and direct-mode acknowledgement. The security posture section in `synology-install.md` was added here rather than in an earlier ticket to keep the install guide stable until the full feature set was validated on DS918+. The retrospective captures the JWT vs. opaque session decision, trust-on-first-visit design, and the known gaps (CSRF/allowedOrigins, Plex PIN callback) that P29 planning must address.
