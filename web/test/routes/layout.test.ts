@@ -63,6 +63,8 @@ const mockSession: SessionInfo = {
 
 const sharedLayoutData = {
 	user: null,
+	untrustedOrigin: null,
+	networkPosture: null,
 	installHealthState: null
 };
 

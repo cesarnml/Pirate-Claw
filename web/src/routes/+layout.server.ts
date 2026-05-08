@@ -1,8 +1,10 @@
-import { apiFetch } from '$lib/server/api';
+import { apiRequest, apiFetch } from '$lib/server/api';
 import type {
 	AppConfig,
+	AuthStateResult,
 	DaemonHealth,
 	InstallHealthResponse,
+	NetworkPostureState,
 	PlexAuthState,
 	PlexAuthStatusResponse,
 	ReadinessResponse,
@@ -32,9 +34,19 @@ function normalizePlexAuthState(
 	return authState ?? 'not_connected';
 }
 
-export const load: LayoutServerLoad = async ({ locals }) => {
+export const load: LayoutServerLoad = async ({ locals, url }) => {
 	// Skip sensitive API fetches for unauthenticated requests (auth pages: /setup, /login)
 	const authenticated = locals.user !== null;
+	const writeToken = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+	const authStateFetch: Promise<AuthStateResult> =
+		authenticated && writeToken
+			? apiRequest('/api/auth/state', {
+					headers: { Authorization: `Bearer ${writeToken}` }
+				}).then(async (res) => {
+					if (!res.ok) throw new Error(`auth/state ${res.status}`);
+					return res.json() as Promise<AuthStateResult>;
+				})
+			: Promise.reject(new Error('unauthenticated'));
 
 	const [
 		healthResult,
@@ -43,7 +55,8 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		setupStateResult,
 		readinessResult,
 		installHealthResult,
-		plexAuthResult
+		plexAuthResult,
+		authStateResult
 	] = await Promise.allSettled([
 		authenticated ? apiFetch<DaemonHealth>('/api/health') : Promise.reject('unauthenticated'),
 		authenticated
@@ -59,7 +72,8 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 			: Promise.reject('unauthenticated'),
 		authenticated
 			? apiFetch<PlexAuthStatusResponse>('/api/plex/auth/status')
-			: Promise.reject('unauthenticated')
+			: Promise.reject('unauthenticated'),
+		authStateFetch
 	]);
 
 	if (authenticated && healthResult.status === 'rejected') {
@@ -96,6 +110,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		configResult.status === 'fulfilled' && configResult.value.plex !== undefined;
 	const plexAuthState =
 		plexAuthResult.status === 'fulfilled' ? plexAuthResult.value.state : undefined;
+	const authState = authStateResult.status === 'fulfilled' ? authStateResult.value : null;
+	const trustedOrigins = authState?.trusted_origins ?? [];
+	const requestOrigin = url.origin;
+	const untrustedOrigin: string | null =
+		locals.user && !trustedOrigins.includes(requestOrigin) ? requestOrigin : null;
+	const networkPosture: NetworkPostureState | null = authState?.network_posture ?? null;
 
 	return {
 		user: locals.user ?? null,
@@ -105,6 +125,8 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		setupState: normalizeSetupState(setupState),
 		readinessState: normalizeReadinessState(readiness?.state),
 		installHealthState:
-			installHealthResult.status === 'fulfilled' ? installHealthResult.value : null
+			installHealthResult.status === 'fulfilled' ? installHealthResult.value : null,
+		untrustedOrigin,
+		networkPosture
 	};
 };

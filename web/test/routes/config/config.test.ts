@@ -56,6 +56,8 @@ const mockConfig: AppConfig = {
 
 const sharedLayoutData = {
 	user: null,
+	untrustedOrigin: null,
+	networkPosture: null,
 	health: null,
 	transmissionSession: null,
 	plexAuthState: 'unavailable'

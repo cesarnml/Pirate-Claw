@@ -7,6 +7,8 @@ import type { PageData } from '../../../../src/routes/shows/[slug]/$types';
 const sharedLayoutData: Pick<
 	PageData,
 	| 'user'
+	| 'untrustedOrigin'
+	| 'networkPosture'
 	| 'health'
 	| 'transmissionSession'
 	| 'plexAuthState'
@@ -15,6 +17,8 @@ const sharedLayoutData: Pick<
 	| 'installHealthState'
 > = {
 	user: null,
+	untrustedOrigin: null,
+	networkPosture: null,
 	health: null,
 	transmissionSession: null,
 	plexAuthState: 'unavailable',

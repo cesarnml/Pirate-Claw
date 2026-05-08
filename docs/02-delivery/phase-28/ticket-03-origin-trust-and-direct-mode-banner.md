@@ -46,4 +46,8 @@ Tailscale access from a new origin shows the trust banner; one click adds the or
 
 ## Rationale
 
-_To be completed during delivery._
+`untrustedOrigin` is computed from `url.origin` (scheme+host+port of the request), not the HTTP `Origin` header. Direct browser navigation doesn't send an `Origin` header; `url.origin` is always present and correctly represents the access origin (LAN IP, Tailscale IP, etc.).
+
+The auth state fetch (`GET /api/auth/state`) runs on every authenticated page load inside `+layout.server.ts`. This adds one daemon round-trip per navigation but keeps trust-origin and network-posture state always fresh without client-side caching. For a local NAS appliance, this latency is acceptable.
+
+The `apiRequest` mock in layout tests required an explicit `.mockRejectedValue(...)` default to prevent `undefined.then()` errors when `PIRATE_CLAW_API_WRITE_TOKEN` is set in the `.env` file. The layout tests only care about `apiFetch` calls; auth state is intentionally absent from the layout test fixtures (always null).

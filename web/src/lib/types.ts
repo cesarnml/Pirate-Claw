@@ -324,3 +324,16 @@ export type TransmissionStatusResponse = {
 	reachable: boolean;
 	advisory?: string;
 };
+
+export type NetworkPostureState =
+	| 'unacknowledged'
+	| 'direct_acknowledged'
+	| 'already_secured_externally'
+	| 'vpn_bridge_pending';
+
+export type AuthStateResult = {
+	owner_exists: boolean;
+	setup_complete: boolean;
+	trusted_origins: string[];
+	network_posture: NetworkPostureState;
+};
