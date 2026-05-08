@@ -53,4 +53,4 @@ All five auth endpoints behave correctly. `session-secret` is generated on first
 
 ## Rationale
 
-_To be completed during delivery._
+Auth state lives in a new `src/auth-state.ts` module (not mixed into `install-bootstrap.ts` or `api.ts`) so the file I/O contract and bcrypt operations are testable in isolation. Session-secret generation was added to `ensureFirstStartupBootstrap` following the same create-if-absent pattern as the daemon write token; `auth/` and `web/` subdirectories are created lazily by each write function rather than added to `INSTALL_ROOT_DIRECTORIES`, matching the existing `config/generated` pattern. All five auth endpoints are behind `checkWriteAuth` (daemon write token) so the web layer remains the only caller, preventing direct unauthenticated access from LAN. Bcrypt cost 12 was chosen as the standard hardening value; the timing-safe comparison relies on bcrypt's inherent constant-time properties plus always calling `Bun.password.verify` before the username check when an owner exists.

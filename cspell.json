@@ -107,7 +107,11 @@
     "watchlist",
     "worktree",
     "worktrees",
-    "writeability"
+    "writeability",
+    "correcthorsebatterystaple",
+    "mypassword",
+    "notadmin",
+    "wrongpassword"
   ],
   "ignoreWords": [],
   "import": []

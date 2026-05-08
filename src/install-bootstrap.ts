@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { ensureSessionSecret } from './auth-state';
 
 export const DEFAULT_SYNOLOGY_INSTALL_ROOT = '/volume1/pirate-claw';
 
@@ -23,6 +24,8 @@ export type FirstStartupBootstrapResult = {
   configDir: string;
   daemonApiWriteTokenPath: string;
   daemonApiWriteTokenCreated: boolean;
+  sessionSecretPath: string;
+  sessionSecretCreated: boolean;
 };
 
 export async function ensureFirstStartupBootstrap(input: {
@@ -56,11 +59,15 @@ export async function ensureFirstStartupBootstrap(input: {
     await Bun.write(daemonApiWriteTokenPath, `${generateSecretToken()}\n`);
   }
 
+  const sessionSecret = await ensureSessionSecret(configDir);
+
   return {
     installRoot,
     configDir,
     daemonApiWriteTokenPath,
     daemonApiWriteTokenCreated,
+    sessionSecretPath: sessionSecret.path,
+    sessionSecretCreated: sessionSecret.created,
   };
 }
 

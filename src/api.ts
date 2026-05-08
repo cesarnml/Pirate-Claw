@@ -1,6 +1,14 @@
 import type { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
+import { dirname } from 'node:path';
 import { getSetupState } from './bootstrap';
+import {
+  acknowledgeNetworkPosture,
+  readAuthState,
+  setupOwner,
+  trustOrigin,
+  verifyLogin,
+} from './auth-state';
 import { renameSync, writeFileSync } from 'node:fs';
 import { getInstallHealth } from './install-health';
 import {
@@ -508,6 +516,169 @@ export function createApiFetch(
             ? 'Non-standard Transmission configuration detected. Setup will proceed but verify your URL and port.'
             : undefined;
         return Response.json({ compatibility, url, reachable, advisory });
+      } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/auth/state' && request.method === 'GET') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+      try {
+        return Response.json(await readAuthState(dirname(configPath)));
+      } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/auth/setup-owner' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      const parsed = body as Record<string, unknown>;
+      if (typeof parsed?.username !== 'string' || !parsed.username.trim()) {
+        return Response.json(
+          { error: 'username is required' },
+          { status: 400 },
+        );
+      }
+      if (typeof parsed?.password !== 'string' || !parsed.password) {
+        return Response.json(
+          { error: 'password is required' },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const origin = request.headers.get('origin');
+        const result = await setupOwner(
+          dirname(configPath),
+          parsed.username.trim(),
+          parsed.password,
+          origin,
+        );
+        if (!result.ok) {
+          return Response.json(
+            { error: 'owner already exists' },
+            { status: 409 },
+          );
+        }
+        return Response.json({ ok: true });
+      } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/auth/verify-login' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      const parsed = body as Record<string, unknown>;
+      if (typeof parsed?.username !== 'string' || !parsed.username.trim()) {
+        return Response.json(
+          { error: 'username is required' },
+          { status: 400 },
+        );
+      }
+      if (typeof parsed?.password !== 'string') {
+        return Response.json(
+          { error: 'password is required' },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const result = await verifyLogin(
+          dirname(configPath),
+          parsed.username.trim(),
+          parsed.password,
+        );
+        return Response.json(result);
+      } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/auth/trust-origin' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      const parsed = body as Record<string, unknown>;
+      if (typeof parsed?.origin !== 'string' || !parsed.origin.trim()) {
+        return Response.json({ error: 'origin is required' }, { status: 400 });
+      }
+
+      try {
+        await trustOrigin(dirname(configPath), parsed.origin.trim());
+        return Response.json({ ok: true });
+      } catch {
+        return json500();
+      }
+    }
+
+    if (
+      path === '/api/auth/acknowledge-network-posture' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      const parsed = body as Record<string, unknown>;
+      const validStates = [
+        'direct_acknowledged',
+        'already_secured_externally',
+        'vpn_bridge_pending',
+      ] as const;
+      if (
+        typeof parsed?.state !== 'string' ||
+        !validStates.includes(parsed.state as (typeof validStates)[number])
+      ) {
+        return Response.json(
+          {
+            error:
+              'state must be one of: direct_acknowledged, already_secured_externally, vpn_bridge_pending',
+          },
+          { status: 400 },
+        );
+      }
+
+      try {
+        await acknowledgeNetworkPosture(
+          dirname(configPath),
+          parsed.state as
+            | 'direct_acknowledged'
+            | 'already_secured_externally'
+            | 'vpn_bridge_pending',
+        );
+        return Response.json({ ok: true });
       } catch {
         return json500();
       }
