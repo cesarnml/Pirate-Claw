@@ -27,7 +27,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		error(400, 'Invalid state');
 	}
 
-	console.log('[network-posture] acknowledging state:', state, 'for user:', locals.user.username);
+	console.log('[network-posture] acknowledging state:', state);
 
 	const res = await apiRequest('/api/auth/acknowledge-network-posture', {
 		method: 'POST',

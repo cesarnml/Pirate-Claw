@@ -15,7 +15,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const { origin } = (await request.json()) as { origin: string };
-	console.log('[trust-origin] trusting origin:', origin, 'for user:', locals.user.username);
+	console.log('[trust-origin] trusting origin:', origin);
 
 	const res = await apiRequest('/api/auth/trust-origin', {
 		method: 'POST',
