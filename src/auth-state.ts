@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -48,13 +48,19 @@ export async function ensureSessionSecret(
   configDir: string,
 ): Promise<{ created: boolean; path: string }> {
   const path = sessionSecretPath(configDir);
-  const file = Bun.file(path);
-  if (await file.exists()) {
-    return { created: false, path };
-  }
   await mkdir(authSubdir(configDir), { recursive: true });
-  await Bun.write(path, `${randomBytes(32).toString('hex')}\n`);
-  return { created: true, path };
+  try {
+    await writeFile(path, `${randomBytes(32).toString('hex')}\n`, {
+      flag: 'wx',
+      mode: 0o600,
+    });
+    return { created: true, path };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      return { created: false, path };
+    }
+    throw err;
+  }
 }
 
 async function readOwner(configDir: string): Promise<OwnerRecord | null> {
@@ -147,21 +153,28 @@ export async function setupOwner(
   password: string,
   origin: string | null,
 ): Promise<{ ok: true } | { ok: false; error: 'already_exists' }> {
-  const existing = await readOwner(configDir);
-  if (existing !== null) {
-    return { ok: false, error: 'already_exists' };
-  }
   await mkdir(authSubdir(configDir), { recursive: true });
   const passwordHash = await Bun.password.hash(password, {
     algorithm: 'bcrypt',
     cost: 12,
   });
-  await Bun.write(
-    ownerPath(configDir),
-    `${JSON.stringify({ username, password_hash: passwordHash }, null, 2)}\n`,
-  );
+  const ownerRecord = `${JSON.stringify({ username, password_hash: passwordHash }, null, 2)}\n`;
+  const path = ownerPath(configDir);
+  try {
+    await writeFile(path, ownerRecord, { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      return { ok: false, error: 'already_exists' };
+    }
+    throw err;
+  }
   if (origin) {
-    await writeTrustedOrigins(configDir, [origin]);
+    try {
+      await writeTrustedOrigins(configDir, [origin]);
+    } catch (err) {
+      await unlink(path).catch(() => undefined);
+      throw err;
+    }
   }
   return { ok: true };
 }
