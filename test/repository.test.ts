@@ -594,12 +594,13 @@ describe('SQLite repository', () => {
   describe('listRecentFeedItemOutcomesForReview', () => {
     it('returns one row per identity_key for latest failed enqueue while candidate is still failed', async () => {
       const repository = createTestRepository(await createDatabasePath());
-      const run = repository.startRun('2026-04-01T00:00:00.000Z');
+      const baseTime = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+      const run = repository.startRun(offsetIso(baseTime, 0));
       const feedItem = repository.recordFeedItem(run.id, {
         feedName: 'main-tv',
         guidOrLink: 'https://example.test/item1',
         rawTitle: 'Some.Show.S01E01.720p',
-        publishedAt: '2026-04-01T00:00:00.000Z',
+        publishedAt: offsetIso(baseTime, 0),
         downloadUrl: 'https://example.test/item1.torrent',
       });
 
@@ -607,14 +608,14 @@ describe('SQLite repository', () => {
         runId: run.id,
         feedItemId: feedItem.id,
         status: 'skipped_no_match',
-        createdAt: '2026-04-01T00:01:00.000Z',
+        createdAt: offsetIso(baseTime, 60_000),
       });
 
       const failedFeedItem = repository.recordFeedItem(run.id, {
         feedName: 'main-tv',
         guidOrLink: 'https://example.test/movie-2024-1080p-x265',
         rawTitle: 'Movie 2024 1080p x265',
-        publishedAt: '2026-04-01T00:03:00.000Z',
+        publishedAt: offsetIso(baseTime, 180_000),
         downloadUrl: 'https://example.test/movie.torrent',
       });
       const failedMatch = requireMovieMatch(failedFeedItem.rawTitle);
@@ -624,21 +625,21 @@ describe('SQLite repository', () => {
         feedItem: failedFeedItem,
         match: failedMatch,
         status: 'failed',
-        updatedAt: '2026-04-01T00:03:10.000Z',
+        updatedAt: offsetIso(baseTime, 190_000),
       });
       repository.recordFeedItemOutcome({
         runId: run.id,
         feedItemId: failedFeedItem.id,
         status: 'failed',
         identityKey: failedMatch.identityKey,
-        createdAt: '2026-04-01T00:03:00.000Z',
+        createdAt: offsetIso(baseTime, 180_000),
       });
       repository.recordFeedItemOutcome({
         runId: run.id,
         feedItemId: failedFeedItem.id,
         status: 'failed',
         identityKey: failedMatch.identityKey,
-        createdAt: '2026-04-01T00:04:00.000Z',
+        createdAt: offsetIso(baseTime, 240_000),
         message: 'later run',
       });
 
@@ -646,7 +647,7 @@ describe('SQLite repository', () => {
         feedName: 'main-movie',
         guidOrLink: 'https://example.test/dup1',
         rawTitle: 'Other Movie 2024 1080p',
-        publishedAt: '2026-04-01T00:05:00.000Z',
+        publishedAt: offsetIso(baseTime, 300_000),
         downloadUrl: 'https://example.test/other.torrent',
       });
       const dupMatch = requireMovieMatch(dupFeed.rawTitle);
@@ -656,7 +657,7 @@ describe('SQLite repository', () => {
         status: 'skipped_duplicate',
         identityKey: dupMatch.identityKey,
         ruleName: dupMatch.ruleName,
-        createdAt: '2026-04-01T00:05:30.000Z',
+        createdAt: offsetIso(baseTime, 330_000),
       });
 
       const results = repository.listRecentFeedItemOutcomesForReview(30);
@@ -664,7 +665,7 @@ describe('SQLite repository', () => {
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe('failed');
       expect(results[0].identityKey).toBe(failedMatch.identityKey);
-      expect(results[0].recordedAt).toBe('2026-04-01T00:04:00.000Z');
+      expect(results[0].recordedAt).toBe(offsetIso(baseTime, 240_000));
 
       repository.requeueCandidate(failedMatch.identityKey, {});
       const afterRequeue = repository.listRecentFeedItemOutcomesForReview(30);
@@ -673,12 +674,13 @@ describe('SQLite repository', () => {
 
     it('returns null title and feedName when the latest failed outcome row has no feed item', async () => {
       const repository = createTestRepository(await createDatabasePath());
-      const run = repository.startRun('2026-04-01T00:00:00.000Z');
+      const baseTime = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+      const run = repository.startRun(offsetIso(baseTime, 0));
       const failedFeedItem = repository.recordFeedItem(run.id, {
         feedName: 'main-tv',
         guidOrLink: 'https://example.test/movie-2024-1080p-x265',
         rawTitle: 'Movie 2024 1080p x265',
-        publishedAt: '2026-04-01T00:03:00.000Z',
+        publishedAt: offsetIso(baseTime, 180_000),
         downloadUrl: 'https://example.test/movie.torrent',
       });
       const failedMatch = requireMovieMatch(failedFeedItem.rawTitle);
@@ -688,21 +690,21 @@ describe('SQLite repository', () => {
         feedItem: failedFeedItem,
         match: failedMatch,
         status: 'failed',
-        updatedAt: '2026-04-01T00:03:10.000Z',
+        updatedAt: offsetIso(baseTime, 190_000),
       });
       repository.recordFeedItemOutcome({
         runId: run.id,
         feedItemId: failedFeedItem.id,
         status: 'failed',
         identityKey: failedMatch.identityKey,
-        createdAt: '2026-04-01T00:03:00.000Z',
+        createdAt: offsetIso(baseTime, 180_000),
       });
       repository.recordFeedItemOutcome({
         runId: run.id,
         feedItemId: undefined,
         status: 'failed',
         identityKey: failedMatch.identityKey,
-        createdAt: '2026-04-01T00:04:00.000Z',
+        createdAt: offsetIso(baseTime, 240_000),
       });
 
       const results = repository.listRecentFeedItemOutcomesForReview(30);
@@ -813,6 +815,10 @@ async function createDatabasePath(): Promise<string> {
 
   tempDirs.push(directory);
   return join(directory, 'pirate-claw.db');
+}
+
+function offsetIso(base: Date, offsetMs: number): string {
+  return new Date(base.getTime() + offsetMs).toISOString();
 }
 
 function requireMovieMatch(rawTitle: string) {
