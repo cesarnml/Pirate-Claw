@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { init, resolveUnauthenticatedPageRedirect } from '../src/hooks.server';
+import { init, resolveUnauthenticatedPageRedirect, handle } from '../src/hooks.server';
 import { getSessionSecret, initSessionSecret } from '../src/lib/server/session';
 import { apiRequest } from '../src/lib/server/api';
 
@@ -158,5 +158,91 @@ describe('resolveUnauthenticatedPageRedirect', () => {
 		vi.mocked(apiRequest).mockRejectedValue(new Error('offline'));
 
 		await expect(resolveUnauthenticatedPageRedirect('write-token')).resolves.toBe('/login');
+	});
+});
+
+describe('handle — CSRF validation', () => {
+	const savedOrigin = process.env.ORIGIN;
+	let trustedOriginsFile: string;
+
+	beforeEach(() => {
+		process.env.ORIGIN = 'http://localhost';
+		trustedOriginsFile = join(tmpDir, 'trusted-origins.json');
+		delete process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE;
+		initSessionSecret('');
+		vi.mocked(apiRequest).mockReset();
+	});
+
+	afterEach(() => {
+		if (savedOrigin !== undefined) {
+			process.env.ORIGIN = savedOrigin;
+		} else {
+			delete process.env.ORIGIN;
+		}
+		delete process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE;
+	});
+
+	function makeFormEvent(origin: string, pathname = '/setup') {
+		return {
+			request: new Request(`http://localhost${pathname}`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+					origin
+				},
+				body: 'field=value'
+			}),
+			url: new URL(`http://localhost${pathname}`),
+			cookies: { get: vi.fn().mockReturnValue(undefined) },
+			locals: {} as App.Locals
+		};
+	}
+
+	it('rejects form POST from unknown secondary origin (current broken state — CSRF not enforced)', async () => {
+		const event = makeFormEvent('http://100.64.0.1');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).toBe(403);
+	});
+
+	it('allows form POST from secondary origin when it is in trusted-origins', async () => {
+		writeFileSync(trustedOriginsFile, JSON.stringify(['http://100.64.0.1']));
+		process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE = trustedOriginsFile;
+		init();
+
+		const event = makeFormEvent('http://100.64.0.1');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).not.toBe(403);
+	});
+
+	it('allows form POST from same-origin (ORIGIN env)', async () => {
+		const event = makeFormEvent('http://localhost');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).not.toBe(403);
+	});
+
+	it('allows GET requests from any origin without CSRF check', async () => {
+		const event = {
+			request: new Request('http://localhost/', {
+				method: 'GET',
+				headers: { origin: 'http://100.64.0.1' }
+			}),
+			url: new URL('http://localhost/'),
+			cookies: { get: vi.fn().mockReturnValue(undefined) },
+			locals: {} as App.Locals
+		};
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).not.toBe(403);
 	});
 });

@@ -265,4 +265,27 @@ describe('+layout.svelte', () => {
 		expect(screen.queryByTestId('partial-config-banner')).not.toBeInTheDocument();
 		expect(screen.queryByTestId('ready-pending-restart-banner')).not.toBeInTheDocument();
 	});
+
+	it.each(['/plex/connect', '/plex/connect/callback'])(
+		'does not show starter splash on auth-flow route %s',
+		(pathname) => {
+			setPathname(pathname);
+
+			render(Layout, {
+				props: {
+					children: childSnippet,
+					data: {
+						...sharedLayoutData,
+						health: null,
+						transmissionSession: null,
+						plexAuthState: 'unavailable' as const,
+						setupState: 'starter' as const,
+						readinessState: 'not_ready' as const
+					}
+				}
+			});
+
+			expect(screen.queryByTestId('starter-mode-splash')).not.toBeInTheDocument();
+		}
+	);
 });
