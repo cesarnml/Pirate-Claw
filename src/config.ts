@@ -1,6 +1,10 @@
 import { dirname, join } from 'node:path';
 
 import { generatedDaemonApiWriteTokenPath } from './install-bootstrap';
+import {
+  validateDownloaderNetwork,
+  type DownloaderNetworkConfig,
+} from './vpn-state';
 
 export type FeedConfig = {
   name: string;
@@ -100,6 +104,7 @@ export type AppConfig = {
   runtime: RuntimeConfig;
   tmdb?: TmdbConfig;
   plex?: PlexConfig;
+  downloaderNetwork?: DownloaderNetworkConfig;
 };
 
 const DEFAULT_CONFIG_PATH = 'pirate-claw.config.json';
@@ -165,7 +170,26 @@ export function validateConfig(
     runtime: validateRuntime(input.runtime, path, env),
     tmdb: validateOptionalTmdb(input.tmdb, path),
     plex: validateOptionalPlex(input.plex, path, env),
+    downloaderNetwork: validateOptionalDownloaderNetwork(
+      input.downloaderNetwork,
+      path,
+    ),
   };
+}
+
+function validateOptionalDownloaderNetwork(
+  input: unknown,
+  path: string,
+): DownloaderNetworkConfig | undefined {
+  if (input === undefined) return undefined;
+  try {
+    return validateDownloaderNetwork(input);
+  } catch (err) {
+    if (err instanceof ConfigError) throw err;
+    throw new ConfigError(
+      `Config file "${path}" has an invalid downloaderNetwork block: ${String(err)}`,
+    );
+  }
 }
 
 function validateTvConfig(input: unknown, path: string): TvRule[] {

@@ -6,7 +6,8 @@ export type NetworkPostureState =
   | 'unacknowledged'
   | 'direct_acknowledged'
   | 'already_secured_externally'
-  | 'vpn_bridge_pending';
+  | 'vpn_bridge_pending'
+  | 'vpn_bridge_active';
 
 export type AuthStateResult = {
   owner_exists: boolean;
@@ -108,7 +109,8 @@ async function readNetworkPosture(
         s === 'unacknowledged' ||
         s === 'direct_acknowledged' ||
         s === 'already_secured_externally' ||
-        s === 'vpn_bridge_pending'
+        s === 'vpn_bridge_pending' ||
+        s === 'vpn_bridge_active'
       ) {
         return s;
       }
@@ -204,7 +206,8 @@ export async function acknowledgeNetworkPosture(
   state:
     | 'direct_acknowledged'
     | 'already_secured_externally'
-    | 'vpn_bridge_pending',
+    | 'vpn_bridge_pending'
+    | 'vpn_bridge_active',
 ): Promise<void> {
   await mkdir(webSubdir(configDir), { recursive: true });
   await Bun.write(

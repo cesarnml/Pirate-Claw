@@ -9,6 +9,9 @@ bun.lock
 .agents/delivery/
 .agents/analysis/
 .agents/ai-review/
+.son-of-anton/.agents/delivery/
+.son-of-anton/.agents/analysis/
+.son-of-anton/.agents/ai-review/
 pirate-claw.config.json
 pirate-claw.db
 .pirate-claw/
