@@ -94,8 +94,8 @@ export function validateDownloaderNetwork(
 
 > Append here (do not edit above) when behavior or trade-offs change during implementation.
 
-Red first: [what test failed first]
-Why this path: [why this implementation was the smallest acceptable]
-Alternative considered: [one rejected alternative and why]
-Deferred: [what was intentionally left out of this ticket]
-Contract note: record any deviation from the ticket metadata contract here, including missing/incorrect `Type:` or non-compliant `Scope:` fields, and why it happened.
+Red first: `Cannot find module '../src/vpn-state'` — module did not exist, all 10 new tests failed at typecheck before any runtime.
+Why this path: Smallest surface that satisfies the ticket contract — plain `join` helpers, Bun file I/O for manifest, `ConfigError` for validation. No HTTP, no credentials handling.
+Alternative considered: Inlining path helpers into `auth-state.ts` — rejected; VPN concerns belong in their own module consistent with how `auth-state.ts` owns auth-path helpers.
+Deferred: Credential file write (gluetun `username\npassword\n` format) — P29.04 owns that write; this ticket only defines the path helper.
+Contract note: No deviations from ticket metadata contract.
