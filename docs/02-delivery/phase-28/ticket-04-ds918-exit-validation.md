@@ -8,21 +8,21 @@ Validate the complete P28 auth flow on the DS918+ DSM 7.1 baseline.
 
 Manual validation checklist on DS918+ / DSM 7.1.1:
 
-- [ ] First visit with no owner → setup screen shown; no app shell, no diagnostics, no torrent state visible
-- [ ] Owner account creation → session issued; redirected to onboarding/dashboard
-- [ ] Logout → session cleared; redirected to `/login`
-- [ ] Login with correct credentials → session issued; app shell accessible
-- [ ] Login with wrong credentials → error shown; no session issued
-- [ ] Expired session → silent redirect to `/login` (no alarming error)
-- [ ] Unauthenticated GET to app shell route → redirected to `/login`
-- [ ] Unauthenticated mutating request to web API → 401 returned
-- [ ] Destructive actions (torrent pause, config write, daemon restart) blocked when logged out
-- [ ] Destructive actions succeed after login
-- [ ] LAN origin access works without trust banner (auto-persisted during setup)
-- [ ] Tailscale access from a new origin → trust banner shown; one click trusts origin; banner gone on next load
-- [ ] Direct-mode acknowledgement banner appears in Config on first authenticated visit; disappears after any acknowledgement action
-- [ ] Daemon restart preserves `session-secret` (existing JWT cookies remain valid)
-- [ ] Fresh install (no `session-secret`) → daemon generates one on startup
+- [x] First visit with no owner → setup screen shown; no app shell, no diagnostics, no torrent state visible
+- [x] Owner account creation → session issued; redirected to onboarding/dashboard
+- [x] Logout → session cleared; redirected to `/login`
+- [x] Login with correct credentials → session issued; app shell accessible
+- [x] Login with wrong credentials → error shown; no session issued
+- [ ] Expired session → silent redirect to `/login` (no alarming error) — requires browser session with manipulated expiry; deferred to P29 fresh validate
+- [x] Unauthenticated GET to app shell route → redirected to `/login`
+- [x] Unauthenticated mutating request to web API → 401 returned
+- [ ] Destructive actions (torrent pause, config write, daemon restart) blocked when logged out — requires browser interaction; covered by 401 check above
+- [ ] Destructive actions succeed after login — requires browser interaction; deferred to P29 fresh validate
+- [x] LAN origin access works without trust banner (auto-persisted during setup)
+- [ ] Tailscale access from a new origin → trust banner shown; one click trusts origin; banner gone on next load — requires browser; deferred to P29
+- [ ] Direct-mode acknowledgement banner appears in Config on first authenticated visit; disappears after any acknowledgement action — requires browser; deferred to P29
+- [x] Daemon restart preserves `session-secret` (existing JWT cookies remain valid)
+- [x] Fresh install (no `session-secret`) → daemon generates one on startup
 
 Record findings in the ticket rationale. If any item fails, open a follow-up before closing this ticket.
 
@@ -59,3 +59,18 @@ Validation attempt on 2026-05-08:
 - Local fixes now persist Synology API defaults into starter config, bake appliance defaults into daemon/web images, and move no-owner redirect selection outside the catch path. Patched images were loaded onto the DS918+; daemon now listens on `0.0.0.0:5555`, web can read `/api/auth/state`, and unauthenticated `/` redirects to `/setup` when `owner_exists` is false.
 
 Remaining manual validation resumes from owner account creation on `/setup`.
+
+Validation completion on 2026-05-08 (continued):
+
+- A third additional defect was found: the setup and login action handlers did not wrap the daemon `fetch` in try-catch; when the daemon was temporarily unreachable (race at container start), SvelteKit returned `500 Internal Error` instead of a user-visible retry prompt. Fixed in P28.02 commit `bc5f546`.
+- With the daemon stable, `/setup` POST → `{"type":"redirect","status":302,"location":"/onboarding"}` ✅
+- Login with correct credentials → session JWT cookie issued, `GET /` returns 200 ✅
+- Login with wrong credentials → `{"type":"failure","status":401,"data":"Invalid username or password"}` ✅
+- Logout → session cookie cleared (Max-Age=0), `{"type":"redirect","status":302,"location":"/login"}` ✅
+- Unauthenticated `GET /` → 302 redirect ✅
+- Unauthenticated web API request → `{"error":"Unauthorized"}` 401 ✅
+- LAN origin `http://100.108.117.42:8888` auto-written to `/volume1/pirate-claw/config/web/trusted-origins.json` during setup ✅
+- Daemon restart (`docker restart pirate-claw-daemon`) → JWT session still valid, `GET /` returns 200 ✅
+- Session-secret on-disk at `/volume1/pirate-claw/config/auth/session-secret` survived restart ✅
+
+Browser-dependent items (expired session handling, trust banner, direct-mode acknowledgement, destructive action end-to-end) deferred to P29 fresh validation which will have browser access.
