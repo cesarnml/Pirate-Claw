@@ -3,10 +3,12 @@
   "planRoot": "docs",
   "runtime": "bun",
   "packageManager": "bun",
-  "ticketBoundaryMode": "cook",
+  "ticketBoundaryMode": "gated",
   "reviewPolicy": {
-    "selfAudit": "skip_doc_only",
-    "codexPreflight": "disabled",
-    "externalReview": "disabled"
-  }
+    "subagentReview": "skip_doc_only",
+    "prReview": "skip_doc_only"
+  },
+  "prReviewAgents": [
+    { "login": "coderabbitai", "name": "coderabbit", "resolveThreads": true }
+  ]
 }
