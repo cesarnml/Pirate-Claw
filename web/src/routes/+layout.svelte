@@ -49,7 +49,7 @@
 	const transmissionConnected = $derived(data.transmissionSession !== null);
 	const plexAuthState = $derived(data.plexAuthState ?? 'unavailable');
 	const isOnboarding = $derived($page.url.pathname === '/onboarding');
-	// Any new auth-flow route must be added here — absence causes visible test failure
+	// Auth-flow routes render transient redirects/callbacks; keep the app shell hidden there.
 	const isAuthPage = $derived(
 		$page.url.pathname === '/setup' ||
 			$page.url.pathname === '/login' ||

@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { apiRequest } from '$lib/server/api';
+import { log } from '$lib/server/log';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
@@ -53,7 +54,7 @@ export const load: PageServerLoad = async ({ url }) => {
 	}
 
 	await response.json();
-	console.log({ event: 'plex_callback_redirect', returnTo: returnToFromUrl });
+	log('info', { event: 'plex_callback_redirect', returnTo: returnToFromUrl });
 	return {
 		ok: true,
 		pending: false,

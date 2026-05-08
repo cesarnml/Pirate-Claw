@@ -7,6 +7,7 @@ import {
 	SESSION_COOKIE_NAME
 } from '$lib/server/session';
 import { apiRequest } from '$lib/server/api';
+import { log } from '$lib/server/log';
 
 const PUBLIC_PATHS = new Set(['/setup', '/login', '/logout']);
 
@@ -15,21 +16,6 @@ const FORM_CONTENT_TYPES = new Set([
 	'multipart/form-data',
 	'text/plain'
 ]);
-
-type LogLevel = 'debug' | 'info' | 'silent';
-
-function logLevel(): LogLevel {
-	const level = process.env.PIRATE_CLAW_LOG_LEVEL;
-	if (level === 'debug' || level === 'info' || level === 'silent') return level;
-	return 'info';
-}
-
-function log(level: LogLevel, data: Record<string, unknown>): void {
-	const current = logLevel();
-	if (current === 'silent') return;
-	if (level === 'debug' && current !== 'debug') return;
-	console.log(data);
-}
 
 let trustedOrigins: string[] = [];
 
@@ -63,6 +49,7 @@ export function init() {
 		}
 	}
 
+	trustedOrigins = [];
 	const originsFile = process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE;
 	if (originsFile) {
 		try {
@@ -70,10 +57,18 @@ export function init() {
 			if (Array.isArray(raw)) {
 				trustedOrigins = (raw as unknown[]).filter((x): x is string => typeof x === 'string');
 				log('info', { event: 'csrf_origins_loaded', count: trustedOrigins.length });
+			} else {
+				log('warn', { event: 'csrf_origins_invalid', file: originsFile });
 			}
-		} catch {
-			// file not yet written; trustedOrigins stays [] (same as pre-P29 behavior)
+		} catch (error) {
+			log('warn', {
+				event: 'csrf_origins_load_failed',
+				file: originsFile,
+				error: error instanceof Error ? error.message : String(error)
+			});
 		}
+	} else {
+		log('debug', { event: 'csrf_origins_not_configured' });
 	}
 }
 
@@ -96,7 +91,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		const origin = event.request.headers.get('origin');
 		const serverOrigin = process.env.ORIGIN ?? event.url.origin;
 		if (!isAllowedOrigin(origin, serverOrigin)) {
-			log('info', { event: 'csrf_rejected', origin, serverOrigin });
+			log('warn', { event: 'csrf_rejected', origin, serverOrigin });
 			return new Response('Cross-site form submissions are not allowed.', { status: 403 });
 		}
 		log('debug', { event: 'csrf_allowed', origin, serverOrigin });
