@@ -9,7 +9,8 @@ const config = {
 		defaultHandler(warning);
 	},
 	kit: {
-		adapter: adapter()
+		adapter: adapter(),
+		csrf: { checkOrigin: false }
 	},
 	vitePlugin: {
 		inspector: {

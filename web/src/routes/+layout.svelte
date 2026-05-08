@@ -49,10 +49,13 @@
 	const transmissionConnected = $derived(data.transmissionSession !== null);
 	const plexAuthState = $derived(data.plexAuthState ?? 'unavailable');
 	const isOnboarding = $derived($page.url.pathname === '/onboarding');
+	// Auth-flow routes render transient redirects/callbacks; keep the app shell hidden there.
 	const isAuthPage = $derived(
 		$page.url.pathname === '/setup' ||
 			$page.url.pathname === '/login' ||
-			$page.url.pathname === '/logout'
+			$page.url.pathname === '/logout' ||
+			$page.url.pathname === '/plex/connect' ||
+			$page.url.pathname === '/plex/connect/callback'
 	);
 	const showSidebar = $derived(!isOnboarding && !isAuthPage);
 	const setupState = $derived(data.setupState ?? 'partially_configured');

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { init, resolveUnauthenticatedPageRedirect } from '../src/hooks.server';
+import { init, resolveUnauthenticatedPageRedirect, handle } from '../src/hooks.server';
 import { getSessionSecret, initSessionSecret } from '../src/lib/server/session';
 import { apiRequest } from '../src/lib/server/api';
 
@@ -21,10 +21,16 @@ beforeEach(() => {
 	savedEnv.PIRATE_CLAW_DAEMON_TOKEN_FILE = process.env.PIRATE_CLAW_DAEMON_TOKEN_FILE;
 	savedEnv.PIRATE_CLAW_SESSION_SECRET = process.env.PIRATE_CLAW_SESSION_SECRET;
 	savedEnv.PIRATE_CLAW_SESSION_SECRET_FILE = process.env.PIRATE_CLAW_SESSION_SECRET_FILE;
+	savedEnv.PIRATE_CLAW_TRUSTED_ORIGINS_FILE = process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE;
+	savedEnv.PIRATE_CLAW_LOG_LEVEL = process.env.PIRATE_CLAW_LOG_LEVEL;
+	savedEnv.ORIGIN = process.env.ORIGIN;
 	delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
 	delete process.env.PIRATE_CLAW_DAEMON_TOKEN_FILE;
 	delete process.env.PIRATE_CLAW_SESSION_SECRET;
 	delete process.env.PIRATE_CLAW_SESSION_SECRET_FILE;
+	delete process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE;
+	process.env.PIRATE_CLAW_LOG_LEVEL = 'silent';
+	delete process.env.ORIGIN;
 	vi.mocked(apiRequest).mockReset();
 	// reset module-level secret before each test
 	initSessionSecret('');
@@ -38,7 +44,10 @@ afterEach(() => {
 		'PIRATE_CLAW_API_WRITE_TOKEN',
 		'PIRATE_CLAW_DAEMON_TOKEN_FILE',
 		'PIRATE_CLAW_SESSION_SECRET',
-		'PIRATE_CLAW_SESSION_SECRET_FILE'
+		'PIRATE_CLAW_SESSION_SECRET_FILE',
+		'PIRATE_CLAW_TRUSTED_ORIGINS_FILE',
+		'PIRATE_CLAW_LOG_LEVEL',
+		'ORIGIN'
 	] as const;
 	for (const key of keys) {
 		if (savedEnv[key] !== undefined) {
@@ -158,5 +167,143 @@ describe('resolveUnauthenticatedPageRedirect', () => {
 		vi.mocked(apiRequest).mockRejectedValue(new Error('offline'));
 
 		await expect(resolveUnauthenticatedPageRedirect('write-token')).resolves.toBe('/login');
+	});
+});
+
+describe('handle — CSRF validation', () => {
+	let trustedOriginsFile: string;
+
+	beforeEach(() => {
+		process.env.ORIGIN = 'http://localhost';
+		trustedOriginsFile = join(tmpDir, 'trusted-origins.json');
+		delete process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE;
+		initSessionSecret('');
+		vi.mocked(apiRequest).mockReset();
+	});
+
+	afterEach(() => {
+		delete process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE;
+	});
+
+	function makeFormEvent(origin: string, pathname = '/setup') {
+		return {
+			request: new Request(`http://localhost${pathname}`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/x-www-form-urlencoded',
+					origin
+				},
+				body: 'field=value'
+			}),
+			url: new URL(`http://localhost${pathname}`),
+			cookies: { get: vi.fn().mockReturnValue(undefined) },
+			locals: {} as never
+		};
+	}
+
+	it('rejects form POST from unknown secondary origin (current broken state — CSRF not enforced)', async () => {
+		const event = makeFormEvent('http://100.64.0.1');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).toBe(403);
+	});
+
+	it('allows form POST from secondary origin when it is in trusted-origins', async () => {
+		writeFileSync(trustedOriginsFile, JSON.stringify(['http://100.64.0.1']));
+		process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE = trustedOriginsFile;
+		init();
+
+		const event = makeFormEvent('http://100.64.0.1');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).not.toBe(403);
+	});
+
+	it('does not reread trusted-origins at request time', async () => {
+		writeFileSync(trustedOriginsFile, JSON.stringify(['http://100.64.0.1']));
+		process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE = trustedOriginsFile;
+		init();
+		writeFileSync(trustedOriginsFile, JSON.stringify([]));
+
+		const event = makeFormEvent('http://100.64.0.1');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).not.toBe(403);
+	});
+
+	it('resets trusted-origins to safe defaults when startup read fails', async () => {
+		writeFileSync(trustedOriginsFile, JSON.stringify(['http://100.64.0.1']));
+		process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE = trustedOriginsFile;
+		init();
+		process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE = join(tmpDir, 'missing-trusted-origins.json');
+		init();
+
+		const event = makeFormEvent('http://100.64.0.1');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).toBe(403);
+	});
+
+	it('allows form POST from same-origin (ORIGIN env)', async () => {
+		const event = makeFormEvent('http://localhost');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).not.toBe(403);
+	});
+
+	it('allows GET requests from any origin without CSRF check', async () => {
+		const event = {
+			request: new Request('http://localhost/', {
+				method: 'GET',
+				headers: { origin: 'http://100.64.0.1' }
+			}),
+			url: new URL('http://localhost/'),
+			cookies: { get: vi.fn().mockReturnValue(undefined) },
+			locals: {} as never
+		};
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+
+		const response = await handle({ event: event as never, resolve });
+
+		expect(response.status).not.toBe(403);
+	});
+
+	it('suppresses CSRF logs when PIRATE_CLAW_LOG_LEVEL is silent', async () => {
+		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		process.env.PIRATE_CLAW_LOG_LEVEL = 'silent';
+		process.env.PIRATE_CLAW_TRUSTED_ORIGINS_FILE = join(tmpDir, 'missing-trusted-origins.json');
+
+		init();
+		const event = makeFormEvent('http://100.64.0.1');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+		await handle({ event: event as never, resolve });
+
+		expect(logSpy).not.toHaveBeenCalled();
+		expect(warnSpy).not.toHaveBeenCalled();
+		logSpy.mockRestore();
+		warnSpy.mockRestore();
+	});
+
+	it('does not emit debug logs by default', async () => {
+		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		delete process.env.PIRATE_CLAW_LOG_LEVEL;
+
+		const event = makeFormEvent('http://localhost');
+		const resolve = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }));
+		await handle({ event: event as never, resolve });
+
+		expect(logSpy).not.toHaveBeenCalled();
+		logSpy.mockRestore();
 	});
 });
