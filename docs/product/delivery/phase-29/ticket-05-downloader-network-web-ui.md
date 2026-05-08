@@ -95,3 +95,13 @@ Why this path: [why this implementation was the smallest acceptable]
 Alternative considered: [one rejected alternative and why]
 Deferred: [what was intentionally left out of this ticket]
 Contract note: record any deviation from the ticket metadata contract here, including missing/incorrect `Type:` or non-compliant `Scope:` fields, and why it happened.
+
+Red first: `web/test/routes/config/downloader-network.test.ts` failed because `src/routes/config/downloader-network/+page.svelte` did not exist.
+
+Why this path: implemented a dedicated `/config/downloader-network` route with server actions that proxy the P29.04 daemon VPN endpoints, plus a small `/config/downloader-network/compose` download proxy. The existing `/config` page now links to the route instead of absorbing another dense workflow into the main config grid.
+
+Alternative considered: embedding the full VPN workflow into `/config` beside Transmission and feed controls. Rejected because the VPN apply instructions, upload flow, credentials form, and verification state are a full operator workflow and would make the existing config page harder to scan.
+
+Deferred: persistent verify status and credential-manifest introspection. P29.04 exposes compose availability and verify but no web-readable manifest endpoint, so P29.05 treats credentials as session-confirmed after save and verify as stateless. Durable status display can follow once the daemon exposes a read endpoint.
+
+Contract note: the ticket text still references `GET /api/vpn/compose/vpn`, `GET /api/vpn/compose/direct`, and `direct_mode`, but P29.04 landed the actual daemon contract as single `GET /api/vpn/compose` and `passthrough`. The UI follows the committed P29.04 branch contract and exposes one generated Compose download.
