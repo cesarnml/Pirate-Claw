@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import emptyConfig from '../../../../fixtures/api/config-empty.json';
 import feedOnlyConfig from '../../../../fixtures/api/config-feed-only.json';
+import { formPostRequest } from '../../helpers/form-request';
 
 const apiRequestMock = vi.fn();
 vi.mock('$lib/server/api', () => ({
@@ -165,11 +166,7 @@ describe('onboarding page server', () => {
 			body.set('feedMediaType', 'tv');
 
 			const result = await actions.saveFeed({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -199,11 +196,7 @@ describe('onboarding page server', () => {
 			body.set('existingFeedsJson', JSON.stringify([]));
 
 			const result = await actions.saveFeed({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -229,11 +222,7 @@ describe('onboarding page server', () => {
 			body.set('existingFeedsJson', JSON.stringify([]));
 
 			const result = await actions.saveFeed({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { feedsSuccess?: boolean }).feedsSuccess).toBe(true);
@@ -265,11 +254,7 @@ describe('onboarding page server', () => {
 			body.set('showName', 'Show Alpha');
 
 			const result = await actions.saveTvTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -296,11 +281,7 @@ describe('onboarding page server', () => {
 			body.append('tvCodec', 'x265');
 
 			const result = await actions.saveTvTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { tvTargetSuccess?: boolean }).tvTargetSuccess).toBe(true);
@@ -338,11 +319,7 @@ describe('onboarding page server', () => {
 			body.set('existingShowsJson', JSON.stringify(['Show Alpha']));
 
 			const result = await actions.saveTvTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { tvTargetSuccess?: boolean }).tvTargetSuccess).toBe(true);
@@ -373,11 +350,7 @@ describe('onboarding page server', () => {
 			body.set('existingShowsJson', JSON.stringify(['Show Alpha']));
 
 			const result = await actions.saveTvTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(409);
@@ -402,11 +375,7 @@ describe('onboarding page server', () => {
 			body.set('existingShowsJson', JSON.stringify([]));
 
 			const result = await actions.saveTvTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -429,11 +398,7 @@ describe('onboarding page server', () => {
 			body.set('movieCodecPolicy', 'prefer');
 
 			const result = await actions.saveMovieTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -455,11 +420,7 @@ describe('onboarding page server', () => {
 			body.set('movieCodecPolicy', 'sometimes');
 
 			const result = await actions.saveMovieTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -490,11 +451,7 @@ describe('onboarding page server', () => {
 			body.append('movieCodec', 'x264');
 
 			const result = await actions.saveMovieTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { movieTargetSuccess?: boolean }).movieTargetSuccess).toBe(true);
@@ -533,11 +490,7 @@ describe('onboarding page server', () => {
 			body.append('movieCodec', 'x265');
 
 			const result = await actions.saveMovieTarget({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { movieTargetSuccess?: boolean }).movieTargetSuccess).toBe(true);
@@ -594,11 +547,7 @@ describe('onboarding page server', () => {
 			body.set('tvDir', '/data/tv');
 
 			const result = await actions.saveDownloadDirs({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -623,11 +572,7 @@ describe('onboarding page server', () => {
 			body.set('movieDir', '');
 
 			const result = await actions.saveDownloadDirs({
-				request: new Request('http://localhost/onboarding', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/onboarding', body)
 			} as never);
 
 			expect((result as { downloadDirsSuccess?: boolean }).downloadDirsSuccess).toBe(true);

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { formPostRequest } from '../../helpers/form-request';
 
 const apiRequestMock = vi.fn();
 vi.mock('$lib/server/api', () => ({
@@ -268,11 +269,7 @@ describe('config page server actions', () => {
 			body.set('ifMatch', '"rev-1"');
 
 			const result = await actions.saveShows({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -292,11 +289,7 @@ describe('config page server actions', () => {
 			body.set('showName', 'Test Show');
 
 			const result = await actions.saveShows({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -320,11 +313,7 @@ describe('config page server actions', () => {
 			body.set('showName', 'Breaking Bad');
 
 			const result = await actions.saveShows({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { showsSuccess?: boolean }).showsSuccess).toBe(true);
@@ -350,11 +339,7 @@ describe('config page server actions', () => {
 			body.set('runIntervalMinutes', '15');
 
 			const result = await actions.saveRuntime({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -376,11 +361,7 @@ describe('config page server actions', () => {
 			body.append('currentShow', 'Test Show');
 
 			const result = await actions.saveRuntime({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -408,11 +389,7 @@ describe('config page server actions', () => {
 			body.append('currentShow', 'Better Call Saul');
 
 			const result = await actions.saveRuntime({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { runtimeSuccess?: boolean }).runtimeSuccess).toBe(true);
@@ -437,11 +414,7 @@ describe('config page server actions', () => {
 			body.set('runIntervalMinutes', '30');
 
 			const result = await actions.saveRuntime({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -464,11 +437,7 @@ describe('config page server actions', () => {
 			body.set('tmdbNegativeCacheTtlDays', '1');
 
 			const result = await actions.saveTmdb({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -490,11 +459,7 @@ describe('config page server actions', () => {
 			body.set('tmdbNegativeCacheTtlDays', '1');
 
 			const result = await actions.saveTmdb({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { status?: number }).status).toBe(400);
@@ -520,11 +485,7 @@ describe('config page server actions', () => {
 			body.set('tmdbNegativeCacheTtlDays', '1');
 
 			const result = await actions.saveTmdb({
-				request: new Request('http://localhost/config', {
-					method: 'POST',
-					headers: { 'content-type': 'application/x-www-form-urlencoded' },
-					body
-				})
+				request: formPostRequest('http://localhost/config', body)
 			} as never);
 
 			expect((result as { tmdbSuccess?: boolean }).tmdbSuccess).toBe(true);
