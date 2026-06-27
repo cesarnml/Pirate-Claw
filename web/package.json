@@ -28,7 +28,7 @@
 		"globals": "^16.0.0",
 		"jsdom": "^26.1.0",
 		"mode-watcher": "^1.1.0",
-		"prettier": "3.8.4",
+		"prettier": "3.8.5",
 		"prettier-plugin-svelte": "^3.3.3",
 		"prettier-plugin-tailwindcss": "^0.8.0",
 		"svelte": "^5.25.3",
