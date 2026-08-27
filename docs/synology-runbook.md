@@ -629,6 +629,80 @@ ssh -p "$SSH_PORT" "$DEST" "curl -s -o /dev/null -w 'api:%{http_code}\n' http://
 ssh -p "$SSH_PORT" "$DEST" "curl -s -o /dev/null -w 'web:%{http_code}\n' http://127.0.0.1:3001/"
 ```
 
+## DSM Root Partition Is Tiny — Do Not Install Tools There
+
+Validated 2026-08-27 on the live NAS: DSM's own root filesystem (`/`, backing
+device `/dev/md0` on this `DS918+`) is a **2.3GB partition, separate from the
+`/volume1` data volume**. It runs close to full under normal DSM + Entware
+(`/opt`) operation, and it is easy to push it to `100% / 0 bytes available`
+without noticing, because:
+
+- Docker's own image/container storage is **not** the culprit — `docker info`
+  reports `Docker Root Dir: /volume1/@docker`, i.e. on the big volume. Image
+  builds and running containers do not touch `/`.
+- `/opt` (Entware — `opkg`, and anything manually copied into `/opt/bin`) is
+  what actually lives on `/dev/md0`. A single native binary install here (for
+  example, an operator copying the `gh` CLI release tarball's binary into
+  `/opt/bin`) can be tens of megabytes on a partition with very little slack.
+- An agent's own scratch/temp directory (for Claude Code specifically: the
+  `CLAUDE_CODE_TMPDIR` default path, historically under `/opt/tmp/...`) is
+  also on this same tiny partition unless redirected. A single failed or
+  partial `bun install`/build attempt staged there — even a *failed* one that
+  gets killed partway through downloading dependencies — can leave 100+MB of
+  half-downloaded packages behind.
+
+### What it looks like when this happens
+
+Every shell command starts failing with `ENOSPC: no space left on device`,
+including trivial ones (`echo`, `df`) and even background/detached commands —
+because the thing that fails first is creating a small bookkeeping file for
+the command itself, not the command's own work. `docker build`/`docker run`
+keep working during this (they write to `/volume1/@docker`, not `/`), but any
+tool that needs to write to `/` or `/opt/tmp` is completely blocked, and this
+does not self-resolve — freeing space is the only fix.
+
+### Recovery
+
+```sh
+df -h /
+du -xh --max-depth=1 / | sort -rh
+```
+
+Safe things to remove without touching DSM's own files (`/usr`, `/etc`,
+`/var` are DSM-owned; do not delete from those):
+
+```sh
+sudo opkg remove --force-depends <package>   # any Entware package installed for operator convenience
+sudo rm -f /opt/bin/<binary>                  # any binary copied directly into /opt/bin
+rm -rf /opt/tmp/<agent-scratch-dirs>          # stale scratch/temp dirs (see below for the durable fix)
+```
+
+### Durable fix: never install to `/opt`, and redirect Claude Code's own scratch space
+
+- Install any future CLI tool (a static binary or an archive's extracted
+  binary — `gh`, `jq`, etc.) into `$HOME/.local/bin` instead of `/opt/bin`.
+  `$HOME` on this NAS resolves onto `/volume1/homes/...`, not `/`, and
+  `$HOME/.local/bin` is already on `PATH` by default in this operator's
+  shell config. `bun`'s own installer already does this correctly (installs
+  to `$HOME/.bun`) — do not also symlink it into `/opt/bin`.
+- Add this to the operator's shell profile (`.zshrc` on this NAS) so Claude
+  Code's own scratch/task-tracking files land on the big volume instead of
+  `/dev/md0`:
+
+  ```sh
+  export CLAUDE_CODE_TMPDIR="$HOME/.claude-tmp"
+  ```
+
+  This only takes effect for a **new** session — it does not retroactively
+  fix a session whose process already captured its environment at startup.
+- If a Docker build needs to copy a large `node_modules` tree (see
+  **Deploying new daemon and web images** above) and the working tree has
+  uncommitted changes you must not disturb (e.g. another concurrent session's
+  in-progress edits), export a clean copy of the committed tree with
+  `git archive <ref> | tar -x -C <dest>` into a directory **under
+  `/volume1`**, never under `/opt/tmp` — the export itself is small, but
+  `bun install`/`bun run build` inside it is not.
+
 ## Historical Validation Trail
 
 For the original Phase 06 ticket-by-ticket validation record, use:
