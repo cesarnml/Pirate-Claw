@@ -15,13 +15,14 @@ Phase 29 hardens the bundled downloader network path. Pirate Claw should be usab
 - Debug logging in SvelteKit server and daemon for fresh-install validation
 - Gluetun as first-class install-stack service — always present, single compose artifact, no post-install network migration
 - DSM 7.1 VPN apply path spike finding: no Network tab in Docker GUI Edit dialog, no Compose Project support in legacy Docker package; install-time container creation is the correct model
+- Two credential modes: **native provider** (pick from gluetun's built-in provider list, enter credentials — no file) and **custom OpenVPN** (upload `.ovpn` profile)
 - OpenVPN profile upload and VPN credential storage (mounted file, never in Compose YAML)
 - `gluetun` bridge — passthrough until VPN credentials saved and verified; UI shows "VPN not configured" banner and disables queueing
 - Operator-triggered VPN verification: gluetun health + Transmission RPC
 - DSM 7.2+ Container Manager Compose Project path for VPN topology apply
 - DSM 7.1 individual container creation path via legacy Docker GUI (fresh install only; no compose Project tab)
 
-**Defers:** WireGuard (v2), arbitrary BYO Transmission VPN management, public VPN-provider account automation, direct Docker socket mutation from Pirate Claw web, VPN exit IP attribution check (v2).
+**Defers:** arbitrary BYO Transmission VPN management, public VPN-provider account automation, direct Docker socket mutation from Pirate Claw web, VPN exit IP attribution check (v2), free-tier P2P workarounds. (The prior blanket WireGuard deferral is revised — see Explicit Deferrals.)
 
 ---
 
@@ -56,27 +57,57 @@ Phase 29 should leave Pirate Claw in a state where:
 
 ### VPN Profile and Credential Management
 
-- Owner uploads `.ovpn` profile via Config → Downloader Network
-- VPN username/password (if required by provider) entered in browser, stored by daemon as a gluetun-format credential file
+Gluetun supports roughly forty VPN providers natively (Proton VPN, NordVPN, Mullvad, AirVPN, Surfshark, Windscribe, and others). For those, gluetun resolves servers itself from a built-in list and **no profile file exists** — configuration is a provider name plus credentials. Requiring an `.ovpn` upload for a natively supported provider would be asking the owner to supply a file gluetun does not need.
+
+Downloader Network therefore offers two modes:
+
+#### Mode A — Native provider (default, simpler path)
+
+- Owner picks a provider from a list sourced from gluetun's supported set
+- Owner enters either an OpenVPN username/password or a WireGuard private key, depending on the protocol chosen
+- No file upload
+- Maps to `VPN_SERVICE_PROVIDER=<name>` plus `OPENVPN_USER` / `OPENVPN_PASSWORD`, or `VPN_TYPE=wireguard` plus `WIREGUARD_PRIVATE_KEY`
+- Optional server filtering (`SERVER_COUNTRIES`, `SERVER_CITIES`) exposed as a country selector
+
+#### Mode B — Custom OpenVPN (BYO profile)
+
+- Owner uploads an `.ovpn` profile via Config → Downloader Network
+- VPN username/password (if required by provider) entered in browser
+- Maps to `VPN_SERVICE_PROVIDER=custom` plus `OPENVPN_CUSTOM_CONFIG`
+
+#### Storage Contract
+
+- Secret material is stored by the daemon in a mounted file, never in `pirate-claw.config.json` and never in generated Compose YAML — identical for both modes
 - File contract:
   ```text
   /volume1/pirate-claw/config/vpn/
-    active-profile.ovpn
+    active-profile.ovpn      # Mode B only
     credentials
     manifest.json
   ```
-- Credentials never written to `pirate-claw.config.json` or any generated Compose YAML
 - `pirate-claw.config.json` stores only non-secret network posture:
   ```json
   {
     "downloaderNetwork": {
       "mode": "vpn_bridge",
-      "provider": "custom_openvpn",
-      "profile": "active",
+      "credentialMode": "native_provider",
+      "provider": "protonvpn",
+      "protocol": "wireguard",
+      "serverCountries": ["Netherlands"],
+      "portForwarding": true,
       "status": "pending_apply"
     }
   }
   ```
+  For Mode B, `credentialMode` is `custom_openvpn`, `provider` is `custom`, and `profile` names the uploaded file.
+
+#### Port Forwarding
+
+Gluetun can request a forwarded port automatically where the provider supports it (`VPN_PORT_FORWARDING=on`; Proton additionally needs `+pmp` appended to the OpenVPN username, or NAT-PMP enabled when generating the WireGuard key). Torrent throughput is materially worse without it, so this is exposed as a toggle rather than left implicit.
+
+#### Free-Tier Caveat (owner-facing)
+
+Free VPN tiers generally do not permit P2P traffic — Proton VPN's free plan is the common example: gluetun will connect and the tunnel will come up, but torrent traffic stalls rather than failing loudly, and port forwarding is unavailable. This is a provider policy, not a gluetun limitation, and it produces a confusing "connected but nothing downloads" state. The verification step should detect and name it where possible, and the docs must state plainly that a P2P-permitting (paid) plan is required.
 
 ### Compose Artifact Generation
 
@@ -141,10 +172,11 @@ IP attribution / exit IP check deferred to v2.
 
 ## Explicit Deferrals
 
-- **WireGuard:** v2; requires different gluetun config and a different profile upload UX
+- **WireGuard — deferral revised, needs sign-off.** The original deferral assumed WireGuard meant "a different profile upload UX." Under Mode A that is no longer true: for a natively supported provider, WireGuard is a single `WIREGUARD_PRIVATE_KEY` string and is _simpler_ than the OpenVPN path, not harder. The Mode A section above therefore includes it. If the developer prefers to hold the original deferral, Mode A ships OpenVPN-credentials-only and WireGuard becomes a small follow-on increment — but the "different upload UX" rationale no longer applies either way.
 - **BYO Transmission VPN management:** operator-owned if they use an external Transmission instance
 - **Docker socket / Container Manager mutation from Pirate Claw:** remains deferred; operator always applies artifacts via DSM GUI
-- **VPN-provider account signup or automation:** out of scope; owner provides their own `.ovpn` profile
+- **VPN-provider account signup or automation:** out of scope; the owner brings their own account, and either picks it from the native provider list (Mode A) or supplies an `.ovpn` profile (Mode B)
+- **Free-tier P2P workarounds:** out of scope. Where a provider's free plan forbids P2P, the product surfaces the limitation and requires a P2P-permitting plan; it does not attempt to route around it.
 - **VPN exit IP attribution check:** deferred to v2 hardening; gluetun `/v1/publicip/ip` is the implementation path when ready
 - **Public-internet Pirate Claw exposure:** not supported; Tailscale or LAN only
 - **Dynamic `allowedOrigins` without restart:** origins added after daemon start require restart; fully dynamic request-time CSRF middleware is v2
@@ -197,7 +229,9 @@ A DSM-first owner can configure an OpenVPN bridge for bundled Transmission witho
 
 ## Explicit Deferrals
 
-- WireGuard support (v2)
+> This section duplicates the earlier **Explicit Deferrals** heading. That one is authoritative; this list is retained for history.
+
+- WireGuard support (v2) — **superseded**, see the earlier Explicit Deferrals section
 - VPN-provider-specific account automation
 - BYO Transmission VPN management
 - automatic Docker/Container Manager mutation through a privileged web app
@@ -217,6 +251,19 @@ Grill-me decisions locked during reshape:
 - **No rollback artifact** — `compose.synology.direct.yml` dropped; rollback = clear credentials in UI; gluetun idles in passthrough.
 - **P29.06 exit validation scope** — fresh install on DSM 7.1, gluetun stack up, credentials saved, verify returns `vpn_bridge_active`, download queued. Last DSM 7.1 gate before upgrade.
 
+## Credential Mode Rationale (2026-08-27, post-approval)
+
+The plan originally modelled exactly one way to configure the tunnel: upload an `.ovpn` file plus credentials, with `provider: "custom_openvpn"` as the only value.
+
+That is the _harder_ of the two paths gluetun actually offers, and it is the wrong default. Gluetun natively supports roughly forty providers — it resolves servers from a built-in list, so there is no profile file involved at all. For a Proton VPN or NordVPN owner, the entire configuration is a provider name and a credential. Requiring a file upload there means asking the owner to go find and supply an artifact gluetun does not consume.
+
+So the credential surface splits in two: **Mode A (native provider)** as the default, and **Mode B (custom OpenVPN)** for providers gluetun does not know. The storage contract is unchanged — secret material stays in a daemon-owned mounted file, out of `pirate-claw.config.json` and out of generated Compose YAML — so this is a widening of the input surface, not a change to the security posture.
+
+Two consequences worth recording:
+
+- **Port forwarding became explicit.** Gluetun automates it where providers support it, and torrent throughput is materially worse without it. Leaving it implicit would have shipped a quietly degraded downloader.
+- **Free tiers do not work for this product's purpose.** Proton VPN's free plan is the case owners will most often reach for, and it forbids P2P: the tunnel establishes, verification looks healthy, and torrents silently stall. That failure mode is bad enough that the product should name it rather than let the owner debug it. This is provider policy across the industry, not a gluetun gap — there is no free path to P2P-permitting VPN egress.
+
 ## Rationale
 
-A direct bundled Transmission path is useful for cold start, but it is not the downloader posture many end users expect from a media-ingestion appliance. Phase 29 makes VPN hardening a guided product flow while preserving the DSM-first contract. The owner supplies provider-specific OpenVPN material; Pirate Claw owns the storage, topology, verification, and rollback story for its bundled Transmission stack.
+A direct bundled Transmission path is useful for cold start, but it is not the downloader posture many end users expect from a media-ingestion appliance. Phase 29 makes VPN hardening a guided product flow while preserving the DSM-first contract. The owner supplies provider-specific VPN material — either by selecting a natively supported provider or by uploading a custom OpenVPN profile; Pirate Claw owns the storage, topology, verification, and rollback story for its bundled Transmission stack.
