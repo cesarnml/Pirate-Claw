@@ -174,6 +174,14 @@
 		// racing and getting dropped by submitShows' showsSubmitting guard.
 		showAddChain = showAddChain.then(() => submitShows({ type: 'add', name }));
 		await showAddChain;
+		// enhanceSaveShows' `update({ reset: false })` refreshes `data` once the
+		// save settles, which re-syncs several $state values from data.config —
+		// that page-data refresh (not the toast itself) can knock focus off the
+		// draft input right as the user is typing the next show. Reclaim it.
+		if (keepOpen && showAddDraftActive) {
+			await tick();
+			showAddDraftInputEl?.focus();
+		}
 	}
 
 	function cancelAddShowDraft() {
