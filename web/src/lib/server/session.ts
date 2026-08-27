@@ -80,7 +80,13 @@ export async function verifyJwt(
 export function issueSessionCookie(cookies: Cookies, token: string): void {
 	cookies.set(SESSION_COOKIE_NAME, token, {
 		httpOnly: true,
-		sameSite: 'strict',
+		// 'lax', not 'strict': the Plex hosted sign-in returns via a top-level
+		// cross-site navigation from app.plex.tv to /plex/connect/callback, and
+		// a strict cookie is withheld on that hop — the session guard would then
+		// bounce an already-authenticated operator to /login and strand the
+		// pending auth session. Lax still withholds the cookie on cross-site
+		// POSTs, so form actions keep their CSRF protection.
+		sameSite: 'lax',
 		secure: false,
 		path: '/',
 		maxAge: JWT_EXPIRY_SECONDS

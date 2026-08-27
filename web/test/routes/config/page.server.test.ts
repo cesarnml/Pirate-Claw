@@ -258,6 +258,73 @@ describe('config page server actions', () => {
 		});
 	});
 
+	describe('cancelPlexSignIn', () => {
+		it('returns fail(403) when config writes are disabled', async () => {
+			vi.doMock('$env/dynamic/private', () => ({ env: {} }));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+
+			const result = await actions.cancelPlexSignIn({} as never);
+
+			expect((result as { status?: number }).status).toBe(403);
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('calls /api/plex/auth/cancel, not /api/plex/auth/disconnect', async () => {
+			// Regression: the disconnect button used to submit to disconnectPlex
+			// even while a browser sign-in was still in flight, which wipes the
+			// existing saved X-Plex-Token. cancelPlexSignIn must only retire the
+			// pending session, never touch the stored credential.
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-1"' } })
+			);
+
+			const result = (await actions.cancelPlexSignIn({} as never)) as {
+				plexMessage?: string;
+				plexMessageTone?: string;
+			};
+
+			expect(apiRequestMock).toHaveBeenCalledTimes(1);
+			const [path, init] = apiRequestMock.mock.calls[0];
+			expect(path).toBe('/api/plex/auth/cancel');
+			expect((init as { method?: string })?.method).toBe('POST');
+			expect(result.plexMessageTone).toBe('success');
+			expect(result.plexMessage).toContain('untouched');
+		});
+
+		it('returns fail with the daemon-provided error on a non-ok response', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(JSON.stringify({ error: 'no pending session' }), { status: 409 })
+			);
+
+			const result = await actions.cancelPlexSignIn({} as never);
+
+			expect((result as { status?: number }).status).toBe(409);
+			expect((result as { data?: { plexMessage?: string } }).data?.plexMessage).toBe(
+				'no pending session'
+			);
+		});
+
+		it('returns fail(500) when the daemon is unreachable', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+			apiRequestMock.mockRejectedValue(new Error('connection refused'));
+
+			const result = await actions.cancelPlexSignIn({} as never);
+
+			expect((result as { status?: number }).status).toBe(500);
+		});
+	});
+
 	describe('saveShows', () => {
 		it('returns fail(400) when no show names provided', async () => {
 			vi.doMock('$env/dynamic/private', () => ({

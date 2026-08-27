@@ -1376,6 +1376,33 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/plex/auth/cancel' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+      if (!database) {
+        return json500();
+      }
+
+      try {
+        // Cancelling an in-flight browser sign-in must not disturb the stored
+        // credential: only the pending session row is retired. Wiping the
+        // config token here (as /disconnect does) would destroy a working
+        // connection just because the operator backed out of a new sign-in.
+        const store = new PlexAuthStore(database);
+        const snapshot = store.getSnapshot();
+        if (snapshot.pendingSession) {
+          store.cancelSession(snapshot.pendingSession.id);
+        }
+
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch {
+        return json500();
+      }
+    }
+
     if (path === '/api/config/movies' && request.method === 'PUT') {
       const authError = checkWriteAuth(request, activeConfig);
       if (authError) return authError;
