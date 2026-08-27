@@ -1,4 +1,5 @@
 node_modules/
+web/
 .pirate-claw/
 pirate-claw.db
 pirate-claw.config.json
