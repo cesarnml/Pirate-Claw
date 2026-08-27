@@ -332,7 +332,6 @@ Explicitly deferred:
 
 - rating-based intake gating (`minRating` pipeline filter)
 - TMDB-powered search-to-add from the UI
-- release calendar or upcoming schedule views
 - poster/image local caching or CDN proxying
 
 Working notes:
@@ -690,12 +689,12 @@ Current status:
 
 These items are still explicitly deferred or not yet assigned a numbered phase:
 
-- **Release calendar** — deferred as a feature inside the TMDB/dashboard surface, not its own phase
 - **Rating-based intake gating** — deferred until TMDB integration is stable and display-only has been validated
 - **Show/movie search-to-add from the UI** — deferred; add-by-name from Config page (Phase 14/16) covers the initial need
 - **Config live-reload for TMDB/Plex enrichment clients** — deferred; `PUT /api/config` updates the daemon's in-memory `activeConfig` immediately, but the TMDB and Plex enrichment HTTP clients (`src/cli.ts`: `tmdbMovieEnrichDeps`, `tmdbShowsEnrichDeps`, `plexMovieEnrichDeps`, `plexShowEnrichDeps`) are constructed once at daemon boot and never rebuilt on a later config write, so a new TMDB API key or a corrected `plex.url`/`plex.token` silently has no effect on `/api/movies` or `/api/shows` until the daemon container is restarted. Discovered during manual Synology validation on 2026-08-26; workaround and repro steps are documented in `docs/synology-runbook.md` ("Config changes that need a daemon restart"). A future phase should either rebuild these clients from the live config on every write, or have the Web UI Config page surface a "restart required" notice for the `tmdb`/`plex` sections.
 - **`plex.refreshIntervalMinutes: 0` semantics are overloaded and misleading** — `0` is documented as "disable background refresh," but it also feeds `isPlexCacheExpired` (`cachedAt + refreshIntervalMinutes * 2 * 60_000 <= now()`), which makes every on-demand `/api/movies`/`/api/shows` read treat an always-fresh, correct Plex cache as expired and report `plexStatus: "unknown"` regardless of a good cache. Discovered 2026-08-26 (see `docs/synology-runbook.md`); a future phase should split the scheduled-sweep toggle and the on-demand cache-freshness window into distinct config keys.
 - **No validation on `plex.token` shape** — the Plex browser-auth flow (Phase 23) can leave `plex.token` populated with a `plex.tv` account/OAuth JWT (600+ characters) rather than a real Plex Media Server token (~20 characters); the daemon accepts either without validation and only surfaces the mismatch as an opaque `401` at request time. A future phase should validate token shape (or exchange an account token for a real PMS token) before persisting it.
+- **TMDB movie/show/calendar enrichment each build their own `TmdbHttpClient`** — `tmdbMovieEnrichDeps`, `tmdbShowsEnrichDeps`, and `calendarTvDeps` in `src/cli.ts` each construct an independent client, and `TmdbHttpClient`'s request throttle is tracked per-instance, so the three features don't actually throttle against each other and can exceed the intended request rate against TMDB when they fire close together. A shared-client fix was drafted 2026-08-27 but deferred because `src/cli.ts` had unrelated in-flight changes at the time; low risk (TMDB tolerates bursts via its own 429/retry handling), but worth picking up opportunistically.
 
 The following items are **mapped** to numbered phases (no longer “unbounded” deferrals):
 

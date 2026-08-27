@@ -165,7 +165,7 @@ export class TmdbHttpClient {
     );
   }
 
-  /** Discovers TV series with a first-air-date within [gte, gte] (YYYY-MM-DD), sorted by popularity. */
+  /** Discovers TV series with a first-air-date within [gte, lte] (YYYY-MM-DD), sorted by popularity. */
   async discoverTv(
     gte: string,
     lte: string,

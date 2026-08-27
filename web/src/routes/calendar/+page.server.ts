@@ -45,8 +45,18 @@ export const load: PageServerLoad = async () => {
 		};
 	}
 
-	const body = (await response.json()) as { year: number; items: CalendarTvItem[] };
-	return { year: body.year, items: body.items, tmdbConfigured: true, error: null };
+	try {
+		const body = (await response.json()) as { year: number; items: CalendarTvItem[] };
+		return { year: body.year, items: body.items, tmdbConfigured: true, error: null };
+	} catch (error) {
+		console.error('[calendar] failed to parse /api/calendar/tv response:', error);
+		return {
+			year: new Date().getFullYear(),
+			items: [] as CalendarTvItem[],
+			tmdbConfigured: true,
+			error: 'Calendar response was invalid.'
+		};
+	}
 };
 
 export const actions: Actions = {

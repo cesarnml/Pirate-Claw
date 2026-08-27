@@ -21,11 +21,17 @@ const PAGES_PER_YEAR = 2; // ~40 results, sorted by popularity — enough to
 // surface anything worth adding without paginating a full calendar UI.
 
 /** Tiny in-memory TTL cache, one entry per calendar year. Not persisted:
- * cheap to rebuild, and a daemon restart naturally re-warms it on next hit. */
+ * cheap to rebuild, and a daemon restart naturally re-warms it on next hit.
+ * Also tracks an in-flight fetch per year so concurrent callers on a cache
+ * miss share one TMDB round trip instead of each firing their own. */
 export class CalendarCache {
   private readonly entries = new Map<
     number,
     { fetchedAt: number; items: TmdbDiscoverTvResult[] }
+  >();
+  private readonly inFlight = new Map<
+    number,
+    Promise<TmdbDiscoverTvResult[]>
   >();
 
   get(year: number): TmdbDiscoverTvResult[] | undefined {
@@ -38,6 +44,18 @@ export class CalendarCache {
   set(year: number, items: TmdbDiscoverTvResult[]): void {
     this.entries.set(year, { fetchedAt: Date.now(), items });
   }
+
+  async fetchOnce(
+    year: number,
+    fetcher: () => Promise<TmdbDiscoverTvResult[]>,
+  ): Promise<TmdbDiscoverTvResult[]> {
+    const pending = this.inFlight.get(year);
+    if (pending) return pending;
+
+    const promise = fetcher().finally(() => this.inFlight.delete(year));
+    this.inFlight.set(year, promise);
+    return promise;
+  }
 }
 
 export async function getTvCalendar(
@@ -48,13 +66,23 @@ export async function getTvCalendar(
   let results = deps.cache.get(year);
 
   if (results === undefined) {
-    const pages = await Promise.all(
-      Array.from({ length: PAGES_PER_YEAR }, (_, i) =>
-        deps.client.discoverTv(`${year}-01-01`, `${year}-12-31`, i + 1),
-      ),
-    );
-    results = pages.flat();
-    deps.cache.set(year, results);
+    results = await deps.cache.fetchOnce(year, async () => {
+      const pages = await Promise.all(
+        Array.from({ length: PAGES_PER_YEAR }, (_, i) =>
+          deps.client.discoverTv(`${year}-01-01`, `${year}-12-31`, i + 1),
+        ),
+      );
+      return pages.flat();
+    });
+
+    // TmdbHttpClient.getJson() coalesces every fetch failure (network error,
+    // timeout, exhausted 429 retries, bad/rotated key, 5xx) to null, and
+    // discoverTv() coalesces that to []. An empty result is therefore far
+    // more likely to mean "TMDB call failed" than "nothing premieres this
+    // year" — don't lock that in as a false negative for a full cache TTL.
+    if (results.length > 0) {
+      deps.cache.set(year, results);
+    }
   }
 
   const trackedSet = new Set(
