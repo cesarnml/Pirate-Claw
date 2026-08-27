@@ -87,16 +87,21 @@ function deriveMatchPattern(name: string): string {
     return '^$';
   }
 
-  // Anchored to the start of normalizedTitle (everything before the S/E
-  // marker), not "appears anywhere" — a trailing space/end after the last
-  // token still tolerates real suffixes like regional variants ("Show" ->
-  // "Show UK"), but a short/generic rule name (e.g. "From") no longer
-  // floats and matches as a substring buried inside an unrelated, longer
-  // title (e.g. "Escape From New York"). Real-world release names put
-  // group/source tags as a suffix after quality info, not as a prefix
-  // before the title, so anchoring to the start is safe for this feed
-  // format. Overmatch found and fixed 2026-08-27.
-  return `^${tokens.join(' +')}(?:$| )`;
+  // Single-word rule names (e.g. "From") are where generic titles cause
+  // real overmatch: boundary-matching anywhere in the title lets the word
+  // float and match unrelated releases whose title happens to contain it
+  // (e.g. "Escape From New York"). Require an exact whole-title match
+  // instead — normalizedTitle (everything before the S/E marker) must be
+  // just that one word, nothing else. Multi-word rule names are already
+  // specific enough that this isn't a real risk, and reverting them to
+  // boundary matching preserves legitimate tolerance for extra words
+  // adjacent to the title, e.g. "Example Show" still matching a release
+  // titled "Example Show UK". Overmatch found and fixed 2026-08-27.
+  if (tokens.length === 1) {
+    return `^${tokens[0]}$`;
+  }
+
+  return `(?:^| )${tokens.join(' +')}(?:$| )`;
 }
 
 function buildIdentityKey(item: NormalizedFeedItem): string {
