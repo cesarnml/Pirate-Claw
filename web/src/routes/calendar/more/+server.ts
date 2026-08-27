@@ -6,18 +6,28 @@ import type { RequestHandler } from './$types';
 // Client-side infinite scroll calls this instead of hitting the daemon
 // directly — PIRATE_CLAW_API_URL is a server-only env var, so the browser
 // has no way to reach the daemon on its own. This just proxies the same
-// GET /api/calendar/tv with the caller's offset, clamping limit so a
-// tampered request can't ask for an oversized page.
+// GET /api/calendar/tv, clamping limit so a tampered request can't ask for
+// an oversized page.
 export const GET: RequestHandler = async ({ url }) => {
-	const offset = Math.max(0, Number(url.searchParams.get('offset') ?? '0') || 0);
+	const year = Number(url.searchParams.get('year')) || new Date().getFullYear();
 	const limit = Math.min(
 		_PAGE_SIZE,
 		Math.max(1, Number(url.searchParams.get('limit')) || _PAGE_SIZE)
 	);
+	// offset is intentionally forwarded as-is when omitted (not defaulted to
+	// 0 here) — "load earlier months" rolling into the previous year omits
+	// it on purpose, so the daemon's auto-anchor lands on that year's *last*
+	// page instead of its first. See anchorOffsetForToday in
+	// src/tmdb/calendar.ts.
+	const rawOffset = url.searchParams.get('offset');
+	const offset = rawOffset === null ? undefined : Math.max(0, Number(rawOffset) || 0);
+
+	const params = new URLSearchParams({ year: String(year), limit: String(limit) });
+	if (offset !== undefined) params.set('offset', String(offset));
 
 	let response: Response;
 	try {
-		response = await apiRequest(`/api/calendar/tv?offset=${offset}&limit=${limit}`);
+		response = await apiRequest(`/api/calendar/tv?${params}`);
 	} catch (error) {
 		console.error('[calendar] /more failed to reach /api/calendar/tv:', error);
 		return json({ error: 'Could not reach the API.' }, { status: 503 });
@@ -31,8 +41,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	try {
-		const body = (await response.json()) as { items: unknown; total: number };
-		return json({ items: body.items, total: body.total });
+		const body = (await response.json()) as {
+			year: number;
+			items: unknown;
+			total: number;
+			offset: number;
+		};
+		return json({ year: body.year, items: body.items, total: body.total, offset: body.offset });
 	} catch (error) {
 		console.error('[calendar] /more failed to parse response:', error);
 		return json({ error: 'Calendar response was invalid.' }, { status: 502 });

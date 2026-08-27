@@ -13,6 +13,7 @@ type LoadResult = {
 	year: number;
 	items: unknown[];
 	total: number;
+	offset: number;
 	tmdbConfigured: boolean;
 	error: string | null;
 };
@@ -23,13 +24,14 @@ describe('calendar page server load', () => {
 		vi.resetModules();
 	});
 
-	it('returns year, items, and total on a successful calendar fetch', async () => {
+	it('returns year, items, total, and offset on a successful calendar fetch', async () => {
 		const { load } = await import('../../../src/routes/calendar/+page.server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, {
 				year: 2026,
 				items: [{ tmdbId: 1, name: 'Show', alreadyTracked: false }],
-				total: 37
+				total: 37,
+				offset: 12
 			})
 		);
 
@@ -40,18 +42,24 @@ describe('calendar page server load', () => {
 		expect(result.year).toBe(2026);
 		expect(result.items).toHaveLength(1);
 		expect(result.total).toBe(37);
+		expect(result.offset).toBe(12);
 	});
 
-	it('requests only the first page (bounded limit), not the whole year', async () => {
+	it('requests only a bounded first page, with no offset (lets the daemon auto-anchor to today)', async () => {
 		// Regression: an unpaginated ~40-item response was found to be large
 		// enough to break client-side hydration on some mobile/VPN network
-		// paths. The initial SSR load must only ask for a bounded first page.
+		// paths. The initial SSR load must only ask for a bounded first page —
+		// and it must NOT pass offset=0, since omitting it is what lets the
+		// daemon land the visitor on today's part of the calendar instead of
+		// always page 1 / January.
 		const { load, _PAGE_SIZE } = await import('../../../src/routes/calendar/+page.server');
-		apiRequestMock.mockResolvedValueOnce(jsonResponse(200, { year: 2026, items: [], total: 0 }));
+		apiRequestMock.mockResolvedValueOnce(
+			jsonResponse(200, { year: 2026, items: [], total: 0, offset: 0 })
+		);
 
 		await load({} as never);
 
-		expect(apiRequestMock).toHaveBeenCalledWith(`/api/calendar/tv?offset=0&limit=${_PAGE_SIZE}`);
+		expect(apiRequestMock).toHaveBeenCalledWith(`/api/calendar/tv?limit=${_PAGE_SIZE}`);
 	});
 
 	it('reports tmdbConfigured=false when the daemon returns 409', async () => {

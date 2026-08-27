@@ -9,38 +9,119 @@
 
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 
+	type Cursor = { year: number; offset: number; total: number };
+	type CalendarPage = { year: number; items: CalendarTvItem[]; total: number; offset: number };
+
+	// If a rolled-into year has nothing at all (e.g. TMDB hasn't populated next
+	// year's schedule yet), keep trying a few more years before giving up,
+	// rather than either looping forever or stopping after one empty year.
+	const MAX_EMPTY_YEAR_HOPS = 5;
+
+	// Matches the daemon's own default (src/api.ts), used only to decide how
+	// far back one "load earlier" step reaches within the same year — the
+	// exact number doesn't need to match the server's page size precisely,
+	// it just controls how many months one click reveals.
+	const _PAGE_SIZE_HINT = 16;
+
 	// Seeded once from the SSR page load, then grown client-side via
-	// infinite scroll (see routes/calendar/more/+server.ts). Deliberately
-	// not re-derived from `data` on every prop change — the add-show action
-	// patches this array in place instead of refetching, so scrolled-in
-	// pages don't get discarded when a save round-trips.
+	// scroll-triggered "load more" (forward) and a manual "load earlier
+	// months" button (backward). Deliberately not re-derived from `data` on
+	// every prop change — the add-show action patches this array in place
+	// instead of refetching, so already-loaded pages aren't discarded when a
+	// save round-trips.
 	let items = $state<CalendarTvItem[]>(data.items);
-	let total = $state(data.total);
-	let loadingMore = $state(false);
-	let loadMoreError = $state<string | null>(null);
+	let forward = $state<Cursor>({
+		year: data.year,
+		offset: data.offset + data.items.length,
+		total: data.total
+	});
+	let backward = $state<Cursor>({ year: data.year, offset: data.offset, total: data.total });
+
+	let loadingForward = $state(false);
+	let loadingBackward = $state(false);
+	let forwardError = $state<string | null>(null);
+	let backwardError = $state<string | null>(null);
+	let reachedFutureEnd = $state(false);
+	let reachedPastStart = $state(false);
 	let sentinel = $state<HTMLElement | null>(null);
+	let backwardAnchor = $state<HTMLElement | null>(null);
 	let pendingName = $state<string | null>(null);
 
-	async function loadMore() {
-		if (loadingMore || items.length >= total) return;
-		loadingMore = true;
-		loadMoreError = null;
+	async function fetchPage(params: { year: number; offset?: number }): Promise<CalendarPage> {
+		const query = new URLSearchParams({ year: String(params.year) });
+		if (params.offset !== undefined) query.set('offset', String(params.offset));
+		const res = await fetch(`/calendar/more?${query}`);
+		const body = (await res.json()) as Partial<CalendarPage> & { error?: string };
+		if (!res.ok || body.error) {
+			throw new Error(body.error ?? `Request failed (${res.status}).`);
+		}
+		return body as CalendarPage;
+	}
+
+	async function loadMoreForward() {
+		if (loadingForward || reachedFutureEnd) return;
+		loadingForward = true;
+		forwardError = null;
 		try {
-			const res = await fetch(`/calendar/more?offset=${items.length}`);
-			const body = (await res.json()) as {
-				items?: CalendarTvItem[];
-				total?: number;
-				error?: string;
-			};
-			if (!res.ok || body.error) {
-				throw new Error(body.error ?? `Request failed (${res.status}).`);
+			let { year, offset, total } = forward;
+			for (let hop = 0; hop <= MAX_EMPTY_YEAR_HOPS; hop++) {
+				if (offset >= total) {
+					year += 1;
+					offset = 0;
+				}
+				const page = await fetchPage({ year, offset });
+				if (page.items.length > 0) {
+					items = [...items, ...page.items];
+					forward = { year, offset: page.offset + page.items.length, total: page.total };
+					return;
+				}
+				total = page.total;
+				offset = total; // force a rollover to the next year on the next loop pass
 			}
-			items = [...items, ...(body.items ?? [])];
-			if (typeof body.total === 'number') total = body.total;
+			reachedFutureEnd = true;
 		} catch (error) {
-			loadMoreError = error instanceof Error ? error.message : 'Failed to load more.';
+			forwardError = error instanceof Error ? error.message : 'Failed to load more.';
 		} finally {
-			loadingMore = false;
+			loadingForward = false;
+		}
+	}
+
+	async function loadEarlierMonths() {
+		if (loadingBackward || reachedPastStart) return;
+		loadingBackward = true;
+		backwardError = null;
+
+		// Prepending content above the current scroll position would
+		// otherwise yank the viewport — <main> is the actual scroll
+		// container (see routes/+layout.svelte), not the document.
+		const scrollContainer = backwardAnchor?.closest('main') ?? null;
+		const previousScrollHeight = scrollContainer?.scrollHeight ?? 0;
+		const previousScrollTop = scrollContainer?.scrollTop ?? 0;
+
+		try {
+			let { year, offset } = backward;
+			for (let hop = 0; hop <= MAX_EMPTY_YEAR_HOPS; hop++) {
+				const requestOffset = offset > 0 ? Math.max(0, offset - _PAGE_SIZE_HINT) : undefined;
+				const requestYear = offset > 0 ? year : year - 1;
+				const page = await fetchPage({ year: requestYear, offset: requestOffset });
+				if (page.items.length > 0) {
+					items = [...page.items, ...items];
+					backward = { year: page.year, offset: page.offset, total: page.total };
+					if (scrollContainer) {
+						await new Promise((resolve) => requestAnimationFrame(resolve));
+						const delta = scrollContainer.scrollHeight - previousScrollHeight;
+						scrollContainer.scrollTop = previousScrollTop + delta;
+					}
+					return;
+				}
+				year = requestYear;
+				offset = 0; // this year had nothing; keep rolling back
+			}
+			reachedPastStart = true;
+		} catch (error) {
+			backwardError = error instanceof Error ? error.message : 'Failed to load earlier months.';
+		} finally {
+			loadingBackward = false;
 		}
 	}
 
@@ -48,10 +129,46 @@
 		const target = sentinel;
 		if (!target) return;
 		const observer = new IntersectionObserver((entries) => {
-			if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+			if (entries.some((entry) => entry.isIntersecting)) void loadMoreForward();
 		});
 		observer.observe(target);
 		return () => observer.disconnect();
+	});
+
+	type MonthGroup = { label: string; items: CalendarTvItem[] };
+
+	function monthLabel(dateIso: string | null): string {
+		if (!dateIso) return 'Date unknown';
+		const date = new Date(`${dateIso}T00:00:00Z`);
+		return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+	}
+
+	function dayLabel(dateIso: string | null): string {
+		if (!dateIso) return 'Air date unknown';
+		const today = new Date();
+		const todayIso = today.toISOString().slice(0, 10);
+		if (dateIso === todayIso) return 'Today';
+		const date = new Date(`${dateIso}T00:00:00Z`);
+		const diffDays = Math.round(
+			(date.getTime() - Date.parse(`${todayIso}T00:00:00Z`)) / 86_400_000
+		);
+		if (diffDays === 1) return 'Tomorrow';
+		if (diffDays === -1) return 'Yesterday';
+		return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+	}
+
+	const groups = $derived.by((): MonthGroup[] => {
+		const result: MonthGroup[] = [];
+		for (const item of items) {
+			const label = monthLabel(item.firstAirDate);
+			const last = result[result.length - 1];
+			if (last && last.label === label) {
+				last.items.push(item);
+			} else {
+				result.push({ label, items: [item] });
+			}
+		}
+		return result;
 	});
 
 	const enhanceAddShow: SubmitFunction = ({ formData }) => {
@@ -92,8 +209,8 @@
 		</p>
 		<h1 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">TV — {data.year}</h1>
 		<p class="text-muted-foreground mt-1 text-sm">
-			New series premiering this year, from TMDB, sorted by popularity. Already-tracked shows are
-			marked instead of offering Add.
+			New series premiering this year, from TMDB. Already-tracked shows are marked instead of
+			offering Add.
 		</p>
 	</div>
 
@@ -107,74 +224,101 @@
 	{:else if items.length === 0}
 		<p class="text-muted-foreground text-sm">No calendar data for {data.year} right now.</p>
 	{:else}
-		<ul class="grid list-none gap-5 md:grid-cols-2 xl:grid-cols-3">
-			{#each items as item (item.tmdbId)}
-				<li class="bg-card/75 flex flex-col gap-3 rounded-[24px] border border-white/10 p-4">
-					<div class="flex gap-4">
-						{#if item.posterUrl}
-							<img
-								src={item.posterUrl}
-								alt={`${item.name} poster`}
-								class="h-28 w-20 shrink-0 rounded-lg object-cover"
-								loading="lazy"
-							/>
-						{:else}
-							<div
-								class="bg-muted text-muted-foreground flex h-28 w-20 shrink-0 items-center justify-center rounded-lg text-xs"
-							>
-								No image
+		<div bind:this={backwardAnchor} class="flex justify-center pb-2">
+			{#if reachedPastStart}
+				<p class="text-muted-foreground text-xs">Nothing earlier found.</p>
+			{:else if backwardError}
+				<div class="text-center">
+					<p class="text-destructive text-xs">{backwardError}</p>
+					<Button variant="outline" class="mt-2 rounded-full px-4" onclick={loadEarlierMonths}>
+						Retry
+					</Button>
+				</div>
+			{:else}
+				<Button
+					variant="outline"
+					class="rounded-full px-4"
+					disabled={loadingBackward}
+					onclick={loadEarlierMonths}
+				>
+					{loadingBackward ? 'Loading…' : 'Load earlier months'}
+				</Button>
+			{/if}
+		</div>
+
+		{#each groups as group (group.label)}
+			<div class="space-y-3">
+				<h2 class="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
+					{group.label}
+				</h2>
+				<ul class="grid list-none gap-5 md:grid-cols-2 xl:grid-cols-3">
+					{#each group.items as item (item.tmdbId)}
+						<li class="bg-card/75 flex flex-col gap-3 rounded-[24px] border border-white/10 p-4">
+							<div class="flex gap-4">
+								{#if item.posterUrl}
+									<img
+										src={item.posterUrl}
+										alt={`${item.name} poster`}
+										class="h-28 w-20 shrink-0 rounded-lg object-cover"
+										loading="lazy"
+									/>
+								{:else}
+									<div
+										class="bg-muted text-muted-foreground flex h-28 w-20 shrink-0 items-center justify-center rounded-lg text-xs"
+									>
+										No image
+									</div>
+								{/if}
+								<div class="min-w-0 flex-1">
+									<h3 class="truncate text-base font-semibold">{item.name}</h3>
+									<p class="text-muted-foreground mt-1 text-xs">
+										{dayLabel(item.firstAirDate)}
+									</p>
+									<p class="text-muted-foreground mt-2 line-clamp-3 text-xs">
+										{item.overview || 'No overview available.'}
+									</p>
+								</div>
 							</div>
-						{/if}
-						<div class="min-w-0 flex-1">
-							<h2 class="truncate text-base font-semibold">{item.name}</h2>
-							<p class="text-muted-foreground mt-1 text-xs">
-								{item.firstAirDate ?? 'Air date unknown'}
-							</p>
-							<p class="text-muted-foreground mt-2 line-clamp-3 text-xs">
-								{item.overview || 'No overview available.'}
-							</p>
-						</div>
-					</div>
 
-					{#if item.alreadyTracked}
-						<span
-							class="border-border text-muted-foreground self-start rounded-full border px-3 py-1 text-xs font-medium"
-						>
-							Already tracked
-						</span>
-					{:else}
-						<form method="POST" action="?/addShow" use:enhance={enhanceAddShow}>
-							<input type="hidden" name="name" value={item.name} />
-							<Button
-								type="submit"
-								variant="outline"
-								class="rounded-full px-4"
-								disabled={pendingName === item.name}
-							>
-								{pendingName === item.name ? 'Adding…' : 'Add show'}
-							</Button>
-						</form>
-					{/if}
-				</li>
-			{/each}
-		</ul>
-
-		{#if items.length < total}
-			<div bind:this={sentinel} class="flex justify-center py-4">
-				{#if loadMoreError}
-					<div class="text-center">
-						<p class="text-destructive text-xs">{loadMoreError}</p>
-						<Button variant="outline" class="mt-2 rounded-full px-4" onclick={loadMore}>
-							Retry
-						</Button>
-					</div>
-				{:else}
-					<p class="text-muted-foreground text-xs">
-						{loadingMore ? 'Loading more…' : `${items.length} of ${total}`}
-					</p>
-				{/if}
+							{#if item.alreadyTracked}
+								<span
+									class="border-border text-muted-foreground self-start rounded-full border px-3 py-1 text-xs font-medium"
+								>
+									Already tracked
+								</span>
+							{:else}
+								<form method="POST" action="?/addShow" use:enhance={enhanceAddShow}>
+									<input type="hidden" name="name" value={item.name} />
+									<Button
+										type="submit"
+										variant="outline"
+										class="rounded-full px-4"
+										disabled={pendingName === item.name}
+									>
+										{pendingName === item.name ? 'Adding…' : 'Add show'}
+									</Button>
+								</form>
+							{/if}
+						</li>
+					{/each}
+				</ul>
 			</div>
-		{/if}
+		{/each}
+
+		<div bind:this={sentinel} class="flex justify-center py-4">
+			{#if reachedFutureEnd}
+				<p class="text-muted-foreground text-xs">Nothing further found.</p>
+			{:else if forwardError}
+				<div class="text-center">
+					<p class="text-destructive text-xs">{forwardError}</p>
+					<Button variant="outline" class="mt-2 rounded-full px-4" onclick={loadMoreForward}>
+						Retry
+					</Button>
+				</div>
+			{:else if loadingForward}
+				<p class="text-muted-foreground text-xs">Loading more…</p>
+			{/if}
+		</div>
 	{/if}
 
 	{#if form?.addShowMessage}

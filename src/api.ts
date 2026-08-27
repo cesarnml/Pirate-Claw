@@ -970,18 +970,35 @@ export function createApiFetch(
       }
 
       try {
-        const year = new Date().getFullYear();
-        const trackedNames = activeConfig.tv.map((rule) => rule.name);
         const params = new URL(request.url).searchParams;
-        const offset = clampNonNegativeInt(params.get('offset'), 0);
-        const limit = clampNonNegativeInt(params.get('limit'), 20, 1, 50);
-        const { items, total } = await getTvCalendar(
-          calendarTv,
-          year,
-          trackedNames,
-          { offset, limit },
+        const currentYear = new Date().getFullYear();
+        const year = clampNonNegativeInt(
+          params.get('year'),
+          currentYear,
+          1900,
+          currentYear + 5,
         );
-        return Response.json({ year, items, total, offset, limit });
+        const trackedNames = activeConfig.tv.map((rule) => rule.name);
+        // No default here: omitted means "let getTvCalendar auto-anchor"
+        // (lands on today for the current year, or the natural first/last
+        // page when rolling into an adjacent year — see anchorOffsetForToday).
+        const offsetParam = params.get('offset');
+        const offset =
+          offsetParam === null
+            ? undefined
+            : clampNonNegativeInt(offsetParam, 0);
+        const limit = clampNonNegativeInt(params.get('limit'), 20, 1, 50);
+        const page = await getTvCalendar(calendarTv, year, trackedNames, {
+          offset,
+          limit,
+        });
+        return Response.json({
+          year,
+          items: page.items,
+          total: page.total,
+          offset: page.offset,
+          limit,
+        });
       } catch {
         return json500();
       }

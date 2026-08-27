@@ -13,40 +13,70 @@ function requestEvent(url: string) {
 	return { url: new URL(url) } as never;
 }
 
+const thisYear = new Date().getFullYear();
+
 describe('GET /calendar/more', () => {
 	beforeEach(() => {
 		apiRequestMock.mockReset();
 	});
 
-	it('proxies the offset to GET /api/calendar/tv', async () => {
+	it('proxies the offset and year to GET /api/calendar/tv', async () => {
 		const { GET } = await import('../../../src/routes/calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(
-			jsonResponse(200, { items: [{ tmdbId: 1, name: 'Show' }], total: 30 })
+			jsonResponse(200, { year: 2020, items: [{ tmdbId: 1, name: 'Show' }], total: 30, offset: 16 })
 		);
 
-		const response = await GET(requestEvent('http://localhost/calendar/more?offset=16'));
+		const response = await GET(requestEvent('http://localhost/calendar/more?year=2020&offset=16'));
 		const body = await response.json();
 
-		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?offset=16&limit=16');
-		expect(body).toEqual({ items: [{ tmdbId: 1, name: 'Show' }], total: 30 });
+		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16&offset=16');
+		expect(body).toEqual({
+			year: 2020,
+			items: [{ tmdbId: 1, name: 'Show' }],
+			total: 30,
+			offset: 16
+		});
 	});
 
-	it('defaults offset to 0 when missing or invalid', async () => {
+	it('defaults year to the current year when missing', async () => {
 		const { GET } = await import('../../../src/routes/calendar/more/+server');
-		apiRequestMock.mockResolvedValueOnce(jsonResponse(200, { items: [], total: 0 }));
+		apiRequestMock.mockResolvedValueOnce(
+			jsonResponse(200, { year: thisYear, items: [], total: 0, offset: 0 })
+		);
 
-		await GET(requestEvent('http://localhost/calendar/more?offset=not-a-number'));
+		await GET(requestEvent('http://localhost/calendar/more?offset=16'));
 
-		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?offset=0&limit=16');
+		expect(apiRequestMock).toHaveBeenCalledWith(
+			`/api/calendar/tv?year=${thisYear}&limit=16&offset=16`
+		);
+	});
+
+	it('forwards offset omitted rather than defaulting to 0, for the anchor-to-last-page rollover', async () => {
+		// Real behavior this covers: "load earlier months" rolling into the
+		// previous year omits offset on purpose, so the daemon's auto-anchor
+		// (anchorOffsetForToday) lands on that year's *last* page, not its
+		// first. Silently defaulting offset to 0 here would defeat that.
+		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		apiRequestMock.mockResolvedValueOnce(
+			jsonResponse(200, { year: 2020, items: [], total: 40, offset: 24 })
+		);
+
+		await GET(requestEvent('http://localhost/calendar/more?year=2020'));
+
+		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16');
 	});
 
 	it('clamps a requested limit above the page size', async () => {
 		const { GET } = await import('../../../src/routes/calendar/more/+server');
-		apiRequestMock.mockResolvedValueOnce(jsonResponse(200, { items: [], total: 0 }));
+		apiRequestMock.mockResolvedValueOnce(
+			jsonResponse(200, { year: thisYear, items: [], total: 0, offset: 0 })
+		);
 
 		await GET(requestEvent('http://localhost/calendar/more?offset=0&limit=9999'));
 
-		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?offset=0&limit=16');
+		expect(apiRequestMock).toHaveBeenCalledWith(
+			`/api/calendar/tv?year=${thisYear}&limit=16&offset=0`
+		);
 	});
 
 	it('returns 503 when the daemon is unreachable', async () => {

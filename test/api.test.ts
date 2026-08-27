@@ -1231,6 +1231,74 @@ describe('GET /api/calendar/tv', () => {
     expect(body.offset).toBe(0);
     expect(body.limit).toBeLessThanOrEqual(50);
   });
+
+  it('accepts a year query param instead of always using the current year', async () => {
+    const pastYear = new Date().getFullYear() - 3;
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient([
+          { id: 1, name: 'Old Show', first_air_date: `${pastYear}-05-01` },
+        ]),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request(`http://localhost/api/calendar/tv?year=${pastYear}`),
+    );
+    const body = await response.json();
+
+    expect(body.year).toBe(pastYear);
+    expect(body.items[0].name).toBe('Old Show');
+  });
+
+  it('clamps an out-of-range year instead of erroring', async () => {
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient([]),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/calendar/tv?year=99999'),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.year).toBeLessThanOrEqual(new Date().getFullYear() + 5);
+  });
+
+  it('auto-anchors past today when offset is omitted, rather than always page 1', async () => {
+    // Real bug this covers: "load earlier months" rolling into the previous
+    // year must reuse this same omitted-offset behavior to land on that
+    // year's *last* page, not its first — see anchorOffsetForToday.
+    const pastYear = new Date().getFullYear() - 3;
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      id: i,
+      name: `Show ${i}`,
+      first_air_date: `${pastYear}-${String(1 + i).padStart(2, '0')}-01`,
+    }));
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient(many),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request(`http://localhost/api/calendar/tv?year=${pastYear}&limit=4`),
+    );
+    const body = await response.json();
+
+    // Every date in `pastYear` is before today, so the anchor formula lands
+    // on the last full page (offset = total - limit), not offset 0.
+    expect(body.offset).toBe(6);
+    expect(body.items[0].name).toBe('Show 6');
+  });
 });
 
 describe('POST /api/shows/:slug/tmdb/refresh', () => {

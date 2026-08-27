@@ -21,15 +21,20 @@ export type CalendarTvItem = {
 export const _PAGE_SIZE = 16;
 
 export const load: PageServerLoad = async () => {
+	// No offset param: the daemon auto-anchors to today's date within the
+	// current year, so the visitor lands on the relevant part of the
+	// calendar instead of always January 1st. See anchorOffsetForToday in
+	// src/tmdb/calendar.ts.
 	let response: Response;
 	try {
-		response = await apiRequest(`/api/calendar/tv?offset=0&limit=${_PAGE_SIZE}`);
+		response = await apiRequest(`/api/calendar/tv?limit=${_PAGE_SIZE}`);
 	} catch (error) {
 		console.error('[calendar] failed to reach /api/calendar/tv:', error);
 		return {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
 			total: 0,
+			offset: 0,
 			tmdbConfigured: true,
 			error: 'Could not reach the API.'
 		};
@@ -40,6 +45,7 @@ export const load: PageServerLoad = async () => {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
 			total: 0,
+			offset: 0,
 			tmdbConfigured: false,
 			error: null
 		};
@@ -50,6 +56,7 @@ export const load: PageServerLoad = async () => {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
 			total: 0,
+			offset: 0,
 			tmdbConfigured: true,
 			error: `Calendar request failed (${response.status}).`
 		};
@@ -60,11 +67,13 @@ export const load: PageServerLoad = async () => {
 			year: number;
 			items: CalendarTvItem[];
 			total: number;
+			offset: number;
 		};
 		return {
 			year: body.year,
 			items: body.items,
 			total: body.total,
+			offset: body.offset,
 			tmdbConfigured: true,
 			error: null
 		};
@@ -74,6 +83,7 @@ export const load: PageServerLoad = async () => {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
 			total: 0,
+			offset: 0,
 			tmdbConfigured: true,
 			error: 'Calendar response was invalid.'
 		};

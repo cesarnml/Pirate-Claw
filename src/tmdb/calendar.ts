@@ -61,14 +61,21 @@ export class CalendarCache {
 export type CalendarPage = {
   items: CalendarTvItem[];
   total: number;
+  /** The offset actually used — echoes the caller's explicit offset, or the
+   * resolved value when omitted and auto-anchored to today (see below). */
+  offset: number;
 };
+
+const DEFAULT_PAGE_LIMIT = 20;
+const UNDATED_SORT_KEY = '9999-99-99'; // sorts after every real ISO date
 
 export async function getTvCalendar(
   deps: CalendarDeps,
   year: number,
   trackedNames: string[],
-  pagination: { offset: number; limit: number } = { offset: 0, limit: 20 },
+  pagination: { offset?: number; limit?: number } = {},
 ): Promise<CalendarPage> {
+  const limit = pagination.limit ?? DEFAULT_PAGE_LIMIT;
   let results = deps.cache.get(year);
 
   if (results === undefined) {
@@ -101,19 +108,27 @@ export async function getTvCalendar(
   // daemon ever sending the whole year in one response. A ~40-item response
   // with full overviews + poster URLs was found to be large enough to break
   // client-side hydration over some mobile/VPN network paths.
+  //
+  // Sorted by air date, not popularity — this is a calendar, not a popularity
+  // chart. Undated results (shouldn't normally happen, TMDB's date-range
+  // discover query implies a date) sort last rather than being dropped.
   const named = results.filter(
     (result): result is TmdbDiscoverTvResult & { name: string } =>
       Boolean(result.name),
   );
-  named.sort((left, right) => (right.popularity ?? 0) - (left.popularity ?? 0));
-
-  const page = named.slice(
-    pagination.offset,
-    pagination.offset + pagination.limit,
+  named.sort((left, right) =>
+    (left.first_air_date || UNDATED_SORT_KEY).localeCompare(
+      right.first_air_date || UNDATED_SORT_KEY,
+    ),
   );
 
+  const total = named.length;
+  const offset = pagination.offset ?? anchorOffsetForToday(named, total, limit);
+  const page = named.slice(offset, offset + limit);
+
   return {
-    total: named.length,
+    total,
+    offset,
     items: page.map((result) => ({
       tmdbId: result.id,
       name: result.name,
@@ -126,4 +141,32 @@ export async function getTvCalendar(
       alreadyTracked: trackedSet.has(result.name.trim().toLowerCase()),
     })),
   };
+}
+
+/**
+ * Resolves the offset a caller lands on when it doesn't specify one — used
+ * so the client's initial page load, and its "load earlier months" rollover
+ * into the previous year, share one mechanism instead of each needing to
+ * special-case "which direction am I coming from".
+ *
+ * One formula covers every case because `sorted` is date-ascending:
+ * - current year: lands on the page containing today's date.
+ * - a past year (every date < today): the index search runs off the end,
+ *   so this clamps to the last full page — exactly "load earlier months"
+ *   rolling into the previous year wants.
+ * - a future year (every date > today): the index search matches
+ *   immediately at 0 — exactly "load more" rolling into next year wants.
+ */
+function anchorOffsetForToday(
+  sorted: (TmdbDiscoverTvResult & { name: string })[],
+  total: number,
+  limit: number,
+): number {
+  if (total === 0) return 0;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  let rawIndex = sorted.findIndex(
+    (result) => (result.first_air_date || UNDATED_SORT_KEY) >= todayIso,
+  );
+  if (rawIndex === -1) rawIndex = total;
+  return Math.min(rawIndex, Math.max(0, total - limit));
 }
