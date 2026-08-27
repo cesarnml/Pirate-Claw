@@ -46,12 +46,12 @@ describe('calendar page server load', () => {
 		// Regression: an unpaginated ~40-item response was found to be large
 		// enough to break client-side hydration on some mobile/VPN network
 		// paths. The initial SSR load must only ask for a bounded first page.
-		const { load, PAGE_SIZE } = await import('../../../src/routes/calendar/+page.server');
+		const { load, _PAGE_SIZE } = await import('../../../src/routes/calendar/+page.server');
 		apiRequestMock.mockResolvedValueOnce(jsonResponse(200, { year: 2026, items: [], total: 0 }));
 
 		await load({} as never);
 
-		expect(apiRequestMock).toHaveBeenCalledWith(`/api/calendar/tv?offset=0&limit=${PAGE_SIZE}`);
+		expect(apiRequestMock).toHaveBeenCalledWith(`/api/calendar/tv?offset=0&limit=${_PAGE_SIZE}`);
 	});
 
 	it('reports tmdbConfigured=false when the daemon returns 409', async () => {

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { apiRequest } from '$lib/server/api';
-import { PAGE_SIZE } from '../+page.server';
+import { _PAGE_SIZE } from '../+page.server';
 import type { RequestHandler } from './$types';
 
 // Client-side infinite scroll calls this instead of hitting the daemon
@@ -11,8 +11,8 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ url }) => {
 	const offset = Math.max(0, Number(url.searchParams.get('offset') ?? '0') || 0);
 	const limit = Math.min(
-		PAGE_SIZE,
-		Math.max(1, Number(url.searchParams.get('limit')) || PAGE_SIZE)
+		_PAGE_SIZE,
+		Math.max(1, Number(url.searchParams.get('limit')) || _PAGE_SIZE)
 	);
 
 	let response: Response;

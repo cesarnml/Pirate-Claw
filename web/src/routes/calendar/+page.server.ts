@@ -18,12 +18,12 @@ export type CalendarTvItem = {
 // some mobile/VPN network paths. Only the first page loads with the initial
 // SSR response; the client fetches more via infinite scroll (see
 // routes/calendar/more/+server.ts).
-export const PAGE_SIZE = 16;
+export const _PAGE_SIZE = 16;
 
 export const load: PageServerLoad = async () => {
 	let response: Response;
 	try {
-		response = await apiRequest(`/api/calendar/tv?offset=0&limit=${PAGE_SIZE}`);
+		response = await apiRequest(`/api/calendar/tv?offset=0&limit=${_PAGE_SIZE}`);
 	} catch (error) {
 		console.error('[calendar] failed to reach /api/calendar/tv:', error);
 		return {
