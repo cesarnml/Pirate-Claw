@@ -86,13 +86,6 @@
 		loadingBackward = true;
 		backwardError = null;
 
-		// Prepending content above the current scroll position would
-		// otherwise yank the viewport — <main> is the actual scroll
-		// container (see routes/+layout.svelte), not the document.
-		const scrollContainer = backwardAnchor?.closest('main') ?? null;
-		const previousScrollHeight = scrollContainer?.scrollHeight ?? 0;
-		const previousScrollTop = scrollContainer?.scrollTop ?? 0;
-
 		try {
 			let { year, offset } = backward;
 			for (let hop = 0; hop <= MAX_EMPTY_YEAR_HOPS; hop++) {
@@ -102,11 +95,18 @@
 				if (page.items.length > 0) {
 					items = [...page.items, ...items];
 					backward = { year: page.year, offset: page.offset, total: page.total };
-					if (scrollContainer) {
-						await new Promise((resolve) => requestAnimationFrame(resolve));
-						const delta = scrollContainer.scrollHeight - previousScrollHeight;
-						scrollContainer.scrollTop = previousScrollTop + delta;
-					}
+					// No scroll compensation here on purpose: the "Load earlier
+					// months" button sits at the very top of the page (not
+					// scrolled off-screen above the current view, the way a
+					// chat app's older-messages trigger would be), so the
+					// newly-prepended content lands directly below it —
+					// visible immediately without adjusting scrollTop. An
+					// earlier version compensated scrollTop to keep the
+					// viewport frozen in place, which actively hid every
+					// successful load: the fetch worked, the cursor advanced,
+					// but the visible cards never changed.
+					await new Promise((resolve) => requestAnimationFrame(resolve));
+					backwardAnchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 					return;
 				}
 				year = requestYear;
@@ -123,9 +123,17 @@
 	$effect(() => {
 		const target = sentinel;
 		if (!target) return;
-		const observer = new IntersectionObserver((entries) => {
-			if (entries.some((entry) => entry.isIntersecting)) void loadMoreForward();
-		});
+		// rootMargin pre-triggers the fetch before the sentinel is literally
+		// at the viewport edge — without it, a user scrolling to the true
+		// bottom hits a dead stop (nothing visibly below the fold yet) and
+		// has to scroll further, past where the load actually completed, to
+		// see the new content land. This makes it feel continuous instead.
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) void loadMoreForward();
+			},
+			{ rootMargin: '400px 0px' }
+		);
 		observer.observe(target);
 		return () => observer.disconnect();
 	});

@@ -48,10 +48,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		const body = (await response.json()) as {
 			year: number;
-			items: unknown;
+			items: unknown[];
 			total: number;
 			offset: number;
 		};
+		console.log(
+			`[calendar] /more requested year=${year} offset=${offset ?? 'auto'} -> resolved year=${body.year} offset=${body.offset} items=${body.items.length}/${body.total}`
+		);
 		return json({ year: body.year, items: body.items, total: body.total, offset: body.offset });
 	} catch (error) {
 		console.error('[calendar] /more failed to parse response:', error);
