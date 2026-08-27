@@ -1,6 +1,9 @@
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 
-import { generatedDaemonApiWriteTokenPath } from './install-bootstrap';
+import {
+  generatedDaemonApiWriteTokenPath,
+  installRootDataDir,
+} from './install-bootstrap';
 
 export type FeedConfig = {
   name: string;
@@ -797,6 +800,10 @@ function validateRuntime(
 
     return {
       ...DEFAULT_RUNTIME_CONFIG,
+      artifactDir: resolveArtifactDir(
+        DEFAULT_RUNTIME_CONFIG.artifactDir,
+        installRoot,
+      ),
       ...(apiPort ? { apiPort } : {}),
       ...(apiHost ? { apiHost } : {}),
       ...(apiWriteToken ? { apiWriteToken } : {}),
@@ -838,9 +845,11 @@ function validateRuntime(
         runtime.reconcileIntervalSeconds,
         `${path} runtime reconcileIntervalSeconds`,
       ) ?? DEFAULT_RUNTIME_CONFIG.reconcileIntervalSeconds,
-    artifactDir:
+    artifactDir: resolveArtifactDir(
       optionalString(runtime.artifactDir, `${path} runtime artifactDir`) ??
-      DEFAULT_RUNTIME_CONFIG.artifactDir,
+        DEFAULT_RUNTIME_CONFIG.artifactDir,
+      installRoot,
+    ),
     artifactRetentionDays:
       optionalPositiveNumber(
         runtime.artifactRetentionDays,
@@ -1030,6 +1039,23 @@ async function loadGeneratedConfigEnv(
   const token = (await tokenFile.text()).trim();
 
   return token.length > 0 ? { [API_WRITE_TOKEN_ENV]: token } : {};
+}
+
+/**
+ * A relative artifactDir is resolved against the install root's persistent
+ * `data/` directory rather than the process cwd, so cycle artifacts and
+ * poll-state survive a container restart. Absolute paths are honoured as-is.
+ */
+function resolveArtifactDir(
+  artifactDir: string,
+  installRoot: string | undefined,
+): string {
+  if (isAbsolute(artifactDir)) {
+    return artifactDir;
+  }
+
+  const dataDir = installRootDataDir(installRoot);
+  return dataDir ? join(dataDir, artifactDir) : artifactDir;
 }
 
 function resolveOptionalString(

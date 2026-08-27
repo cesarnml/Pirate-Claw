@@ -11,6 +11,7 @@
 		mode?: 'config' | 'onboarding';
 		saveAction?: string;
 		disconnectAction?: string;
+		cancelAction?: string;
 		skipHref?: string | null;
 	};
 
@@ -24,6 +25,7 @@
 		mode = 'config',
 		saveAction = '?/savePlex',
 		disconnectAction = '?/disconnectPlex',
+		cancelAction = '?/cancelPlexSignIn',
 		skipHref = null
 	}: Props = $props();
 
@@ -72,7 +74,11 @@
 			status.state === 'error_reconnect_required'
 		);
 	});
-	const disconnectLabel = $derived(status.state === 'connecting' ? 'Cancel sign-in' : 'Disconnect');
+	// While a browser sign-in is in flight the button cancels that session; it
+	// must not fall through to disconnect, which clears the saved credential.
+	const isCancellingSignIn = $derived(status.state === 'connecting');
+	const disconnectLabel = $derived(isCancellingSignIn ? 'Cancel sign-in' : 'Disconnect');
+	const teardownAction = $derived(isCancellingSignIn ? cancelAction : disconnectAction);
 	const connectLabel = $derived.by(() => {
 		if (status.state === 'reconnect_required') {
 			return 'Reconnect in browser';
@@ -151,7 +157,7 @@
 			{/if}
 
 			{#if showDisconnectAction}
-				<form method="POST" action={disconnectAction}>
+				<form method="POST" action={teardownAction}>
 					<input type="hidden" name="ifMatch" value={currentEtag ?? ''} />
 					<button
 						type="submit"

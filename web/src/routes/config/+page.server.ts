@@ -229,6 +229,46 @@ export const actions: Actions = {
 		}
 	},
 
+	cancelPlexSignIn: async () => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken)
+			return fail(403, { plexMessage: 'Config writes are disabled.', plexMessageTone: 'error' });
+
+		try {
+			const response = await apiRequest('/api/plex/auth/cancel', {
+				method: 'POST',
+				headers: { authorization: `Bearer ${writeToken}` }
+			});
+
+			if (!response.ok) {
+				let plexMessage = `Cancel failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) plexMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, {
+					plexMessage,
+					plexMessageTone: 'error',
+					plexEtag: response.headers.get('etag')
+				});
+			}
+
+			return {
+				plexMessage: 'Plex sign-in cancelled. The saved credential was left untouched.',
+				plexMessageTone: 'success',
+				plexEtag: response.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[config] cancelPlexSignIn failed:', error);
+			return fail(500, {
+				plexMessage: 'Could not cancel the Plex sign-in.',
+				plexMessageTone: 'error'
+			});
+		}
+	},
+
 	saveShows: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) return fail(500, { showsMessage: 'Server write token is not configured.' });

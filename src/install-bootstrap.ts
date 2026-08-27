@@ -18,6 +18,7 @@ export const INSTALL_ROOT_DIRECTORIES = [
   'transmission/config',
 ] as const;
 
+export const RUNTIME_DATA_DIRECTORY = 'data';
 export const GENERATED_CONFIG_DIRECTORY = 'generated';
 export const DAEMON_API_WRITE_TOKEN_FILE = 'daemon-api-write-token';
 
@@ -71,6 +72,20 @@ export async function ensureFirstStartupBootstrap(input: {
     sessionSecretPath: sessionSecret.path,
     sessionSecretCreated: sessionSecret.created,
   };
+}
+
+/**
+ * Runtime state (SQLite database, cycle artifacts) belongs on the install
+ * root's bind-mounted `data/` directory. Resolving it from the install root
+ * rather than the process cwd keeps that state on the persistent volume even
+ * when the daemon is launched from somewhere else — otherwise it lands in the
+ * container's ephemeral layer and is destroyed on every restart.
+ */
+export function installRootDataDir(
+  installRoot: string | undefined = process.env.PIRATE_CLAW_INSTALL_ROOT,
+): string | undefined {
+  const normalized = normalizeInstallRoot(installRoot);
+  return normalized ? join(normalized, RUNTIME_DATA_DIRECTORY) : undefined;
 }
 
 export function generatedDaemonApiWriteTokenPath(configPath: string): string {

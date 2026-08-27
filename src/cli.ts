@@ -45,7 +45,7 @@ import {
   hasStatusSchema,
   openDatabase,
   openDatabaseReadOnly,
-  DEFAULT_DATABASE_PATH,
+  resolveDatabasePath,
   type CandidateStateRecord,
   type RunSummaryRecord,
 } from './repository';
@@ -329,7 +329,7 @@ export async function runCli(argv: string[]): Promise<number> {
       }
 
       console.log('\n== SQLite Plex cache ==');
-      const dbPath = DEFAULT_DATABASE_PATH;
+      const dbPath = resolveDatabasePath();
       if (!existsSync(dbPath)) {
         console.log(`(no database file at ${dbPath})`);
         return 0;
@@ -642,7 +642,7 @@ function parseOptionalApiPort(value: string | undefined): number | undefined {
 }
 
 function openInitializedWritableDatabase() {
-  if (!existsSync(DEFAULT_DATABASE_PATH)) {
+  if (!existsSync(resolveDatabasePath())) {
     throw new Error(`Database not initialized. Run 'pirate-claw run' first.`);
   }
 
@@ -657,7 +657,7 @@ function openInitializedWritableDatabase() {
 }
 
 function openStatusDatabase() {
-  if (!existsSync(DEFAULT_DATABASE_PATH)) {
+  if (!existsSync(resolveDatabasePath())) {
     throw new Error(`Database not initialized. Run 'pirate-claw run' first.`);
   }
 

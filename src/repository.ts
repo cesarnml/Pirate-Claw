@@ -1,5 +1,8 @@
 import { Database } from 'bun:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
+import { installRootDataDir } from './install-bootstrap';
 import { ensurePlexSchema } from './plex/schema';
 import type { TmdbMoviePublic } from './movie-api-types';
 import { ensureTmdbSchema } from './tmdb/schema';
@@ -208,13 +211,30 @@ export type Repository = {
   ): boolean;
 };
 
-export const DEFAULT_DATABASE_PATH = 'pirate-claw.db';
+export const DEFAULT_DATABASE_FILENAME = 'pirate-claw.db';
 
-export function openDatabase(path = DEFAULT_DATABASE_PATH): Database {
+/**
+ * Resolve the database file. When an install root is configured the database
+ * lives under its persistent `data/` directory; otherwise it stays relative to
+ * the process cwd, which is what local development and the test suite expect.
+ */
+export function resolveDatabasePath(
+  installRoot: string | undefined = process.env.PIRATE_CLAW_INSTALL_ROOT,
+): string {
+  const dataDir = installRootDataDir(installRoot);
+  return dataDir
+    ? join(dataDir, DEFAULT_DATABASE_FILENAME)
+    : DEFAULT_DATABASE_FILENAME;
+}
+
+export function openDatabase(path = resolveDatabasePath()): Database {
+  // SQLite will not create missing parent directories, and the install root's
+  // data/ directory may not exist yet on a fresh volume.
+  mkdirSync(dirname(path), { recursive: true });
   return new Database(path, { create: true, strict: true });
 }
 
-export function openDatabaseReadOnly(path = DEFAULT_DATABASE_PATH): Database {
+export function openDatabaseReadOnly(path = resolveDatabasePath()): Database {
   return new Database(path, { readonly: true, strict: true });
 }
 

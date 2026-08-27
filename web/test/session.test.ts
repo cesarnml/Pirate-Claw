@@ -76,7 +76,11 @@ describe('session cookies', () => {
 		expect(name).toBe(SESSION_COOKIE_NAME);
 		expect(value).toBe('tok');
 		expect(opts?.httpOnly).toBe(true);
-		expect(opts?.sameSite).toBe('strict');
+		// 'lax', not 'strict': the Plex hosted sign-in returns via a top-level
+		// cross-site navigation from app.plex.tv, and a strict cookie is
+		// withheld on that hop, stranding an already-authenticated operator at
+		// /login mid-flow. See issueSessionCookie's own comment.
+		expect(opts?.sameSite).toBe('lax');
 		expect(opts?.path).toBe('/');
 		expect(opts?.maxAge).toBeGreaterThan(0);
 	});

@@ -647,7 +647,7 @@ without noticing, because:
 - An agent's own scratch/temp directory (for Claude Code specifically: the
   `CLAUDE_CODE_TMPDIR` default path, historically under `/opt/tmp/...`) is
   also on this same tiny partition unless redirected. A single failed or
-  partial `bun install`/build attempt staged there — even a *failed* one that
+  partial `bun install`/build attempt staged there — even a _failed_ one that
   gets killed partway through downloading dependencies — can leave 100+MB of
   half-downloaded packages behind.
 
@@ -695,6 +695,7 @@ rm -rf /opt/tmp/<agent-scratch-dirs>          # stale scratch/temp dirs (see bel
 
   This only takes effect for a **new** session — it does not retroactively
   fix a session whose process already captured its environment at startup.
+
 - If a Docker build needs to copy a large `node_modules` tree (see
   **Deploying new daemon and web images** above) and the working tree has
   uncommitted changes you must not disturb (e.g. another concurrent session's
