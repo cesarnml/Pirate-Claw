@@ -3,15 +3,28 @@ import { describe, expect, it } from 'bun:test';
 import type { TmdbDiscoverTvResult, TmdbHttpClient } from '../src/tmdb/client';
 import { CalendarCache, getTvCalendar } from '../src/tmdb/calendar';
 
+/** Stands in for TMDB's `discover/tv`, honouring the requested date range the
+ * way the real endpoint does — getTvCalendar queries a year one month at a
+ * time, so a fake that ignored the range and echoed a fixed page back would
+ * hand the same results to all 12 calls and prove nothing about coverage.
+ * Takes result arrays purely as a convenience; they're flattened and then
+ * served according to each result's own air date. */
 function fakeClient(pages: TmdbDiscoverTvResult[][]): {
   client: TmdbHttpClient;
-  calls: number[];
+  calls: { gte: string; lte: string; page: number }[];
 } {
-  const calls: number[] = [];
+  const all = pages.flat();
+  const calls: { gte: string; lte: string; page: number }[] = [];
   const client = {
-    discoverTv: async (_gte: string, _lte: string, page: number) => {
-      calls.push(page);
-      return pages[page - 1] ?? [];
+    discoverTv: async (gte: string, lte: string, page: number) => {
+      calls.push({ gte, lte, page });
+      return all.filter((entry) => {
+        // Undated results can't match a date range; TMDB wouldn't return
+        // them at all. Attribute them to the January call so they surface
+        // exactly once and the "undated sorts last" case stays testable.
+        if (!entry.first_air_date) return gte.endsWith('-01-01');
+        return entry.first_air_date >= gte && entry.first_air_date <= lte;
+      });
     },
   } as unknown as TmdbHttpClient;
   return { client, calls };
@@ -77,6 +90,72 @@ describe('getTvCalendar', () => {
         alreadyTracked: false,
       },
     ]);
+  });
+
+  it('queries every month of the year so no month can be crowded out', async () => {
+    // Regression, observed live: the year used to be fetched as one
+    // 01-01..12-31 range sorted by popularity, keeping the top ~40. Since
+    // popularity tracks what has already aired, querying in late August
+    // returned nothing premiering after August — the rendered calendar was
+    // missing Sept, Oct, Nov, Dec (and Feb) entirely, while TMDB itself had
+    // 198 September titles. Bucketing per month makes popularity compete
+    // only within a month, so each month gets its own slots.
+    const { client, calls } = fakeClient([
+      [
+        result({ id: 1, name: 'January Show', first_air_date: '2026-01-15' }),
+        result({ id: 2, name: 'December Show', first_air_date: '2026-12-20' }),
+      ],
+    ]);
+
+    const page = await getTvCalendar(
+      { client, cache: new CalendarCache() },
+      2026,
+      [],
+      { offset: 0, limit: 20 },
+    );
+
+    expect(calls).toHaveLength(12);
+    expect(calls.map((call) => call.gte)).toEqual([
+      '2026-01-01',
+      '2026-02-01',
+      '2026-03-01',
+      '2026-04-01',
+      '2026-05-01',
+      '2026-06-01',
+      '2026-07-01',
+      '2026-08-01',
+      '2026-09-01',
+      '2026-10-01',
+      '2026-11-01',
+      '2026-12-01',
+    ]);
+    // Month ends must be real calendar days, not a fixed 31.
+    expect(calls[1]?.lte).toBe('2026-02-28');
+    expect(calls[3]?.lte).toBe('2026-04-30');
+    expect(calls[11]?.lte).toBe('2026-12-31');
+    // A December premiere survives alongside a January one.
+    expect(page.items.map((item) => item.name)).toEqual([
+      'January Show',
+      'December Show',
+    ]);
+  });
+
+  it('uses a leap-year-correct February range', async () => {
+    // 2028 is a leap year; a fixed 28-day assumption would silently drop any
+    // Feb 29 premiere from the calendar.
+    const { client, calls } = fakeClient([
+      [result({ id: 1, name: 'Leap Day Show', first_air_date: '2028-02-29' })],
+    ]);
+
+    const page = await getTvCalendar(
+      { client, cache: new CalendarCache() },
+      2028,
+      [],
+      { offset: 0, limit: 20 },
+    );
+
+    expect(calls[1]?.lte).toBe('2028-02-29');
+    expect(page.items.map((item) => item.name)).toEqual(['Leap Day Show']);
   });
 
   it('drops results repeated across TMDB pages, keeping one entry per id', async () => {

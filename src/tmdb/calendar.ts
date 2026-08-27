@@ -17,8 +17,32 @@ export type CalendarDeps = {
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour — short enough to reflect new
 // premiere announcements without hitting TMDB on every page load.
-const PAGES_PER_YEAR = 2; // ~40 results, sorted by popularity — enough to
-// surface anything worth adding without paginating a full calendar UI.
+
+// The year is queried one month at a time (12 requests, filled once per cache
+// TTL) rather than as a single year-wide range.
+//
+// This is not an optimization — it's the only way to get a calendar without
+// holes. `discover/tv` sorts by popularity, and popularity tracks what has
+// *already* aired: querying 2026-01-01..2026-12-31 in late August and taking
+// the top ~40 returned nothing after August, because every unaired autumn
+// premiere ranks below the shows that ran in spring. Re-sorting that biased
+// sample by date produced a "calendar" missing Sept–Dec entirely (and Feb),
+// while TMDB itself had 198 September titles, 78 October, 30 November and 28
+// December. Bucketing by month makes the popularity ranking compete only
+// within a month, so every month gets its own slots.
+const MONTHS_PER_YEAR = 12;
+
+/** Last calendar day of a 1-indexed month, as an ISO date. Day 0 of the
+ * following month is the last day of this one, which handles leap years
+ * without a table. */
+function monthRange(year: number, month: number): { gte: string; lte: string } {
+  const pad = String(month).padStart(2, '0');
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return {
+    gte: `${year}-${pad}-01`,
+    lte: `${year}-${pad}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
 
 /** Tiny in-memory TTL cache, one entry per calendar year. Not persisted:
  * cheap to rebuild, and a daemon restart naturally re-warms it on next hit.
@@ -80,12 +104,13 @@ export async function getTvCalendar(
 
   if (results === undefined) {
     results = await deps.cache.fetchOnce(year, async () => {
-      const pages = await Promise.all(
-        Array.from({ length: PAGES_PER_YEAR }, (_, i) =>
-          deps.client.discoverTv(`${year}-01-01`, `${year}-12-31`, i + 1),
-        ),
+      const months = await Promise.all(
+        Array.from({ length: MONTHS_PER_YEAR }, (_, i) => {
+          const { gte, lte } = monthRange(year, i + 1);
+          return deps.client.discoverTv(gte, lte, 1);
+        }),
       );
-      return pages.flat();
+      return months.flat();
     });
 
     // TmdbHttpClient.getJson() coalesces every fetch failure (network error,
