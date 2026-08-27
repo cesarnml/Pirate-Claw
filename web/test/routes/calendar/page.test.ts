@@ -174,4 +174,44 @@ describe('calendar page — client-side pagination', () => {
 
 		await waitFor(() => expect(screen.getByText(/nothing further found/i)).toBeInTheDocument());
 	});
+
+	it('drops the oldest loaded page once the window is full, instead of accumulating every page forever', async () => {
+		// Regression: an unbounded accumulation of loaded pages was confirmed
+		// live to reach 100+ full cards (poster + overview each) within a
+		// single scroll session and lock up a phone's renderer — the exact
+		// "oversized payload" failure client-side pagination exists to avoid,
+		// just relocated to the client instead of the initial SSR response.
+		for (let i = 0; i < 6; i++) {
+			fetchMock.mockReturnValueOnce(
+				jsonResponse(200, {
+					year: 2027 + i,
+					items: [
+						item({
+							tmdbId: 100 + i,
+							name: `Year ${2027 + i} Show`,
+							firstAirDate: `${2027 + i}-02-01`
+						})
+					],
+					total: 1,
+					offset: 0
+				})
+			);
+		}
+
+		render(Page, { data: baseData });
+		expect(screen.getByText('January Show')).toBeInTheDocument();
+
+		for (let i = 0; i < 6; i++) {
+			FakeIntersectionObserver.instances[0].trigger();
+			await waitFor(() => expect(screen.getByText(`Year ${2027 + i} Show`)).toBeInTheDocument());
+		}
+
+		// 1 initial chunk + 6 loaded chunks = 7, one over MAX_CHUNKS (6) — the
+		// oldest (the initial SSR chunk) should have been dropped.
+		expect(screen.queryByText('January Show')).not.toBeInTheDocument();
+		// The rest of the window stays mounted.
+		for (let i = 0; i < 6; i++) {
+			expect(screen.getByText(`Year ${2027 + i} Show`)).toBeInTheDocument();
+		}
+	});
 });

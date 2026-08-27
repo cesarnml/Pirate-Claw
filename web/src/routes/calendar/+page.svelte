@@ -10,27 +10,39 @@
 
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 
-	type Cursor = { year: number; offset: number; total: number };
 	type CalendarPage = { year: number; items: CalendarTvItem[]; total: number; offset: number };
+	// One fetched page, kept intact (not flattened) so a chunk can be
+	// dropped as a unit when the window (see MAX_CHUNKS below) is full, and
+	// re-requested with these exact same params if the user scrolls back to
+	// it — no separate bookkeeping needed for what got trimmed.
+	type Chunk = { year: number; offset: number; total: number; items: CalendarTvItem[] };
 
 	// If a rolled-into year has nothing at all (e.g. TMDB hasn't populated next
 	// year's schedule yet), keep trying a few more years before giving up,
 	// rather than either looping forever or stopping after one empty year.
 	const MAX_EMPTY_YEAR_HOPS = 5;
 
+	// Caps how many pages stay mounted at once. Without this, a long scroll
+	// session accumulates every page ever fetched into one ever-growing
+	// list — confirmed live to reach 100+ full cards (poster + overview
+	// each) within a single session and lock up a phone's renderer. This is
+	// the exact "oversized payload" failure mode client-side pagination was
+	// originally built to avoid, just relocated from one big SSR response
+	// to client-side accumulation. When the window is full, the chunk from
+	// the opposite end is dropped — it re-fetches on demand (same params)
+	// if the user scrolls back to it.
+	const MAX_CHUNKS = 6;
+
 	// Seeded once from the SSR page load, then grown client-side via
 	// scroll-triggered "load more" (forward) and a manual "load earlier
 	// months" button (backward). Deliberately not re-derived from `data` on
-	// every prop change — the add-show action patches this array in place
-	// instead of refetching, so already-loaded pages aren't discarded when a
-	// save round-trips.
-	let items = $state<CalendarTvItem[]>(data.items);
-	let forward = $state<Cursor>({
-		year: data.year,
-		offset: data.offset + data.items.length,
-		total: data.total
-	});
-	let backward = $state<Cursor>({ year: data.year, offset: data.offset, total: data.total });
+	// every prop change — the add-show action patches chunk items in place
+	// instead of refetching, so already-loaded pages aren't discarded when
+	// a save round-trips.
+	let chunks = $state<Chunk[]>([
+		{ year: data.year, offset: data.offset, total: data.total, items: data.items }
+	]);
+	const items = $derived(chunks.flatMap((chunk) => chunk.items));
 
 	let loadingForward = $state(false);
 	let loadingBackward = $state(false);
@@ -42,15 +54,27 @@
 	let backwardAnchor = $state<HTMLElement | null>(null);
 	let pendingName = $state<string | null>(null);
 
+	// A stalled connection (rare, but seen live on a mobile network) would
+	// otherwise leave loadingForward/loadingBackward stuck true forever with
+	// no way to recover except reloading the page — surface it as a
+	// retryable error instead.
+	const FETCH_TIMEOUT_MS = 15_000;
+
 	async function fetchPage(params: { year: number; offset?: number }): Promise<CalendarPage> {
 		const query = new URLSearchParams({ year: String(params.year) });
 		if (params.offset !== undefined) query.set('offset', String(params.offset));
-		const res = await fetch(`/calendar/more?${query}`);
-		const body = (await res.json()) as Partial<CalendarPage> & { error?: string };
-		if (!res.ok || body.error) {
-			throw new Error(body.error ?? `Request failed (${res.status}).`);
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+		try {
+			const res = await fetch(`/calendar/more?${query}`, { signal: controller.signal });
+			const body = (await res.json()) as Partial<CalendarPage> & { error?: string };
+			if (!res.ok || body.error) {
+				throw new Error(body.error ?? `Request failed (${res.status}).`);
+			}
+			return body as CalendarPage;
+		} finally {
+			clearTimeout(timeout);
 		}
-		return body as CalendarPage;
 	}
 
 	async function loadMoreForward() {
@@ -58,7 +82,10 @@
 		loadingForward = true;
 		forwardError = null;
 		try {
-			let { year, offset, total } = forward;
+			const last = chunks[chunks.length - 1];
+			let year = last.year;
+			let offset = last.offset + last.items.length;
+			let total = last.total;
 			for (let hop = 0; hop <= MAX_EMPTY_YEAR_HOPS; hop++) {
 				if (offset >= total) {
 					year += 1;
@@ -66,8 +93,12 @@
 				}
 				const page = await fetchPage({ year, offset });
 				if (page.items.length > 0) {
-					items = [...items, ...page.items];
-					forward = { year, offset: page.offset + page.items.length, total: page.total };
+					const grown = [
+						...chunks,
+						{ year, offset: page.offset, total: page.total, items: page.items }
+					];
+					chunks = grown.length > MAX_CHUNKS ? grown.slice(grown.length - MAX_CHUNKS) : grown;
+					if (grown.length > MAX_CHUNKS) reachedPastStart = false;
 					return;
 				}
 				total = page.total;
@@ -87,14 +118,20 @@
 		backwardError = null;
 
 		try {
-			let { year, offset } = backward;
+			const first = chunks[0];
+			let year = first.year;
+			let offset = first.offset;
 			for (let hop = 0; hop <= MAX_EMPTY_YEAR_HOPS; hop++) {
 				const requestOffset = offset > 0 ? Math.max(0, offset - CALENDAR_PAGE_SIZE) : undefined;
 				const requestYear = offset > 0 ? year : year - 1;
 				const page = await fetchPage({ year: requestYear, offset: requestOffset });
 				if (page.items.length > 0) {
-					items = [...page.items, ...items];
-					backward = { year: page.year, offset: page.offset, total: page.total };
+					const grown = [
+						{ year: page.year, offset: page.offset, total: page.total, items: page.items },
+						...chunks
+					];
+					chunks = grown.length > MAX_CHUNKS ? grown.slice(0, MAX_CHUNKS) : grown;
+					if (grown.length > MAX_CHUNKS) reachedFutureEnd = false;
 					// No scroll compensation here on purpose: the "Load earlier
 					// months" button sits at the very top of the page (not
 					// scrolled off-screen above the current view, the way a
@@ -123,16 +160,17 @@
 	$effect(() => {
 		const target = sentinel;
 		if (!target) return;
-		// rootMargin pre-triggers the fetch before the sentinel is literally
-		// at the viewport edge — without it, a user scrolling to the true
-		// bottom hits a dead stop (nothing visibly below the fold yet) and
-		// has to scroll further, past where the load actually completed, to
-		// see the new content land. This makes it feel continuous instead.
+		// A small rootMargin lets the fetch start slightly before the
+		// sentinel is literally at the viewport edge, so scrolling to the
+		// bottom doesn't hit a dead stop before new content lands below the
+		// fold. Kept modest (not large) now that MAX_CHUNKS bounds the
+		// worst case — this no longer needs to double as the safety valve
+		// against runaway accumulation.
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries.some((entry) => entry.isIntersecting)) void loadMoreForward();
 			},
-			{ rootMargin: '400px 0px' }
+			{ rootMargin: '150px 0px' }
 		);
 		observer.observe(target);
 		return () => observer.disconnect();
@@ -199,11 +237,14 @@
 			) {
 				toast(String((actionData as { message?: string }).message ?? 'Show added.'), 'success');
 				// Patch locally instead of re-running load — a full refresh would
-				// reset `items` back to just the first page, discarding whatever
-				// infinite scroll had already loaded in.
-				items = items.map((item) =>
-					item.name === name ? { ...item, alreadyTracked: true } : item
-				);
+				// reset the loaded chunks back to just the first page,
+				// discarding whatever infinite scroll had already loaded in.
+				chunks = chunks.map((chunk) => ({
+					...chunk,
+					items: chunk.items.map((item) =>
+						item.name === name ? { ...item, alreadyTracked: true } : item
+					)
+				}));
 			} else if (result.type === 'failure') {
 				toast(
 					String(
