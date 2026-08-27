@@ -321,7 +321,7 @@ rebuilds them on a later write. Concretely:
   enrichment until `docker restart pirate-claw` (or `pirate-claw-daemon` on
   this NAS's container name) — the bound TMDB HTTP client still has no key
 - correcting `plex.url` or `plex.token` after the daemon is already running
-  has no effect on the *daemon's own* Plex client until the same restart —
+  has no effect on the _daemon's own_ Plex client until the same restart —
   even though `GET /api/config` already shows the corrected values
 - the one-off CLI commands (`plex-refresh`, `plex-audit`) are unaffected by
   this — each invocation loads the config fresh, so they pick up a hand-edited

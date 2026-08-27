@@ -42,6 +42,16 @@ export type TmdbTvDetails = {
   seasons?: { season_number: number; episode_count: number }[];
 };
 
+export type TmdbDiscoverTvResult = {
+  id: number;
+  name: string;
+  first_air_date?: string;
+  overview?: string;
+  poster_path?: string | null;
+  popularity?: number;
+  vote_average?: number;
+};
+
 export type TmdbTvSeasonDetails = {
   season_number: number;
   episodes?: {
@@ -153,5 +163,17 @@ export class TmdbHttpClient {
     return this.getJson<TmdbTvSeasonDetails>(
       `/tv/${tvId}/season/${seasonNumber}`,
     );
+  }
+
+  /** Discovers TV series with a first-air-date within [gte, gte] (YYYY-MM-DD), sorted by popularity. */
+  async discoverTv(
+    gte: string,
+    lte: string,
+    page: number,
+  ): Promise<TmdbDiscoverTvResult[]> {
+    const data = await this.getJson<{ results?: TmdbDiscoverTvResult[] }>(
+      `/discover/tv?first_air_date.gte=${gte}&first_air_date.lte=${lte}&sort_by=popularity.desc&include_adult=false&page=${page}`,
+    );
+    return data?.results ?? [];
   }
 }

@@ -28,6 +28,8 @@ import { INSTALL_ROOT_DIRECTORIES } from '../src/install-bootstrap';
 import type { CycleResult } from '../src/runtime-artifacts';
 import { PlexAuthStore } from '../src/plex/auth';
 import { TmdbCache } from '../src/tmdb/cache';
+import { CalendarCache } from '../src/tmdb/calendar';
+import type { TmdbDiscoverTvResult, TmdbHttpClient } from '../src/tmdb/client';
 import { movieMatchKey, tvMatchKey } from '../src/tmdb/keys';
 import { ensureTmdbSchema } from '../src/tmdb/schema';
 
@@ -1075,6 +1077,81 @@ describe('GET /api/shows', () => {
     const body = await response.json();
 
     expect(body.shows).toHaveLength(1);
+  });
+});
+
+describe('GET /api/calendar/tv', () => {
+  function fakeCalendarClient(results: TmdbDiscoverTvResult[]): TmdbHttpClient {
+    return {
+      discoverTv: async (_gte: string, _lte: string, page: number) =>
+        page === 1 ? results : [],
+    } as unknown as TmdbHttpClient;
+  }
+
+  it('returns 409 when TMDB is not configured', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/calendar/tv'),
+    );
+
+    expect(response.status).toBe(409);
+  });
+
+  it('returns the current year and TMDB-derived calendar items', async () => {
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient([
+          {
+            id: 1,
+            name: 'New Show',
+            first_air_date: '2026-02-01',
+            popularity: 50,
+          },
+        ]),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/calendar/tv'),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.year).toBe(new Date().getFullYear());
+    expect(body.items).toEqual([
+      {
+        tmdbId: 1,
+        name: 'New Show',
+        firstAirDate: '2026-02-01',
+        overview: '',
+        posterUrl: null,
+        popularity: 50,
+        alreadyTracked: false,
+      },
+    ]);
+  });
+
+  it('flags a calendar item already present in config.tv as tracked', async () => {
+    // stubConfig()'s tv list includes a rule named "Example Show".
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient([
+          { id: 1, name: 'Example Show', popularity: 10 },
+        ]),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/calendar/tv'),
+    );
+    const body = await response.json();
+
+    expect(body.items[0].alreadyTracked).toBe(true);
   });
 });
 

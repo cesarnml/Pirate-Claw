@@ -55,6 +55,8 @@ import type {
 import type { CycleResult } from './runtime-artifacts';
 import type { TmdbCache } from './tmdb/cache';
 import { enrichCandidatesFromCache } from './tmdb/candidate-cache-enrich';
+import type { CalendarDeps } from './tmdb/calendar';
+import { getTvCalendar } from './tmdb/calendar';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import { enrichMovieBreakdowns } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
@@ -145,6 +147,8 @@ export type ApiFetchDeps = {
   ) => void;
   /** When set, POST /api/candidates/:id/requeue is available. */
   downloader?: Downloader;
+  /** When set (TMDB configured), GET /api/calendar/tv is available. */
+  calendarTv?: CalendarDeps;
 };
 
 function json500(): Response {
@@ -431,6 +435,7 @@ export function createApiFetch(
     tmdbCache,
     onCandidateTmdbCacheError,
     downloader,
+    calendarTv,
   } = deps;
   let activeConfig = configHolder?.current ?? config;
 
@@ -951,6 +956,24 @@ export function createApiFetch(
           ? await enrichShowBreakdowns(withPlex, tmdbShows)
           : withPlex;
         return Response.json({ shows });
+      } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/calendar/tv') {
+      if (!calendarTv) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+
+      try {
+        const year = new Date().getFullYear();
+        const trackedNames = activeConfig.tv.map((rule) => rule.name);
+        const items = await getTvCalendar(calendarTv, year, trackedNames);
+        return Response.json({ year, items });
       } catch {
         return json500();
       }

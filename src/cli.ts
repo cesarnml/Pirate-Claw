@@ -50,6 +50,8 @@ import {
   type RunSummaryRecord,
 } from './repository';
 import { runTmdbBackgroundRefresh } from './tmdb/background-refresh';
+import type { CalendarDeps } from './tmdb/calendar';
+import { CalendarCache } from './tmdb/calendar';
 import { TmdbCache } from './tmdb/cache';
 import { TmdbHttpClient } from './tmdb/client';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
@@ -130,6 +132,22 @@ function tmdbMovieEnrichDeps(
     cacheTtlMs: tmdbResolved.cacheTtlMs,
     negativeCacheTtlMs: tmdbResolved.negativeCacheTtlMs,
     log: (m: string) => log(`[tmdb] ${m}`),
+  };
+}
+
+function calendarTvDeps(
+  config: AppConfig,
+  log: (message: string) => void,
+): CalendarDeps | undefined {
+  const tmdbResolved = resolveTmdbSettings(config);
+  if (!tmdbResolved) {
+    return undefined;
+  }
+  return {
+    client: new TmdbHttpClient(tmdbResolved.apiKey, (m: string) =>
+      log(`[tmdb] ${m}`),
+    ),
+    cache: new CalendarCache(),
   };
 }
 
@@ -441,6 +459,7 @@ export async function runCli(argv: string[]): Promise<number> {
 
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
         const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
+        const calendarTv = calendarTvDeps(config, log);
         const plexMovies = plexMovieEnrichDeps(
           database,
           configHolder,
@@ -557,6 +576,7 @@ export async function runCli(argv: string[]): Promise<number> {
                       }`,
                     ),
                   downloader,
+                  calendarTv,
                 })
               : undefined,
         });
