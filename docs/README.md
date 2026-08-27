@@ -63,6 +63,9 @@ Phase-level product definitions.
 - `phase-29-openvpn-bridge-for-bundled-transmission.md`: OpenVPN bridge for the bundled Transmission stack
 - `phase-30-ux-ui-polish-after-functional-completion.md`: UX/UI polish after functional product completion
 - `phase-31-v1-release-and-schema-versioning.md`: v1.0.0 release, config `schemaVersion`, SQLite `PRAGMA user_version` (product definition; renumbered from the former “Phase 20 v1-only” slot)
+- `phase-36-library-gap-reconciliation-and-indexer-backfill.md`: gap reconciliation against Plex and in-flight state, plus EZTV/YTS resolver backfill (**draft**; not approved)
+
+> **Note:** this list is drifted from the authoritative phase docs in `docs/product/plans/`, which run through `phase-35-v1-release-ceremony.md` and use different titles for Phases 30–31. Treat `docs/product/plans/` as the source of truth until this index is reconciled.
 
 ### `02-delivery`
 

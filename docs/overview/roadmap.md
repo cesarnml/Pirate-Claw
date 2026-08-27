@@ -712,6 +712,7 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 - **OpenVPN bridge for bundled Transmission** — Phase 29
 - **v1.0.0 release / schema versioning** — Phase 31
 - **Dashboard Transmission proxy** — Phase 20
+- **Library gap reconciliation / indexer backfill** — Phase 36 (draft)
 
 ## Current Planning Posture
 
@@ -723,6 +724,8 @@ The following items are **mapped** to numbered phases (no longer “unbounded”
 - engineering epic write-ups **`EE01`–`EE09`** live under `docs/engineering/` (orchestrator, PR hygiene, and delivery workflow tooling)
 - each new phase requires an explicit planning pass, approved ticket decomposition, and developer sign-off before implementation starts
 - smaller bounded changes can still proceed as standalone PR work without inventing a new phase
+- **Phase 36** (library gap reconciliation and indexer backfill) is **drafted only** — product definition written 2026-08-27, not approved; it still needs a planning pass and `grill-me` before ticket decomposition
+- the phase numbering in this section is drifted from `docs/product/plans/`, which is the authoritative set of phase docs; that directory runs through `phase-35-v1-release-ceremony.md` and assigns Phase 30 to the Mac GUI install path, Phase 31 to DSM 7.2.1 Container Manager, Phase 33 to UX/UI polish, and Phase 35 to the v1 release ceremony. Reconciling this section against that directory is outstanding doc hygiene.
 
 Working notes:
 
