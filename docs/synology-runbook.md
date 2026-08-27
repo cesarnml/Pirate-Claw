@@ -294,6 +294,93 @@ Fallback methods:
 2. Settings → Account → `<username>` XML link; the token appears in the
    `authToken` attribute
 
+**Do not use a `plex.tv` account/OAuth token here.** A real PMS token is a
+short (~20 character) string. If `plex.token` is a long JSON Web Token (three
+dot-separated segments, 600+ characters) — for example one produced by the
+in-app Plex browser-auth ("Get Info" is not the same thing as the app's own
+Plex connect/PIN flow) — Plex Media Server will reject it with `401` even
+though `plex.url` and connectivity are correct. Validated 2026-08-26 on the
+live NAS: swapping a JWT-shaped token for a genuine `X-Plex-Token` from
+**View XML** immediately fixed a `401` on every `/library/sections` call. A
+future phase should validate token shape (or exchange an account token for a
+real server token) before persisting it, instead of failing opaquely at
+request time.
+
+### Config changes that need a daemon restart (validated 2026-08-26)
+
+`PUT /api/config` (and the other config write endpoints) update the daemon's
+in-memory `activeConfig` immediately — that's why `GET /api/config` reflects a
+web UI save right away with no restart. **This does not extend to the TMDB and
+Plex enrichment clients.** Both are constructed once, at daemon boot, from the
+config as it existed at startup (`src/cli.ts`, `tmdbMovieEnrichDeps` /
+`tmdbShowsEnrichDeps` / `plexMovieEnrichDeps` / `plexShowEnrichDeps`), and nothing
+rebuilds them on a later write. Concretely:
+
+- adding `PIRATE_CLAW_TMDB_API_KEY` or a `tmdb.apiKey` value after the daemon
+  is already running has no effect on `/api/movies` or `/api/shows`
+  enrichment until `docker restart pirate-claw` (or `pirate-claw-daemon` on
+  this NAS's container name) — the bound TMDB HTTP client still has no key
+- correcting `plex.url` or `plex.token` after the daemon is already running
+  has no effect on the *daemon's own* Plex client until the same restart —
+  even though `GET /api/config` already shows the corrected values
+- the one-off CLI commands (`plex-refresh`, `plex-audit`) are unaffected by
+  this — each invocation loads the config fresh, so they pick up a hand-edited
+  or freshly-saved config immediately without touching the running daemon
+
+**Operator rule of thumb:** after any Plex or TMDB config change (via the Web
+UI or a direct file edit), restart the daemon container before trusting
+`/api/movies` or `/api/shows` enrichment. A future phase should either rebuild
+these clients from `configHolder.current` on every config write, or make the
+Web UI Config page explicitly say "restart required" for the `tmdb` and
+`plex` sections the way it already should for anything else that is
+boot-frozen.
+
+### `plex.refreshIntervalMinutes: 0` does not mean "disabled" for reads
+
+The `refreshIntervalMinutes: 0` guidance elsewhere in this doc ("set `0` to
+disable background refresh") is only true for the **scheduled sweep**
+(`plex-refresh` running on a timer inside the daemon loop). It does **not**
+disable the **on-demand freshness check** that `/api/movies` and `/api/shows`
+run against the SQLite cache on every request:
+`isPlexCacheExpired(cachedAt, refreshIntervalMinutes)` computes
+`cachedAt + refreshIntervalMinutes * 2 * 60_000 <= now()`. With
+`refreshIntervalMinutes: 0` that expression is true the instant any time has
+passed, so **every** read treats a perfectly good, freshly-written cache row
+as stale and falls back to `plexStatus: "unknown"` — even immediately after a
+successful `plex-refresh` that wrote `in_library: 1` rows.
+
+Validated 2026-08-26: `plex_movie_cache` and `plex_tv_cache` both showed
+`in_library = 1` for every title right after a clean `plex-refresh` run, but
+`/api/movies` and `/api/shows` kept reporting `"unknown"` until
+`plex.refreshIntervalMinutes` was changed from `0` to a positive value (`30`,
+the documented default) **and** the daemon was restarted (see previous
+section — this value is also captured once at boot).
+
+**Operator rule of thumb:** never set `plex.refreshIntervalMinutes: 0` if you
+want `/api/movies` / `/api/shows` Plex status to ever show anything other than
+`"unknown"`. Use a positive value; `0` should only be used if you intend to
+disable Plex status entirely. A future phase should give the on-demand
+freshness check and the scheduled-sweep toggle distinct config keys instead of
+overloading one number for two different behaviors, and should make `0` mean
+"no cache read at all" or "never expire" — whichever is intended — rather than
+"always expired."
+
+### TMDB API Key Setup
+
+TMDB enrichment (posters, overviews, ratings on `/api/movies` and
+`/api/shows`) is optional and off by default. To enable it, get a free API
+key from `https://www.themoviedb.org/settings/api`, then either:
+
+- set `PIRATE_CLAW_TMDB_API_KEY` in `/volume1/pirate-claw/config/.env`
+  (preferred — keeps the key out of the JSON config), or
+- add a `tmdb.apiKey` value to `pirate-claw.config.json` via the Web UI or a
+  direct file edit
+
+Either way, **restart the daemon container afterward** — see **Config changes
+that need a daemon restart** above. There is no CLI or API endpoint to trigger
+an on-demand TMDB lookup; enrichment happens lazily inside `GET /api/movies`
+and `GET /api/shows` once the key is live.
+
 ### Verification
 
 After restarting the `pirate-claw` container with the `plex` block configured:
