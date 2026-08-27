@@ -24,7 +24,7 @@ describe('matchTvItem', () => {
         identityKey: 'tv:example show|s01e02',
         score: 101,
         reasons: [
-          'pattern:(?:^| )Example +Show(?:$| )',
+          'pattern:^Example +Show(?:$| )',
           'resolution:1080p',
           'codec:x265',
         ],
@@ -63,6 +63,58 @@ describe('matchTvItem', () => {
     ];
 
     expect(matchTvItem(item, rules)).toEqual([]);
+  });
+
+  it('rejects a generic single-word rule name floating inside an unrelated title', () => {
+    // Real bug: a rule for a generically-named show like "From" used to match
+    // any unrelated release whose title happened to contain "from" as a
+    // word anywhere, because the derived pattern allowed the match to start
+    // mid-string. Anchoring to the start of normalizedTitle fixes this.
+    const item = normalizeFeedItem({
+      mediaType: 'tv',
+      rawTitle: 'Escape From New York S01E02 1080p WEB x265',
+    });
+    const rules: TvRule[] = [
+      {
+        name: 'From',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ];
+
+    expect(matchTvItem(item, rules)).toEqual([]);
+  });
+
+  it('still matches the intended generic-named show at the start of the title', () => {
+    const item = normalizeFeedItem({
+      mediaType: 'tv',
+      rawTitle: 'From S01E02 1080p WEB x265',
+    });
+    const rules: TvRule[] = [
+      {
+        name: 'From',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ];
+
+    expect(matchTvItem(item, rules)).toHaveLength(1);
+  });
+
+  it('still tolerates a trailing regional suffix on the derived pattern', () => {
+    const item = normalizeFeedItem({
+      mediaType: 'tv',
+      rawTitle: 'Example Show UK S01E02 1080p WEB x265',
+    });
+    const rules: TvRule[] = [
+      {
+        name: 'Example Show',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ];
+
+    expect(matchTvItem(item, rules)).toHaveLength(1);
   });
 
   it.each([
@@ -127,7 +179,7 @@ describe('matchTvItem', () => {
         identityKey: 'tv:example show|s01e02',
         score: 201,
         reasons: [
-          'pattern:(?:^| )Example +Show(?:$| )',
+          'pattern:^Example +Show(?:$| )',
           'resolution:1080p',
           'codec:x265',
         ],

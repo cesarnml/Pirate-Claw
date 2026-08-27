@@ -87,7 +87,16 @@ function deriveMatchPattern(name: string): string {
     return '^$';
   }
 
-  return `(?:^| )${tokens.join(' +')}(?:$| )`;
+  // Anchored to the start of normalizedTitle (everything before the S/E
+  // marker), not "appears anywhere" — a trailing space/end after the last
+  // token still tolerates real suffixes like regional variants ("Show" ->
+  // "Show UK"), but a short/generic rule name (e.g. "From") no longer
+  // floats and matches as a substring buried inside an unrelated, longer
+  // title (e.g. "Escape From New York"). Real-world release names put
+  // group/source tags as a suffix after quality info, not as a prefix
+  // before the title, so anchoring to the start is safe for this feed
+  // format. Overmatch found and fixed 2026-08-27.
+  return `^${tokens.join(' +')}(?:$| )`;
 }
 
 function buildIdentityKey(item: NormalizedFeedItem): string {
