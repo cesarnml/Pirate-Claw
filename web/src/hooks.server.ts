@@ -44,26 +44,27 @@ export function init() {
 export const handle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
 
-	if (PUBLIC_PATHS.has(path)) {
-		event.locals.user = null;
-		return resolve(event);
-	}
-
 	const secret = getSessionSecret();
-	if (!secret) {
-		event.locals.user = null;
-		return resolve(event);
-	}
-
-	const token = event.cookies.get(SESSION_COOKIE_NAME);
-	if (token) {
-		const user = await verifyJwt(token, secret);
-		if (user) {
-			event.locals.user = user;
-			return resolve(event);
+	let user: { username: string } | null = null;
+	if (secret) {
+		const token = event.cookies.get(SESSION_COOKIE_NAME);
+		if (token) {
+			user = await verifyJwt(token, secret);
 		}
 	}
-	event.locals.user = null;
+	event.locals.user = user;
+
+	// /setup, /login, and /logout stay reachable either way — their own
+	// load/actions use `locals.user` to redirect an already-authenticated
+	// visitor to `/` (see routes/login and routes/setup +page.server.ts).
+	// Forcing locals.user = null here would defeat that guard.
+	if (PUBLIC_PATHS.has(path)) {
+		return resolve(event);
+	}
+
+	if (user) {
+		return resolve(event);
+	}
 
 	// API routes return 401 rather than redirecting
 	if (path.startsWith('/api/')) {

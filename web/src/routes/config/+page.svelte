@@ -128,27 +128,52 @@
 		showAddDraftName = '';
 	}
 
-	function submitShows(intent: ShowIntent) {
-		if (!canWrite || !currentEtag || showsSubmitting || !showsFormEl || !showsSubmitButtonEl)
-			return;
+	// Resolved by enhanceSaveShows once the in-flight /api/config/shows request
+	// settles, so queued adds (Shift+Enter) wait their turn instead of being
+	// silently dropped by the showsSubmitting guard below.
+	let showsSubmitResolve: (() => void) | null = null;
+	let showAddChain: Promise<void> = Promise.resolve();
+
+	function submitShows(intent: ShowIntent): Promise<void> {
+		if (!canWrite || !currentEtag || showsSubmitting || !showsFormEl || !showsSubmitButtonEl) {
+			return Promise.resolve();
+		}
 		pendingShowIntent = intent;
+		const done = new Promise<void>((resolve) => {
+			showsSubmitResolve = resolve;
+		});
 		showsFormEl.requestSubmit(showsSubmitButtonEl);
+		return done;
 	}
 
 	function handleShowEnter(index: number) {
 		const name = showRows[index]?.trim() ?? '';
 		if (!name) return;
-		submitShows({ type: 'edit', name });
+		void submitShows({ type: 'edit', name });
 	}
 
-	async function submitAddShowDraft() {
+	/**
+	 * Adds a show at the top of the watchlist. `keepOpen` (Shift+Enter) clears
+	 * and refocuses the draft input for the next entry instead of closing it;
+	 * plain Enter / the button click close the draft, unchanged.
+	 */
+	async function submitAddShowDraft(keepOpen = false) {
 		const name = showAddDraftName.trim();
 		if (!name) return;
-		showRows = [...showRows, name];
-		showAddDraftActive = false;
+		showRows = [name, ...showRows];
 		showAddDraftName = '';
-		await tick();
-		submitShows({ type: 'add', name });
+		if (keepOpen) {
+			await tick();
+			showAddDraftInputEl?.focus();
+		} else {
+			showAddDraftActive = false;
+			await tick();
+		}
+		// Chain onto any add still in flight so rapid Shift+Enter presses queue
+		// up and each gets the fresh etag from the previous save, rather than
+		// racing and getting dropped by submitShows' showsSubmitting guard.
+		showAddChain = showAddChain.then(() => submitShows({ type: 'add', name }));
+		await showAddChain;
 	}
 
 	function cancelAddShowDraft() {
@@ -464,6 +489,8 @@
 			}
 			pendingShowIntent = null;
 			await update({ reset: false });
+			showsSubmitResolve?.();
+			showsSubmitResolve = null;
 		};
 	};
 
@@ -671,7 +698,7 @@
 											cancelAddShowDraft();
 										} else if (event.key === 'Enter') {
 											event.preventDefault();
-											void submitAddShowDraft();
+											void submitAddShowDraft(event.shiftKey);
 										}
 									}}
 								/>

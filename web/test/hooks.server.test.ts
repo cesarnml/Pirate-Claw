@@ -3,9 +3,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { init, resolveUnauthenticatedPageRedirect } from '../src/hooks.server';
-import { getSessionSecret, initSessionSecret } from '../src/lib/server/session';
+import { init, handle, resolveUnauthenticatedPageRedirect } from '../src/hooks.server';
+import {
+	getSessionSecret,
+	initSessionSecret,
+	signJwt,
+	SESSION_COOKIE_NAME
+} from '../src/lib/server/session';
 import { apiRequest } from '../src/lib/server/api';
+import type { RequestEvent } from '@sveltejs/kit';
 
 vi.mock('../src/lib/server/api', () => ({
 	apiRequest: vi.fn()
@@ -134,6 +140,63 @@ describe('hooks.server init — session secret', () => {
 		init();
 
 		expect(getSessionSecret()).toBeFalsy();
+	});
+});
+
+describe('handle — public paths still resolve locals.user from a valid session', () => {
+	beforeEach(() => {
+		initSessionSecret('test-secret');
+	});
+
+	function fakeEvent(path: string, cookieValue: string | undefined): RequestEvent {
+		return {
+			url: new URL(`http://localhost:8888${path}`),
+			cookies: { get: (name: string) => (name === SESSION_COOKIE_NAME ? cookieValue : undefined) },
+			locals: {}
+		} as unknown as RequestEvent;
+	}
+
+	it('populates locals.user on /login when a valid session cookie is present', async () => {
+		const token = await signJwt('pirate-claw-admin', 'test-secret');
+		const event = fakeEvent('/login', token);
+		const resolve = vi.fn().mockResolvedValue(new Response('ok'));
+
+		await handle({ event, resolve } as never);
+
+		expect(event.locals.user).toEqual({ username: 'pirate-claw-admin' });
+		expect(resolve).toHaveBeenCalledWith(event);
+	});
+
+	it('leaves locals.user null on /login with no session cookie', async () => {
+		const event = fakeEvent('/login', undefined);
+		const resolve = vi.fn().mockResolvedValue(new Response('ok'));
+
+		await handle({ event, resolve } as never);
+
+		expect(event.locals.user).toBeNull();
+		expect(resolve).toHaveBeenCalledWith(event);
+	});
+
+	it('populates locals.user on /setup when a valid session cookie is present', async () => {
+		const token = await signJwt('pirate-claw-admin', 'test-secret');
+		const event = fakeEvent('/setup', token);
+		const resolve = vi.fn().mockResolvedValue(new Response('ok'));
+
+		await handle({ event, resolve } as never);
+
+		expect(event.locals.user).toEqual({ username: 'pirate-claw-admin' });
+		expect(resolve).toHaveBeenCalledWith(event);
+	});
+
+	it('still resolves a protected path for an authenticated user', async () => {
+		const token = await signJwt('pirate-claw-admin', 'test-secret');
+		const event = fakeEvent('/', token);
+		const resolve = vi.fn().mockResolvedValue(new Response('ok'));
+
+		await handle({ event, resolve } as never);
+
+		expect(event.locals.user).toEqual({ username: 'pirate-claw-admin' });
+		expect(resolve).toHaveBeenCalledWith(event);
 	});
 });
 
