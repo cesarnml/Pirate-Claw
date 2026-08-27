@@ -195,7 +195,9 @@ export async function runCli(argv: string[]): Promise<number> {
       const configPath = parseConfigPath(rest);
       const resolvedConfigPath = resolveConfigPath(configPath);
       const config = await loadConfig(resolvedConfigPath);
-      const database = openDatabase();
+      const database = openDatabase(
+        resolveDatabasePath(config.runtime.installRoot),
+      );
 
       try {
         ensureSchema(database);
@@ -217,7 +219,9 @@ export async function runCli(argv: string[]): Promise<number> {
       const configPath = parseConfigPath(rest);
       const resolvedConfigPath = resolveConfigPath(configPath);
       const config = await loadConfig(resolvedConfigPath);
-      const database = openInitializedWritableDatabase();
+      const database = openInitializedWritableDatabase(
+        config.runtime.installRoot,
+      );
 
       try {
         const result = await retryFailedCandidates({
@@ -238,7 +242,9 @@ export async function runCli(argv: string[]): Promise<number> {
       const configPath = parseConfigPath(rest);
       const resolvedConfigPath = resolveConfigPath(configPath);
       const config = await loadConfig(resolvedConfigPath);
-      const database = openInitializedWritableDatabase();
+      const database = openInitializedWritableDatabase(
+        config.runtime.installRoot,
+      );
 
       try {
         const result = await reconcileCandidates({
@@ -266,7 +272,9 @@ export async function runCli(argv: string[]): Promise<number> {
         return 1;
       }
 
-      const database = openInitializedWritableDatabase();
+      const database = openInitializedWritableDatabase(
+        config.runtime.installRoot,
+      );
       const log = console.log;
 
       try {
@@ -329,13 +337,13 @@ export async function runCli(argv: string[]): Promise<number> {
       }
 
       console.log('\n== SQLite Plex cache ==');
-      const dbPath = resolveDatabasePath();
+      const dbPath = resolveDatabasePath(config.runtime.installRoot);
       if (!existsSync(dbPath)) {
         console.log(`(no database file at ${dbPath})`);
         return 0;
       }
 
-      const database = openDatabaseReadOnly();
+      const database = openDatabaseReadOnly(dbPath);
       try {
         if (!hasStatusSchema(database)) {
           console.log(
@@ -424,7 +432,9 @@ export async function runCli(argv: string[]): Promise<number> {
         config = await loadConfig(resolvedConfigPath);
       }
 
-      const database = openDatabase();
+      const database = openDatabase(
+        resolveDatabasePath(config.runtime.installRoot),
+      );
       const log = console.log;
 
       try {
@@ -641,12 +651,13 @@ function parseOptionalApiPort(value: string | undefined): number | undefined {
     : undefined;
 }
 
-function openInitializedWritableDatabase() {
-  if (!existsSync(resolveDatabasePath())) {
+function openInitializedWritableDatabase(installRoot?: string) {
+  const dbPath = resolveDatabasePath(installRoot);
+  if (!existsSync(dbPath)) {
     throw new Error(`Database not initialized. Run 'pirate-claw run' first.`);
   }
 
-  const database = openDatabase();
+  const database = openDatabase(dbPath);
 
   if (!hasStatusSchema(database)) {
     database.close();

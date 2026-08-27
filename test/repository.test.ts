@@ -7,9 +7,11 @@ import { join } from 'node:path';
 import { matchMovieItem } from '../src/movie-match';
 import { normalizeFeedItem } from '../src/normalize';
 import {
+  DEFAULT_DATABASE_FILENAME,
   createRepository,
   ensureSchema,
   openDatabase,
+  resolveDatabasePath,
 } from '../src/repository';
 
 const tempDirs: string[] = [];
@@ -799,6 +801,44 @@ describe('SQLite repository', () => {
 
       expect(repository.listRecentFeedItemOutcomesForReview(30)).toEqual([]);
     });
+  });
+});
+
+describe('resolveDatabasePath', () => {
+  const originalEnvInstallRoot = process.env.PIRATE_CLAW_INSTALL_ROOT;
+
+  afterEach(() => {
+    if (originalEnvInstallRoot === undefined) {
+      delete process.env.PIRATE_CLAW_INSTALL_ROOT;
+    } else {
+      process.env.PIRATE_CLAW_INSTALL_ROOT = originalEnvInstallRoot;
+    }
+  });
+
+  it('resolves under an explicitly-given install root, regardless of the env var', () => {
+    // Regression: this must not silently fall back to
+    // process.env.PIRATE_CLAW_INSTALL_ROOT when an install root is passed in
+    // explicitly — the CLI threads config.runtime.installRoot through here so
+    // that setting installRoot only in the config file (a supported source
+    // independent of the env var, per src/config.ts validateRuntime) actually
+    // moves the database, not just runtime.artifactDir.
+    process.env.PIRATE_CLAW_INSTALL_ROOT = '/env/should-not-be-used';
+
+    expect(resolveDatabasePath('/volume1/pirate-claw')).toBe(
+      `/volume1/pirate-claw/data/${DEFAULT_DATABASE_FILENAME}`,
+    );
+  });
+
+  it('falls back to a cwd-relative path when no install root is given or configured', () => {
+    delete process.env.PIRATE_CLAW_INSTALL_ROOT;
+    expect(resolveDatabasePath()).toBe(DEFAULT_DATABASE_FILENAME);
+  });
+
+  it('falls back to the environment variable only when no argument is given', () => {
+    process.env.PIRATE_CLAW_INSTALL_ROOT = '/volume1/pirate-claw';
+    expect(resolveDatabasePath()).toBe(
+      `/volume1/pirate-claw/data/${DEFAULT_DATABASE_FILENAME}`,
+    );
   });
 });
 

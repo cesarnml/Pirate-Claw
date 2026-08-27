@@ -7,8 +7,10 @@ import {
   DAEMON_API_WRITE_TOKEN_FILE,
   GENERATED_CONFIG_DIRECTORY,
   INSTALL_ROOT_DIRECTORIES,
+  RUNTIME_DATA_DIRECTORY,
   ensureFirstStartupBootstrap,
   generateSecretToken,
+  installRootDataDir,
 } from '../src/install-bootstrap';
 
 describe('ensureFirstStartupBootstrap', () => {
@@ -84,5 +86,40 @@ describe('ensureFirstStartupBootstrap', () => {
     });
 
     expect(result).toBeUndefined();
+  });
+});
+
+describe('installRootDataDir', () => {
+  const originalEnvInstallRoot = process.env.PIRATE_CLAW_INSTALL_ROOT;
+
+  afterEach(() => {
+    if (originalEnvInstallRoot === undefined) {
+      delete process.env.PIRATE_CLAW_INSTALL_ROOT;
+    } else {
+      process.env.PIRATE_CLAW_INSTALL_ROOT = originalEnvInstallRoot;
+    }
+  });
+
+  it('joins an explicitly-given install root with the runtime data directory', () => {
+    // This is the exact call shape that must be threaded through from a
+    // resolved config's runtime.installRoot — passing an explicit value here
+    // must win regardless of what (if anything) is in the process env, since
+    // the config file is a supported install-root source independent of the
+    // PIRATE_CLAW_INSTALL_ROOT env var (see src/config.ts validateRuntime).
+    process.env.PIRATE_CLAW_INSTALL_ROOT = '/env/should-not-be-used';
+
+    expect(installRootDataDir('/volume1/pirate-claw')).toBe(
+      `/volume1/pirate-claw/${RUNTIME_DATA_DIRECTORY}`,
+    );
+  });
+
+  it('falls back to the environment variable only when no argument is given', () => {
+    delete process.env.PIRATE_CLAW_INSTALL_ROOT;
+    expect(installRootDataDir()).toBeUndefined();
+
+    process.env.PIRATE_CLAW_INSTALL_ROOT = '/volume1/pirate-claw';
+    expect(installRootDataDir()).toBe(
+      `/volume1/pirate-claw/${RUNTIME_DATA_DIRECTORY}`,
+    );
   });
 });

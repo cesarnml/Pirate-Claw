@@ -1058,6 +1058,55 @@ describe('pirate-claw plex-refresh', () => {
   });
 });
 
+describe('pirate-claw run > database path resolution', () => {
+  it('resolves the database under runtime.installRoot from the config file alone, without the env var', async () => {
+    // Regression: resolveDatabasePath()/installRootDataDir() must not fall
+    // back to reading process.env.PIRATE_CLAW_INSTALL_ROOT when the CLI has
+    // already loaded a config with runtime.installRoot set — config-only
+    // installRoot (no env var exported) is an explicitly supported source
+    // (see src/config.ts validateRuntime), and runtime.artifactDir already
+    // honored it; the database must too, or every container recreate
+    // silently resets it even though this config looks fully durable.
+    const cwdDir = await mkdtemp();
+    const installRoot = await mkdtemp();
+    const configPath = join(cwdDir, 'pirate-claw.config.json');
+
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        feeds: [],
+        tv: [],
+        movies: { years: [2024], resolutions: ['1080p'], codecs: ['x265'] },
+        transmission: {
+          url: 'http://127.0.0.1:1/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+        runtime: { installRoot },
+      }),
+    );
+
+    const commandEnv: Record<string, string | undefined> = { ...env };
+    delete commandEnv.PIRATE_CLAW_INSTALL_ROOT;
+
+    const child = Bun.spawn([cliExecutable, 'run', '--config', configPath], {
+      cwd: cwdDir,
+      env: commandEnv,
+      stderr: 'pipe',
+      stdout: 'pipe',
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+
+    expect({ exitCode, stdout, stderr }.exitCode).toBe(0);
+    expect(existsSync(join(cwdDir, 'pirate-claw.db'))).toBe(false);
+    expect(existsSync(join(installRoot, 'data', 'pirate-claw.db'))).toBe(true);
+  });
+});
+
 async function mkdtemp(): Promise<string> {
   const directory = await createTempDir(join(tmpdir(), 'pirate-claw-test-'));
 
