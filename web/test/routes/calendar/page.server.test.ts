@@ -12,6 +12,7 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
 type LoadResult = {
 	year: number;
 	items: unknown[];
+	total: number;
 	tmdbConfigured: boolean;
 	error: string | null;
 };
@@ -22,10 +23,14 @@ describe('calendar page server load', () => {
 		vi.resetModules();
 	});
 
-	it('returns year and items on a successful calendar fetch', async () => {
+	it('returns year, items, and total on a successful calendar fetch', async () => {
 		const { load } = await import('../../../src/routes/calendar/+page.server');
 		apiRequestMock.mockResolvedValueOnce(
-			jsonResponse(200, { year: 2026, items: [{ tmdbId: 1, name: 'Show', alreadyTracked: false }] })
+			jsonResponse(200, {
+				year: 2026,
+				items: [{ tmdbId: 1, name: 'Show', alreadyTracked: false }],
+				total: 37
+			})
 		);
 
 		const result = (await load({} as never)) as LoadResult;
@@ -34,6 +39,19 @@ describe('calendar page server load', () => {
 		expect(result.error).toBeNull();
 		expect(result.year).toBe(2026);
 		expect(result.items).toHaveLength(1);
+		expect(result.total).toBe(37);
+	});
+
+	it('requests only the first page (bounded limit), not the whole year', async () => {
+		// Regression: an unpaginated ~40-item response was found to be large
+		// enough to break client-side hydration on some mobile/VPN network
+		// paths. The initial SSR load must only ask for a bounded first page.
+		const { load, PAGE_SIZE } = await import('../../../src/routes/calendar/+page.server');
+		apiRequestMock.mockResolvedValueOnce(jsonResponse(200, { year: 2026, items: [], total: 0 }));
+
+		await load({} as never);
+
+		expect(apiRequestMock).toHaveBeenCalledWith(`/api/calendar/tv?offset=0&limit=${PAGE_SIZE}`);
 	});
 
 	it('reports tmdbConfigured=false when the daemon returns 409', async () => {

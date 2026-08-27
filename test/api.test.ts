@@ -1153,6 +1153,84 @@ describe('GET /api/calendar/tv', () => {
 
     expect(body.items[0].alreadyTracked).toBe(true);
   });
+
+  it('paginates via offset/limit query params, capping the response size', async () => {
+    // Real bug this covers: an unpaginated ~40-item response (full posters +
+    // overviews) was found to be large enough to break client-side
+    // hydration on some mobile/VPN network paths. The client now requests
+    // small slices via offset/limit instead of the whole year at once.
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      name: `Show ${i}`,
+      popularity: 30 - i,
+    }));
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient(many),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/calendar/tv?offset=10&limit=5'),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.total).toBe(30);
+    expect(body.offset).toBe(10);
+    expect(body.limit).toBe(5);
+    expect(body.items).toHaveLength(5);
+    expect(body.items[0].name).toBe('Show 10');
+  });
+
+  it('defaults to a bounded first page when no pagination params are given', async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      name: `Show ${i}`,
+      popularity: 30 - i,
+    }));
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient(many),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/calendar/tv'),
+    );
+    const body = await response.json();
+
+    expect(body.total).toBe(30);
+    expect(body.items.length).toBeLessThan(30);
+  });
+
+  it('clamps a malformed or oversized limit instead of erroring', async () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      id: i,
+      name: `Show ${i}`,
+      popularity: 10 - i,
+    }));
+    const deps: ApiFetchDeps = {
+      ...createDeps(),
+      calendarTv: {
+        client: fakeCalendarClient(many),
+        cache: new CalendarCache(),
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/calendar/tv?offset=-5&limit=9999'),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.offset).toBe(0);
+    expect(body.limit).toBeLessThanOrEqual(50);
+  });
 });
 
 describe('POST /api/shows/:slug/tmdb/refresh', () => {

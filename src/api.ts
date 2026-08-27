@@ -972,8 +972,16 @@ export function createApiFetch(
       try {
         const year = new Date().getFullYear();
         const trackedNames = activeConfig.tv.map((rule) => rule.name);
-        const items = await getTvCalendar(calendarTv, year, trackedNames);
-        return Response.json({ year, items });
+        const params = new URL(request.url).searchParams;
+        const offset = clampNonNegativeInt(params.get('offset'), 0);
+        const limit = clampNonNegativeInt(params.get('limit'), 20, 1, 50);
+        const { items, total } = await getTvCalendar(
+          calendarTv,
+          year,
+          trackedNames,
+          { offset, limit },
+        );
+        return Response.json({ year, items, total, offset, limit });
       } catch {
         return json500();
       }
@@ -2442,6 +2450,21 @@ function optionalNonNegativeNumber(input: unknown): number | undefined {
     return undefined;
   }
   return input;
+}
+
+/** Parses a query-param integer, clamping to [min, max] and falling back to
+ * `fallback` for anything missing or invalid. Used for GET /api/calendar/tv
+ * pagination so a malformed offset/limit can't return a negative slice or an
+ * oversized one. */
+function clampNonNegativeInt(
+  raw: string | null,
+  fallback: number,
+  min = 0,
+  max = Number.MAX_SAFE_INTEGER,
+): number {
+  const parsed = raw === null ? Number.NaN : Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.trunc(parsed), min), max);
 }
 
 function requireRecord(

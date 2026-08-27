@@ -58,11 +58,17 @@ export class CalendarCache {
   }
 }
 
+export type CalendarPage = {
+  items: CalendarTvItem[];
+  total: number;
+};
+
 export async function getTvCalendar(
   deps: CalendarDeps,
   year: number,
   trackedNames: string[],
-): Promise<CalendarTvItem[]> {
+  pagination: { offset: number; limit: number } = { offset: 0, limit: 20 },
+): Promise<CalendarPage> {
   let results = deps.cache.get(year);
 
   if (results === undefined) {
@@ -89,11 +95,26 @@ export async function getTvCalendar(
     trackedNames.map((name) => name.trim().toLowerCase()).filter(Boolean),
   );
 
-  return results
-    .filter((result): result is TmdbDiscoverTvResult & { name: string } =>
+  // The full year's worth of items is fetched and cached once (cheap, TMDB
+  // side), but only a page-sized slice is mapped/returned per call — the
+  // client paginates via offset/limit (infinite scroll) instead of the
+  // daemon ever sending the whole year in one response. A ~40-item response
+  // with full overviews + poster URLs was found to be large enough to break
+  // client-side hydration over some mobile/VPN network paths.
+  const named = results.filter(
+    (result): result is TmdbDiscoverTvResult & { name: string } =>
       Boolean(result.name),
-    )
-    .map((result) => ({
+  );
+  named.sort((left, right) => (right.popularity ?? 0) - (left.popularity ?? 0));
+
+  const page = named.slice(
+    pagination.offset,
+    pagination.offset + pagination.limit,
+  );
+
+  return {
+    total: named.length,
+    items: page.map((result) => ({
       tmdbId: result.id,
       name: result.name,
       firstAirDate: result.first_air_date ?? null,
@@ -103,6 +124,6 @@ export async function getTvCalendar(
         : null,
       popularity: result.popularity ?? 0,
       alreadyTracked: trackedSet.has(result.name.trim().toLowerCase()),
-    }))
-    .sort((left, right) => right.popularity - left.popularity);
+    })),
+  };
 }

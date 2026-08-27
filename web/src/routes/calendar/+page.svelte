@@ -5,21 +5,82 @@
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from '$lib/toast';
 	import type { ActionData, PageData } from './$types';
+	import type { CalendarTvItem } from './+page.server';
 
 	const { data, form }: { data: PageData; form?: ActionData } = $props();
 
+	// Seeded once from the SSR page load, then grown client-side via
+	// infinite scroll (see routes/calendar/more/+server.ts). Deliberately
+	// not re-derived from `data` on every prop change — the add-show action
+	// patches this array in place instead of refetching, so scrolled-in
+	// pages don't get discarded when a save round-trips.
+	let items = $state<CalendarTvItem[]>(data.items);
+	let total = $state(data.total);
+	let loadingMore = $state(false);
+	let loadMoreError = $state<string | null>(null);
+	let sentinel = $state<HTMLElement | null>(null);
 	let pendingName = $state<string | null>(null);
 
-	const enhanceAddShow: SubmitFunction = ({ formData }) => {
-		pendingName = String(formData.get('name') ?? '');
-		return async ({ result, update }) => {
-			pendingName = null;
-			if (result.type === 'success' && result.data?.addShowSuccess) {
-				toast(String(result.data.message ?? 'Show added.'), 'success');
-			} else if (result.type === 'failure') {
-				toast(String(result.data?.addShowMessage ?? 'Add show failed.'), 'error');
+	async function loadMore() {
+		if (loadingMore || items.length >= total) return;
+		loadingMore = true;
+		loadMoreError = null;
+		try {
+			const res = await fetch(`/calendar/more?offset=${items.length}`);
+			const body = (await res.json()) as {
+				items?: CalendarTvItem[];
+				total?: number;
+				error?: string;
+			};
+			if (!res.ok || body.error) {
+				throw new Error(body.error ?? `Request failed (${res.status}).`);
 			}
-			await update({ reset: false });
+			items = [...items, ...(body.items ?? [])];
+			if (typeof body.total === 'number') total = body.total;
+		} catch (error) {
+			loadMoreError = error instanceof Error ? error.message : 'Failed to load more.';
+		} finally {
+			loadingMore = false;
+		}
+	}
+
+	$effect(() => {
+		const target = sentinel;
+		if (!target) return;
+		const observer = new IntersectionObserver((entries) => {
+			if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+		});
+		observer.observe(target);
+		return () => observer.disconnect();
+	});
+
+	const enhanceAddShow: SubmitFunction = ({ formData }) => {
+		const name = String(formData.get('name') ?? '');
+		pendingName = name;
+		return async ({ result }) => {
+			pendingName = null;
+			const actionData =
+				result.type === 'success' || result.type === 'failure' ? result.data : undefined;
+			if (
+				result.type === 'success' &&
+				(actionData as { addShowSuccess?: boolean } | undefined)?.addShowSuccess
+			) {
+				toast(String((actionData as { message?: string }).message ?? 'Show added.'), 'success');
+				// Patch locally instead of re-running load — a full refresh would
+				// reset `items` back to just the first page, discarding whatever
+				// infinite scroll had already loaded in.
+				items = items.map((item) =>
+					item.name === name ? { ...item, alreadyTracked: true } : item
+				);
+			} else if (result.type === 'failure') {
+				toast(
+					String(
+						(actionData as { addShowMessage?: string } | undefined)?.addShowMessage ??
+							'Add show failed.'
+					),
+					'error'
+				);
+			}
 		};
 	};
 </script>
@@ -43,11 +104,11 @@
 			TMDB is not configured, so the release calendar can't fetch anything. Add a TMDB API key in
 			Config to enable this page.
 		</div>
-	{:else if data.items.length === 0}
+	{:else if items.length === 0}
 		<p class="text-muted-foreground text-sm">No calendar data for {data.year} right now.</p>
 	{:else}
 		<ul class="grid list-none gap-5 md:grid-cols-2 xl:grid-cols-3">
-			{#each data.items as item (item.tmdbId)}
+			{#each items as item (item.tmdbId)}
 				<li class="bg-card/75 flex flex-col gap-3 rounded-[24px] border border-white/10 p-4">
 					<div class="flex gap-4">
 						{#if item.posterUrl}
@@ -97,6 +158,23 @@
 				</li>
 			{/each}
 		</ul>
+
+		{#if items.length < total}
+			<div bind:this={sentinel} class="flex justify-center py-4">
+				{#if loadMoreError}
+					<div class="text-center">
+						<p class="text-destructive text-xs">{loadMoreError}</p>
+						<Button variant="outline" class="mt-2 rounded-full px-4" onclick={loadMore}>
+							Retry
+						</Button>
+					</div>
+				{:else}
+					<p class="text-muted-foreground text-xs">
+						{loadingMore ? 'Loading more…' : `${items.length} of ${total}`}
+					</p>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 
 	{#if form?.addShowMessage}

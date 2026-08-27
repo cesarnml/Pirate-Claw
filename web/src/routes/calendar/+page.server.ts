@@ -13,15 +13,23 @@ export type CalendarTvItem = {
 	alreadyTracked: boolean;
 };
 
+// A full year's worth of calendar items (poster URLs + overviews for ~40
+// shows) was found to be large enough to break client-side hydration over
+// some mobile/VPN network paths. Only the first page loads with the initial
+// SSR response; the client fetches more via infinite scroll (see
+// routes/calendar/more/+server.ts).
+export const PAGE_SIZE = 16;
+
 export const load: PageServerLoad = async () => {
 	let response: Response;
 	try {
-		response = await apiRequest('/api/calendar/tv');
+		response = await apiRequest(`/api/calendar/tv?offset=0&limit=${PAGE_SIZE}`);
 	} catch (error) {
 		console.error('[calendar] failed to reach /api/calendar/tv:', error);
 		return {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
+			total: 0,
 			tmdbConfigured: true,
 			error: 'Could not reach the API.'
 		};
@@ -31,6 +39,7 @@ export const load: PageServerLoad = async () => {
 		return {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
+			total: 0,
 			tmdbConfigured: false,
 			error: null
 		};
@@ -40,19 +49,31 @@ export const load: PageServerLoad = async () => {
 		return {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
+			total: 0,
 			tmdbConfigured: true,
 			error: `Calendar request failed (${response.status}).`
 		};
 	}
 
 	try {
-		const body = (await response.json()) as { year: number; items: CalendarTvItem[] };
-		return { year: body.year, items: body.items, tmdbConfigured: true, error: null };
+		const body = (await response.json()) as {
+			year: number;
+			items: CalendarTvItem[];
+			total: number;
+		};
+		return {
+			year: body.year,
+			items: body.items,
+			total: body.total,
+			tmdbConfigured: true,
+			error: null
+		};
 	} catch (error) {
 		console.error('[calendar] failed to parse /api/calendar/tv response:', error);
 		return {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
+			total: 0,
 			tmdbConfigured: true,
 			error: 'Calendar response was invalid.'
 		};

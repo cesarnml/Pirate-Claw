@@ -44,13 +44,14 @@ describe('getTvCalendar', () => {
       ],
     ]);
 
-    const items = await getTvCalendar(
+    const page = await getTvCalendar(
       { client, cache: new CalendarCache() },
       2026,
       [],
     );
 
-    expect(items).toEqual([
+    expect(page.total).toBe(2);
+    expect(page.items).toEqual([
       {
         tmdbId: 2,
         name: 'High Popularity',
@@ -77,13 +78,13 @@ describe('getTvCalendar', () => {
       [result({ id: 1, name: 'From', popularity: 50 })],
     ]);
 
-    const items = await getTvCalendar(
+    const page = await getTvCalendar(
       { client, cache: new CalendarCache() },
       2026,
       ['  FROM  '],
     );
 
-    expect(items[0]?.alreadyTracked).toBe(true);
+    expect(page.items[0]?.alreadyTracked).toBe(true);
   });
 
   it('filters out results with no name', async () => {
@@ -91,17 +92,18 @@ describe('getTvCalendar', () => {
       [result({ id: 1, name: '' }), result({ id: 2, name: 'Has A Name' })],
     ]);
 
-    const items = await getTvCalendar(
+    const page = await getTvCalendar(
       { client, cache: new CalendarCache() },
       2026,
       [],
     );
 
-    expect(items).toHaveLength(1);
-    expect(items[0]?.name).toBe('Has A Name');
+    expect(page.items).toHaveLength(1);
+    expect(page.total).toBe(1);
+    expect(page.items[0]?.name).toBe('Has A Name');
   });
 
-  it('caches results per year and does not refetch on a second call', async () => {
+  it('caches the full fetched set per year and does not refetch on a second call', async () => {
     const { client, calls } = fakeClient([[result({ id: 1, name: 'Show' })]]);
     const cache = new CalendarCache();
 
@@ -122,6 +124,64 @@ describe('getTvCalendar', () => {
     expect(calls.length).toBeGreaterThan(0);
     // Distinct years each trigger their own fetch (cache is keyed by year).
     const cachedAgain = await getTvCalendar({ client, cache }, 2026, []);
-    expect(cachedAgain).toHaveLength(1);
+    expect(cachedAgain.items).toHaveLength(1);
+  });
+
+  describe('pagination', () => {
+    function manyResults(count: number): TmdbDiscoverTvResult[] {
+      return Array.from({ length: count }, (_, i) =>
+        result({ id: i, name: `Show ${i}`, popularity: count - i }),
+      );
+    }
+
+    it('returns only a page-sized slice, with the full count in total', async () => {
+      const { client } = fakeClient([manyResults(30)]);
+
+      const page = await getTvCalendar(
+        { client, cache: new CalendarCache() },
+        2026,
+        [],
+        { offset: 0, limit: 10 },
+      );
+
+      expect(page.total).toBe(30);
+      expect(page.items).toHaveLength(10);
+      // Highest popularity first, since input is already sorted descending.
+      expect(page.items[0]?.name).toBe('Show 0');
+      expect(page.items[9]?.name).toBe('Show 9');
+    });
+
+    it('returns the next page from a non-zero offset without refetching TMDB', async () => {
+      const { client, calls } = fakeClient([manyResults(30)]);
+      const cache = new CalendarCache();
+
+      await getTvCalendar({ client, cache }, 2026, [], {
+        offset: 0,
+        limit: 10,
+      });
+      const callsAfterFirstPage = calls.length;
+      const secondPage = await getTvCalendar({ client, cache }, 2026, [], {
+        offset: 10,
+        limit: 10,
+      });
+
+      expect(calls.length).toBe(callsAfterFirstPage);
+      expect(secondPage.items).toHaveLength(10);
+      expect(secondPage.items[0]?.name).toBe('Show 10');
+    });
+
+    it('returns an empty page past the end of the result set', async () => {
+      const { client } = fakeClient([manyResults(5)]);
+
+      const page = await getTvCalendar(
+        { client, cache: new CalendarCache() },
+        2026,
+        [],
+        { offset: 20, limit: 10 },
+      );
+
+      expect(page.total).toBe(5);
+      expect(page.items).toEqual([]);
+    });
   });
 });
