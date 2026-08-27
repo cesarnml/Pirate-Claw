@@ -19,8 +19,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	// it on purpose, so the daemon's auto-anchor lands on that year's *last*
 	// page instead of its first. See anchorOffsetForToday in
 	// src/tmdb/calendar.ts.
+	// A missing offset is meaningful (see comment above), so a garbage value
+	// (e.g. `offset=abc`) is normalized to the same "omitted" undefined
+	// rather than silently collapsing to 0 — malformed input shouldn't
+	// quietly behave differently from no input at all.
 	const rawOffset = url.searchParams.get('offset');
-	const offset = rawOffset === null ? undefined : Math.max(0, Number(rawOffset) || 0);
+	const parsedOffset = rawOffset === null ? NaN : Number(rawOffset);
+	const offset = Number.isFinite(parsedOffset) ? Math.max(0, parsedOffset) : undefined;
 
 	const params = new URLSearchParams({ year: String(year), limit: String(limit) });
 	if (offset !== undefined) params.set('offset', String(offset));

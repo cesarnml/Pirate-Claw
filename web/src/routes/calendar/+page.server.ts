@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
+import { CALENDAR_PAGE_SIZE } from '$lib/calendarConfig';
 import { apiRequest } from '$lib/server/api';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -18,7 +19,7 @@ export type CalendarTvItem = {
 // some mobile/VPN network paths. Only the first page loads with the initial
 // SSR response; the client fetches more via infinite scroll (see
 // routes/calendar/more/+server.ts).
-export const _PAGE_SIZE = 16;
+export const _PAGE_SIZE = CALENDAR_PAGE_SIZE;
 
 export const load: PageServerLoad = async () => {
 	// No offset param: the daemon auto-anchors to today's date within the

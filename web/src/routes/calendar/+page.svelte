@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
+	import { CALENDAR_PAGE_SIZE } from '$lib/calendarConfig';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from '$lib/toast';
 	import type { ActionData, PageData } from './$types';
@@ -16,12 +17,6 @@
 	// year's schedule yet), keep trying a few more years before giving up,
 	// rather than either looping forever or stopping after one empty year.
 	const MAX_EMPTY_YEAR_HOPS = 5;
-
-	// Matches the daemon's own default (src/api.ts), used only to decide how
-	// far back one "load earlier" step reaches within the same year — the
-	// exact number doesn't need to match the server's page size precisely,
-	// it just controls how many months one click reveals.
-	const _PAGE_SIZE_HINT = 16;
 
 	// Seeded once from the SSR page load, then grown client-side via
 	// scroll-triggered "load more" (forward) and a manual "load earlier
@@ -101,7 +96,7 @@
 		try {
 			let { year, offset } = backward;
 			for (let hop = 0; hop <= MAX_EMPTY_YEAR_HOPS; hop++) {
-				const requestOffset = offset > 0 ? Math.max(0, offset - _PAGE_SIZE_HINT) : undefined;
+				const requestOffset = offset > 0 ? Math.max(0, offset - CALENDAR_PAGE_SIZE) : undefined;
 				const requestYear = offset > 0 ? year : year - 1;
 				const page = await fetchPage({ year: requestYear, offset: requestOffset });
 				if (page.items.length > 0) {
@@ -157,6 +152,18 @@
 		return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 	}
 
+	// The heading pins to a single SSR-loaded year, but scrolling can carry
+	// the visible content across year boundaries — the whole point of this
+	// feature. Derive the displayed year (or range) from what's actually
+	// loaded rather than the static initial value.
+	const yearRangeLabel = $derived.by((): string => {
+		const dated = items.filter((entry) => entry.firstAirDate);
+		if (dated.length === 0) return String(data.year);
+		const firstYear = Number(dated[0].firstAirDate!.slice(0, 4));
+		const lastYear = Number(dated[dated.length - 1].firstAirDate!.slice(0, 4));
+		return firstYear === lastYear ? String(firstYear) : `${firstYear}–${lastYear}`;
+	});
+
 	const groups = $derived.by((): MonthGroup[] => {
 		const result: MonthGroup[] = [];
 		for (const item of items) {
@@ -207,7 +214,7 @@
 		<p class="text-primary font-mono text-xs font-semibold tracking-[0.2em] uppercase">
 			Release Calendar
 		</p>
-		<h1 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">TV — {data.year}</h1>
+		<h1 class="mt-2 text-2xl font-semibold tracking-[-0.03em]">TV — {yearRangeLabel}</h1>
 		<p class="text-muted-foreground mt-1 text-sm">
 			New series premiering this year, from TMDB. Already-tracked shows are marked instead of
 			offering Add.

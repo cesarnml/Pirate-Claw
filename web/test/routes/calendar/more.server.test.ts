@@ -66,6 +66,20 @@ describe('GET /calendar/more', () => {
 		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16');
 	});
 
+	it('treats a non-numeric offset as omitted rather than defaulting it to 0', async () => {
+		// A garbage offset (e.g. a tampered request) should behave like no
+		// offset was supplied at all, not silently collapse to 0 — otherwise
+		// it would defeat the daemon's auto-anchor-to-today behavior.
+		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		apiRequestMock.mockResolvedValueOnce(
+			jsonResponse(200, { year: thisYear, items: [], total: 0, offset: 0 })
+		);
+
+		await GET(requestEvent('http://localhost/calendar/more?year=2020&offset=abc'));
+
+		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16');
+	});
+
 	it('clamps a requested limit above the page size', async () => {
 		const { GET } = await import('../../../src/routes/calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(
