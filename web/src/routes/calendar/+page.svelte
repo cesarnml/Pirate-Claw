@@ -42,7 +42,32 @@
 	let chunks = $state<Chunk[]>([
 		{ year: data.year, offset: data.offset, total: data.total, items: data.items }
 	]);
-	const items = $derived(chunks.flatMap((chunk) => chunk.items));
+	// Deduplicated by tmdbId, and this is load-bearing rather than hygiene:
+	// the rendered `{#each ... (item.tmdbId)}` below is keyed, and Svelte
+	// throws a fatal each_key_duplicate on a repeated key — which kills the
+	// entire component render, blanking the page (nav included) after an
+	// otherwise-successful fetch. The daemon dedupes its own TMDB paging
+	// (see src/tmdb/calendar.ts), but two *chunks* can still legitimately
+	// overlap: a dropped-and-refetched chunk boundary, or a year whose
+	// underlying TMDB result set shifted between requests. Guarding here
+	// means a duplicate degrades to "shown once" instead of "page dies".
+	const items = $derived.by((): CalendarTvItem[] => {
+		const seen = new Set<number>();
+		const result: CalendarTvItem[] = [];
+		for (const chunk of chunks) {
+			for (const item of chunk.items) {
+				if (seen.has(item.tmdbId)) {
+					console.warn(
+						`[calendar] dropped duplicate tmdbId ${item.tmdbId} (${item.name}) — would have crashed the keyed each`
+					);
+					continue;
+				}
+				seen.add(item.tmdbId);
+				result.push(item);
+			}
+		}
+		return result;
+	});
 
 	let loadingForward = $state(false);
 	let loadingBackward = $state(false);
@@ -176,7 +201,7 @@
 		return () => observer.disconnect();
 	});
 
-	type MonthGroup = { label: string; items: CalendarTvItem[] };
+	type MonthGroup = { key: string; label: string; items: CalendarTvItem[] };
 
 	function monthLabel(dateIso: string | null): string {
 		if (!dateIso) return 'Date unknown';
@@ -218,7 +243,12 @@
 			if (last && last.label === label) {
 				last.items.push(item);
 			} else {
-				result.push({ label, items: [item] });
+				// Keyed on the first item's id, not the month label: labels are
+				// only unique while items stay globally date-ordered, and a
+				// repeated key in the keyed `{#each groups}` below is fatal to
+				// the render (see the dedupe note on `items`). An id-based key
+				// can't collide regardless of ordering.
+				result.push({ key: `${label}:${item.tmdbId}`, label, items: [item] });
 			}
 		}
 		return result;
@@ -302,7 +332,7 @@
 			{/if}
 		</div>
 
-		{#each groups as group (group.label)}
+		{#each groups as group (group.key)}
 			<div class="space-y-3">
 				<h2 class="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
 					{group.label}

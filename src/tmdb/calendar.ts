@@ -112,9 +112,23 @@ export async function getTvCalendar(
   // Sorted by air date, not popularity — this is a calendar, not a popularity
   // chart. Undated results (shouldn't normally happen, TMDB's date-range
   // discover query implies a date) sort last rather than being dropped.
+  //
+  // Deduplicated by TMDB id first, and this is load-bearing, not hygiene:
+  // PAGES_PER_YEAR fetches two `discover/tv` pages sorted by popularity, and
+  // popularity shifts between those two requests — so an item sitting near
+  // the page-1/page-2 boundary can come back on both. The web UI renders a
+  // *keyed* `{#each ... (item.tmdbId)}`, and Svelte throws a fatal
+  // each_key_duplicate on a repeated key, which kills the whole component
+  // render: the page fetches fine, then blanks out. Observed live with
+  // "Cape Fear" (id 277439) appearing twice in the 2026 calendar.
+  const seenIds = new Set<number>();
   const named = results.filter(
-    (result): result is TmdbDiscoverTvResult & { name: string } =>
-      Boolean(result.name),
+    (result): result is TmdbDiscoverTvResult & { name: string } => {
+      if (!result.name) return false;
+      if (seenIds.has(result.id)) return false;
+      seenIds.add(result.id);
+      return true;
+    },
   );
   named.sort((left, right) =>
     (left.first_air_date || UNDATED_SORT_KEY).localeCompare(

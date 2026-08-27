@@ -175,6 +175,33 @@ describe('calendar page — client-side pagination', () => {
 		await waitFor(() => expect(screen.getByText(/nothing further found/i)).toBeInTheDocument());
 	});
 
+	it('renders a duplicate tmdbId once instead of crashing the keyed each', async () => {
+		// Regression, and the actual cause of the long-standing "page loads
+		// then goes blank" report: a repeated key in a keyed {#each} is a
+		// fatal Svelte error that takes down the whole component render. The
+		// daemon dedupes its own TMDB paging, but overlapping chunks must not
+		// be able to reintroduce the failure client-side.
+		fetchMock.mockReturnValueOnce(
+			jsonResponse(200, {
+				year: 2026,
+				items: [
+					item({ tmdbId: 1, name: 'January Show', firstAirDate: '2026-01-10' }),
+					item({ tmdbId: 999, name: 'Cape Fear', firstAirDate: '2026-06-04' })
+				],
+				total: 2,
+				offset: 1
+			})
+		);
+
+		render(Page, { data: baseData });
+		FakeIntersectionObserver.instances[0].trigger();
+
+		await waitFor(() => expect(screen.getByText('Cape Fear')).toBeInTheDocument());
+		// The initial chunk already held tmdbId 1; the incoming chunk repeats
+		// it. It must appear exactly once, and the page must still be alive.
+		expect(screen.getAllByText('January Show')).toHaveLength(1);
+	});
+
 	it('drops the oldest loaded page once the window is full, instead of accumulating every page forever', async () => {
 		// Regression: an unbounded accumulation of loaded pages was confirmed
 		// live to reach 100+ full cards (poster + overview each) within a

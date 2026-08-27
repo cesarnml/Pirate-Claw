@@ -79,6 +79,33 @@ describe('getTvCalendar', () => {
     ]);
   });
 
+  it('drops results repeated across TMDB pages, keeping one entry per id', async () => {
+    // Regression, observed live: PAGES_PER_YEAR fetches two popularity-sorted
+    // `discover/tv` pages, and popularity shifts between those two requests,
+    // so a boundary item comes back on both ("Cape Fear", id 277439, in the
+    // real 2026 calendar). The web UI renders a keyed `{#each ... (tmdbId)}`
+    // and Svelte throws a fatal each_key_duplicate on a repeated key, which
+    // blanks the whole page after an otherwise-successful fetch. `total` must
+    // count the deduped set too, or pagination overruns the real end.
+    const { client } = fakeClient([
+      [
+        result({ id: 10, name: 'Cape Fear', first_air_date: '2026-06-04' }),
+        result({ id: 11, name: 'Other', first_air_date: '2026-06-05' }),
+      ],
+      [result({ id: 10, name: 'Cape Fear', first_air_date: '2026-06-04' })],
+    ]);
+
+    const page = await getTvCalendar(
+      { client, cache: new CalendarCache() },
+      2026,
+      [],
+      { offset: 0, limit: 20 },
+    );
+
+    expect(page.items.map((item) => item.tmdbId)).toEqual([10, 11]);
+    expect(page.total).toBe(2);
+  });
+
   it('sorts items with no air date last', async () => {
     const { client } = fakeClient([
       [
