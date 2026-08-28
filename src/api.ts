@@ -1484,6 +1484,140 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/plex/auth/manual-token' && request.method === 'POST') {
+      // Fallback for when the in-browser/background renewal path (PIN sign-in,
+      // silent JWT-based renewal) is unavailable or misbehaving: lets an
+      // operator paste a token straight from Plex Web instead. Unlike the
+      // OAuth paths, this token is used exactly as given — it must already be
+      // a legacy PMS-compatible token, not a JWT (see the /api/v2/devices
+      // exchange in refreshPlexAuthToken/exchangePlexPinForAuthToken for why
+      // that distinction matters). It's validated against the live PMS before
+      // being saved, so a bad paste never silently overwrites a working token.
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+      const etagError = checkEtag(request, activeConfig);
+      if (etagError) return etagError;
+
+      let token: string;
+      try {
+        const body: unknown = await request.json();
+        const parsed = expectRecord(body, 'request body');
+        // requireNonEmptyString only rejects an empty string, so a
+        // whitespace-only value ("   ") passes it and only becomes empty
+        // after trim() — check again post-trim rather than trusting that.
+        token = requireNonEmptyString(
+          parsed.token,
+          'request body token',
+        ).trim();
+        if (!token) {
+          return Response.json(
+            { error: 'Plex token is required.' },
+            { status: 400 },
+          );
+        }
+      } catch (error) {
+        return Response.json(
+          {
+            error:
+              error instanceof Error ? error.message : 'invalid request body',
+          },
+          { status: 400 },
+        );
+      }
+
+      if ((token.match(/\./g) ?? []).length >= 2) {
+        return Response.json(
+          {
+            error:
+              'That looks like a JWT (three dot-separated segments), not a Plex Media Server token. ' +
+              'Copy the short ~20-character X-Plex-Token from Plex Web (Get Info → View XML), not an ' +
+              'app.plex.tv browser session token.',
+          },
+          { status: 400 },
+        );
+      }
+
+      const plexUrl = activeConfig.plex?.url ?? 'http://localhost:32400';
+      console.log(`[plex-auth] manual token probe starting against ${plexUrl}`);
+      try {
+        const probeResponse = await loggedFetch(
+          `${plexUrl.replace(/\/$/, '')}/identity`,
+          { headers: { 'X-Plex-Token': token, Accept: 'application/json' } },
+          { source: 'plex', label: 'manual-token-probe' },
+        );
+
+        if (probeResponse.status === 401) {
+          console.warn(
+            `[plex-auth] manual token probe rejected (401) by ${plexUrl}`,
+          );
+          return Response.json(
+            {
+              error: `Plex Media Server rejected this token (401) at ${plexUrl}. Confirm the token and the Plex Media Server URL are both correct.`,
+            },
+            { status: 400 },
+          );
+        }
+        if (!probeResponse.ok) {
+          console.warn(
+            `[plex-auth] manual token probe failed status=${probeResponse.status} url=${plexUrl}`,
+          );
+          return Response.json(
+            {
+              error: `Could not validate the token against ${plexUrl} (HTTP ${probeResponse.status}).`,
+            },
+            { status: 400 },
+          );
+        }
+        console.log(
+          `[plex-auth] manual token probe succeeded against ${plexUrl}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[plex-auth] manual token probe could not reach ${plexUrl}: ${message}`,
+        );
+        return Response.json(
+          {
+            error: `Could not reach Plex Media Server at ${plexUrl} to validate the token: ${message}`,
+          },
+          { status: 400 },
+        );
+      }
+
+      try {
+        activeConfig = await writePlexTokenToConfig({
+          authToken: token,
+          configPath,
+          currentConfig: activeConfig,
+          configHolder,
+        });
+
+        if (database) {
+          // completeRenewal (not clearRenewalState) — this token was just
+          // verified against the live PMS, i.e. exactly what a successful
+          // OAuth renewal represents, so it should update
+          // last_authenticated_at the same way and not leave it stale.
+          new PlexAuthStore(database).completeRenewal(token, {
+            authenticatedAt: new Date().toISOString(),
+          });
+        }
+
+        console.log('[plex-auth] manual token saved and marked connected');
+        const redacted = redactConfig(activeConfig);
+        return Response.json(redacted, {
+          headers: { ETag: buildConfigEtag(redacted) },
+        });
+      } catch (error) {
+        if (error instanceof ConfigError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
+        if (error instanceof ConfigWriteError) {
+          return jsonConfigWriteFailure();
+        }
+        return json500();
+      }
+    }
+
     if (path === '/api/plex/auth/cancel' && request.method === 'POST') {
       const authError = checkWriteAuth(request, activeConfig);
       if (authError) return authError;

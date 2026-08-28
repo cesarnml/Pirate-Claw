@@ -49,9 +49,27 @@ describe('Plex credential renewal', () => {
         });
       }
       if (url.endsWith('/api/v2/auth/token')) {
-        return new Response(JSON.stringify({ auth_token: 'new-plex-token' }), {
-          status: 200,
-        });
+        return new Response(
+          JSON.stringify({ auth_token: 'jwt.shaped.token' }),
+          {
+            status: 200,
+          },
+        );
+      }
+      if (url.endsWith('/api/v2/devices')) {
+        // /api/v2/auth/token only returns a plex.tv-scoped JWT, which PMS
+        // rejects — renewal must exchange it via /api/v2/devices for this
+        // device's legacy (PMS-compatible) token before it's usable.
+        return new Response(
+          JSON.stringify([
+            {
+              clientIdentifier: identity.clientIdentifier,
+              token: 'new-plex-token',
+            },
+            { clientIdentifier: 'some-other-device', token: 'not-this-one' },
+          ]),
+          { status: 200 },
+        );
       }
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch);
@@ -65,7 +83,7 @@ describe('Plex credential renewal', () => {
 
     await manager.startupRenew();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(configHolder.current.plex?.token).toBe('new-plex-token');
     expect(store.getSnapshot('2026-04-22T09:05:00.000Z')).toMatchObject({
       state: 'connected',

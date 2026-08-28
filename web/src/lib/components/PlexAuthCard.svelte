@@ -12,6 +12,7 @@
 		saveAction?: string;
 		disconnectAction?: string;
 		cancelAction?: string;
+		manualTokenAction?: string;
 		skipHref?: string | null;
 	};
 
@@ -26,8 +27,11 @@
 		saveAction = '?/savePlex',
 		disconnectAction = '?/disconnectPlex',
 		cancelAction = '?/cancelPlexSignIn',
+		manualTokenAction = '?/manualPlexToken',
 		skipHref = null
 	}: Props = $props();
+
+	let manualTokenOpen = $state(false);
 
 	const stateCopy = {
 		not_connected: {
@@ -199,6 +203,55 @@
 				Operator-managed PMS URL. Keep this pointed at the server Pirate Claw should read.
 			</p>
 		</form>
+
+		<div class="border-border/60 space-y-3 border-t pt-4">
+			<button
+				type="button"
+				class="text-muted-foreground hover:text-foreground text-sm underline-offset-4 hover:underline"
+				onclick={() => (manualTokenOpen = !manualTokenOpen)}
+			>
+				{manualTokenOpen ? 'Hide' : 'Have a token already?'} Paste a Plex token manually
+			</button>
+			{#if manualTokenOpen}
+				<form method="POST" action={manualTokenAction} class="space-y-2">
+					<input type="hidden" name="ifMatch" value={currentEtag ?? ''} />
+					<label class="text-sm font-medium" for="plex-manual-token">Plex token</label>
+					<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+						<input
+							id="plex-manual-token"
+							name="plexToken"
+							type="text"
+							autocomplete="off"
+							spellcheck="false"
+							placeholder="20-character X-Plex-Token"
+							class="border-input bg-background/70 ring-offset-background placeholder:text-muted-foreground/70 h-11 w-full rounded-xl border px-4 py-2 font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+						/>
+						<button
+							type="submit"
+							class="border-border bg-background/55 hover:bg-muted/80 inline-flex h-11 items-center rounded-xl border px-4 text-sm transition-colors disabled:opacity-50"
+							disabled={!canWrite || !currentEtag}
+						>
+							Verify &amp; save
+						</button>
+					</div>
+					<p class="text-muted-foreground text-xs">
+						Fallback for when the in-browser sign-in or background renewal is unavailable. Checked
+						against the Plex Media Server above before saving — a legacy ~20-character
+						<code>X-Plex-Token</code>
+						only (not a JWT from an app.plex.tv browser session). See
+						<a
+							href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="underline underline-offset-4"
+						>
+							finding your Plex token
+						</a>
+						for how to get one from Plex Web.
+					</p>
+				</form>
+			{/if}
+		</div>
 	{/if}
 
 	<div class="flex flex-wrap items-center gap-3">

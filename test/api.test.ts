@@ -194,6 +194,24 @@ async function createInstallRoot(omit: string[] = []): Promise<string> {
   return installRoot;
 }
 
+/**
+ * Mocks a single GET /api/v2/devices call, as used by exchangePlexPinForAuthToken /
+ * refreshPlexAuthToken to trade a plex.tv-scoped JWT for this device's legacy
+ * (PMS-compatible) token. Echoes back whatever X-Plex-Client-Identifier the
+ * caller sent, so it matches regardless of which identity a given test's
+ * daemon instance generated, and doesn't need that value known up front.
+ */
+function mockPlexDevicesExchange(legacyToken = 'plex-legacy-token') {
+  return (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const clientIdentifier = headers['X-Plex-Client-Identifier'] ?? '';
+    return new Response(
+      JSON.stringify([{ clientIdentifier, token: legacyToken }]),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+}
+
 function mockHealthyTransmission() {
   return spyOn(globalThis, 'fetch').mockImplementation((async (
     _input: RequestInfo | URL,
@@ -1610,7 +1628,8 @@ describe('Plex browser auth flow', () => {
         new Response(JSON.stringify({ authToken: 'plex-jwt-token' }), {
           status: 200,
         }),
-      );
+      )
+      .mockImplementationOnce(mockPlexDevicesExchange());
 
     try {
       const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
@@ -1682,7 +1701,7 @@ describe('Plex browser auth flow', () => {
       };
       expect(disk.plex).toEqual({
         url: 'http://localhost:32400',
-        token: 'plex-jwt-token',
+        token: 'plex-legacy-token',
         refreshIntervalMinutes: 30,
       });
       deps.database?.close();
@@ -1800,7 +1819,8 @@ describe('Plex browser auth flow', () => {
         new Response(JSON.stringify({ authToken: 'plex-jwt-token' }), {
           status: 200,
         }),
-      );
+      )
+      .mockImplementationOnce(mockPlexDevicesExchange());
 
     try {
       const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-plex-auth-'));
@@ -1938,6 +1958,7 @@ describe('Plex browser auth flow', () => {
           status: 200,
         }),
       )
+      .mockImplementationOnce(mockPlexDevicesExchange())
       .mockResolvedValueOnce(
         new Response(
           '<?xml version="1.0" encoding="UTF-8"?><MediaContainer size="0" version="1.43.2.1005-abc123"></MediaContainer>',
@@ -3950,7 +3971,8 @@ describe('POST /api/daemon/restart', () => {
         new Response(JSON.stringify({ authToken: 'plex-jwt-token' }), {
           status: 200,
         }),
-      );
+      )
+      .mockImplementationOnce(mockPlexDevicesExchange());
     const killSpy = spyOn(process, 'kill').mockImplementation(
       () => undefined as never,
     );
@@ -4069,7 +4091,7 @@ describe('POST /api/daemon/restart', () => {
 
       const identityBeforeRestart = new PlexAuthStore(database).getIdentity();
       expect(identityBeforeRestart?.clientIdentifier).toBeTruthy();
-      expect(identityBeforeRestart?.refreshToken).toBe('plex-jwt-token');
+      expect(identityBeforeRestart?.refreshToken).toBe('plex-legacy-token');
 
       const restart = await handler(
         new Request('http://localhost/api/daemon/restart', {
@@ -4092,7 +4114,7 @@ describe('POST /api/daemon/restart', () => {
       const reloadedConfig = await loadConfig(configPath);
       expect(reloadedConfig.runtime.runIntervalMinutes).toBe(45);
       expect(reloadedConfig.runtime.reconcileIntervalSeconds).toBe(2);
-      expect(reloadedConfig.plex?.token).toBe('plex-jwt-token');
+      expect(reloadedConfig.plex?.token).toBe('plex-legacy-token');
 
       const reopenedDatabase = openDatabase(databasePath);
       try {
@@ -4104,7 +4126,7 @@ describe('POST /api/daemon/restart', () => {
           identityBeforeRestart?.clientIdentifier,
         );
         expect(identityAfterRestart?.keyId).toBe(identityBeforeRestart?.keyId);
-        expect(identityAfterRestart?.refreshToken).toBe('plex-jwt-token');
+        expect(identityAfterRestart?.refreshToken).toBe('plex-legacy-token');
       } finally {
         reopenedDatabase.close();
       }

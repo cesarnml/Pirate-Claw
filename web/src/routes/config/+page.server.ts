@@ -229,6 +229,61 @@ export const actions: Actions = {
 		}
 	},
 
+	manualPlexToken: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken)
+			return fail(403, { plexMessage: 'Config writes are disabled.', plexMessageTone: 'error' });
+
+		const formData = await request.formData();
+		const ifMatch = String(formData.get('ifMatch') ?? '').trim();
+		const token = String(formData.get('plexToken') ?? '').trim();
+		if (!ifMatch) {
+			return fail(400, {
+				plexMessage: 'Missing config revision. Reload and try again.',
+				plexMessageTone: 'error'
+			});
+		}
+		if (!token) {
+			return fail(400, { plexMessage: 'Plex token is required.', plexMessageTone: 'error' });
+		}
+
+		try {
+			const response = await apiRequest('/api/plex/auth/manual-token', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`,
+					'if-match': ifMatch
+				},
+				body: JSON.stringify({ token })
+			});
+
+			if (!response.ok) {
+				let plexMessage = `Token check failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) plexMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, {
+					plexMessage,
+					plexMessageTone: 'error',
+					plexEtag: response.headers.get('etag')
+				});
+			}
+
+			return {
+				plexMessage: 'Plex token verified and saved.',
+				plexMessageTone: 'success',
+				plexEtag: response.headers.get('etag')
+			};
+		} catch (error) {
+			console.error('[config] manualPlexToken failed:', error);
+			return fail(500, { plexMessage: 'Could not save the Plex token.', plexMessageTone: 'error' });
+		}
+	},
+
 	cancelPlexSignIn: async () => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken)

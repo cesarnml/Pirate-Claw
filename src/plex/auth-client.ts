@@ -89,6 +89,29 @@ export class PlexRateLimitError extends Error {
 
 const DEFAULT_RATE_LIMIT_RETRY_MS = 5_000;
 
+function parseRetryAfterMs(response: Response): number {
+  const retryAfterRaw = response.headers.get('retry-after');
+  const retryAfterSec = retryAfterRaw !== null ? Number(retryAfterRaw) : NaN;
+  return Number.isFinite(retryAfterSec) && retryAfterSec > 0
+    ? retryAfterSec * 1000
+    : DEFAULT_RATE_LIMIT_RETRY_MS;
+}
+
+/** Shared by every clients.plex.tv call site that can 429 (pin exchange,
+ * nonce, token refresh, devices exchange) so each honors Plex's Retry-After
+ * the same way — throws PlexRateLimitError if `response` is a 429, otherwise
+ * does nothing. */
+function throwIfRateLimited(response: Response, label: string): void {
+  if (response.status !== 429) {
+    return;
+  }
+  const retryAfterMs = parseRetryAfterMs(response);
+  console.warn(
+    `[plex-auth] ${label} rate limited (429) retryAfterMs=${retryAfterMs}`,
+  );
+  throw new PlexRateLimitError(retryAfterMs);
+}
+
 // Plex redirects to forwardUrl before the PIN is committed server-side, so a
 // single check can legitimately see it not-yet-linked. That's expected and
 // signaled by returning null — the caller's own poll loop (the browser
@@ -114,18 +137,7 @@ export async function exchangePlexPinForAuthToken(input: {
     { source: 'plex-auth', label: 'pin-exchange' },
   );
 
-  if (response.status === 429) {
-    const retryAfterRaw = response.headers.get('retry-after');
-    const retryAfterSec = retryAfterRaw !== null ? Number(retryAfterRaw) : NaN;
-    const retryAfterMs =
-      Number.isFinite(retryAfterSec) && retryAfterSec > 0
-        ? retryAfterSec * 1000
-        : DEFAULT_RATE_LIMIT_RETRY_MS;
-    console.warn(
-      `[plex-auth] pin exchange rate limited (429) pinId=${input.pinId} retryAfterMs=${retryAfterMs}`,
-    );
-    throw new PlexRateLimitError(retryAfterMs);
-  }
+  throwIfRateLimited(response, `pin exchange pinId=${input.pinId}`);
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
@@ -140,7 +152,31 @@ export async function exchangePlexPinForAuthToken(input: {
   const body = (await response.json()) as { authToken?: string | null };
   if (body.authToken) {
     console.log(`[plex-auth] pin exchange linked pinId=${input.pinId}`);
-    return body.authToken;
+    // The PIN was created with strong: true (see startPlexPinAuth), which
+    // asks Plex for a JWT-capable link — the token this endpoint hands back
+    // is plex.tv-scoped, same as /api/v2/auth/token's, and needs the same
+    // /api/v2/devices exchange before it's usable as a PMS X-Plex-Token
+    // (see refreshPlexAuthToken()).
+    try {
+      return await exchangeJwtForLegacyToken({
+        clientIdentifier: input.clientIdentifier,
+        jwtToken: body.authToken,
+      });
+    } catch (error) {
+      if (error instanceof PlexRateLimitError) {
+        throw error;
+      }
+      // Plex just linked the PIN, but /api/v2/devices may not have
+      // propagated this device yet — treat like the not-yet-linked case
+      // (return null, let the callback page's own retry/timeout handle it)
+      // rather than a hard failure, so a brief propagation lag doesn't force
+      // the user to restart the whole sign-in.
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[plex-auth] pin linked but devices exchange not ready yet pinId=${input.pinId}: ${message}`,
+      );
+      return null;
+    }
   }
 
   console.log(`[plex-auth] pin exchange still pending pinId=${input.pinId}`);
@@ -152,6 +188,10 @@ export async function refreshPlexAuthToken(input: {
   identity: PlexAuthIdentity;
   now?: Date;
 }): Promise<string> {
+  console.log(
+    `[plex-auth] silent renewal starting clientIdentifier=${input.clientIdentifier}`,
+  );
+
   const nonceResponse = await loggedFetch(
     `${PLEX_CLIENTS_API}/api/v2/auth/nonce`,
     {
@@ -164,7 +204,12 @@ export async function refreshPlexAuthToken(input: {
     { source: 'plex-auth', label: 'nonce' },
   );
 
+  throwIfRateLimited(nonceResponse, 'nonce request');
+
   if (!nonceResponse.ok) {
+    console.error(
+      `[plex-auth] nonce request failed status=${nonceResponse.status}`,
+    );
     throw new Error(
       `Plex nonce request failed with HTTP ${nonceResponse.status}.`,
     );
@@ -172,8 +217,10 @@ export async function refreshPlexAuthToken(input: {
 
   const nonceBody = (await nonceResponse.json()) as { nonce?: string };
   if (!nonceBody.nonce) {
+    console.error('[plex-auth] nonce response missing nonce field');
     throw new Error('Plex nonce response did not include a nonce.');
   }
+  console.log('[plex-auth] nonce received, signing device JWT');
 
   const deviceJwt = createDeviceJwt({
     clientIdentifier: input.clientIdentifier,
@@ -197,7 +244,12 @@ export async function refreshPlexAuthToken(input: {
     { source: 'plex-auth', label: 'token-refresh' },
   );
 
+  throwIfRateLimited(tokenResponse, 'token refresh');
+
   if (!tokenResponse.ok) {
+    console.error(
+      `[plex-auth] token refresh failed status=${tokenResponse.status}`,
+    );
     throw new Error(
       `Plex token refresh failed with HTTP ${tokenResponse.status}.`,
     );
@@ -207,12 +259,92 @@ export async function refreshPlexAuthToken(input: {
     auth_token?: string;
     authToken?: string;
   };
-  const authToken = tokenBody.auth_token ?? tokenBody.authToken;
-  if (!authToken) {
+  const jwtToken = tokenBody.auth_token ?? tokenBody.authToken;
+  if (!jwtToken) {
+    console.error('[plex-auth] token refresh response missing auth_token');
     throw new Error('Plex token refresh response did not include auth_token.');
   }
+  console.log(
+    '[plex-auth] plex.tv-scoped token minted, exchanging for legacy PMS token',
+  );
 
-  return authToken;
+  // /api/v2/auth/token returns a JWT scoped to plex.tv's own API — Plex
+  // Media Server does not understand JWTs and rejects them with 401
+  // (confirmed against the live PMS on this box: a fresh JWT 401s at
+  // /library/sections every time, no matter how recently it was minted).
+  // /api/v2/devices, called with that same JWT, lists every device linked
+  // to the account and gives each one back a legacy ~20-char token that PMS
+  // does accept — that's the token this function must actually return.
+  const legacyToken = await exchangeJwtForLegacyToken({
+    clientIdentifier: input.clientIdentifier,
+    jwtToken,
+  });
+  console.log('[plex-auth] silent renewal complete, legacy token obtained');
+  return legacyToken;
+}
+
+/**
+ * Exchanges a plex.tv-scoped JWT for this device's legacy PMS-compatible
+ * token via GET /api/v2/devices. See the comment in refreshPlexAuthToken()
+ * for why this step exists.
+ */
+async function exchangeJwtForLegacyToken(input: {
+  clientIdentifier: string;
+  jwtToken: string;
+}): Promise<string> {
+  console.log(
+    `[plex-auth] devices exchange starting clientIdentifier=${input.clientIdentifier}`,
+  );
+
+  const response = await loggedFetch(
+    `${PLEX_CLIENTS_API}/api/v2/devices`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'X-Plex-Client-Identifier': input.clientIdentifier,
+        'X-Plex-Token': input.jwtToken,
+      },
+    },
+    { source: 'plex-auth', label: 'devices-exchange' },
+  );
+
+  throwIfRateLimited(response, 'devices exchange');
+
+  if (!response.ok) {
+    console.error(
+      `[plex-auth] devices exchange failed status=${response.status}`,
+    );
+    throw new Error(`Plex devices lookup failed with HTTP ${response.status}.`);
+  }
+
+  const body = (await response.json()) as unknown;
+  const devices = Array.isArray(body) ? body : [body];
+  console.log(
+    `[plex-auth] devices exchange returned ${devices.length} device(s)`,
+  );
+
+  const mine = devices.find(
+    (d): d is { clientIdentifier?: string; token?: string } =>
+      typeof d === 'object' &&
+      d !== null &&
+      (d as { clientIdentifier?: unknown }).clientIdentifier ===
+        input.clientIdentifier,
+  );
+
+  if (!mine?.token) {
+    console.error(
+      `[plex-auth] no device in the response matched clientIdentifier=${input.clientIdentifier}`,
+    );
+    throw new Error(
+      'Plex devices response did not include a legacy token for this device.',
+    );
+  }
+
+  console.log(
+    `[plex-auth] devices exchange matched this device, legacy token length=${mine.token.length}`,
+  );
+  return mine.token;
 }
 
 function buildPlexHostedAuthUrl(input: {
