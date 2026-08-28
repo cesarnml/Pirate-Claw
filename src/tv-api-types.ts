@@ -46,5 +46,11 @@ export type ShowBreakdown = {
   plexStatus: PlexStatus;
   watchCount: number | null;
   lastWatchedAt: string | null;
+  /** When the Plex cache last checked this show, even if that check is now
+   * stale (past refreshIntervalMinutes) and therefore not trusted for
+   * `plexStatus` above — surfaced so "unknown" can be told apart from "never
+   * checked" vs. "checked a while ago, due for another look." Undefined
+   * when no cache row exists at all for this show yet. */
+  plexCheckedAt?: string | null;
   tmdb?: TmdbTvShowMeta;
 };

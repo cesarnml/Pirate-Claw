@@ -89,6 +89,46 @@ export const actions: Actions = {
 		}
 	},
 
+	refreshPlex: async ({ params }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, {
+				plexRefreshMessage: 'Plex refresh is unavailable without API write access.'
+			});
+		}
+
+		try {
+			const response = await apiRequest(
+				`/api/shows/${encodeURIComponent(params.slug)}/plex/refresh`,
+				{
+					method: 'POST',
+					headers: {
+						authorization: `Bearer ${writeToken}`
+					}
+				}
+			);
+
+			if (!response.ok) {
+				let plexRefreshMessage = `Refresh failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) plexRefreshMessage = body.error;
+				} catch {
+					// Keep fallback message.
+				}
+				return fail(response.status, { plexRefreshMessage });
+			}
+
+			return {
+				plexRefreshSuccess: true,
+				plexRefreshMessage: 'Plex status refreshed.'
+			};
+		} catch (error) {
+			console.error('[shows detail] refreshPlex failed:', error);
+			return fail(500, { plexRefreshMessage: 'Could not refresh Plex status.' });
+		}
+	},
+
 	removeShow: async ({ params }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {

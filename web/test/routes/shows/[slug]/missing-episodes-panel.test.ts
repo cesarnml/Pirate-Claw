@@ -89,7 +89,7 @@ describe('MissingEpisodesPanel', () => {
 		expect(screen.getByText('Queued via eztv')).toBeInTheDocument();
 	});
 
-	it('shows the Plex-unreachable banner and hides "Find on EZTV" when Plex could not be confirmed', () => {
+	it('shows the not-yet-confirmed banner (not an "unreachable" claim) and hides "Find on EZTV" when Plex could not be confirmed', () => {
 		render(Panel, {
 			slug: 'the-show',
 			episodeStatus: {
@@ -106,7 +106,8 @@ describe('MissingEpisodesPanel', () => {
 			canWrite: true
 		});
 
-		expect(screen.getByText('Plex unreachable')).toBeInTheDocument();
+		expect(screen.getByText("Plex hasn't confirmed this show yet")).toBeInTheDocument();
+		expect(screen.queryByText('Plex unreachable')).not.toBeInTheDocument();
 		expect(screen.queryByText('Find on EZTV')).not.toBeInTheDocument();
 	});
 

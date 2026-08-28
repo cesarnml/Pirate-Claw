@@ -34,6 +34,8 @@ import { INSTALL_ROOT_DIRECTORIES } from '../src/install-bootstrap';
 import { setHttpLogDirForTest } from '../src/http-log';
 import type { CycleResult } from '../src/runtime-artifacts';
 import { PlexAuthStore } from '../src/plex/auth';
+import { PlexCache } from '../src/plex/cache';
+import { ensurePlexSchema } from '../src/plex/schema';
 import { TmdbCache } from '../src/tmdb/cache';
 import { ManualGrabsStore } from '../src/manual-grabs/store';
 import { CalendarCache } from '../src/tmdb/calendar';
@@ -1452,6 +1454,117 @@ describe('POST /api/shows/:slug/tmdb/refresh', () => {
     );
 
     expect(response.status).toBe(409);
+  });
+});
+
+describe('POST /api/shows/:slug/plex/refresh', () => {
+  it('refreshes the Plex cache live and returns the re-enriched show', async () => {
+    const db = new Database(':memory:');
+    try {
+      ensurePlexSchema(db);
+      const cache = new PlexCache(db);
+      const deps = createDeps({
+        listCandidateStates: () =>
+          [
+            tvCandidate({
+              identityKey: 'k1',
+              normalizedTitle: 'test show',
+              season: 1,
+              episode: 1,
+              resolution: '1080p',
+              codec: 'x265',
+            }),
+          ] as never,
+      });
+      deps.config.runtime.apiWriteToken = 'write-token';
+      deps.plexShows = {
+        cache,
+        client: {
+          searchShows: async () => [
+            { ratingKey: '1', title: 'Test Show', type: 'show', viewCount: 3 },
+          ],
+          listAllTvShowsForMatching: async () => [],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      };
+
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/shows/test%20show/plex/refresh', {
+          method: 'POST',
+          headers: { authorization: 'Bearer write-token' },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        ok: boolean;
+        show: { plexStatus: string; watchCount: number | null; plexCheckedAt?: string };
+      };
+      expect(body.ok).toBe(true);
+      expect(body.show.plexStatus).toBe('in_library');
+      expect(body.show.watchCount).toBe(3);
+      expect(body.show.plexCheckedAt).toBeDefined();
+      expect(cache.getTv('test show')).toMatchObject({ inLibrary: true });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects refresh requests without write auth', async () => {
+    const deps = createDeps();
+    deps.config.runtime.apiWriteToken = 'write-token';
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/shows/test%20show/plex/refresh', {
+        method: 'POST',
+      }),
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it('reports when Plex refresh support is not configured', async () => {
+    const deps = createDeps();
+    deps.config.runtime.apiWriteToken = 'write-token';
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/shows/test%20show/plex/refresh', {
+        method: 'POST',
+        headers: { authorization: 'Bearer write-token' },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+  });
+
+  it('reports show not found for an unknown slug', async () => {
+    const db = new Database(':memory:');
+    try {
+      ensurePlexSchema(db);
+      const cache = new PlexCache(db);
+      const deps = createDeps();
+      deps.config.runtime.apiWriteToken = 'write-token';
+      deps.plexShows = {
+        cache,
+        client: { searchShows: async () => [], listAllTvShowsForMatching: async () => [] } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      };
+
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/shows/nonexistent/plex/refresh', {
+          method: 'POST',
+          headers: { authorization: 'Bearer write-token' },
+        }),
+      );
+
+      expect(response.status).toBe(404);
+    } finally {
+      db.close();
+    }
   });
 });
 

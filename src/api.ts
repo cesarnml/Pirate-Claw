@@ -80,7 +80,10 @@ import {
 import type { PlexMovieEnrichDeps } from './plex/movies';
 import { enrichMovieBreakdownsFromPlexCache } from './plex/movies';
 import type { PlexShowEnrichDeps } from './plex/shows';
-import { enrichShowBreakdownsFromPlexCache } from './plex/shows';
+import {
+  enrichShowBreakdownsFromPlexCache,
+  refreshPlexShowBreakdown,
+} from './plex/shows';
 import { PlexAuthStore } from './plex/auth';
 import {
   exchangePlexPinForAuthToken,
@@ -1349,6 +1352,47 @@ export function createApiFetch(
         }
 
         const refreshed = await refreshShowBreakdown(show, tmdbShows);
+        return Response.json({ ok: true, show: refreshed });
+      } catch {
+        return json500();
+      }
+    }
+
+    const showPlexRefreshMatch = path.match(
+      /^\/api\/shows\/([^/]+)\/plex\/refresh$/,
+    );
+    if (showPlexRefreshMatch) {
+      if (request.method !== 'POST') {
+        return jsonMethodNotAllowed('POST');
+      }
+
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!plexShows) {
+        return Response.json(
+          { error: 'plex refresh is not configured' },
+          { status: 409 },
+        );
+      }
+
+      try {
+        const slug = decodeURIComponent(showPlexRefreshMatch[1]);
+        const candidates = repository.listCandidateStates(
+          API_CANDIDATE_LIST_LIMIT,
+        );
+        const base = buildShowBreakdowns(candidates, trackedNormalizedTitles());
+        const show =
+          base.find(
+            (entry) =>
+              entry.normalizedTitle.toLowerCase() === slug.toLowerCase(),
+          ) ?? null;
+
+        if (!show) {
+          return Response.json({ error: 'show not found' }, { status: 404 });
+        }
+
+        const refreshed = await refreshPlexShowBreakdown(show, plexShows);
         return Response.json({ ok: true, show: refreshed });
       } catch {
         return json500();

@@ -288,6 +288,7 @@ export async function runCli(argv: string[]): Promise<number> {
 
       try {
         const repository = createRepository(database);
+        const trackedShows = new TrackedShowsStore(database);
         const configHolder = { current: config };
         const plexMovies = plexMovieEnrichDeps(database, configHolder, log);
         const plexShows = plexShowEnrichDeps(database, configHolder, log);
@@ -295,6 +296,7 @@ export async function runCli(argv: string[]): Promise<number> {
           repository,
           plexMovies,
           plexShows,
+          trackedShows,
           log,
         });
       } finally {
@@ -570,6 +572,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   repository,
                   plexMovies,
                   plexShows,
+                  trackedShows,
                   log,
                 });
               }

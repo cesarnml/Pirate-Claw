@@ -213,6 +213,41 @@ describe('/shows', () => {
 		expect(screen.getByText('2 seasons')).toBeInTheDocument();
 	});
 
+	it('shows a "Plex synced" relative-time caption when the cache has checked this show, even if plexStatus is unknown', () => {
+		const staleCheckedShow: ShowBreakdown = {
+			...exampleShow,
+			normalizedTitle: 'Recently Checked Show',
+			plexStatus: 'unknown',
+			plexCheckedAt: new Date(Date.now() - 5 * 60_000).toISOString()
+		};
+
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [staleCheckedShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		expect(screen.getByText('Plex synced 5m ago')).toBeInTheDocument();
+	});
+
+	it('omits the "Plex synced" caption when the show has never been checked', () => {
+		const neverCheckedShow: ShowBreakdown = { ...exampleShow, plexCheckedAt: undefined };
+
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [neverCheckedShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		expect(screen.queryByText(/Plex synced/)).not.toBeInTheDocument();
+	});
+
 	it('"Needs Content" filters down to tracked shows with zero known episodes', async () => {
 		const emptyShow: ShowBreakdown = {
 			normalizedTitle: 'House of the Dragon',

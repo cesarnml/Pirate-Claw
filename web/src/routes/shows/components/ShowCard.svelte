@@ -5,6 +5,7 @@
 	import {
 		formatLastWatched,
 		formatRating,
+		formatRelativeTime,
 		safeHttpsUrl,
 		showDisplayTitle,
 		showHeroBackdropSrc,
@@ -27,6 +28,11 @@
 	// lower bound instead of the true total.
 	const seasonCount = $derived(props.show.tmdb?.numberOfSeasons ?? props.show.seasons.length);
 	const latestIntake = $derived(mostRecentQueuedAt(props.show));
+	// Distinguishes "never checked" from "checked a while ago, due for
+	// another look" — a plexStatus of 'unknown' alone can't tell those apart,
+	// and without this a fresh (correctly cautious) 'unknown' looks identical
+	// to a stale one the background sweep just hasn't gotten to yet.
+	const plexSyncedLabel = $derived(formatRelativeTime(props.show.plexCheckedAt));
 
 	// Note: latestIntake is derived from show.seasons, which reflects every
 	// episode this show has *evidence* for — RSS-matched, manually grabbed,
@@ -94,9 +100,14 @@
 							<span>{formatLastWatched(props.show.lastWatchedAt)}</span>
 						</div>
 					</div>
-					{#if props.show.plexStatus !== 'unknown'}
-						<StatusChip status={props.show.plexStatus} class="shrink-0" />
-					{/if}
+					<div class="flex shrink-0 flex-col items-end gap-1">
+						{#if props.show.plexStatus !== 'unknown'}
+							<StatusChip status={props.show.plexStatus} />
+						{/if}
+						{#if plexSyncedLabel}
+							<span class="text-muted-foreground text-[11px]">Plex synced {plexSyncedLabel}</span>
+						{/if}
+					</div>
 				</div>
 
 				{#if props.show.tmdb?.overview}

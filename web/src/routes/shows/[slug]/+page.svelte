@@ -7,7 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { showHeroBackdropSrc } from '$lib/helpers';
+	import { formatRelativeTime, showHeroBackdropSrc } from '$lib/helpers';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
@@ -92,6 +92,12 @@
 							Refresh TMDB
 						</Button>
 					</form>
+					<form method="POST" action="?/refreshPlex" use:enhance={enhanceRefresh}>
+						<Button type="submit" variant="outline" class="rounded-full px-4">
+							<RefreshCcwIcon class="mr-2 h-4 w-4" />
+							Refresh Plex
+						</Button>
+					</form>
 					<form method="POST" action="?/removeShow" use:enhance={enhanceRefresh}>
 						<Button type="submit" variant="outline" class="rounded-full px-4">
 							<Trash2Icon class="mr-2 h-4 w-4" />
@@ -106,6 +112,13 @@
 			<Alert class={form.refreshSuccess ? 'border-primary/20 bg-primary/8' : ''}>
 				<AlertTitle>{form.refreshSuccess ? 'TMDB refreshed' : 'Refresh failed'}</AlertTitle>
 				<AlertDescription>{form.refreshMessage}</AlertDescription>
+			</Alert>
+		{/if}
+
+		{#if form?.plexRefreshMessage}
+			<Alert class={form.plexRefreshSuccess ? 'border-primary/20 bg-primary/8' : ''}>
+				<AlertTitle>{form.plexRefreshSuccess ? 'Plex refreshed' : 'Refresh failed'}</AlertTitle>
+				<AlertDescription>{form.plexRefreshMessage}</AlertDescription>
 			</Alert>
 		{/if}
 
@@ -192,6 +205,11 @@
 							<div class="mt-3">
 								<StatusChip status={data.show.plexStatus} />
 							</div>
+							{#if formatRelativeTime(data.show.plexCheckedAt)}
+								<p class="text-muted-foreground mt-2 text-xs">
+									Synced {formatRelativeTime(data.show.plexCheckedAt)}
+								</p>
+							{/if}
 						</div>
 						<div class="rounded-3xl border border-white/10 bg-slate-950/46 px-4 py-4">
 							<p

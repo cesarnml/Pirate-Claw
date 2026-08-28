@@ -21,11 +21,16 @@ export function enrichShowBreakdownsFromPlexCache(
 ): ShowBreakdown[] {
   return shows.map((show) => {
     const row = deps.cache.getTv(show.normalizedTitle);
-    if (
-      !row ||
-      isPlexShowCacheExpired(row.cachedAt, deps.refreshIntervalMinutes)
-    ) {
+    if (!row) {
       return show;
+    }
+
+    // plexCheckedAt is surfaced even when the row is stale (below) — the
+    // whole point is telling "never checked" apart from "checked a while
+    // ago, due for another look," which the UI can't do from plexStatus
+    // alone once it's reset to 'unknown'.
+    if (isPlexShowCacheExpired(row.cachedAt, deps.refreshIntervalMinutes)) {
+      return { ...show, plexCheckedAt: row.cachedAt };
     }
 
     return {
@@ -33,8 +38,21 @@ export function enrichShowBreakdownsFromPlexCache(
       plexStatus: row.inLibrary ? 'in_library' : 'missing',
       watchCount: row.watchCount ?? 0,
       lastWatchedAt: row.lastWatchedAt,
+      plexCheckedAt: row.cachedAt,
     };
   });
+}
+
+/** Single-show equivalent of refreshShowLibraryCache, for an operator-
+ * triggered "Refresh Plex" action (mirrors refreshShowBreakdown in
+ * tmdb/tv-enrichment.ts) — refreshes the cache for just this show, live,
+ * then returns the show re-enriched from that fresh cache row. */
+export async function refreshPlexShowBreakdown(
+  show: ShowBreakdown,
+  deps: PlexShowEnrichDeps,
+): Promise<ShowBreakdown> {
+  await refreshShowLibraryCache([show], deps);
+  return enrichShowBreakdownsFromPlexCache([show], deps)[0]!;
 }
 
 export async function refreshShowLibraryCache(

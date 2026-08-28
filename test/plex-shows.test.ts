@@ -7,10 +7,13 @@ import { PlexCache } from '../src/plex/cache';
 import {
   enrichShowBreakdownsFromPlexCache,
   isPlexShowCacheExpired,
+  refreshPlexShowBreakdown,
   refreshShowLibraryCache,
 } from '../src/plex/shows';
 import { ensurePlexSchema } from '../src/plex/schema';
+import { ensureSchema } from '../src/repository';
 import type { Repository } from '../src/repository';
+import { TrackedShowsStore } from '../src/tracked-shows/store';
 
 const RUN_INTERVAL_MINUTES_DEFAULT = 15;
 const RECONCILE_INTERVAL_SECONDS_DEFAULT = 30;
@@ -192,8 +195,161 @@ describe('plex show enrichment', () => {
       plexStatus: 'unknown',
       watchCount: null,
       lastWatchedAt: null,
+      // Even though the row is too stale to trust for plexStatus, the
+      // checked-at timestamp itself is still surfaced — that's what tells a
+      // stale 'unknown' apart from a never-checked one in the UI.
+      plexCheckedAt: '2026-04-01T00:00:00.000Z',
     });
     expect(isPlexShowCacheExpired('2026-04-01T00:00:00.000Z', 30)).toBe(true);
+  });
+
+  it('surfaces plexCheckedAt on a fresh (non-expired) cache row too', () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+    const cachedAt = new Date().toISOString();
+    cache.upsertTv({
+      normalizedTitle: 'Fresh Show',
+      plexRatingKey: '1',
+      inLibrary: true,
+      watchCount: 2,
+      lastWatchedAt: null,
+      cachedAt,
+    });
+
+    const shows = enrichShowBreakdownsFromPlexCache(
+      [
+        {
+          normalizedTitle: 'Fresh Show',
+          seasons: [],
+          plexStatus: 'unknown',
+          watchCount: null,
+          lastWatchedAt: null,
+        },
+      ],
+      { cache, refreshIntervalMinutes: 30 },
+    );
+
+    expect(shows[0].plexCheckedAt).toBe(cachedAt);
+  });
+
+  it('leaves plexCheckedAt unset when no cache row exists at all', () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+
+    const shows = enrichShowBreakdownsFromPlexCache(
+      [
+        {
+          normalizedTitle: 'Never Checked Show',
+          seasons: [],
+          plexStatus: 'unknown',
+          watchCount: null,
+          lastWatchedAt: null,
+        },
+      ],
+      { cache, refreshIntervalMinutes: 30 },
+    );
+
+    expect(shows[0].plexCheckedAt).toBeUndefined();
+  });
+
+  it('refreshPlexShowBreakdown refreshes the cache live and returns the re-enriched show', async () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+
+    const refreshed = await refreshPlexShowBreakdown(
+      {
+        normalizedTitle: 'On Demand Show',
+        seasons: [],
+        plexStatus: 'unknown',
+        watchCount: null,
+        lastWatchedAt: null,
+      },
+      {
+        cache,
+        client: {
+          searchShows: async () => [
+            { ratingKey: '99', title: 'On Demand Show', type: 'show', viewCount: 4 },
+          ],
+          listAllTvShowsForMatching: async () => [],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      },
+    );
+
+    expect(refreshed).toMatchObject({ plexStatus: 'in_library', watchCount: 4 });
+    expect(refreshed.plexCheckedAt).toBeDefined();
+    expect(cache.getTv('On Demand Show')).toMatchObject({ inLibrary: true });
+  });
+
+  it('background refresh sweeps a tracked show with zero candidates when trackedShows is provided', async () => {
+    const db = new Database(':memory:');
+    ensureSchema(db);
+    const cache = new PlexCache(db);
+    const trackedShows = new TrackedShowsStore(db);
+    trackedShows.createIfMissing({
+      normalizedTitle: 'Zero Candidate Show',
+      displayTitle: 'Zero Candidate Show',
+      resolutions: [],
+      codecs: [],
+    });
+
+    await runPlexBackgroundRefresh({
+      repository: { ...stubRepository(), listCandidateStates: () => [] },
+      plexShows: {
+        cache,
+        client: {
+          searchShows: async () => [
+            {
+              ratingKey: '1',
+              title: 'Zero Candidate Show',
+              type: 'show',
+              viewCount: 0,
+            },
+          ],
+          listAllTvShowsForMatching: async () => [],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      },
+      trackedShows,
+      log: () => {},
+    });
+
+    expect(cache.getTv('Zero Candidate Show')).toMatchObject({ inLibrary: true });
+  });
+
+  it('background refresh without trackedShows still only sweeps candidate-derived shows (regression guard)', async () => {
+    const db = new Database(':memory:');
+    ensureSchema(db);
+    const cache = new PlexCache(db);
+    const trackedShows = new TrackedShowsStore(db);
+    trackedShows.createIfMissing({
+      normalizedTitle: 'Untracked-Sweep Show',
+      displayTitle: 'Untracked-Sweep Show',
+      resolutions: [],
+      codecs: [],
+    });
+
+    await runPlexBackgroundRefresh({
+      repository: { ...stubRepository(), listCandidateStates: () => [] },
+      plexShows: {
+        cache,
+        client: {
+          searchShows: async () => [],
+          listAllTvShowsForMatching: async () => [],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      },
+      // trackedShows intentionally omitted
+      log: () => {},
+    });
+
+    expect(cache.getTv('Untracked-Sweep Show')).toBeUndefined();
   });
 
   it('surfaces Plex cache fields in GET /api/shows', async () => {

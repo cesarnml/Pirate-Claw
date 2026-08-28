@@ -112,6 +112,42 @@ describe('shows detail page server', () => {
 		});
 	});
 
+	describe('refreshPlex', () => {
+		it('calls the refresh endpoint and returns success on happy path', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../../src/routes/shows/[slug]/+page.server');
+			apiRequestMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+			const result = await actions.refreshPlex({ params: { slug: 'the show' } } as never);
+
+			expect((result as { plexRefreshSuccess?: boolean }).plexRefreshSuccess).toBe(true);
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/shows/the%20show/plex/refresh',
+				expect.objectContaining({
+					method: 'POST',
+					headers: { authorization: 'Bearer write-token' }
+				})
+			);
+		});
+
+		it('returns fail(403) when write access is unavailable', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: {}
+			}));
+			const { actions } = await import('../../../../src/routes/shows/[slug]/+page.server');
+
+			const result = await actions.refreshPlex({ params: { slug: 'the show' } } as never);
+
+			expect((result as { status?: number }).status).toBe(403);
+			expect(
+				(result as { data?: { plexRefreshMessage?: string } }).data?.plexRefreshMessage
+			).toContain('write access');
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('removeShow', () => {
 		it('calls DELETE on the show endpoint and returns success on happy path', async () => {
 			vi.doMock('$env/dynamic/private', () => ({

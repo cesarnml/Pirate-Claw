@@ -1,6 +1,7 @@
 import { buildMovieBreakdowns } from '../api';
 import { buildShowBreakdowns } from '../api';
 import type { Repository } from '../repository';
+import type { TrackedShowsStore } from '../tracked-shows/store';
 import type { PlexMovieEnrichDeps } from './movies';
 import { refreshMovieLibraryCache } from './movies';
 import type { PlexShowEnrichDeps } from './shows';
@@ -13,9 +14,14 @@ export async function runPlexBackgroundRefresh(input: {
   repository: Repository;
   plexMovies?: PlexMovieEnrichDeps;
   plexShows?: PlexShowEnrichDeps;
+  /** Without this, a show tracked with zero candidate_state rows (e.g. added
+   * after its season already aired) is invisible to this sweep forever —
+   * buildShowBreakdowns only seeds tracked-but-empty stubs when given a
+   * tracked-title list. See api.ts's own callers for the same wiring. */
+  trackedShows?: TrackedShowsStore;
   log: (message: string) => void;
 }): Promise<void> {
-  const { repository, plexMovies, plexShows, log } = input;
+  const { repository, plexMovies, plexShows, trackedShows, log } = input;
   if (!plexMovies && !plexShows) {
     return;
   }
@@ -32,7 +38,10 @@ export async function runPlexBackgroundRefresh(input: {
   }
   if (plexShows) {
     try {
-      const shows = buildShowBreakdowns(candidates);
+      const trackedNormalizedTitles = trackedShows
+        ?.list()
+        .map((show) => show.normalizedTitle);
+      const shows = buildShowBreakdowns(candidates, trackedNormalizedTitles);
       await refreshShowLibraryCache(shows, plexShows);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -180,6 +180,28 @@ export function formatLastWatched(value: string | null): string {
 	return `Last watched ${date.toLocaleDateString()}`;
 }
 
+/**
+ * Human-readable relative time ("5m ago", "3h ago", "2d ago"), falling back
+ * to an absolute date past a week. Used for "last synced with Plex"-style
+ * timestamps where staleness itself is the useful signal — telling "just
+ * checked" apart from "checked a while ago, due for another look" isn't
+ * possible with an absolute date alone at a glance.
+ */
+export function formatRelativeTime(value: string | null | undefined): string | null {
+	if (!value) return null;
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return null;
+	const diffMs = Date.now() - date.getTime();
+	const minutes = Math.floor(diffMs / 60_000);
+	if (minutes < 1) return 'just now';
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.floor(hours / 24);
+	if (days < 7) return `${days}d ago`;
+	return date.toLocaleDateString();
+}
+
 /** Returns true when a Plex status badge should be shown (library hit or confirmed miss). */
 export function hasPlexChip(plexStatus: string | undefined | null): boolean {
 	return plexStatus === 'in_library' || plexStatus === 'missing';

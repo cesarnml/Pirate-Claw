@@ -84,6 +84,9 @@ export type ShowBreakdown = {
 	plexStatus: PlexStatus;
 	watchCount: number | null;
 	lastWatchedAt: string | null;
+	/** When the Plex cache last checked this show, even if stale — undefined
+	 * when no cache row exists yet. See src/tv-api-types.ts on the server. */
+	plexCheckedAt?: string | null;
 	tmdb?: TmdbTvShowMeta;
 };
 

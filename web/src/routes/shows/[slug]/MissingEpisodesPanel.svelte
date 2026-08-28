@@ -179,10 +179,12 @@
 	{:else}
 		{#if !props.episodeStatus.plexReachable}
 			<Alert>
-				<AlertTitle>Plex unreachable</AlertTitle>
+				<AlertTitle>Plex hasn't confirmed this show yet</AlertTitle>
 				<AlertDescription>
-					Showing TMDB's episode list only — every episode reads "unknown" until Plex can be reached
-					again, rather than risk telling you to re-grab something you already have.
+					Showing TMDB's episode list only — every episode reads "unknown" until a live check or the
+					next scheduled sync confirms this show one way or another, rather than risk telling you to
+					re-grab something you already have. Plex itself may be perfectly reachable; this just
+					means neither a live search nor the cache could confirm this specific show yet.
 				</AlertDescription>
 			</Alert>
 		{/if}
