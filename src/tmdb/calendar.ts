@@ -1,4 +1,6 @@
 import type { TmdbDiscoverTvResult, TmdbHttpClient } from './client';
+import { languageDisplayName } from './languages';
+import { tvGenreNames } from './tv-genres';
 
 export type CalendarTvItem = {
   tmdbId: number;
@@ -8,6 +10,13 @@ export type CalendarTvItem = {
   posterUrl: string | null;
   popularity: number;
   alreadyTracked: boolean;
+  /** Undefined when TMDB didn't report a language for this result. */
+  language: string | undefined;
+  /** Rounded to 1 decimal (TMDB's own vote_average precision); undefined
+   * when TMDB reported no votes. */
+  rating: number | undefined;
+  /** Up to 2 genre names, most-relevant first per TMDB's own genre_ids order. */
+  genres: string[];
 };
 
 export type CalendarDeps = {
@@ -178,6 +187,13 @@ export async function getTvCalendar(
         : null,
       popularity: result.popularity ?? 0,
       alreadyTracked: trackedSet.has(result.name.trim().toLowerCase()),
+      language: languageDisplayName(result.original_language),
+      // vote_average of exactly 0 means "no votes yet" in practice, not a
+      // genuine 0.0 rating — treat it the same as missing.
+      rating: result.vote_average
+        ? Math.round(result.vote_average * 10) / 10
+        : undefined,
+      genres: tvGenreNames(result.genre_ids).slice(0, 2),
     })),
   };
 }

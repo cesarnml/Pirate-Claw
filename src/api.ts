@@ -10,7 +10,7 @@ import {
   verifyLogin,
 } from './auth-state';
 import { renameSync, writeFileSync } from 'node:fs';
-import { loggedFetch } from './http-log';
+import { loggedFetch, logClientError } from './http-log';
 import { getInstallHealth } from './install-health';
 import {
   fetchSessionInfo,
@@ -518,6 +518,48 @@ export function createApiFetch(
       } catch {
         return json500();
       }
+    }
+
+    if (path === '/api/client-error' && request.method === 'POST') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      if (!isRecord(body)) {
+        return Response.json(
+          { error: 'request body must be an object' },
+          { status: 400 },
+        );
+      }
+      if (typeof body.message !== 'string' || body.message.length === 0) {
+        return Response.json(
+          { error: 'request body message must be a non-empty string' },
+          { status: 400 },
+        );
+      }
+
+      // This endpoint takes an arbitrary browser-reported error, and the
+      // browser-facing hop (web/src/routes/api/client-error/+server.ts)
+      // requires no auth from the caller — so, unlike every other field in
+      // this codebase's HTTP log, these values are untrusted input, not
+      // something this process itself constructed. Truncate before they
+      // ever reach logClientError/rotateIfNeeded, which sizes the rotating
+      // log file by checking *before* a write, not after: an unbounded
+      // stack trace could blow well past the intended 10MB rotation cap in
+      // a single POST.
+      logClientError({
+        message: body.message.slice(0, 2_000),
+        stack: truncateClientErrorField(body.stack, 8_000),
+        url: truncateClientErrorField(body.url, 2_000),
+        label: truncateClientErrorField(body.label, 200),
+      });
+      return Response.json({ ok: true });
     }
 
     if (path === '/api/setup/transmission/status' && request.method === 'GET') {
@@ -2365,6 +2407,18 @@ function writeConfigAtomically(
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+/** Bounds an optional untrusted string field before it reaches the http.log
+ * writer — see the /api/client-error handler for why this matters there. */
+function truncateClientErrorField(
+  input: unknown,
+  maxLength: number,
+): string | undefined {
+  if (typeof input !== 'string' || input.length === 0) {
+    return undefined;
+  }
+  return input.length > maxLength ? input.slice(0, maxLength) : input;
 }
 
 /**

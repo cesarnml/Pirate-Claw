@@ -51,6 +51,8 @@ export type TmdbDiscoverTvResult = {
   poster_path?: string | null;
   popularity?: number;
   vote_average?: number;
+  original_language?: string;
+  genre_ids?: number[];
 };
 
 export type TmdbTvSeasonDetails = {

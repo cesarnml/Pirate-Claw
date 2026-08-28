@@ -1,8 +1,14 @@
 import { Database } from 'bun:sqlite';
-import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp as fsMkdtemp,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { describe, expect, it, spyOn } from 'bun:test';
+import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 
 import {
   type ApiFetchDeps,
@@ -25,6 +31,7 @@ import {
   openDatabase,
 } from '../src/repository';
 import { INSTALL_ROOT_DIRECTORIES } from '../src/install-bootstrap';
+import { setHttpLogDirForTest } from '../src/http-log';
 import type { CycleResult } from '../src/runtime-artifacts';
 import { PlexAuthStore } from '../src/plex/auth';
 import { TmdbCache } from '../src/tmdb/cache';
@@ -32,6 +39,26 @@ import { CalendarCache } from '../src/tmdb/calendar';
 import type { TmdbDiscoverTvResult, TmdbHttpClient } from '../src/tmdb/client';
 import { movieMatchKey, tvMatchKey } from '../src/tmdb/keys';
 import { ensureTmdbSchema } from '../src/tmdb/schema';
+
+// Every mkdtemp() call in this file funnels through here so a single
+// afterEach can remove every temp dir a test created, regardless of which
+// `it()` block or helper (createInstallRoot, etc.) created it. Left
+// uncleaned, these leaked onto the NAS's 2.3GB root partition and, over
+// repeated `bun test` runs, filled it to 100% — discovered live 2026-08-28.
+const createdTempDirs: string[] = [];
+
+async function mkdtemp(prefix: string): Promise<string> {
+  const dir = await fsMkdtemp(prefix);
+  createdTempDirs.push(dir);
+  return dir;
+}
+
+afterEach(async () => {
+  while (createdTempDirs.length > 0) {
+    const dir = createdTempDirs.pop();
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
 
 const RUN_INTERVAL_MINUTES_DEFAULT = 15;
 const RECONCILE_INTERVAL_SECONDS_DEFAULT = 30;
@@ -1130,6 +1157,9 @@ describe('GET /api/calendar/tv', () => {
         posterUrl: null,
         popularity: 50,
         alreadyTracked: false,
+        language: undefined,
+        rating: undefined,
+        genres: [],
       },
     ]);
   });
@@ -2220,8 +2250,9 @@ describe('PUT /api/config', () => {
   it('returns a deployment-specific error when the config file is not writable', async () => {
     const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
     delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    let directory: string | undefined;
     try {
-      const directory = await mkdtemp(
+      directory = await mkdtemp(
         join(tmpdir(), 'pirate-claw-api-config-readonly-'),
       );
       const configPath = join(directory, 'pirate-claw.config.json');
@@ -2268,6 +2299,17 @@ describe('PUT /api/config', () => {
         process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
       } else {
         delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+      // The chmod(directory, 0o555) above makes `directory` non-writable,
+      // which blocks unlinking its own contents (POSIX: deleting an entry
+      // needs write permission on the parent dir, not the file) — the
+      // module-level afterEach's `rm(dir, { recursive: true, force: true })`
+      // would silently fail on this specific dir otherwise. Restore write
+      // permission before the general cleanup runs. Discovered live: ~38
+      // dirs from this exact test had accumulated on the NAS's root
+      // partition, contributing to it filling to 100% (see 2026-08-28).
+      if (directory) {
+        await chmod(directory, 0o755).catch(() => {});
       }
     }
   });
@@ -4399,5 +4441,172 @@ describe('build Plex defaults', () => {
       watchCount: null,
       lastWatchedAt: null,
     });
+  });
+});
+
+describe('POST /api/client-error', () => {
+  afterEach(() => {
+    setHttpLogDirForTest(undefined);
+  });
+
+  it('records a browser-reported render crash into the http log', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-client-error-'));
+    setHttpLogDirForTest(dir);
+
+    const deps = {
+      ...createDeps(),
+      config: {
+        ...createDeps().config,
+        runtime: {
+          ...createDeps().config.runtime,
+          apiWriteToken: 'write-token',
+        },
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/client-error', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer write-token',
+        },
+        body: JSON.stringify({
+          message: 'each_key_duplicate',
+          url: 'http://localhost:8888/calendar',
+          label: 'calendar',
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+
+    const logged = await Bun.file(join(dir, 'http.log')).text();
+    const entry = JSON.parse(logged.trim());
+    expect(entry).toMatchObject({
+      source: 'client',
+      label: 'calendar',
+      error: 'each_key_duplicate',
+      url: 'http://localhost:8888/calendar',
+    });
+  });
+
+  it('rejects without a valid bearer token', async () => {
+    const deps = {
+      ...createDeps(),
+      config: {
+        ...createDeps().config,
+        runtime: {
+          ...createDeps().config.runtime,
+          apiWriteToken: 'write-token',
+        },
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/client-error', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'boom' }),
+      }),
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 400 when message is missing', async () => {
+    const deps = {
+      ...createDeps(),
+      config: {
+        ...createDeps().config,
+        runtime: {
+          ...createDeps().config.runtime,
+          apiWriteToken: 'write-token',
+        },
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/client-error', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer write-token',
+        },
+        body: JSON.stringify({}),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns a message describing the actual problem, not a leftover config-file error', async () => {
+    const deps = {
+      ...createDeps(),
+      config: {
+        ...createDeps().config,
+        runtime: {
+          ...createDeps().config.runtime,
+          apiWriteToken: 'write-token',
+        },
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/client-error', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer write-token',
+        },
+        body: JSON.stringify({}),
+      }),
+    );
+
+    const body = await response.json();
+    expect(body.error).not.toContain('Config file');
+    expect(body.error).toContain('message');
+  });
+
+  it('truncates an oversized untrusted field before it reaches the log, bounding a single POST', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pirate-claw-client-error-cap-'));
+    setHttpLogDirForTest(dir);
+
+    const deps = {
+      ...createDeps(),
+      config: {
+        ...createDeps().config,
+        runtime: {
+          ...createDeps().config.runtime,
+          apiWriteToken: 'write-token',
+        },
+      },
+    };
+    const handler = createApiFetch(deps);
+    const response = await handler(
+      new Request('http://localhost/api/client-error', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer write-token',
+        },
+        // An unauthenticated browser can send an arbitrarily large stack —
+        // this must not be allowed to blow past the log's 10MB rotation
+        // cap in a single write (rotateIfNeeded() sizes the file *before*
+        // the write, not after).
+        body: JSON.stringify({
+          message: 'x'.repeat(5_000),
+          stack: 'y'.repeat(50_000),
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+
+    const logged = await Bun.file(join(dir, 'http.log')).text();
+    const entry = JSON.parse(logged.trim());
+    expect(entry.error.length).toBe(2_000);
+    expect(entry.stack.length).toBe(8_000);
   });
 });

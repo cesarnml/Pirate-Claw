@@ -14,7 +14,11 @@ export type HttpLogSource =
   | 'plex'
   | 'plex-auth'
   | 'transmission'
-  | 'feed';
+  | 'feed'
+  // Not an outbound API call — a browser-side rendering crash reported via
+  // POST /api/client-error (see logClientError below). Shares this log/
+  // rotation rather than a separate file so there's one place to look.
+  | 'client';
 
 export type HttpLogMeta = {
   source: HttpLogSource;
@@ -25,11 +29,12 @@ type HttpLogEntry = {
   ts: string;
   source: HttpLogSource;
   label?: string;
-  method: string;
-  url: string;
+  method?: string;
+  url?: string;
   status?: number;
   error?: string;
-  durationMs: number;
+  stack?: string;
+  durationMs?: number;
 };
 
 const MAX_LOG_BYTES = 10 * 1024 * 1024; // 10MB
@@ -104,6 +109,30 @@ export async function loggedFetch(
     });
     throw error;
   }
+}
+
+/**
+ * Records a browser-side rendering crash (reported by the web app's
+ * POST /api/client-error, itself fed by a <svelte:boundary> onerror
+ * handler) into the same rotating log as the 3rd-party API calls above.
+ * Client-side JS exceptions are otherwise invisible here entirely — they
+ * only ever reach the browser's own devtools console, which nobody is
+ * watching at the moment a page blanks out for a live user.
+ */
+export function logClientError(entry: {
+  message: string;
+  stack?: string;
+  url?: string;
+  label?: string;
+}): void {
+  writeHttpLogEntry({
+    ts: new Date().toISOString(),
+    source: 'client',
+    label: entry.label,
+    url: entry.url,
+    error: entry.message,
+    stack: entry.stack,
+  });
 }
 
 function writeHttpLogEntry(entry: HttpLogEntry): void {

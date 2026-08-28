@@ -1059,6 +1059,16 @@ describe('pirate-claw plex-refresh', () => {
 });
 
 describe('pirate-claw run > database path resolution', () => {
+  afterEach(async () => {
+    while (tempDirs.length > 0) {
+      const directory = tempDirs.pop();
+
+      if (directory) {
+        await Bun.$`rm -rf ${directory}`;
+      }
+    }
+  });
+
   it('resolves the database under runtime.installRoot from the config file alone, without the env var', async () => {
     // Regression: resolveDatabasePath()/installRootDataDir() must not fall
     // back to reading process.env.PIRATE_CLAW_INSTALL_ROOT when the CLI has

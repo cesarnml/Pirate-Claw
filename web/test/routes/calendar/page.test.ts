@@ -43,6 +43,9 @@ function item(overrides: Partial<CalendarTvItem> = {}): CalendarTvItem {
 		posterUrl: null,
 		popularity: 1,
 		alreadyTracked: false,
+		language: undefined,
+		rating: undefined,
+		genres: [],
 		...overrides
 	};
 }
@@ -85,6 +88,31 @@ describe('calendar page — client-side pagination', () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+	});
+
+	it('renders language, rating, and genre pills when present, omitting the row when all are absent', async () => {
+		render(Page, {
+			data: {
+				...baseData,
+				items: [
+					item({
+						tmdbId: 1,
+						name: 'Thai Show',
+						language: 'Thai',
+						rating: 8.3,
+						genres: ['Drama', 'Mystery']
+					}),
+					item({ tmdbId: 2, name: 'No Metadata Show' })
+				],
+				total: 2
+			}
+		});
+
+		expect(screen.getByText('Thai')).toBeInTheDocument();
+		expect(screen.getByText('★ 8.3')).toBeInTheDocument();
+		expect(screen.getByText('Drama')).toBeInTheDocument();
+		expect(screen.getByText('Mystery')).toBeInTheDocument();
+		expect(screen.getByText('No Metadata Show')).toBeInTheDocument();
 	});
 
 	it('rolls forward into the next year when the current year is exhausted', async () => {

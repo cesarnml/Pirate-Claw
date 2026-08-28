@@ -52,6 +52,9 @@ describe('getTvCalendar', () => {
           first_air_date: '2026-06-01',
           overview: 'A show.',
           poster_path: '/poster.jpg',
+          original_language: 'en',
+          vote_average: 8.25,
+          genre_ids: [18, 9648, 10765],
         }),
         result({
           id: 2,
@@ -79,6 +82,9 @@ describe('getTvCalendar', () => {
         posterUrl: null,
         popularity: 10,
         alreadyTracked: false,
+        language: undefined,
+        rating: undefined,
+        genres: [],
       },
       {
         tmdbId: 1,
@@ -88,8 +94,62 @@ describe('getTvCalendar', () => {
         posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
         popularity: 90,
         alreadyTracked: false,
+        language: 'English',
+        rating: 8.3,
+        genres: ['Drama', 'Mystery'],
       },
     ]);
+  });
+
+  it('caps genres at 2, drops unknown genre_ids, and treats a 0.0 rating as unrated', async () => {
+    const { client } = fakeClient([
+      [
+        result({
+          id: 1,
+          name: 'Thai Drama',
+          first_air_date: '2026-03-01',
+          original_language: 'th',
+          vote_average: 0,
+          genre_ids: [18, 9648, 10765, 999999],
+        }),
+      ],
+    ]);
+
+    const page = await getTvCalendar(
+      { client, cache: new CalendarCache() },
+      2026,
+      [],
+      { offset: 0, limit: 20 },
+    );
+
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        language: 'Thai',
+        rating: undefined,
+        genres: ['Drama', 'Mystery'],
+      }),
+    ]);
+  });
+
+  it('omits language when TMDB reports no original_language', async () => {
+    const { client } = fakeClient([
+      [
+        result({
+          id: 1,
+          name: 'No Language Show',
+          first_air_date: '2026-03-01',
+        }),
+      ],
+    ]);
+
+    const page = await getTvCalendar(
+      { client, cache: new CalendarCache() },
+      2026,
+      [],
+      { offset: 0, limit: 20 },
+    );
+
+    expect(page.items[0]).toMatchObject({ language: undefined });
   });
 
   it('queries every month of the year so no month can be crowded out', async () => {

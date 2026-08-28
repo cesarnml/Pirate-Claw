@@ -12,6 +12,9 @@ export type CalendarTvItem = {
 	posterUrl: string | null;
 	popularity: number;
 	alreadyTracked: boolean;
+	language: string | undefined;
+	rating: number | undefined;
+	genres: string[];
 };
 
 // A full year's worth of calendar items (poster URLs + overviews for ~40

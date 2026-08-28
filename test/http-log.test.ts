@@ -1,9 +1,29 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'bun:test';
 
-import { loggedFetch, redactUrl, setHttpLogDirForTest } from '../src/http-log';
+import {
+  loggedFetch,
+  logClientError,
+  redactUrl,
+  setHttpLogDirForTest,
+} from '../src/http-log';
+
+// The rotation tests below write real ~10MB files to prove rotation actually
+// triggers at the byte threshold — left uncleaned, repeated `bun test` runs
+// on this NAS silently filled the 2.3GB root partition to 100% (each run
+// leaked ~2 fresh 10MB+ dirs under the system tmpdir; discovered live after
+// ~13 accumulated runs). Every dir mkdtemp() hands out is tracked here and
+// removed in the top-level afterEach below, regardless of which describe
+// block created it.
+const createdDirs: string[] = [];
 
 async function mkdtemp(): Promise<string> {
   const dir = join(
@@ -11,8 +31,16 @@ async function mkdtemp(): Promise<string> {
     `pirate-claw-http-log-${Date.now()}-${Math.random()}`,
   );
   mkdirSync(dir, { recursive: true });
+  createdDirs.push(dir);
   return dir;
 }
+
+afterEach(() => {
+  while (createdDirs.length > 0) {
+    const dir = createdDirs.pop();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function readActiveLog(dir: string): string[] {
   const path = join(dir, 'http.log');
@@ -139,5 +167,39 @@ describe('loggedFetch', () => {
 
     const backup = readFileSync(join(dir, 'http.log.1'), 'utf8');
     expect(backup).not.toContain('stale backup content');
+  });
+});
+
+describe('logClientError', () => {
+  afterEach(() => {
+    setHttpLogDirForTest(undefined);
+  });
+
+  it('records a client-side render crash into the same rotating log', async () => {
+    const dir = await mkdtemp();
+    setHttpLogDirForTest(dir);
+
+    logClientError({
+      message: 'each_key_duplicate',
+      stack: 'Error: ...',
+      url: 'http://100.108.117.42:8888/calendar',
+      label: 'calendar',
+    });
+
+    const lines = readActiveLog(dir);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({
+      source: 'client',
+      label: 'calendar',
+      error: 'each_key_duplicate',
+      stack: 'Error: ...',
+      url: 'http://100.108.117.42:8888/calendar',
+    });
+  });
+
+  it('is a no-op when no log dir has been configured', () => {
+    setHttpLogDirForTest(undefined);
+    // Should not throw even though nothing is configured.
+    expect(() => logClientError({ message: 'boom' })).not.toThrow();
   });
 });

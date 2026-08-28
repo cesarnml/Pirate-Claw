@@ -1,6 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { tmpdir } from 'node:os';
 
 import {
@@ -10,11 +16,21 @@ import {
   writeCycleArtifact,
 } from '../src/runtime-artifacts';
 
+const createdTempDirs: string[] = [];
+
 async function mkdtemp(): Promise<string> {
   const dir = join(tmpdir(), `pirate-claw-test-${Date.now()}-${Math.random()}`);
   mkdirSync(dir, { recursive: true });
+  createdTempDirs.push(dir);
   return dir;
 }
+
+afterEach(() => {
+  while (createdTempDirs.length > 0) {
+    const dir = createdTempDirs.pop();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 describe('runtime artifacts', () => {
   it('writes JSON and Markdown artifacts for a completed cycle', async () => {

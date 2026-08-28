@@ -254,6 +254,27 @@
 		return result;
 	});
 
+	// Contains a render crash in the card list to a fallback instead of
+	// blanking the whole page (nav included) — SvelteKit's +error.svelte
+	// boundary does NOT catch an exception thrown during Svelte's own
+	// render/reactivity (e.g. the each_key_duplicate this dedup logic
+	// exists to prevent); it's an uncaught JS exception that otherwise
+	// takes down everything around it. Reported to the daemon's rotating
+	// log so a live occurrence is diagnosable afterward instead of only
+	// visible in whichever browser's devtools happened to be open.
+	function handleRenderCrash(error: unknown): void {
+		const message = error instanceof Error ? error.message : String(error);
+		const stack = error instanceof Error ? error.stack : undefined;
+		console.error('[calendar] render crash contained by boundary:', error);
+		fetch('/api/client-error', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ message, stack, url: location.href, label: 'calendar' })
+		}).catch(() => {
+			// Best-effort — a failed error report must never itself throw.
+		});
+	}
+
 	const enhanceAddShow: SubmitFunction = ({ formData }) => {
 		const name = String(formData.get('name') ?? '');
 		pendingName = name;
@@ -332,64 +353,102 @@
 			{/if}
 		</div>
 
-		{#each groups as group (group.key)}
-			<div class="space-y-3">
-				<h2 class="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
-					{group.label}
-				</h2>
-				<ul class="grid list-none gap-5 md:grid-cols-2 xl:grid-cols-3">
-					{#each group.items as item (item.tmdbId)}
-						<li class="bg-card/75 flex flex-col gap-3 rounded-[24px] border border-white/10 p-4">
-							<div class="flex gap-4">
-								{#if item.posterUrl}
-									<img
-										src={item.posterUrl}
-										alt={`${item.name} poster`}
-										class="h-28 w-20 shrink-0 rounded-lg object-cover"
-										loading="lazy"
-									/>
-								{:else}
-									<div
-										class="bg-muted text-muted-foreground flex h-28 w-20 shrink-0 items-center justify-center rounded-lg text-xs"
-									>
-										No image
+		<svelte:boundary onerror={handleRenderCrash}>
+			{#each groups as group (group.key)}
+				<div class="space-y-3">
+					<h2 class="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
+						{group.label}
+					</h2>
+					<ul class="grid list-none gap-5 md:grid-cols-2 xl:grid-cols-3">
+						{#each group.items as item (item.tmdbId)}
+							<li class="bg-card/75 flex flex-col gap-3 rounded-[24px] border border-white/10 p-4">
+								<div class="flex gap-4">
+									{#if item.posterUrl}
+										<img
+											src={item.posterUrl}
+											alt={`${item.name} poster`}
+											class="h-28 w-20 shrink-0 rounded-lg object-cover"
+											loading="lazy"
+										/>
+									{:else}
+										<div
+											class="bg-muted text-muted-foreground flex h-28 w-20 shrink-0 items-center justify-center rounded-lg text-xs"
+										>
+											No image
+										</div>
+									{/if}
+									<div class="min-w-0 flex-1">
+										<h3 class="truncate text-base font-semibold">{item.name}</h3>
+										<p class="text-muted-foreground mt-1 text-xs">
+											{dayLabel(item.firstAirDate)}
+										</p>
+										<p class="text-muted-foreground mt-2 line-clamp-3 text-xs">
+											{item.overview || 'No overview available.'}
+										</p>
+									</div>
+								</div>
+
+								{#if item.language || item.rating || item.genres.length > 0}
+									<div class="flex flex-wrap gap-1.5">
+										{#if item.language}
+											<span
+												class="border-primary/35 bg-primary/18 text-primary rounded-full border px-2.5 py-0.5 text-xs font-medium"
+											>
+												{item.language}
+											</span>
+										{/if}
+										{#if item.rating}
+											<span
+												class="border-border text-muted-foreground rounded-full border px-2.5 py-0.5 text-xs font-medium"
+											>
+												★ {item.rating}
+											</span>
+										{/if}
+										{#each item.genres as genre (genre)}
+											<span
+												class="border-border text-muted-foreground rounded-full border px-2.5 py-0.5 text-xs font-medium"
+											>
+												{genre}
+											</span>
+										{/each}
 									</div>
 								{/if}
-								<div class="min-w-0 flex-1">
-									<h3 class="truncate text-base font-semibold">{item.name}</h3>
-									<p class="text-muted-foreground mt-1 text-xs">
-										{dayLabel(item.firstAirDate)}
-									</p>
-									<p class="text-muted-foreground mt-2 line-clamp-3 text-xs">
-										{item.overview || 'No overview available.'}
-									</p>
-								</div>
-							</div>
 
-							{#if item.alreadyTracked}
-								<span
-									class="border-border text-muted-foreground self-start rounded-full border px-3 py-1 text-xs font-medium"
-								>
-									Already tracked
-								</span>
-							{:else}
-								<form method="POST" action="?/addShow" use:enhance={enhanceAddShow}>
-									<input type="hidden" name="name" value={item.name} />
-									<Button
-										type="submit"
-										variant="outline"
-										class="rounded-full px-4"
-										disabled={pendingName === item.name}
+								{#if item.alreadyTracked}
+									<span
+										class="border-border text-muted-foreground self-start rounded-full border px-3 py-1 text-xs font-medium"
 									>
-										{pendingName === item.name ? 'Adding…' : 'Add show'}
-									</Button>
-								</form>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/each}
+										Already tracked
+									</span>
+								{:else}
+									<form method="POST" action="?/addShow" use:enhance={enhanceAddShow}>
+										<input type="hidden" name="name" value={item.name} />
+										<Button
+											type="submit"
+											variant="outline"
+											class="rounded-full px-4"
+											disabled={pendingName === item.name}
+										>
+											{pendingName === item.name ? 'Adding…' : 'Add show'}
+										</Button>
+									</form>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/each}
+
+			{#snippet failed(error, reset)}
+				<div class="bg-card/75 rounded-3xl border border-white/10 p-6 text-center text-sm">
+					<p class="text-destructive mb-2">Something went wrong showing part of the calendar.</p>
+					<p class="text-muted-foreground mb-4 text-xs">
+						This has been logged. Try again, or reload the page.
+					</p>
+					<Button variant="outline" class="rounded-full px-4" onclick={reset}>Try again</Button>
+				</div>
+			{/snippet}
+		</svelte:boundary>
 
 		<div bind:this={sentinel} class="flex justify-center py-4">
 			{#if reachedFutureEnd}
