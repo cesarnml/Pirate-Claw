@@ -3,10 +3,10 @@ FROM oven/bun:1 AS build
 
 WORKDIR /app
 
-COPY web/package.json web/bun.lock* ./
+COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile
 
-COPY web/ .
+COPY . .
 RUN bun run build
 
 # Runtime stage
@@ -17,7 +17,7 @@ WORKDIR /app
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
-COPY web/docker-entrypoint.sh ./docker-entrypoint.sh
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 
 EXPOSE 8888

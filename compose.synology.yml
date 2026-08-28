@@ -38,8 +38,8 @@ services:
   pirate-claw-web:
     image: pirate-claw-web:latest
     build:
-      context: .
-      dockerfile: web/Dockerfile
+      context: ./web
+      dockerfile: Dockerfile
     command:
       - sh
       - -c
