@@ -29,4 +29,30 @@ export function ensureManualGrabsSchema(database: Database): void {
     CREATE INDEX IF NOT EXISTS manual_grabs_show_episode
       ON manual_grabs(normalized_title, season, episode);
   `);
+
+  // A manual grab has no candidate_state row, so the dashboard's usual
+  // poster/title lookup (which joins Transmission torrents against
+  // candidate_state by hash) finds nothing for these — showing a plain
+  // letter avatar. Storing the show's own TMDB poster/name at grab time
+  // (already available then, from the enriched show breakdown) lets
+  // /api/transmission/torrents fill that in without a second lookup.
+  ensureManualGrabsColumn(database, 'show_poster_url', 'TEXT');
+  ensureManualGrabsColumn(database, 'show_display_title', 'TEXT');
+}
+
+function ensureManualGrabsColumn(
+  database: Database,
+  columnName: string,
+  columnType: 'INTEGER' | 'REAL' | 'TEXT',
+): void {
+  const hasColumn =
+    (database
+      .query(`SELECT 1 FROM pragma_table_info('manual_grabs') WHERE name = ?1`)
+      .get(columnName) as { 1: number } | null | undefined) !== null;
+
+  if (!hasColumn) {
+    database.run(
+      `ALTER TABLE manual_grabs ADD COLUMN ${columnName} ${columnType}`,
+    );
+  }
 }

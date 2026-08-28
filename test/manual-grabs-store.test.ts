@@ -90,4 +90,50 @@ describe('ManualGrabsStore', () => {
       'first attempt',
     ]);
   });
+
+  it('listAllTorrentDisplayInfo maps hash to poster/title, most-recent grab winning on a repeat', () => {
+    const store = freshStore();
+    store.record({
+      normalizedTitle: 'show a',
+      season: 1,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'first attempt',
+      transmissionTorrentHash: 'hash-1',
+      transmissionTorrentId: 1,
+      showPosterUrl: 'https://example.test/old-poster.jpg',
+      showDisplayTitle: 'Show A',
+      queuedAt: '2026-01-01T00:00:00.000Z',
+    });
+    // Same hash grabbed again later with different display info — the
+    // later grab should win.
+    store.record({
+      normalizedTitle: 'show a',
+      season: 1,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'second attempt',
+      transmissionTorrentHash: 'hash-1',
+      transmissionTorrentId: 1,
+      showPosterUrl: 'https://example.test/new-poster.jpg',
+      showDisplayTitle: 'Show A (renamed)',
+      queuedAt: '2026-01-02T00:00:00.000Z',
+    });
+    store.record({
+      normalizedTitle: 'show b',
+      season: 1,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'no hash yet',
+      transmissionTorrentHash: null,
+      transmissionTorrentId: null,
+    });
+
+    const info = store.listAllTorrentDisplayInfo();
+    expect(Array.from(info.keys())).toEqual(['hash-1']);
+    expect(info.get('hash-1')).toEqual({
+      posterUrl: 'https://example.test/new-poster.jpg',
+      displayTitle: 'Show A (renamed)',
+    });
+  });
 });

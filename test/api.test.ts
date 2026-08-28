@@ -4151,6 +4151,8 @@ describe('GET /api/transmission/torrents', () => {
       rawTitle: 'manual grab',
       transmissionTorrentHash: 'manual-hash-1',
       transmissionTorrentId: 99,
+      showPosterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+      showDisplayTitle: 'Strange New Worlds',
     });
 
     const deps = createDeps({ listCandidateStates: () => [] });
@@ -4194,8 +4196,18 @@ describe('GET /api/transmission/torrents', () => {
         new Request('http://localhost/api/transmission/torrents'),
       );
       expect(response.status).toBe(200);
-      const body = (await response.json()) as { torrents: { hash: string }[] };
+      const body = (await response.json()) as {
+        torrents: {
+          hash: string;
+          posterUrl?: string;
+          displayTitle?: string;
+        }[];
+      };
       expect(body.torrents.map((t) => t.hash)).toEqual(['manual-hash-1']);
+      expect(body.torrents[0]).toMatchObject({
+        posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+        displayTitle: 'Strange New Worlds',
+      });
     } finally {
       fetchMock.mockRestore();
       db.close();

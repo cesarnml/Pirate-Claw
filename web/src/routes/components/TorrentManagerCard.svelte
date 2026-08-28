@@ -263,8 +263,12 @@
 		{:else}
 			<ul class="space-y-4">
 				{#each activeDownloads as { torrent, candidate } (torrent.hash)}
-					{@const title = candidate ? candidateTitle(candidate) : torrent.name}
-					{@const posterUrl = candidate ? candidatePosterUrl(candidate) : null}
+					{@const title = candidate
+						? candidateTitle(candidate)
+						: (torrent.displayTitle ?? torrent.name)}
+					{@const posterUrl = candidate
+						? candidatePosterUrl(candidate)
+						: (torrent.posterUrl ?? null)}
 					{@const inFlightRow = inflightAction === torrent.hash}
 					{@const rowState = rowDisplayState(torrent, candidate)}
 					{@const showUpload =

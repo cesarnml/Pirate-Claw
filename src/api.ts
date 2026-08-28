@@ -1357,6 +1357,8 @@ export function createApiFetch(
           rawTitle,
           transmissionTorrentHash: result.torrentHash ?? null,
           transmissionTorrentId: result.torrentId ?? null,
+          showPosterUrl: show.tmdb?.posterUrl ?? null,
+          showDisplayTitle: show.tmdb?.name ?? show.normalizedTitle,
         });
 
         return Response.json({ ok: true, grab: recorded });
@@ -2248,11 +2250,11 @@ export function createApiFetch(
       // manual-grabs/schema.ts), so without this they'd download for real
       // in Transmission but never show up here — surfacing as "the Grab
       // button did nothing" even on a genuine success.
-      const manualGrabHashes = database
-        ? new ManualGrabsStore(database).listAllTorrentHashes()
-        : [];
+      const manualGrabDisplayInfo = database
+        ? new ManualGrabsStore(database).listAllTorrentDisplayInfo()
+        : new Map();
       const hashes = Array.from(
-        new Set([...candidateHashes, ...manualGrabHashes]),
+        new Set([...candidateHashes, ...manualGrabDisplayInfo.keys()]),
       );
 
       if (hashes.length === 0) {
@@ -2269,7 +2271,21 @@ export function createApiFetch(
       }
 
       const hashSet = new Set(hashes);
-      const torrents = result.torrents.filter((t) => hashSet.has(t.hash));
+      // Also has no candidate_state row, so no poster/title from the usual
+      // lookup — attach what was captured at grab time instead (see
+      // manual-grabs/schema.ts).
+      const torrents = result.torrents
+        .filter((t) => hashSet.has(t.hash))
+        .map((t) => {
+          const grabInfo = manualGrabDisplayInfo.get(t.hash);
+          return grabInfo
+            ? {
+                ...t,
+                posterUrl: grabInfo.posterUrl,
+                displayTitle: grabInfo.displayTitle,
+              }
+            : t;
+        });
       return Response.json({ torrents });
     }
 

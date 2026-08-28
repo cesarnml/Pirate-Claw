@@ -278,6 +278,11 @@ export type TorrentStatSnapshot = {
 	rateDownload: number;
 	rateUpload: number;
 	eta: number;
+	/** Set only for a manually-grabbed torrent (see manual_grabs) — it has no
+	 * candidate_state row for the usual poster/title lookup to find, so the
+	 * API attaches these from the grab record directly. */
+	posterUrl?: string | null;
+	displayTitle?: string | null;
 };
 
 export type SessionInfo = {
