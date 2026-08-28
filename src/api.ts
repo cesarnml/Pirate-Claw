@@ -26,6 +26,11 @@ import type {
   FeedConfig,
   RuntimeConfig,
 } from './config';
+import { DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV } from './config';
+import { EztvHttpClient } from './eztv/client';
+import { ManualGrabsStore } from './manual-grabs/store';
+import { buildShowEpisodeStatus } from './shows/episode-status';
+import { extractCodec, extractResolution } from './normalize';
 import {
   ConfigError,
   validateCompactTvDefaults,
@@ -448,6 +453,27 @@ export function createApiFetch(
     calendarTv,
   } = deps;
   let activeConfig = configHolder?.current ?? config;
+
+  /** Shared by /api/shows/:slug/episodes, /eztv, and /manual-grab — same
+   * lookup showRefreshMatch already does (candidates -> breakdowns -> Plex
+   * cache merge -> TMDB enrich), so all three see the same show shape. */
+  async function findEnrichedShowBySlug(
+    slug: string,
+  ): Promise<ShowBreakdown | null> {
+    const candidates = repository.listCandidateStates();
+    const base = buildShowBreakdowns(candidates);
+    const withPlex = plexShows
+      ? enrichShowBreakdownsFromPlexCache(base, plexShows)
+      : base;
+    const withTmdb = tmdbShows
+      ? await enrichShowBreakdowns(withPlex, tmdbShows)
+      : withPlex;
+    return (
+      withTmdb.find(
+        (entry) => entry.normalizedTitle.toLowerCase() === slug.toLowerCase(),
+      ) ?? null
+    );
+  }
 
   return async (request: Request) => {
     const path = new URL(request.url).pathname;
@@ -1124,6 +1150,216 @@ export function createApiFetch(
 
         const refreshed = await refreshShowBreakdown(show, tmdbShows);
         return Response.json({ ok: true, show: refreshed });
+      } catch {
+        return json500();
+      }
+    }
+
+    const showEpisodesMatch = path.match(/^\/api\/shows\/([^/]+)\/episodes$/);
+    if (showEpisodesMatch) {
+      if (request.method !== 'GET') {
+        return jsonMethodNotAllowed('GET');
+      }
+
+      if (!tmdbShows) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+      if (!database) {
+        return json500();
+      }
+
+      try {
+        const slug = decodeURIComponent(showEpisodesMatch[1]);
+        const show = await findEnrichedShowBySlug(slug);
+        if (!show) {
+          return Response.json({ error: 'show not found' }, { status: 404 });
+        }
+
+        const status = await buildShowEpisodeStatus(show, {
+          tmdb: tmdbShows,
+          plex: plexShows
+            ? { client: plexShows.client, cache: plexShows.cache }
+            : undefined,
+          manualGrabs: new ManualGrabsStore(database),
+        });
+        if (!status) {
+          return Response.json(
+            { error: 'no tmdb match for this show yet' },
+            { status: 409 },
+          );
+        }
+        return Response.json(status);
+      } catch {
+        return json500();
+      }
+    }
+
+    const showEztvMatch = path.match(/^\/api\/shows\/([^/]+)\/eztv$/);
+    if (showEztvMatch) {
+      if (request.method !== 'GET') {
+        return jsonMethodNotAllowed('GET');
+      }
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!tmdbShows) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+
+      const params = new URL(request.url).searchParams;
+      const seasonRaw = params.get('season');
+      const episodeRaw = params.get('episode');
+      // Number(null) and Number('') both coerce to 0, not NaN — a missing
+      // or blank param must not silently pass validation as "season 0".
+      const season = !seasonRaw ? Number.NaN : Number(seasonRaw);
+      const episode = !episodeRaw ? Number.NaN : Number(episodeRaw);
+      if (
+        !Number.isInteger(season) ||
+        season < 0 ||
+        !Number.isInteger(episode) ||
+        episode < 0
+      ) {
+        return Response.json(
+          { error: 'season and episode query params are required' },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const slug = decodeURIComponent(showEztvMatch[1]);
+        const show = await findEnrichedShowBySlug(slug);
+        if (!show) {
+          return Response.json({ error: 'show not found' }, { status: 404 });
+        }
+        if (!show.tmdb?.tmdbId) {
+          return Response.json(
+            { error: 'no tmdb match for this show yet' },
+            { status: 409 },
+          );
+        }
+
+        const externalIds = await tmdbShows.client.getTvExternalIds(
+          show.tmdb.tmdbId,
+        );
+        if (!externalIds) {
+          return Response.json(
+            { error: 'no IMDB id found for this show on TMDB' },
+            { status: 404 },
+          );
+        }
+
+        const eztv = new EztvHttpClient((msg) => console.warn(msg));
+        const torrents = await eztv.getTorrents(externalIds.imdbId, {
+          season,
+          episode,
+        });
+        if (torrents === null) {
+          return Response.json(
+            { error: 'EZTV lookup failed; try again' },
+            { status: 502 },
+          );
+        }
+
+        // Practical downloadability signal, not resolution — a 0-seed 1080p
+        // release is worse than a 5-seed 720p one (see grill-me Q5).
+        torrents.sort((a, b) => b.seeds - a.seeds);
+        const withQuality = torrents.map((t) => ({
+          ...t,
+          resolution: extractResolution(t.title)?.value,
+          codec: extractCodec(t.title)?.value,
+        }));
+        return Response.json({ torrents: withQuality });
+      } catch {
+        return json500();
+      }
+    }
+
+    const showManualGrabMatch = path.match(
+      /^\/api\/shows\/([^/]+)\/manual-grab$/,
+    );
+    if (showManualGrabMatch) {
+      if (request.method !== 'POST') {
+        return jsonMethodNotAllowed('POST');
+      }
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!downloader) {
+        return Response.json(
+          { error: 'manual grab is not available' },
+          { status: 503 },
+        );
+      }
+      if (!database) {
+        return json500();
+      }
+
+      let season: number;
+      let episode: number;
+      let magnetUrl: string;
+      let rawTitle: string;
+      try {
+        const body: unknown = await request.json();
+        const parsed = expectRecord(body, 'request body');
+        season = requireInt(parsed.season, 'request body season');
+        episode = requireInt(parsed.episode, 'request body episode');
+        magnetUrl = requireNonEmptyString(
+          parsed.magnetUrl,
+          'request body magnetUrl',
+        );
+        rawTitle = requireNonEmptyString(
+          parsed.rawTitle,
+          'request body rawTitle',
+        );
+      } catch (error) {
+        return Response.json(
+          {
+            error:
+              error instanceof Error ? error.message : 'invalid request body',
+          },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const slug = decodeURIComponent(showManualGrabMatch[1]);
+        const show = await findEnrichedShowBySlug(slug);
+        if (!show) {
+          return Response.json({ error: 'show not found' }, { status: 404 });
+        }
+
+        // Straight to Transmission, no RSS-pipeline policy filtering — the
+        // whole point of this path is the operator already picked the
+        // variant they want by eye (see grill-me: this bypasses
+        // candidate_state/rule matching by design).
+        const result = await downloader.submit({
+          downloadUrl: magnetUrl,
+          downloadDir:
+            activeConfig.transmission.downloadDirs?.tv ??
+            activeConfig.transmission.downloadDir ??
+            DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.message }, { status: 502 });
+        }
+
+        const recorded = new ManualGrabsStore(database).record({
+          normalizedTitle: show.normalizedTitle,
+          season,
+          episode,
+          source: 'eztv',
+          rawTitle,
+          transmissionTorrentHash: result.torrentHash ?? null,
+          transmissionTorrentId: result.torrentId ?? null,
+        });
+
+        return Response.json({ ok: true, grab: recorded });
       } catch {
         return json500();
       }
@@ -2683,6 +2919,15 @@ function expectRecord(input: unknown, label: string): Record<string, unknown> {
 function requireNonEmptyString(input: unknown, label: string): string {
   if (typeof input !== 'string' || input.length === 0) {
     throw new ConfigError(`Config file "${label}" must be a non-empty string.`);
+  }
+  return input;
+}
+
+function requireInt(input: unknown, label: string): number {
+  if (typeof input !== 'number' || !Number.isInteger(input) || input < 0) {
+    throw new ConfigError(
+      `Config file "${label}" must be a non-negative integer.`,
+    );
   }
   return input;
 }

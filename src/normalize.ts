@@ -76,7 +76,10 @@ function extractYear(
   };
 }
 
-function extractResolution(
+/** Exported for the missing-episodes feature's EZTV lookup, which reuses
+ * this to display resolution alongside each EZTV result rather than
+ * duplicating the parsing logic. */
+export function extractResolution(
   value: string,
 ): { value: string; index: number } | undefined {
   const match = resolutionPattern.exec(value);
@@ -91,7 +94,8 @@ function extractResolution(
   };
 }
 
-function extractCodec(
+/** Exported for the same reason as extractResolution above. */
+export function extractCodec(
   value: string,
 ): { value: 'x264' | 'x265'; index: number } | undefined {
   const match = codecPattern.exec(value);

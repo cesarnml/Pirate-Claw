@@ -87,6 +87,56 @@ export type ShowBreakdown = {
 	tmdb?: TmdbTvShowMeta;
 };
 
+// --- Missing-episodes feature (TMDB canonical episode list + live Plex
+// per-episode presence + manual EZTV backfill) — GET /api/shows/:slug/episodes,
+// /eztv, POST /manual-grab. Deliberately separate from ShowEpisode/ShowSeason
+// above, which reflect local queue history (candidate_state), not TMDB's full
+// episode list.
+
+export type EpisodeManualGrabInfo = {
+	queuedAt: string;
+	source: string;
+	rawTitle: string;
+};
+
+export type EpisodeWithStatus = {
+	episode: number;
+	name?: string;
+	overview?: string;
+	airDate?: string;
+	plexStatus: PlexStatus;
+	manualGrab: EpisodeManualGrabInfo | null;
+};
+
+export type SeasonWithStatus = {
+	season: number;
+	episodes: EpisodeWithStatus[];
+	/** Undefined when Plex data for this season isn't available to compare. */
+	episodeCountMismatch: boolean | undefined;
+};
+
+export type ShowEpisodeStatus = {
+	/** False when Plex data couldn't be confirmed right now — every episode
+	 * then reads 'unknown', not 'missing'. */
+	plexReachable: boolean;
+	seasons: SeasonWithStatus[];
+};
+
+export type EztvTorrent = {
+	id: number;
+	title: string;
+	filename: string;
+	magnetUrl: string;
+	season: number;
+	episode: number;
+	sizeBytes: number;
+	seeds: number;
+	peers: number;
+	dateReleasedUnix: number;
+	resolution?: string;
+	codec?: string;
+};
+
 export type TmdbMoviePublic = {
 	tmdbId?: number;
 	title?: string;

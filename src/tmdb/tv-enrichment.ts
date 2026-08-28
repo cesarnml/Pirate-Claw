@@ -145,7 +145,12 @@ async function resolveShow(
   }
 }
 
-async function loadSeasonEpisodes(
+/** Exported for the missing-episodes feature (src/shows/episode-status.ts),
+ * which needs TMDB's canonical per-season episode list independent of
+ * ShowBreakdown.seasons — that field is built from candidate_state history
+ * (what pirate_claw has queued), not TMDB's full episode list, so it can't
+ * surface episodes the daemon never saw. */
+export async function loadSeasonEpisodes(
   showMatchKey: string,
   tvId: number,
   seasonNumber: number,

@@ -163,6 +163,16 @@ export class TmdbHttpClient {
     return this.getJson<TmdbTvDetails>(`/tv/${tvId}`);
   }
 
+  /** Fetched separately (not append_to_response on getTv) since it's only
+   * needed by the missing-episodes EZTV lookup — a rare, user-initiated
+   * action — not the regular show enrichment path every show goes through. */
+  async getTvExternalIds(tvId: number): Promise<{ imdbId: string } | null> {
+    const data = await this.getJson<{ imdb_id?: string | null }>(
+      `/tv/${tvId}/external_ids`,
+    );
+    return data?.imdb_id ? { imdbId: data.imdb_id } : null;
+  }
+
   async getTvSeason(
     tvId: number,
     seasonNumber: number,

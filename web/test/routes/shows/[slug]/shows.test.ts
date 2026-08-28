@@ -100,6 +100,8 @@ describe('/shows/[slug]', () => {
 				...sharedLayoutData,
 				show: detailShow,
 				torrents: [liveTorrent],
+				episodeStatus: null,
+				episodeStatusError: null,
 				error: null,
 				canWrite: true
 			},
@@ -119,6 +121,8 @@ describe('/shows/[slug]', () => {
 				...sharedLayoutData,
 				show: detailShow,
 				torrents: [liveTorrent],
+				episodeStatus: null,
+				episodeStatusError: null,
 				error: null,
 				canWrite: true
 			},
@@ -141,7 +145,15 @@ describe('/shows/[slug]', () => {
 
 	it('renders not-found and error states', () => {
 		const { rerender } = render(Page, {
-			data: { ...sharedLayoutData, show: null, torrents: null, error: null, canWrite: false },
+			data: {
+				...sharedLayoutData,
+				show: null,
+				torrents: null,
+				episodeStatus: null,
+				episodeStatusError: null,
+				error: null,
+				canWrite: false
+			},
 			form: undefined
 		});
 
@@ -152,6 +164,8 @@ describe('/shows/[slug]', () => {
 				...sharedLayoutData,
 				show: null,
 				torrents: null,
+				episodeStatus: null,
+				episodeStatusError: null,
 				error: 'Could not reach the API.',
 				canWrite: false
 			},

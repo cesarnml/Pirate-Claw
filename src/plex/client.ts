@@ -21,11 +21,27 @@ export type PlexSearchResult = {
   lastViewedAt?: number;
 };
 
+/** One season under a show, from GET /library/metadata/{showRatingKey}/children. */
+export type PlexSeasonSummary = {
+  ratingKey: string;
+  seasonNumber: number;
+  /** Plex's own episode count for this season (`leafCount`) — compare against
+   * TMDB's season episode count to flag a season-level mismatch. */
+  episodeCount: number | undefined;
+};
+
+/** One episode under a season, from GET /library/metadata/{seasonRatingKey}/children. */
+export type PlexEpisodeSummary = {
+  episodeNumber: number;
+  title?: string;
+};
+
 type PlexMediaContainer = {
   MediaContainer?: {
     Directory?: Array<Record<string, unknown>> | Record<string, unknown>;
     Video?: Array<Record<string, unknown>> | Record<string, unknown>;
     Hub?: Array<Record<string, unknown>> | Record<string, unknown>;
+    Metadata?: Array<Record<string, unknown>> | Record<string, unknown>;
   };
 };
 
@@ -132,6 +148,95 @@ export class PlexHttpClient {
 
   getLastFailureKind(): PlexRequestFailureKind | null {
     return this.lastFailureKind;
+  }
+
+  /** Lists the seasons under a show (by its Plex ratingKey). Returns null on
+   * any request/parse failure — same "can't confirm" signal as the rest of
+   * this client — so callers can render "Plex unreachable" instead of
+   * mistaking a fetch failure for "this show has no seasons". */
+  async getShowSeasons(
+    showRatingKey: string,
+  ): Promise<PlexSeasonSummary[] | null> {
+    this.lastFailureKind = null;
+    const container = await this.getXml(
+      `/library/metadata/${encodeURIComponent(showRatingKey)}/children`,
+    );
+    if (!container) {
+      return null;
+    }
+
+    // Confirmed live: Plex doesn't consistently use <Metadata>/<Directory>
+    // for season/episode children — Star Trek: Strange New Worlds season 4's
+    // single episode came back tagged <Video>, the same "flat listing" shape
+    // /library/sections/*/all uses for movies (see collectPagedSectionItems
+    // above). Missing this merge silently dropped that episode entirely.
+    const mc = container.MediaContainer as Record<string, unknown>;
+    const rows = [
+      ...asArray(mc?.Directory),
+      ...asArray(mc?.Metadata),
+      ...asArray(mc?.Video),
+    ] as Record<string, unknown>[];
+
+    const seasons: PlexSeasonSummary[] = [];
+    for (const entry of rows) {
+      if (plexEntryType(entry) !== 'season') {
+        continue;
+      }
+      const ratingKey = optionalStringField(entry.ratingKey);
+      const seasonNumber = optionalNumberField(entry.index);
+      if (ratingKey === undefined || seasonNumber === undefined) {
+        continue;
+      }
+      seasons.push({
+        ratingKey,
+        seasonNumber,
+        episodeCount: optionalNumberField(entry.leafCount),
+      });
+    }
+    return seasons;
+  }
+
+  /** Lists the episodes under a season (by its Plex ratingKey). Returns null
+   * on request/parse failure, same "can't confirm" contract as
+   * getShowSeasons(). */
+  async getSeasonEpisodes(
+    seasonRatingKey: string,
+  ): Promise<PlexEpisodeSummary[] | null> {
+    this.lastFailureKind = null;
+    const container = await this.getXml(
+      `/library/metadata/${encodeURIComponent(seasonRatingKey)}/children`,
+    );
+    if (!container) {
+      return null;
+    }
+
+    // Confirmed live: Plex doesn't consistently use <Metadata>/<Directory>
+    // for season/episode children — Star Trek: Strange New Worlds season 4's
+    // single episode came back tagged <Video>, the same "flat listing" shape
+    // /library/sections/*/all uses for movies (see collectPagedSectionItems
+    // above). Missing this merge silently dropped that episode entirely.
+    const mc = container.MediaContainer as Record<string, unknown>;
+    const rows = [
+      ...asArray(mc?.Directory),
+      ...asArray(mc?.Metadata),
+      ...asArray(mc?.Video),
+    ] as Record<string, unknown>[];
+
+    const episodes: PlexEpisodeSummary[] = [];
+    for (const entry of rows) {
+      if (plexEntryType(entry) !== 'episode') {
+        continue;
+      }
+      const episodeNumber = optionalNumberField(entry.index);
+      if (episodeNumber === undefined) {
+        continue;
+      }
+      episodes.push({
+        episodeNumber,
+        title: optionalStringField(entry.title),
+      });
+    }
+    return episodes;
   }
 
   private async collectPagedSectionItems(

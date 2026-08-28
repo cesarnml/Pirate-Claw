@@ -35,6 +35,7 @@ import { setHttpLogDirForTest } from '../src/http-log';
 import type { CycleResult } from '../src/runtime-artifacts';
 import { PlexAuthStore } from '../src/plex/auth';
 import { TmdbCache } from '../src/tmdb/cache';
+import { ManualGrabsStore } from '../src/manual-grabs/store';
 import { CalendarCache } from '../src/tmdb/calendar';
 import type { TmdbDiscoverTvResult, TmdbHttpClient } from '../src/tmdb/client';
 import { movieMatchKey, tvMatchKey } from '../src/tmdb/keys';
@@ -1451,6 +1452,295 @@ describe('POST /api/shows/:slug/tmdb/refresh', () => {
     );
 
     expect(response.status).toBe(409);
+  });
+});
+
+describe('missing-episodes feature (episodes / eztv / manual-grab)', () => {
+  const writeToken = 'write-token';
+  const authHeader = { Authorization: `Bearer ${writeToken}` };
+
+  function depsWithTmdbShow(overrides: Partial<Repository> = {}): {
+    deps: ApiFetchDeps;
+    db: Database;
+  } {
+    const db = new Database(':memory:');
+    ensureSchema(db);
+    const deps: ApiFetchDeps = {
+      ...createDeps({
+        listCandidateStates: () =>
+          [
+            tvCandidate({
+              identityKey: 'k1',
+              normalizedTitle: 'test show',
+              season: 1,
+              episode: 1,
+            }),
+          ] as never,
+        ...overrides,
+      }),
+      database: db,
+      config: {
+        ...stubConfig(),
+        runtime: { ...stubConfig().runtime, apiWriteToken: writeToken },
+      },
+      tmdbShows: {
+        cache: new TmdbCache(db),
+        client: {
+          searchTv: async () => ({ id: 42, name: 'Test Show' }),
+          getTv: async () => ({
+            id: 42,
+            name: 'Test Show',
+            number_of_seasons: 1,
+          }),
+          getTvSeason: async () => ({
+            season_number: 1,
+            episodes: [
+              { episode_number: 1, name: 'Pilot', air_date: '2026-01-01' },
+              { episode_number: 2, name: 'Two', air_date: '2026-01-08' },
+            ],
+          }),
+          getTvExternalIds: async () => ({ imdbId: 'tt1234567' }),
+        } as never,
+        cacheTtlMs: 60_000,
+        negativeCacheTtlMs: 10_000,
+        log: () => {},
+      },
+    };
+    return { deps, db };
+  }
+
+  describe('GET /api/shows/:slug/episodes', () => {
+    it('returns the season/episode grid, unreachable Plex when unconfigured', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/episodes'),
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          plexReachable: boolean;
+          seasons: Array<{
+            season: number;
+            episodes: Array<{ episode: number; plexStatus: string }>;
+          }>;
+        };
+        expect(body.plexReachable).toBe(false);
+        expect(
+          body.seasons[0].episodes.map((e) => [e.episode, e.plexStatus]),
+        ).toEqual([
+          [1, 'unknown'],
+          [2, 'unknown'],
+        ]);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('404s for an unknown show', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/nope/episodes'),
+        );
+        expect(response.status).toBe(404);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('409s when TMDB is not configured', async () => {
+      const deps = createDeps();
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/shows/test%20show/episodes'),
+      );
+      expect(response.status).toBe(409);
+    });
+  });
+
+  describe('GET /api/shows/:slug/eztv', () => {
+    it('requires season and episode query params', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/eztv', {
+            headers: authHeader,
+          }),
+        );
+        expect(response.status).toBe(400);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('rejects a blank season param rather than treating it as season 0', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request(
+            'http://localhost/api/shows/test%20show/eztv?season=&episode=3',
+            { headers: authHeader },
+          ),
+        );
+        expect(response.status).toBe(400);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('requires write auth', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request(
+            'http://localhost/api/shows/test%20show/eztv?season=1&episode=1',
+          ),
+        );
+        expect(response.status).toBe(401);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('looks up the show IMDB id then returns EZTV results sorted by seeds, with resolution/codec attached', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
+        (async () =>
+          new Response(
+            JSON.stringify({
+              torrents_count: 2,
+              torrents: [
+                {
+                  id: 1,
+                  title: 'Test Show S01E01 480p x264-mSD',
+                  filename: 'a.mkv',
+                  magnet_url: 'magnet:?xt=urn:btih:aaa',
+                  season: '1',
+                  episode: '1',
+                  size_bytes: 100,
+                  seeds: 1,
+                  peers: 0,
+                  date_released_unix: 1,
+                },
+                {
+                  id: 2,
+                  title: 'Test Show S01E01 1080p HEVC x265-MeGusta',
+                  filename: 'b.mkv',
+                  magnet_url: 'magnet:?xt=urn:btih:bbb',
+                  season: '1',
+                  episode: '1',
+                  size_bytes: 200,
+                  seeds: 9,
+                  peers: 2,
+                  date_released_unix: 2,
+                },
+              ],
+            }),
+            { status: 200 },
+          )) as unknown as typeof fetch,
+      );
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request(
+            'http://localhost/api/shows/test%20show/eztv?season=1&episode=1',
+            { headers: authHeader },
+          ),
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          torrents: Array<{
+            seeds: number;
+            resolution?: string;
+            codec?: string;
+          }>;
+        };
+        expect(body.torrents.map((t) => t.seeds)).toEqual([9, 1]);
+        expect(body.torrents[0]).toMatchObject({
+          resolution: '1080p',
+          codec: 'x265',
+        });
+      } finally {
+        fetchMock.mockRestore();
+        db.close();
+      }
+    });
+  });
+
+  describe('POST /api/shows/:slug/manual-grab', () => {
+    it('returns 503 when no downloader is configured', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/manual-grab', {
+            method: 'POST',
+            headers: { ...authHeader, 'content-type': 'application/json' },
+            body: JSON.stringify({
+              season: 1,
+              episode: 1,
+              magnetUrl: 'magnet:?xt=urn:btih:aaa',
+              rawTitle: 'Test Show S01E01',
+            }),
+          }),
+        );
+        expect(response.status).toBe(503);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('enqueues directly to Transmission and records the grab, bypassing candidate_state', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      deps.downloader = {
+        submit: async () => ({
+          ok: true,
+          status: 'queued' as const,
+          torrentId: 7,
+          torrentHash: 'hash123',
+          torrentName: 'Test Show S01E01',
+        }),
+      };
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/manual-grab', {
+            method: 'POST',
+            headers: { ...authHeader, 'content-type': 'application/json' },
+            body: JSON.stringify({
+              season: 1,
+              episode: 1,
+              magnetUrl: 'magnet:?xt=urn:btih:aaa',
+              rawTitle: 'Test Show S01E01',
+            }),
+          }),
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          ok: boolean;
+          grab: { transmissionTorrentHash: string; source: string };
+        };
+        expect(body.ok).toBe(true);
+        expect(body.grab).toMatchObject({
+          transmissionTorrentHash: 'hash123',
+          source: 'eztv',
+        });
+
+        // Recorded in manual_grabs, not candidate_state.
+        expect(new ManualGrabsStore(db).listForShow('test show')).toHaveLength(
+          1,
+        );
+      } finally {
+        db.close();
+      }
+    });
   });
 });
 

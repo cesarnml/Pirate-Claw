@@ -13,6 +13,7 @@
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
 	import StarIcon from '@lucide/svelte/icons/star';
+	import MissingEpisodesPanel from './MissingEpisodesPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	const props = $props<{ data: PageData; form?: ActionData }>();
@@ -256,6 +257,14 @@
 				</div>
 			</div>
 		</div>
+
+		<MissingEpisodesPanel
+			slug={data.show.normalizedTitle}
+			episodeStatus={data.episodeStatus}
+			episodeStatusError={data.episodeStatusError}
+			canWrite={data.canWrite}
+			{form}
+		/>
 
 		<div class="space-y-4">
 			<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

@@ -6,7 +6,12 @@ import type { AppConfig } from '../config';
 import { loadConfigEnv, validateConfig } from '../config';
 import { PlexAuthStore } from './auth';
 import { refreshPlexAuthToken } from './auth-client';
-import type { PlexLibrarySection, PlexSearchResult } from './client';
+import type {
+  PlexEpisodeSummary,
+  PlexLibrarySection,
+  PlexSearchResult,
+  PlexSeasonSummary,
+} from './client';
 import { PlexHttpClient } from './client';
 
 const PLEX_TOKEN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
@@ -205,6 +210,24 @@ export class RenewingPlexHttpClient extends PlexHttpClient {
     return this.runWithRenewal(
       (client) => client.listAllMoviesForMatching(),
       [],
+    );
+  }
+
+  override async getShowSeasons(
+    showRatingKey: string,
+  ): Promise<PlexSeasonSummary[] | null> {
+    return this.runWithRenewal(
+      (client) => client.getShowSeasons(showRatingKey),
+      null,
+    );
+  }
+
+  override async getSeasonEpisodes(
+    seasonRatingKey: string,
+  ): Promise<PlexEpisodeSummary[] | null> {
+    return this.runWithRenewal(
+      (client) => client.getSeasonEpisodes(seasonRatingKey),
+      null,
     );
   }
 

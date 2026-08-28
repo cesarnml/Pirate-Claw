@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { installRootDataDir } from './install-bootstrap';
+import { ensureManualGrabsSchema } from './manual-grabs/schema';
 import { ensurePlexSchema } from './plex/schema';
 import type { TmdbMoviePublic } from './movie-api-types';
 import { ensureTmdbSchema } from './tmdb/schema';
@@ -329,6 +330,7 @@ export function ensureSchema(database: Database): void {
 
   ensureTmdbSchema(database);
   ensurePlexSchema(database);
+  ensureManualGrabsSchema(database);
 }
 
 export function hasStatusSchema(database: Database): boolean {
