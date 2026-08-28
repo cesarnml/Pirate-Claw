@@ -190,10 +190,10 @@
 	</div>
 {/snippet}
 
-<div class="dark bg-background text-foreground flex h-screen overflow-hidden">
+<div class="dark bg-background text-foreground flex h-dvh overflow-hidden">
 	{#if showSidebar}
 		<aside
-			class="border-border bg-card/60 relative z-40 hidden h-screen shrink-0 border-r backdrop-blur md:flex md:w-16 lg:w-56"
+			class="border-border bg-card/60 relative z-40 hidden h-dvh shrink-0 border-r backdrop-blur md:flex md:w-16 lg:w-56"
 		>
 			{@render sidebarContent()}
 		</aside>

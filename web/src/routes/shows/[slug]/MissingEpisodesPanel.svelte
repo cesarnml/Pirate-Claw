@@ -11,14 +11,12 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
-	import type { ActionData } from './$types';
 
 	const props = $props<{
 		slug: string;
 		episodeStatus: ShowEpisodeStatus | null;
 		episodeStatusError: string | null;
 		canWrite: boolean;
-		form?: ActionData;
 	}>();
 
 	const todayIsoDate = new Date().toISOString().slice(0, 10);
@@ -178,13 +176,6 @@
 					Plex's own episode count for this season differs from TMDB's — double-check manually
 					before trusting the per-episode grid below for this season.
 				</AlertDescription>
-			</Alert>
-		{/if}
-
-		{#if props.form?.grabMessage}
-			<Alert class={props.form.grabSuccess ? 'border-primary/20 bg-primary/8' : ''}>
-				<AlertTitle>{props.form.grabSuccess ? 'Queued' : 'Grab failed'}</AlertTitle>
-				<AlertDescription>{props.form.grabMessage}</AlertDescription>
 			</Alert>
 		{/if}
 

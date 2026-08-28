@@ -117,6 +117,19 @@ export class ManualGrabsStore {
     return Array.from(this.listAllTorrentDisplayInfo().keys());
   }
 
+  /** Whether any manual grab ever recorded this Transmission torrent hash —
+   * used so pause/resume/remove/remove-and-delete can manage a manually-
+   * grabbed torrent too, not just candidate_state ones (see
+   * resolveManagedTorrentAction in api.ts). */
+  hasTorrentHash(hash: string): boolean {
+    const row = this.database
+      .query(
+        `SELECT 1 FROM manual_grabs WHERE transmission_torrent_hash = ?1 LIMIT 1`,
+      )
+      .get(hash);
+    return row !== null;
+  }
+
   /** Poster/title info for every manually-grabbed torrent that still has a
    * hash, keyed by hash — lets /api/transmission/torrents show real cover
    * art for these instead of falling back to a letter avatar (they have no

@@ -4215,6 +4215,156 @@ describe('GET /api/transmission/torrents', () => {
   });
 });
 
+describe('managing a manually-grabbed torrent (pause/resume/remove)', () => {
+  const writeToken = 'write-token';
+  const authHeader = { Authorization: `Bearer ${writeToken}` };
+
+  function depsForManualGrab(): { deps: ApiFetchDeps; db: Database } {
+    const db = new Database(':memory:');
+    ensureSchema(db);
+    new ManualGrabsStore(db).record({
+      normalizedTitle: 'manual show',
+      season: 1,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'manual grab',
+      transmissionTorrentHash: 'manual-hash-1',
+      transmissionTorrentId: 99,
+    });
+
+    const deps: ApiFetchDeps = {
+      ...createDeps({ listCandidateStates: () => [] }),
+      database: db,
+      config: {
+        ...stubConfig(),
+        runtime: { ...stubConfig().runtime, apiWriteToken: writeToken },
+        transmission: {
+          url: 'http://transmission.test/transmission/rpc',
+          username: 'u',
+          password: 'p',
+        },
+      },
+    };
+    return { deps, db };
+  }
+
+  /** Mocks Transmission RPC responses keyed by method, skipping the 409
+   * CSRF-token dance (always 200) — enough to exercise the endpoint logic
+   * this test cares about. */
+  function mockTransmissionRpc(torrentStatus: number) {
+    return spyOn(globalThis, 'fetch').mockImplementation((async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        method?: string;
+      };
+      if (body.method === 'torrent-get') {
+        return new Response(
+          JSON.stringify({
+            result: 'success',
+            arguments: {
+              torrents: [
+                {
+                  id: 99,
+                  name: 'manual grab',
+                  hashString: 'manual-hash-1',
+                  status: torrentStatus,
+                  percentDone: 0.5,
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      // torrent-remove / torrent-stop / torrent-start
+      return new Response(
+        JSON.stringify({ result: 'success', arguments: {} }),
+        {
+          status: 200,
+        },
+      );
+    }) as unknown as typeof fetch);
+  }
+
+  it('removes a manually-grabbed torrent with no candidate_state row (was 404)', async () => {
+    const { deps, db } = depsForManualGrab();
+    // status 4 = downloading, per managedTorrentRowState's Transmission code mapping.
+    const fetchMock = mockTransmissionRpc(4);
+
+    try {
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/transmission/torrent/remove', {
+          method: 'POST',
+          headers: { ...authHeader, 'content-type': 'application/json' },
+          body: JSON.stringify({ hash: 'manual-hash-1' }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+    } finally {
+      fetchMock.mockRestore();
+      db.close();
+    }
+  });
+
+  it('still 404s for a hash that matches neither candidate_state nor manual_grabs', async () => {
+    const { deps, db } = depsForManualGrab();
+    const fetchMock = mockTransmissionRpc(4);
+
+    try {
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/transmission/torrent/remove', {
+          method: 'POST',
+          headers: { ...authHeader, 'content-type': 'application/json' },
+          body: JSON.stringify({ hash: 'totally-unknown-hash' }),
+        }),
+      );
+      expect(response.status).toBe(404);
+    } finally {
+      fetchMock.mockRestore();
+      db.close();
+    }
+  });
+
+  it('pauses and resumes a manually-grabbed torrent too', async () => {
+    const { deps, db } = depsForManualGrab();
+    const handler = createApiFetch(deps);
+
+    const pauseFetch = mockTransmissionRpc(4); // downloading -> pausable
+    try {
+      const pauseResponse = await handler(
+        new Request('http://localhost/api/transmission/torrent/pause', {
+          method: 'POST',
+          headers: { ...authHeader, 'content-type': 'application/json' },
+          body: JSON.stringify({ hash: 'manual-hash-1' }),
+        }),
+      );
+      expect(pauseResponse.status).toBe(200);
+    } finally {
+      pauseFetch.mockRestore();
+    }
+
+    const resumeFetch = mockTransmissionRpc(0); // stopped -> resumable
+    try {
+      const resumeResponse = await handler(
+        new Request('http://localhost/api/transmission/torrent/resume', {
+          method: 'POST',
+          headers: { ...authHeader, 'content-type': 'application/json' },
+          body: JSON.stringify({ hash: 'manual-hash-1' }),
+        }),
+      );
+      expect(resumeResponse.status).toBe(200);
+    } finally {
+      resumeFetch.mockRestore();
+      db.close();
+    }
+  });
+});
+
 describe('GET /api/transmission/session', () => {
   it('returns 502 when Transmission is unreachable', async () => {
     const deps = createDeps();

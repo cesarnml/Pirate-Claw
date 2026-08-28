@@ -310,56 +310,88 @@ async function parseJsonTorrentHash(
   return { ok: true, hash };
 }
 
+/**
+ * Resolves a Transmission hash to a manageable torrent context for
+ * pause/resume/remove/remove-and-delete. Tries candidate_state first (the
+ * RSS-pipeline case, which also carries an identityKey the caller can set a
+ * pirateClawDisposition on); if that's not this hash's origin, falls back to
+ * manual_grabs (see manual-grabs/schema.ts) — a hash that only exists there
+ * is still a real, manageable Transmission torrent, it just has no
+ * candidate_state disposition concept to update. `dispose` intentionally
+ * does not use this fallback: it's specifically for RSS-tracked torrents the
+ * reconcile loop lost track of, a concept manual grabs don't have.
+ */
 async function resolveManagedTorrentAction(
   repository: Repository,
   transmissionConfig: AppConfig['transmission'],
   hash: string,
+  manualGrabs: ManualGrabsStore | undefined,
 ): Promise<
   | {
       ok: true;
-      candidate: CandidateStateRecord;
+      candidate: CandidateStateRecord | null;
       rowState: ManagedTorrentRowState;
     }
   | { ok: false; response: Response }
 > {
   const candidate = repository.getCandidateStateByTransmissionHash(hash);
-  if (!candidate?.transmissionTorrentHash) {
+  if (candidate?.transmissionTorrentHash) {
+    if (
+      candidate.pirateClawDisposition === 'removed' ||
+      candidate.pirateClawDisposition === 'deleted'
+    ) {
+      return {
+        ok: false,
+        response: Response.json(
+          { error: 'candidate is already in a terminal disposition' },
+          { status: 400 },
+        ),
+      };
+    }
+
+    const statsResult = await fetchTorrentStats(transmissionConfig, [
+      candidate.transmissionTorrentHash,
+    ]);
+    if (!statsResult.ok) {
+      return {
+        ok: false,
+        response: Response.json(
+          { error: statsResult.message },
+          { status: 502 },
+        ),
+      };
+    }
+    const torrent = statsResult.torrents.find(
+      (t) => t.hash === candidate.transmissionTorrentHash,
+    );
+    return { ok: true, candidate, rowState: managedTorrentRowState(torrent) };
+  }
+
+  if (manualGrabs?.hasTorrentHash(hash)) {
+    const statsResult = await fetchTorrentStats(transmissionConfig, [hash]);
+    if (!statsResult.ok) {
+      return {
+        ok: false,
+        response: Response.json(
+          { error: statsResult.message },
+          { status: 502 },
+        ),
+      };
+    }
+    const torrent = statsResult.torrents.find((t) => t.hash === hash);
     return {
-      ok: false,
-      response: Response.json(
-        { error: 'no candidate matches this torrent hash' },
-        { status: 404 },
-      ),
+      ok: true,
+      candidate: null,
+      rowState: managedTorrentRowState(torrent),
     };
   }
-  if (
-    candidate.pirateClawDisposition === 'removed' ||
-    candidate.pirateClawDisposition === 'deleted'
-  ) {
-    return {
-      ok: false,
-      response: Response.json(
-        { error: 'candidate is already in a terminal disposition' },
-        { status: 400 },
-      ),
-    };
-  }
-  const statsResult = await fetchTorrentStats(transmissionConfig, [
-    candidate.transmissionTorrentHash,
-  ]);
-  if (!statsResult.ok) {
-    return {
-      ok: false,
-      response: Response.json({ error: statsResult.message }, { status: 502 }),
-    };
-  }
-  const torrent = statsResult.torrents.find(
-    (t) => t.hash === candidate.transmissionTorrentHash,
-  );
+
   return {
-    ok: true,
-    candidate,
-    rowState: managedTorrentRowState(torrent),
+    ok: false,
+    response: Response.json(
+      { error: 'no candidate matches this torrent hash' },
+      { status: 404 },
+    ),
   };
 }
 
@@ -2316,6 +2348,7 @@ export function createApiFetch(
         repository,
         activeConfig.transmission,
         body.hash,
+        database ? new ManualGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState !== 'downloading' && ctx.rowState !== 'seeding') {
@@ -2346,6 +2379,7 @@ export function createApiFetch(
         repository,
         activeConfig.transmission,
         body.hash,
+        database ? new ManualGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState !== 'paused') {
@@ -2376,6 +2410,7 @@ export function createApiFetch(
         repository,
         activeConfig.transmission,
         body.hash,
+        database ? new ManualGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState === 'missing') {
@@ -2396,11 +2431,14 @@ export function createApiFetch(
         return Response.json({ error: rpc.message }, { status: 502 });
       }
 
+      // No candidate_state row for a manual-grab-only torrent — nothing to
+      // set a disposition on (see resolveManagedTorrentAction).
       if (
-        ctx.rowState === 'downloading' ||
-        ctx.rowState === 'seeding' ||
-        ctx.rowState === 'paused' ||
-        ctx.rowState === 'completed'
+        ctx.candidate &&
+        (ctx.rowState === 'downloading' ||
+          ctx.rowState === 'seeding' ||
+          ctx.rowState === 'paused' ||
+          ctx.rowState === 'completed')
       ) {
         repository.setPirateClawDisposition(
           ctx.candidate.identityKey,
@@ -2425,6 +2463,7 @@ export function createApiFetch(
         repository,
         activeConfig.transmission,
         body.hash,
+        database ? new ManualGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState === 'missing') {
@@ -2445,7 +2484,12 @@ export function createApiFetch(
         return Response.json({ error: rpc.message }, { status: 502 });
       }
 
-      repository.setPirateClawDisposition(ctx.candidate.identityKey, 'deleted');
+      if (ctx.candidate) {
+        repository.setPirateClawDisposition(
+          ctx.candidate.identityKey,
+          'deleted',
+        );
+      }
 
       return Response.json({ ok: true });
     }
@@ -2460,10 +2504,14 @@ export function createApiFetch(
       const body = await parseJsonDisposeBody(request);
       if (!body.ok) return body.response;
 
+      // No manualGrabs fallback here on purpose — dispose is specifically
+      // for an RSS-tracked torrent the reconcile loop lost track of, a
+      // concept manual grabs don't have (see resolveManagedTorrentAction).
       const ctx = await resolveManagedTorrentAction(
         repository,
         activeConfig.transmission,
         body.hash,
+        undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState !== 'missing') {
@@ -2474,6 +2522,9 @@ export function createApiFetch(
           },
           { status: 400 },
         );
+      }
+      if (!ctx.candidate) {
+        return json500();
       }
 
       repository.setPirateClawDisposition(

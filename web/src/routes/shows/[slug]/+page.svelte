@@ -8,7 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import type { ShowEpisode, TorrentStatSnapshot } from '$lib/types';
-	import { torrentDisplayState } from '$lib/helpers';
+	import { showHeroBackdropSrc, torrentDisplayState } from '$lib/helpers';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
@@ -36,16 +36,6 @@
 
 	function episodeCount(show: NonNullable<PageData['show']>): number {
 		return show.seasons.reduce((sum, season) => sum + season.episodes.length, 0);
-	}
-
-	function safeHttpsBackgroundUrl(raw: string | undefined): string | undefined {
-		if (!raw) return undefined;
-		try {
-			const url = new URL(raw);
-			return url.protocol === 'https:' ? url.href : undefined;
-		} catch {
-			return undefined;
-		}
 	}
 
 	/** Transfer speeds come from Transmission and should never be negative. */
@@ -131,7 +121,7 @@
 		</CardContent>
 	</Card>
 {:else}
-	{@const backdropUrl = safeHttpsBackgroundUrl(data.show.tmdb?.backdropUrl)}
+	{@const backdropUrl = showHeroBackdropSrc(data.show.tmdb?.backdropUrl, data.show.tmdb?.posterUrl)}
 	<section class="space-y-6">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<Button href="/shows" variant="ghost" class="rounded-full px-3">
@@ -158,16 +148,14 @@
 
 		<div
 			class="relative overflow-hidden rounded-[34px] border border-white/10"
-			style={backdropUrl
-				? `background:
+			style={`background:
 				linear-gradient(135deg, rgb(15 23 42 / 0.96), rgb(15 23 42 / 0.88)),
 				linear-gradient(180deg, rgb(15 23 42 / 0.15), rgb(15 23 42 / 0.85)),
-				url(${backdropUrl}) center/cover no-repeat;`
-				: 'background: linear-gradient(135deg, rgb(15 23 42 / 1), rgb(30 41 59 / 0.92));'}
+				url(${backdropUrl}) center/cover no-repeat;`}
 		>
 			<div class="grid gap-6 p-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:p-8">
 				<div
-					class="overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/60 shadow-[0_24px_90px_rgba(2,6,23,0.4)]"
+					class="hidden overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/60 shadow-[0_24px_90px_rgba(2,6,23,0.4)] lg:block"
 				>
 					{#if data.show.tmdb?.posterUrl}
 						<img
@@ -263,7 +251,6 @@
 			episodeStatus={data.episodeStatus}
 			episodeStatusError={data.episodeStatusError}
 			canWrite={data.canWrite}
-			{form}
 		/>
 
 		<div class="space-y-4">

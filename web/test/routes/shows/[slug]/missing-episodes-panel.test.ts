@@ -57,8 +57,7 @@ describe('MissingEpisodesPanel', () => {
 			slug: 'the-show',
 			episodeStatus: null,
 			episodeStatusError: null,
-			canWrite: true,
-			form: undefined
+			canWrite: true
 		});
 
 		expect(screen.getByText('No TMDB match yet.')).toBeInTheDocument();
@@ -69,8 +68,7 @@ describe('MissingEpisodesPanel', () => {
 			slug: 'the-show',
 			episodeStatus: null,
 			episodeStatusError: 'Could not load the missing-episodes panel.',
-			canWrite: true,
-			form: undefined
+			canWrite: true
 		});
 
 		expect(screen.getByText('Missing-episodes panel unavailable')).toBeInTheDocument();
@@ -81,8 +79,7 @@ describe('MissingEpisodesPanel', () => {
 			slug: 'the-show',
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true,
-			form: undefined
+			canWrite: true
 		});
 
 		expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
@@ -106,8 +103,7 @@ describe('MissingEpisodesPanel', () => {
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true,
-			form: undefined
+			canWrite: true
 		});
 
 		expect(screen.getByText('Plex unreachable')).toBeInTheDocument();
@@ -119,8 +115,7 @@ describe('MissingEpisodesPanel', () => {
 			slug: 'the-show',
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: false,
-			form: undefined
+			canWrite: false
 		});
 
 		expect(screen.queryByText('Find on EZTV')).not.toBeInTheDocument();
@@ -149,8 +144,7 @@ describe('MissingEpisodesPanel', () => {
 			slug: 'the-show',
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true,
-			form: undefined
+			canWrite: true
 		});
 
 		const buttons = screen.getAllByRole('button', { name: 'Find on EZTV' });
