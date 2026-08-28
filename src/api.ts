@@ -30,6 +30,13 @@ import { DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV } from './config';
 import { EztvHttpClient } from './eztv/client';
 import { ManualGrabsStore } from './manual-grabs/store';
 import { buildShowEpisodeStatus } from './shows/episode-status';
+import { TrackedShowsStore } from './tracked-shows/store';
+import {
+  normalizeShowName,
+  syncTrackedShowsFromConfig,
+} from './tracked-shows/sync';
+import { reconcileShowLibrary } from './adoption/reconciler';
+import { installRootMediaShowsDir } from './install-bootstrap';
 import { extractCodec, extractResolution } from './normalize';
 import {
   ConfigError,
@@ -156,6 +163,15 @@ export type ApiFetchDeps = {
   downloader?: Downloader;
   /** When set (TMDB configured), GET /api/calendar/tv is available. */
   calendarTv?: CalendarDeps;
+  /**
+   * The tracked-show ledger (see src/tracked-shows/). When set, /api/shows
+   * and friends include every tracked show even with zero candidate_state
+   * rows, PUT /api/config keeps the ledger in sync with the watchlist, and
+   * DELETE /api/shows/:slug (untrack) and the library reconciler become
+   * available. Optional so existing tests/deps that don't care about this
+   * feature aren't forced to construct one.
+   */
+  trackedShows?: TrackedShowsStore;
 };
 
 function json500(): Response {
@@ -181,6 +197,10 @@ function jsonMethodNotAllowed(allow: string): Response {
 
 /** Repository default is 20; HTTP dashboards need a full slice for joins and torrent polling. */
 const API_CANDIDATE_LIST_LIMIT = 50_000;
+
+/** How long a show's library-reconciliation result is trusted before the
+ * next episode-grid view re-runs it (see reconcileShowIfStale). */
+const RECONCILE_STALE_AFTER_MS = 10 * 60 * 1000;
 
 type ManagedTorrentRowState =
   | 'missing'
@@ -483,6 +503,7 @@ export function createApiFetch(
     onCandidateTmdbCacheError,
     downloader,
     calendarTv,
+    trackedShows,
   } = deps;
   let activeConfig = configHolder?.current ?? config;
 
@@ -492,8 +513,8 @@ export function createApiFetch(
   async function findEnrichedShowBySlug(
     slug: string,
   ): Promise<ShowBreakdown | null> {
-    const candidates = repository.listCandidateStates();
-    const base = buildShowBreakdowns(candidates);
+    const candidates = repository.listCandidateStates(API_CANDIDATE_LIST_LIMIT);
+    const base = buildShowBreakdowns(candidates, trackedNormalizedTitles());
     const withPlex = plexShows
       ? enrichShowBreakdownsFromPlexCache(base, plexShows)
       : base;
@@ -505,6 +526,106 @@ export function createApiFetch(
         (entry) => entry.normalizedTitle.toLowerCase() === slug.toLowerCase(),
       ) ?? null
     );
+  }
+
+  function trackedNormalizedTitles(): string[] | undefined {
+    return trackedShows?.list().map((show) => show.normalizedTitle);
+  }
+
+  /** Refreshes at most once per RECONCILE_STALE_AFTER_MS per show, triggered
+   * by viewing that show's episode grid — see grill-me: on-demand per show,
+   * not a global background job, since this is a single-user NAS app and a
+   * periodic sweep over every tracked show's Transmission list + media tree
+   * would be wasted work most of the time. Best-effort: any failure here
+   * must never break the page that triggered it. */
+  async function reconcileShowIfStale(normalizedTitle: string): Promise<void> {
+    if (!trackedShows || !database) return;
+    const tracked = trackedShows.get(normalizedTitle);
+    if (!tracked) return;
+
+    const lastReconciledAt = tracked.lastReconciledAt
+      ? Date.parse(tracked.lastReconciledAt)
+      : Number.NaN;
+    if (
+      !Number.isNaN(lastReconciledAt) &&
+      Date.now() - lastReconciledAt < RECONCILE_STALE_AFTER_MS
+    ) {
+      return;
+    }
+
+    try {
+      await reconcileShowLibrary(tracked, {
+        transmission: activeConfig.transmission,
+        manualGrabs: new ManualGrabsStore(database),
+        mediaShowsDir: installRootMediaShowsDir(
+          activeConfig.runtime.installRoot,
+        ),
+      });
+    } catch {
+      // Best-effort — see doc comment above.
+    } finally {
+      trackedShows.markReconciled(normalizedTitle, new Date().toISOString());
+    }
+  }
+
+  /** Strips any config.tv.shows entry whose normalized name matches, so the
+   * RSS pipeline stops matching new episodes for an untracked show — without
+   * this, the next call to syncTrackedShowsFromConfig (daemon restart, or
+   * any other config PUT) would just re-create the ledger row this DELETE
+   * just removed. Returns `{ ok: false }` on a genuine structural problem
+   * (legacy non-compact tv config — the only format every config-writing
+   * feature in this codebase, including PUT /api/config, already requires —
+   * or an unexpected write failure) so the caller can fail loudly instead of
+   * reporting "untracked" while the watchlist silently still matches it.
+   * Nothing to remove (the show wasn't in tv.shows at all — e.g. a
+   * candidate-only leftover show with no real config entry) is a legitimate
+   * no-op, not a failure. */
+  async function removeShowFromWatchlist(
+    normalizedTitle: string,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const baseOnDisk = await readConfigFileRecord(configPath);
+      const tvDisk = baseOnDisk.tv;
+      if (!isRecord(tvDisk) || !Array.isArray(tvDisk.shows)) {
+        return {
+          ok: false,
+          error:
+            'config tv is not in the expected compact format; edit the config file directly to remove this show from the watchlist',
+        };
+      }
+
+      const remainingShows = tvDisk.shows.filter((entry) => {
+        const name = configShowEntryName(entry);
+        return (
+          name === undefined || normalizeShowName(name) !== normalizedTitle
+        );
+      });
+      if (remainingShows.length === tvDisk.shows.length) return { ok: true };
+
+      const merged = {
+        ...baseOnDisk,
+        tv: { ...tvDisk, shows: remainingShows },
+      };
+      const validated = validateConfig(
+        merged,
+        'config',
+        await loadConfigEnv(configPath),
+      );
+      writeConfigAtomically(configPath, merged);
+      activeConfig = validated;
+      if (configHolder) {
+        configHolder.current = validated;
+      }
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'failed to update the watchlist',
+      };
+    }
   }
 
   return async (request: Request) => {
@@ -1088,8 +1209,10 @@ export function createApiFetch(
 
     if (path === '/api/shows') {
       try {
-        const candidates = repository.listCandidateStates();
-        const base = buildShowBreakdowns(candidates);
+        const candidates = repository.listCandidateStates(
+          API_CANDIDATE_LIST_LIMIT,
+        );
+        const base = buildShowBreakdowns(candidates, trackedNormalizedTitles());
         const withPlex = plexShows
           ? enrichShowBreakdownsFromPlexCache(base, plexShows)
           : base;
@@ -1145,6 +1268,49 @@ export function createApiFetch(
       }
     }
 
+    const showDeleteMatch = path.match(/^\/api\/shows\/([^/]+)$/);
+    if (showDeleteMatch && request.method === 'DELETE') {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!trackedShows) {
+        return Response.json(
+          { error: 'show tracking is not available' },
+          { status: 503 },
+        );
+      }
+
+      try {
+        const slug = decodeURIComponent(showDeleteMatch[1]);
+        const existing = trackedShows.getByNormalizedTitleCaseInsensitive(slug);
+        if (!existing) {
+          return Response.json({ error: 'show not found' }, { status: 404 });
+        }
+        // Untrack removes the ledger row *and* stops the RSS pipeline from
+        // matching new episodes for it — otherwise the next feed poll would
+        // just re-create the ledger row via syncTrackedShowsFromConfig.
+        // candidate_state/manual_grabs history is left alone either way (see
+        // TrackedShowsStore.remove) — this doesn't undo past downloads. If
+        // the watchlist can't actually be updated, fail loudly instead of
+        // reporting success while the RSS pipeline keeps matching it.
+        if (database) {
+          const watchlistResult = await removeShowFromWatchlist(
+            existing.normalizedTitle,
+          );
+          if (!watchlistResult.ok) {
+            return Response.json(
+              { error: watchlistResult.error },
+              { status: 500 },
+            );
+          }
+        }
+        trackedShows.remove(existing.normalizedTitle);
+        return Response.json({ ok: true });
+      } catch {
+        return json500();
+      }
+    }
+
     const showRefreshMatch = path.match(
       /^\/api\/shows\/([^/]+)\/tmdb\/refresh$/,
     );
@@ -1165,8 +1331,10 @@ export function createApiFetch(
 
       try {
         const slug = decodeURIComponent(showRefreshMatch[1]);
-        const candidates = repository.listCandidateStates();
-        const base = buildShowBreakdowns(candidates);
+        const candidates = repository.listCandidateStates(
+          API_CANDIDATE_LIST_LIMIT,
+        );
+        const base = buildShowBreakdowns(candidates, trackedNormalizedTitles());
         const withPlex = plexShows
           ? enrichShowBreakdownsFromPlexCache(base, plexShows)
           : base;
@@ -1209,6 +1377,8 @@ export function createApiFetch(
         if (!show) {
           return Response.json({ error: 'show not found' }, { status: 404 });
         }
+
+        await reconcileShowIfStale(show.normalizedTitle);
 
         const status = await buildShowEpisodeStatus(show, {
           tmdb: tmdbShows,
@@ -1591,6 +1761,12 @@ export function createApiFetch(
         activeConfig = validated;
         if (configHolder) {
           configHolder.current = validated;
+        }
+        // Keep the tracked-show ledger in sync so a show added here (e.g.
+        // calendar's "Add show") shows up on /shows immediately, without
+        // waiting on an RSS match or a daemon restart.
+        if (database && trackedShows) {
+          syncTrackedShowsFromConfig(database, validated.tv);
         }
 
         const redacted = redactConfig(activeConfig);
@@ -2593,6 +2769,17 @@ function isCandidateVisible(c: CandidateStateRecord): boolean {
 
 export function buildShowBreakdowns(
   candidates: CandidateStateRecord[],
+  /**
+   * `undefined` means "no tracked-show ledger available" — every candidate-
+   * derived show is shown, unfiltered (back-compat for callers/tests without
+   * a TrackedShowsStore). A defined array (including an empty one) means the
+   * ledger IS the authority: every tracked show is seeded even with zero
+   * candidates, and any candidate-derived show NOT in this list is dropped —
+   * otherwise "Untrack show" would be a no-op for any show that ever had a
+   * real RSS match, since its candidate_state history would keep rebuilding
+   * a showMap entry for it regardless of ledger membership.
+   */
+  trackedNormalizedTitles?: string[],
 ): ShowBreakdown[] {
   const tvCandidates = candidates
     .filter(isCandidateVisible)
@@ -2626,6 +2813,47 @@ export function buildShowBreakdowns(
       transmissionStatusCode: c.transmissionStatusCode,
       transmissionTorrentHash: c.transmissionTorrentHash,
     });
+  }
+
+  // Seed every tracked show, even with zero candidates — a show that's
+  // tracked but hasn't had an RSS match yet (e.g. added after its season
+  // already aired) must still show up so TMDB enrichment and manual grab
+  // work on it, not just shows the RSS pipeline happened to match. A
+  // candidate's normalizedTitle comes from an actual feed item's raw title,
+  // not from config — its casing can differ from the tracked ledger's
+  // (derived from the configured show name). Re-key to the ledger's casing
+  // whenever a case-insensitive match already exists, so a tracked show
+  // never splits into two entries and every downstream lookup keyed by
+  // `show.normalizedTitle` (manual grabs, reconciliation, the ledger itself)
+  // agrees on one canonical casing.
+  if (trackedNormalizedTitles !== undefined) {
+    for (const title of trackedNormalizedTitles) {
+      const existingKey = Array.from(showMap.keys()).find(
+        (key) => key.toLowerCase() === title.toLowerCase(),
+      );
+      if (existingKey !== undefined) {
+        if (existingKey !== title) {
+          const seasons = showMap.get(existingKey)!;
+          showMap.delete(existingKey);
+          showMap.set(title, seasons);
+        }
+        continue;
+      }
+      showMap.set(title, new Map());
+    }
+
+    // The ledger is authoritative once it exists: drop any candidate-derived
+    // show that isn't (or is no longer) tracked, so untracking a show that
+    // already has RSS history actually removes it from view instead of it
+    // reappearing from candidate_state alone.
+    const trackedLower = new Set(
+      trackedNormalizedTitles.map((t) => t.toLowerCase()),
+    );
+    for (const key of Array.from(showMap.keys())) {
+      if (!trackedLower.has(key.toLowerCase())) {
+        showMap.delete(key);
+      }
+    }
   }
 
   const shows: ShowBreakdown[] = [];
@@ -2854,6 +3082,15 @@ function writeConfigAtomically(
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+/** A config.tv.shows entry is either a plain string name or an object with a
+ * "name" field (see CompactTvShowEntry in config.ts) — extracts it either
+ * way, for removeShowFromWatchlist above. */
+function configShowEntryName(entry: unknown): string | undefined {
+  if (typeof entry === 'string') return entry;
+  if (isRecord(entry) && typeof entry.name === 'string') return entry.name;
+  return undefined;
 }
 
 /** Bounds an optional untrusted string field before it reaches the http.log

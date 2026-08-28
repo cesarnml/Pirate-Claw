@@ -10,7 +10,7 @@
 		showHeroBackdropSrc,
 		showHref
 	} from '$lib/helpers';
-	import type { ShowBreakdown, ShowSeason } from '$lib/types';
+	import type { ShowBreakdown } from '$lib/types';
 	import StarIcon from '@lucide/svelte/icons/star';
 
 	const props = $props();
@@ -22,18 +22,20 @@
 		showHeroBackdropSrc(props.show.tmdb?.backdropUrl, props.show.tmdb?.posterUrl)
 	);
 	const heroBackdropAlt = $derived(tmdbBackdrop ? '' : posterUrl ? `Poster for ${title}` : '');
-	const seasonCount = $derived(props.show.seasons.length);
-	const episodeCount = $derived(
-		props.show.seasons.reduce((sum: number, s: ShowSeason) => sum + s.episodes.length, 0)
-	);
+	// TMDB's real season count when known; otherwise fall back to however
+	// many seasons have at least one known episode — still honest, just a
+	// lower bound instead of the true total.
+	const seasonCount = $derived(props.show.tmdb?.numberOfSeasons ?? props.show.seasons.length);
 	const latestIntake = $derived(mostRecentQueuedAt(props.show));
 
-	// Note: episodeCount/latestIntake are both derived from show.seasons, which
-	// only reflects episodes ever queued via the RSS pipeline (candidate_state)
-	// — not a show's true episode count, and not manual grabs. Fine as loose
-	// "activity" signals here; do not treat them as authoritative completion
-	// data (that's what the removed Completion card was doing wrong).
-
+	// Note: latestIntake is derived from show.seasons, which reflects every
+	// episode this show has *evidence* for — RSS-matched, manually grabbed,
+	// or adopted from Transmission/disk by the library reconciler — not a
+	// live Plex scan. Fine as a loose "activity" signal; the whole-show
+	// plexStatus chip above is the actual Plex-confirmed completeness signal
+	// at this grid-view scale (see grill-me: a real "N of M episodes owned"
+	// count would need a live per-episode Plex walk per card, too expensive
+	// to run for a whole grid — that precision lives on the show detail page).
 	function mostRecentQueuedAt(show: ShowBreakdown): number {
 		return show.seasons.reduce((latest, s) => {
 			for (const ep of s.episodes) {
@@ -45,12 +47,16 @@
 		}, 0);
 	}
 
+	// "Having TMDB metadata" is true for nearly every show now (tracked shows
+	// get TMDB-enriched the same as candidate-derived ones) — a badge that's
+	// almost always present conveys nothing, so it's not a fallback here
+	// anymore. 'Library target' is the honest default: this show is tracked,
+	// full stop, independent of whether a network keyword happened to match.
 	function networkLabel(show: ShowBreakdown): string {
 		const overview = show.tmdb?.overview?.toLowerCase() ?? '';
 		if (overview.includes('apple')) return 'APPLE TV+';
 		if (overview.includes('hbo')) return 'HBO';
 		if (overview.includes('fx')) return 'FX';
-		if (overview) return 'TMDB METADATA';
 		return 'Library target';
 	}
 </script>
@@ -79,7 +85,6 @@
 					<div class="min-w-0 space-y-2">
 						<h2 class="truncate text-2xl font-semibold tracking-[-0.03em]">{title}</h2>
 						<div class="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs">
-							<span>{episodeCount} episodes tracked</span>
 							{#if props.show.tmdb?.voteAverage !== undefined}
 								<span class="inline-flex items-center gap-1">
 									<StarIcon class="h-3.5 w-3.5 fill-current" />

@@ -13,14 +13,18 @@
 	type SortKey = 'title' | 'rating' | 'progress' | 'recent';
 
 	let sortKey = $state<SortKey>('title');
+	let needsContentOnly = $state(false);
 
-	function completionPct(show: ShowBreakdown): number | null {
-		const totalEpisodes = show.seasons.reduce((sum, s) => sum + s.episodes.length, 0);
-		if (totalEpisodes === 0) return null;
-		const completed = show.seasons
-			.flatMap((season) => season.episodes)
-			.filter((episode) => episode.transmissionPercentDone === 1).length;
-		return Math.round((completed / totalEpisodes) * 100);
+	// Every episode this show has *evidence* for: RSS-matched, manually
+	// grabbed, or adopted from Transmission/disk by the library reconciler.
+	// Not a live Plex completeness percentage (TMDB doesn't cache a total
+	// episode count today, and a live per-episode Plex walk for every show
+	// in the grid would be too expensive) — a raw count is what's honestly
+	// available at this scale, so "Progress" sorts by that instead of a
+	// fabricated percentage. "Needs Content" below is exactly the count === 0
+	// case: a tracked show with no evidence of any episode yet.
+	function ownedEpisodeCount(show: ShowBreakdown): number {
+		return show.seasons.reduce((sum, s) => sum + s.episodes.length, 0);
 	}
 
 	function mostRecentQueuedAt(show: ShowBreakdown): number {
@@ -34,13 +38,19 @@
 		}, 0);
 	}
 
+	const visibleShows = $derived(
+		needsContentOnly
+			? data.shows.filter((show: ShowBreakdown) => ownedEpisodeCount(show) === 0)
+			: data.shows
+	);
+
 	const sortedShows = $derived(
-		[...data.shows].sort((left, right) => {
+		[...visibleShows].sort((left, right) => {
 			if (sortKey === 'rating') {
 				return (right.tmdb?.voteAverage ?? -1) - (left.tmdb?.voteAverage ?? -1);
 			}
 			if (sortKey === 'progress') {
-				return (completionPct(right) ?? 0) - (completionPct(left) ?? 0);
+				return ownedEpisodeCount(right) - ownedEpisodeCount(left);
 			}
 			if (sortKey === 'recent') {
 				return mostRecentQueuedAt(right) - mostRecentQueuedAt(left);
@@ -51,12 +61,21 @@
 </script>
 
 <section class="space-y-6">
-	<ShowsDeckHeader {sortKey} onSortChange={(key) => (sortKey = key)} />
+	<ShowsDeckHeader
+		{sortKey}
+		onSortChange={(key) => (sortKey = key)}
+		{needsContentOnly}
+		onToggleNeedsContent={() => (needsContentOnly = !needsContentOnly)}
+	/>
 
 	{#if data.error}
 		<ApiUnavailableAlert message={data.error} />
 	{:else if data.shows.length === 0}
 		<ShowsNoTargetsCard />
+	{:else if sortedShows.length === 0}
+		<p class="text-muted-foreground text-sm">
+			No shows need content right now — every tracked show has at least one known episode.
+		</p>
 	{:else}
 		<ul class="grid list-none gap-5 lg:grid-cols-2 xl:grid-cols-3">
 			{#each sortedShows as show (show.normalizedTitle)}

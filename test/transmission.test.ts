@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import type { TransmissionConfig } from '../src/config';
 import {
   createTransmissionDownloader,
+  fetchAllTorrentsForAdoption,
   fetchSessionInfo,
   fetchTorrentStats,
   type SubmissionFailure,
@@ -819,6 +820,80 @@ describe('fetchSessionInfo', () => {
     });
 
     expect(result).toMatchObject({ ok: false, code: 'network_error' });
+  });
+});
+
+describe('fetchAllTorrentsForAdoption', () => {
+  afterEach(() => {
+    while (servers.length > 0) {
+      servers.pop()?.stop(true);
+    }
+    globalThis.fetch = originalFetch;
+  });
+
+  it('lists every torrent Transmission knows about with no ids filter', async () => {
+    const requests: CapturedRequest[] = [];
+    const server = startTransmissionServer(async (request) => {
+      requests.push(await captureRequest(request));
+      return Response.json({
+        result: 'success',
+        arguments: {
+          torrents: [
+            { id: 1, hashString: 'abc123', name: 'Hand-Added.Show.S01E02' },
+            { id: 2, hashString: 'def456', name: 'Another.Show.S02E03' },
+          ],
+        },
+      });
+    });
+
+    const result = await fetchAllTorrentsForAdoption(
+      createTransmissionConfig(server.url.origin),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      torrents: [
+        { id: 1, hash: 'abc123', name: 'Hand-Added.Show.S01E02' },
+        { id: 2, hash: 'def456', name: 'Another.Show.S02E03' },
+      ],
+    });
+    const body = requests[0].json as { arguments: { ids?: unknown } };
+    expect(body.arguments.ids).toBeUndefined();
+  });
+
+  it('skips a malformed torrent entry rather than failing the whole call', async () => {
+    const server = startTransmissionServer(() =>
+      Response.json({
+        result: 'success',
+        arguments: {
+          torrents: [
+            { id: 1, hashString: 'abc123', name: 'Good Entry' },
+            { id: 'not-a-number', hashString: 'bad', name: 'Bad Entry' },
+          ],
+        },
+      }),
+    );
+
+    const result = await fetchAllTorrentsForAdoption(
+      createTransmissionConfig(server.url.origin),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      torrents: [{ id: 1, hash: 'abc123', name: 'Good Entry' }],
+    });
+  });
+
+  it('surfaces an rpc error result', async () => {
+    const server = startTransmissionServer(() =>
+      Response.json({ result: 'no such method', arguments: {} }),
+    );
+
+    const result = await fetchAllTorrentsForAdoption(
+      createTransmissionConfig(server.url.origin),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'rpc_error' });
   });
 });
 

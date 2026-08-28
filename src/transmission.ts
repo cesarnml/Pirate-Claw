@@ -433,6 +433,146 @@ export async function fetchTorrentStats(
   return parseTorrentStatsResult(parsed);
 }
 
+export type AdoptionTorrentSnapshot = {
+  id: number;
+  hash: string;
+  name: string;
+};
+
+export type FetchAllTorrentsResult =
+  | { ok: true; torrents: AdoptionTorrentSnapshot[] }
+  | SubmissionFailure;
+
+/**
+ * Lists every torrent Transmission currently knows about, not just ones
+ * pirate-claw itself queued — `fetchTorrentStats` above requires an explicit
+ * hash list and can't answer "what's in Transmission that I don't know
+ * about." Used by the library reconciler (src/adoption/reconciler.ts) to
+ * find torrents added by hand through Transmission's own web UI.
+ */
+export async function fetchAllTorrentsForAdoption(
+  config: TransmissionConfig,
+): Promise<FetchAllTorrentsResult> {
+  const body = {
+    method: 'torrent-get',
+    arguments: {
+      fields: ['id', 'name', 'hashString'],
+    },
+  };
+
+  const firstResponse = await sendRpcRequest(config, body);
+  if (!firstResponse.ok) {
+    return firstResponse.error;
+  }
+
+  let response = firstResponse.response;
+
+  if (response.status === 409) {
+    const sessionId = response.headers.get('x-transmission-session-id');
+    if (!sessionId) {
+      return {
+        ok: false,
+        code: 'session_error',
+        message:
+          'Transmission session negotiation failed: missing X-Transmission-Session-Id header.',
+      };
+    }
+    const retryResponse = await sendRpcRequest(config, body, sessionId);
+    if (!retryResponse.ok) {
+      return retryResponse.error;
+    }
+    response = retryResponse.response;
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code: 'http_error',
+      message: `Transmission RPC request failed with HTTP ${response.status}.`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message: 'Transmission RPC response was not valid JSON.',
+    };
+  }
+
+  return parseAllTorrentsResult(parsed);
+}
+
+function parseAllTorrentsResult(parsed: unknown): FetchAllTorrentsResult {
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    !('result' in parsed) ||
+    !('arguments' in parsed)
+  ) {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message:
+        'Transmission RPC torrent-get response was missing required fields.',
+    };
+  }
+
+  const record = parsed as Record<string, unknown>;
+  if (record.result !== 'success') {
+    return {
+      ok: false,
+      code: 'rpc_error',
+      message: `Transmission rejected torrent-get: ${String(record.result)}.`,
+      rpcResult: typeof record.result === 'string' ? record.result : undefined,
+    };
+  }
+
+  const args = record.arguments;
+  const rawTorrents =
+    args &&
+    typeof args === 'object' &&
+    Array.isArray((args as Record<string, unknown>).torrents)
+      ? ((args as Record<string, unknown>).torrents as unknown[])
+      : undefined;
+
+  if (!rawTorrents) {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message:
+        'Transmission RPC torrent-get response was missing required fields.',
+    };
+  }
+
+  const torrents: AdoptionTorrentSnapshot[] = [];
+  for (const raw of rawTorrents) {
+    if (!raw || typeof raw !== 'object') continue;
+    const torrent = raw as {
+      id?: unknown;
+      hashString?: unknown;
+      name?: unknown;
+    };
+    if (
+      typeof torrent.id !== 'number' ||
+      typeof torrent.hashString !== 'string' ||
+      typeof torrent.name !== 'string'
+    ) {
+      continue;
+    }
+    torrents.push({
+      id: torrent.id,
+      hash: torrent.hashString,
+      name: torrent.name,
+    });
+  }
+
+  return { ok: true, torrents };
+}
+
 export async function fetchSessionInfo(
   config: TransmissionConfig,
 ): Promise<FetchSessionInfoResult> {

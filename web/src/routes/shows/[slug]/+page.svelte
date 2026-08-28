@@ -12,6 +12,7 @@
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
 	import StarIcon from '@lucide/svelte/icons/star';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import MissingEpisodesPanel from './MissingEpisodesPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -30,6 +31,13 @@
 
 	function episodeCount(show: NonNullable<PageData['show']>): number {
 		return show.seasons.reduce((sum, season) => sum + season.episodes.length, 0);
+	}
+
+	// TMDB's real season count when known; falls back to however many seasons
+	// have at least one known episode otherwise (still honest, just a lower
+	// bound instead of the true total — same reasoning as ShowCard.svelte).
+	function seasonCount(show: NonNullable<PageData['show']>): number {
+		return show.tmdb?.numberOfSeasons ?? show.seasons.length;
 	}
 
 	function formatLastWatched(value: string | null): string {
@@ -52,7 +60,15 @@
 {:else if !data.show}
 	<Card class="bg-card/72 rounded-[30px] border-white/10">
 		<CardContent class="space-y-4 pt-8">
-			<p class="text-lg font-semibold">Show not found.</p>
+			<p class="text-lg font-semibold">
+				{form?.removeSuccess ? 'Show untracked.' : 'Show not found.'}
+			</p>
+			{#if form?.removeSuccess}
+				<p class="text-muted-foreground text-sm">
+					The RSS pipeline won't match new episodes for it. Past downloads are untouched — you can
+					always track it again from the calendar.
+				</p>
+			{/if}
 			<Button href="/shows" variant="outline" class="w-fit rounded-full px-4">
 				<ArrowLeftIcon class="mr-2 h-4 w-4" />
 				Back to shows
@@ -69,12 +85,20 @@
 			</Button>
 
 			{#if data.canWrite}
-				<form method="POST" action="?/refreshTmdb" use:enhance={enhanceRefresh}>
-					<Button type="submit" variant="outline" class="rounded-full px-4">
-						<RefreshCcwIcon class="mr-2 h-4 w-4" />
-						Refresh TMDB
-					</Button>
-				</form>
+				<div class="flex flex-wrap gap-2">
+					<form method="POST" action="?/refreshTmdb" use:enhance={enhanceRefresh}>
+						<Button type="submit" variant="outline" class="rounded-full px-4">
+							<RefreshCcwIcon class="mr-2 h-4 w-4" />
+							Refresh TMDB
+						</Button>
+					</form>
+					<form method="POST" action="?/removeShow" use:enhance={enhanceRefresh}>
+						<Button type="submit" variant="outline" class="rounded-full px-4">
+							<Trash2Icon class="mr-2 h-4 w-4" />
+							Untrack show
+						</Button>
+					</form>
+				</div>
 			{/if}
 		</div>
 
@@ -82,6 +106,13 @@
 			<Alert class={form.refreshSuccess ? 'border-primary/20 bg-primary/8' : ''}>
 				<AlertTitle>{form.refreshSuccess ? 'TMDB refreshed' : 'Refresh failed'}</AlertTitle>
 				<AlertDescription>{form.refreshMessage}</AlertDescription>
+			</Alert>
+		{/if}
+
+		{#if form?.removeMessage}
+			<Alert variant="destructive">
+				<AlertTitle>Untrack failed</AlertTitle>
+				<AlertDescription>{form.removeMessage}</AlertDescription>
 			</Alert>
 		{/if}
 
@@ -138,7 +169,7 @@
 								{data.show.tmdb?.network ?? 'TMDB metadata'}
 							</Badge>
 							<Badge variant="outline">
-								{data.show.seasons.length} season{data.show.seasons.length === 1 ? '' : 's'}
+								{seasonCount(data.show)} season{seasonCount(data.show) === 1 ? '' : 's'}
 							</Badge>
 							<Badge variant="outline">
 								{episodeCount(data.show)} episode{episodeCount(data.show) === 1 ? '' : 's'}

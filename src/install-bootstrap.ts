@@ -88,6 +88,22 @@ export function installRootDataDir(
   return normalized ? join(normalized, RUNTIME_DATA_DIRECTORY) : undefined;
 }
 
+/**
+ * Where the daemon container sees Transmission's TV download/library
+ * directory on disk — the daemon mounts the *whole* install root (unlike the
+ * transmission service, which only mounts `media` at `/media`), so this is
+ * `<installRoot>/media/shows`, not the `/media/shows` path Transmission's own
+ * config uses internally. Used by the library reconciler to walk the real
+ * files on disk. Returns undefined when no install root is configured (local
+ * dev), matching `installRootDataDir`.
+ */
+export function installRootMediaShowsDir(
+  installRoot: string | undefined = process.env.PIRATE_CLAW_INSTALL_ROOT,
+): string | undefined {
+  const normalized = normalizeInstallRoot(installRoot);
+  return normalized ? join(normalized, 'media', 'shows') : undefined;
+}
+
 export function generatedDaemonApiWriteTokenPath(configPath: string): string {
   return join(
     dirname(configPath),

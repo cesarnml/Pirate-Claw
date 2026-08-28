@@ -89,6 +89,38 @@ export const actions: Actions = {
 		}
 	},
 
+	removeShow: async ({ params }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { removeMessage: 'Untracking is unavailable without API write access.' });
+		}
+
+		try {
+			const response = await apiRequest(`/api/shows/${encodeURIComponent(params.slug)}`, {
+				method: 'DELETE',
+				headers: {
+					authorization: `Bearer ${writeToken}`
+				}
+			});
+
+			if (!response.ok) {
+				let removeMessage = `Untrack failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) removeMessage = body.error;
+				} catch {
+					// Keep fallback message.
+				}
+				return fail(response.status, { removeMessage });
+			}
+
+			return { removeSuccess: true };
+		} catch (error) {
+			console.error('[shows detail] removeShow failed:', error);
+			return fail(500, { removeMessage: 'Could not reach the API to untrack this show.' });
+		}
+	},
+
 	manualGrab: async ({ request, params }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {

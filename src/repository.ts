@@ -7,6 +7,7 @@ import { ensureManualGrabsSchema } from './manual-grabs/schema';
 import { ensurePlexSchema } from './plex/schema';
 import type { TmdbMoviePublic } from './movie-api-types';
 import { ensureTmdbSchema } from './tmdb/schema';
+import { ensureTrackedShowsSchema } from './tracked-shows/schema';
 import type { TmdbTvShowMeta } from './tv-api-types';
 import type { RawFeedItem } from './feed';
 import type { NormalizedFeedItem } from './normalize';
@@ -331,6 +332,7 @@ export function ensureSchema(database: Database): void {
   ensureTmdbSchema(database);
   ensurePlexSchema(database);
   ensureManualGrabsSchema(database);
+  ensureTrackedShowsSchema(database);
 }
 
 export function hasStatusSchema(database: Database): boolean {

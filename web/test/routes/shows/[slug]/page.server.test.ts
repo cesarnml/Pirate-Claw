@@ -112,6 +112,59 @@ describe('shows detail page server', () => {
 		});
 	});
 
+	describe('removeShow', () => {
+		it('calls DELETE on the show endpoint and returns success on happy path', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../../src/routes/shows/[slug]/+page.server');
+			apiRequestMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+			const result = await actions.removeShow({ params: { slug: 'the show' } } as never);
+
+			expect((result as { removeSuccess?: boolean }).removeSuccess).toBe(true);
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/shows/the%20show',
+				expect.objectContaining({
+					method: 'DELETE',
+					headers: { authorization: 'Bearer write-token' }
+				})
+			);
+		});
+
+		it('returns fail(403) when write access is unavailable', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: {}
+			}));
+			const { actions } = await import('../../../../src/routes/shows/[slug]/+page.server');
+
+			const result = await actions.removeShow({ params: { slug: 'the show' } } as never);
+
+			expect((result as { status?: number }).status).toBe(403);
+			expect((result as { data?: { removeMessage?: string } }).data?.removeMessage).toContain(
+				'write access'
+			);
+			expect(apiRequestMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces the API error message on failure', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../../src/routes/shows/[slug]/+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(JSON.stringify({ error: 'show not found' }), { status: 404 })
+			);
+
+			const result = await actions.removeShow({ params: { slug: 'the show' } } as never);
+
+			expect((result as { status?: number }).status).toBe(404);
+			expect((result as { data?: { removeMessage?: string } }).data?.removeMessage).toBe(
+				'show not found'
+			);
+		});
+	});
+
 	describe('manualGrab', () => {
 		function grabRequest(fields: Record<string, string>): Request {
 			const body = new FormData();

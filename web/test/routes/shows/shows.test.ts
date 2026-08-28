@@ -198,6 +198,49 @@ describe('/shows', () => {
 		expect(links[0]).toHaveAttribute('href', '/shows/the%20example%20show');
 	});
 
+	it('does not show a dishonest "episodes tracked" count, and uses TMDB numberOfSeasons for the season pill', () => {
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [exampleShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		expect(screen.queryByText(/episodes tracked/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/TMDB METADATA/)).not.toBeInTheDocument();
+		expect(screen.getByText('2 seasons')).toBeInTheDocument();
+	});
+
+	it('"Needs Content" filters down to tracked shows with zero known episodes', async () => {
+		const emptyShow: ShowBreakdown = {
+			normalizedTitle: 'House of the Dragon',
+			plexStatus: 'unknown',
+			watchCount: null,
+			lastWatchedAt: null,
+			seasons: [],
+			tmdb: { name: 'House of the Dragon', numberOfSeasons: 2 }
+		};
+
+		render(Page, {
+			data: {
+				...sharedLayoutData,
+				shows: [exampleShow, emptyShow],
+				torrents: [liveTorrent],
+				error: null
+			}
+		});
+
+		expect(screen.getByText('The Example Show')).toBeInTheDocument();
+		expect(screen.getByText('House of the Dragon')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Needs Content' }));
+
+		expect(screen.queryByText('The Example Show')).not.toBeInTheDocument();
+		expect(screen.getByText('House of the Dragon')).toBeInTheDocument();
+	});
+
 	it('renders empty and error states', () => {
 		const { rerender } = render(Page, {
 			data: { ...sharedLayoutData, shows: [], torrents: null, error: null }

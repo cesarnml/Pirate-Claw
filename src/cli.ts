@@ -59,6 +59,8 @@ import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
 import { resolveTmdbSettings } from './tmdb/settings';
 import { createTransmissionDownloader } from './transmission';
+import { TrackedShowsStore } from './tracked-shows/store';
+import { syncTrackedShowsFromConfig } from './tracked-shows/sync';
 
 function plexMovieEnrichDeps(
   database: Database,
@@ -449,6 +451,17 @@ export async function runCli(argv: string[]): Promise<number> {
       try {
         ensureSchema(database);
         const repository = createRepository(database);
+        const trackedShows = new TrackedShowsStore(database);
+        // One-time backfill (idempotent) for shows already in the watchlist
+        // or with pre-existing candidate history before this ledger existed,
+        // plus the ordinary case of picking up config edits made outside the
+        // API (e.g. hand-editing the config file) since the last restart.
+        syncTrackedShowsFromConfig(
+          database,
+          config.tv,
+          // Repository default is 20; this backfill needs the full history.
+          repository.listCandidateStates(50_000).map((c) => c.normalizedTitle),
+        );
         const downloader = createTransmissionDownloader(config.transmission, {
           warn: log,
         });
@@ -596,6 +609,7 @@ export async function runCli(argv: string[]): Promise<number> {
                     ),
                   downloader,
                   calendarTv,
+                  trackedShows,
                 })
               : undefined,
         });

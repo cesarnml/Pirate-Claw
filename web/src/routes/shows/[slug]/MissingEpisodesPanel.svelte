@@ -222,7 +222,7 @@
 								{/if}
 							</div>
 							<div class="flex items-center gap-2">
-								{#if episode.manualGrab}
+								{#if episode.manualGrab && episode.plexStatus !== 'in_library'}
 									<Badge class="border-primary/20 bg-primary/12 text-primary">
 										Queued via {episode.manualGrab.source}
 									</Badge>

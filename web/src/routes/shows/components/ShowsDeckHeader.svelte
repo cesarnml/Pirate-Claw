@@ -11,6 +11,8 @@
 	const props = $props<{
 		sortKey: SortKey;
 		onSortChange: (key: SortKey) => void;
+		needsContentOnly: boolean;
+		onToggleNeedsContent: () => void;
 	}>();
 </script>
 
@@ -39,5 +41,19 @@
 				{option.label}
 			</button>
 		{/each}
+		<!-- A standalone toggle, not part of the sort group above — filters
+		     down to shows tracked with zero known episodes so far (e.g. just
+		     added, season already aired before the RSS pipeline ever saw it),
+		     independent of however the list is currently sorted. -->
+		<button
+			type="button"
+			class={`border-border bg-card/75 text-muted-foreground hover:border-primary/30 hover:text-foreground rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.18em] uppercase transition-colors ${
+				props.needsContentOnly ? 'border-primary/45 bg-primary/12 text-primary' : ''
+			}`}
+			onclick={() => props.onToggleNeedsContent()}
+			aria-pressed={props.needsContentOnly}
+		>
+			Needs Content
+		</button>
 	</div>
 </div>
