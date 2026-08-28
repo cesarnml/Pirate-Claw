@@ -29,7 +29,8 @@
 		reconciled: 'COMPLETED',
 		in_library: 'IN LIBRARY',
 		missing: 'MISSING',
-		unknown: 'UNKNOWN'
+		unknown: 'UNKNOWN',
+		unaired: 'UNAIRED'
 	};
 
 	// Add Transmission torrent UI display tones
@@ -51,7 +52,8 @@
 		reconciled: 'border-emerald-400/25 bg-emerald-500/15 text-emerald-200',
 		in_library: 'border-primary/35 bg-primary/18 text-primary',
 		missing: 'border-amber-400/25 bg-amber-500/18 text-amber-200',
-		unknown: 'border-white/8 bg-white/6 text-slate-300'
+		unknown: 'border-white/8 bg-white/6 text-slate-300',
+		unaired: 'border-white/8 bg-white/6 text-slate-300'
 	};
 
 	const label = $derived(labels[normalized] ?? status.toUpperCase());

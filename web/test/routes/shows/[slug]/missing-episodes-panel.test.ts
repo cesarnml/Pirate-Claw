@@ -110,6 +110,47 @@ describe('MissingEpisodesPanel', () => {
 		expect(screen.queryByText('Find on EZTV')).not.toBeInTheDocument();
 	});
 
+	it('shows UNAIRED (not MISSING) only for a confirmed future air date, not merely an unknown one', () => {
+		const farFuture = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+		render(Panel, {
+			slug: 'the-show',
+			episodeStatus: {
+				plexReachable: true,
+				seasons: [
+					{
+						season: 1,
+						episodeCountMismatch: undefined,
+						episodes: [
+							{
+								episode: 1,
+								name: 'Confirmed future episode',
+								airDate: farFuture,
+								plexStatus: 'missing',
+								manualGrab: null
+							},
+							{
+								episode: 2,
+								name: 'No air date on record',
+								airDate: undefined,
+								plexStatus: 'missing',
+								manualGrab: null
+							}
+						]
+					}
+				]
+			},
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		// Confirmed future date -> honest "UNAIRED", not "MISSING".
+		expect(screen.getByText('UNAIRED')).toBeInTheDocument();
+		// No air date at all is NOT the same claim as "confirmed not aired yet"
+		// — an episode with an unknown air date could easily have already
+		// aired, so it must stay "MISSING", not be assumed unaired.
+		expect(screen.getByText('MISSING')).toBeInTheDocument();
+	});
+
 	it('does not show "Find on EZTV" for missing episodes when canWrite is false', () => {
 		render(Panel, {
 			slug: 'the-show',

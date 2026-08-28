@@ -23,9 +23,20 @@
 
 	/** An episode with a future/no air date can't have leaked online yet —
 	 * "missing" is still technically true, but offering "Find on EZTV" for
-	 * something that hasn't released is pointless noise. */
+	 * something that hasn't released is pointless noise. Unknown air date
+	 * (undefined) is treated the same as "not aired" here — safe default for
+	 * this gate, since showing the button either way risks nothing worse
+	 * than a zero-result search. */
 	function hasAired(airDate: string | undefined): boolean {
 		return airDate !== undefined && airDate <= todayIsoDate;
+	}
+
+	/** Stricter than hasAired — only true for a *confirmed future* air date,
+	 * not merely "we don't have one." Used for the "UNAIRED" badge, since
+	 * claiming that confidently based on a missing TMDB date would be its own
+	 * dishonesty (the episode could easily have already aired). */
+	function isConfirmedUnaired(airDate: string | undefined): boolean {
+		return airDate !== undefined && airDate > todayIsoDate;
 	}
 
 	let selectedSeason = $state<number | null>(null);
@@ -191,6 +202,10 @@
 				{#each activeSeason.episodes as episode (episode.episode)}
 					{@const key = episodeKey(activeSeason.season, episode.episode)}
 					{@const lookup = eztvResults[key]}
+					{@const displayStatus =
+						episode.plexStatus === 'missing' && isConfirmedUnaired(episode.airDate)
+							? 'unaired'
+							: episode.plexStatus}
 					<div class="bg-card/74 rounded-[24px] border border-white/10 p-4">
 						<div class="flex flex-wrap items-start justify-between gap-3">
 							<div class="min-w-0">
@@ -212,7 +227,7 @@
 										Queued via {episode.manualGrab.source}
 									</Badge>
 								{/if}
-								<StatusChip status={episode.plexStatus} />
+								<StatusChip status={displayStatus} />
 							</div>
 						</div>
 
