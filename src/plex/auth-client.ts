@@ -1,5 +1,6 @@
 import { sign } from 'node:crypto';
 
+import { loggedFetch } from '../http-log';
 import type { PlexAuthIdentity } from './auth';
 
 const PLEX_CLIENTS_API = 'https://clients.plex.tv';
@@ -24,20 +25,24 @@ export type StartedPlexPinAuth = {
 export async function startPlexPinAuth(
   input: StartPlexPinAuthInput,
 ): Promise<StartedPlexPinAuth> {
-  const response = await fetch(`${PLEX_CLIENTS_API}/api/v2/pins`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Plex-Client-Identifier': input.clientIdentifier,
-      'X-Plex-Product': input.productName,
-      'X-Plex-Version': '1.0.0',
-      'X-Plex-Platform': 'Web',
-      'X-Plex-Device': input.productName,
-      'X-Plex-Device-Name': input.productName,
+  const response = await loggedFetch(
+    `${PLEX_CLIENTS_API}/api/v2/pins`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Plex-Client-Identifier': input.clientIdentifier,
+        'X-Plex-Product': input.productName,
+        'X-Plex-Version': '1.0.0',
+        'X-Plex-Platform': 'Web',
+        'X-Plex-Device': input.productName,
+        'X-Plex-Device-Name': input.productName,
+      },
+      body: JSON.stringify({ strong: true, jwk: input.jwk }),
     },
-    body: JSON.stringify({ strong: true, jwk: input.jwk }),
-  });
+    { source: 'plex-auth', label: 'pin-start' },
+  );
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
@@ -97,7 +102,7 @@ export async function exchangePlexPinForAuthToken(input: {
 }): Promise<string | null> {
   console.log(`[plex-auth] pin exchange check pinId=${input.pinId}`);
 
-  const response = await fetch(
+  const response = await loggedFetch(
     `${PLEX_CLIENTS_API}/api/v2/pins/${String(input.pinId)}`,
     {
       method: 'GET',
@@ -106,6 +111,7 @@ export async function exchangePlexPinForAuthToken(input: {
         'X-Plex-Client-Identifier': input.clientIdentifier,
       },
     },
+    { source: 'plex-auth', label: 'pin-exchange' },
   );
 
   if (response.status === 429) {
@@ -146,13 +152,17 @@ export async function refreshPlexAuthToken(input: {
   identity: PlexAuthIdentity;
   now?: Date;
 }): Promise<string> {
-  const nonceResponse = await fetch(`${PLEX_CLIENTS_API}/api/v2/auth/nonce`, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'X-Plex-Client-Identifier': input.clientIdentifier,
+  const nonceResponse = await loggedFetch(
+    `${PLEX_CLIENTS_API}/api/v2/auth/nonce`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'X-Plex-Client-Identifier': input.clientIdentifier,
+      },
     },
-  });
+    { source: 'plex-auth', label: 'nonce' },
+  );
 
   if (!nonceResponse.ok) {
     throw new Error(
@@ -173,15 +183,19 @@ export async function refreshPlexAuthToken(input: {
     now: input.now,
   });
 
-  const tokenResponse = await fetch(`${PLEX_CLIENTS_API}/api/v2/auth/token`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Plex-Client-Identifier': input.clientIdentifier,
+  const tokenResponse = await loggedFetch(
+    `${PLEX_CLIENTS_API}/api/v2/auth/token`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Plex-Client-Identifier': input.clientIdentifier,
+      },
+      body: JSON.stringify({ jwt: deviceJwt }),
     },
-    body: JSON.stringify({ jwt: deviceJwt }),
-  });
+    { source: 'plex-auth', label: 'token-refresh' },
+  );
 
   if (!tokenResponse.ok) {
     throw new Error(

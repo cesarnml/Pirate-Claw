@@ -1,3 +1,4 @@
+import { loggedFetch } from '../http-log';
 import { TMDB_API_BASE } from './constants';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -92,10 +93,14 @@ export class TmdbHttpClient {
 
     let response: Response;
     try {
-      response = await fetch(url, {
-        signal: AbortSignal.timeout(this.timeoutMs),
-        headers: { Accept: 'application/json' },
-      });
+      response = await loggedFetch(
+        url,
+        {
+          signal: AbortSignal.timeout(this.timeoutMs),
+          headers: { Accept: 'application/json' },
+        },
+        { source: 'tmdb', label: path },
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.log(`tmdb request failed: ${path} (${message})`);

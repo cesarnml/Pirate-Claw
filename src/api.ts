@@ -10,6 +10,7 @@ import {
   verifyLogin,
 } from './auth-state';
 import { renameSync, writeFileSync } from 'node:fs';
+import { loggedFetch } from './http-log';
 import { getInstallHealth } from './install-health';
 import {
   fetchSessionInfo,
@@ -202,12 +203,16 @@ async function fetchPlexServerVersion(
 ): Promise<string | null> {
   let response: Response;
   try {
-    response = await fetch(new URL('/identity', plexUrl).toString(), {
-      headers: {
-        Accept: 'application/xml',
+    response = await loggedFetch(
+      new URL('/identity', plexUrl).toString(),
+      {
+        headers: {
+          Accept: 'application/xml',
+        },
+        signal: AbortSignal.timeout(PLEX_VERSION_PROBE_TIMEOUT_MS),
       },
-      signal: AbortSignal.timeout(PLEX_VERSION_PROBE_TIMEOUT_MS),
-    });
+      { source: 'plex', label: 'identity-probe' },
+    );
   } catch {
     return null;
   }
@@ -216,13 +221,17 @@ async function fetchPlexServerVersion(
     // Some PMS deployments gate /identity unexpectedly; fall back to a root
     // probe with the token for compatibility.
     try {
-      response = await fetch(new URL('/', plexUrl).toString(), {
-        headers: {
-          Accept: 'application/xml',
-          'X-Plex-Token': token,
+      response = await loggedFetch(
+        new URL('/', plexUrl).toString(),
+        {
+          headers: {
+            Accept: 'application/xml',
+            'X-Plex-Token': token,
+          },
+          signal: AbortSignal.timeout(PLEX_VERSION_PROBE_TIMEOUT_MS),
         },
-        signal: AbortSignal.timeout(PLEX_VERSION_PROBE_TIMEOUT_MS),
-      });
+        { source: 'plex', label: 'root-probe' },
+      );
     } catch {
       return null;
     }
@@ -1736,9 +1745,13 @@ export function createApiFetch(
           if (existingUrls.has(feed.url)) continue;
           let fetchOk = false;
           try {
-            const res = await fetch(feed.url, {
-              signal: AbortSignal.timeout(10_000),
-            });
+            const res = await loggedFetch(
+              feed.url,
+              {
+                signal: AbortSignal.timeout(10_000),
+              },
+              { source: 'feed', label: `${feed.name} (validate)` },
+            );
             fetchOk = res.ok;
           } catch {
             fetchOk = false;

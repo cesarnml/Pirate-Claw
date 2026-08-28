@@ -1,4 +1,5 @@
 import type { TransmissionConfig } from './config';
+import { loggedFetch } from './http-log';
 
 export type SubmitDownloadInput = {
   downloadUrl: string;
@@ -592,11 +593,19 @@ async function sendRpcRequest(
     }
 > {
   try {
-    const response = await fetch(config.url, {
-      method: 'POST',
-      headers: buildHeaders(config, sessionId),
-      body: JSON.stringify(body),
-    });
+    const rpcMethod =
+      typeof body === 'object' && body !== null && 'method' in body
+        ? String((body as { method: unknown }).method)
+        : undefined;
+    const response = await loggedFetch(
+      config.url,
+      {
+        method: 'POST',
+        headers: buildHeaders(config, sessionId),
+        body: JSON.stringify(body),
+      },
+      { source: 'transmission', label: rpcMethod },
+    );
 
     return {
       ok: true,

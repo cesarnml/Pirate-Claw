@@ -1,5 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 
+import { loggedFetch } from '../http-log';
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export type PlexRequestFailureKind = 'auth' | 'http' | 'network' | 'parse';
@@ -218,13 +220,17 @@ export class PlexHttpClient {
 
     let response: Response;
     try {
-      response = await fetch(url, {
-        headers: {
-          Accept: 'application/xml',
-          'X-Plex-Token': this.token,
+      response = await loggedFetch(
+        url,
+        {
+          headers: {
+            Accept: 'application/xml',
+            'X-Plex-Token': this.token,
+          },
+          signal: AbortSignal.timeout(this.timeoutMs),
         },
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
+        { source: 'plex', label: path },
+      );
     } catch (error) {
       this.lastFailureKind = 'network';
       const message = error instanceof Error ? error.message : String(error);

@@ -1,6 +1,7 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
 import type { FeedConfig } from './config';
+import { loggedFetch } from './http-log';
 
 export type RawFeedItem = {
   feedName: string;
@@ -22,7 +23,10 @@ export async function fetchFeed(feed: FeedConfig): Promise<RawFeedItem[]> {
   const safeFeedUrl = formatFeedUrlForError(feed.url);
 
   try {
-    response = await fetch(feed.url);
+    response = await loggedFetch(feed.url, undefined, {
+      source: 'feed',
+      label: feed.name,
+    });
   } catch (error) {
     throw new FeedError(
       `Failed to fetch feed "${feed.name}" from ${safeFeedUrl}: ${formatCause(error)}.`,

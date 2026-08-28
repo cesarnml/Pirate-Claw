@@ -13,6 +13,7 @@ import {
   resolveConfigPath,
 } from './config';
 import { daemonOptionsFromConfig, runDaemonLoop } from './daemon';
+import { configureHttpLog } from './http-log';
 import {
   DEFAULT_SYNOLOGY_API_HOST,
   DEFAULT_SYNOLOGY_API_PORT,
@@ -173,6 +174,12 @@ function tmdbShowsEnrichDeps(
 
 export async function runCli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
+
+  // Default from the env var so every command's 3rd-party HTTP calls (TMDB,
+  // Plex, Transmission, feeds) get logged, not just `daemon`. The `daemon`
+  // branch re-points this at config.runtime.installRoot once config loads,
+  // matching how resolveDatabasePath() layers env-default over config.
+  configureHttpLog(process.env.PIRATE_CLAW_INSTALL_ROOT);
 
   try {
     if (command === 'config') {
@@ -431,6 +438,8 @@ export async function runCli(argv: string[]): Promise<number> {
         });
         config = await loadConfig(resolvedConfigPath);
       }
+
+      configureHttpLog(config.runtime.installRoot);
 
       const database = openDatabase(
         resolveDatabasePath(config.runtime.installRoot),
