@@ -71,6 +71,7 @@ import { enrichShowBreakdownsFromPlexCache } from './plex/shows';
 import { PlexAuthStore } from './plex/auth';
 import {
   exchangePlexPinForAuthToken,
+  PlexRateLimitError,
   startPlexPinAuth,
 } from './plex/auth-client';
 import { readRestartStatus, recordRestartRequested } from './restart-proof';
@@ -766,6 +767,11 @@ export function createApiFetch(
         return Response.json({ error: 'invalid json body' }, { status: 400 });
       }
 
+      // Hoisted so the catch block below can still report returnTo/expiresAt
+      // for a PlexRateLimitError, which is thrown after this is set.
+      let pendingReturnTo: string | null = null;
+      let pendingExpiresAt: string | null = null;
+
       try {
         const parsed = expectRecord(body, 'request body');
         const sessionId = requireNonEmptyString(
@@ -774,6 +780,8 @@ export function createApiFetch(
         );
         const store = new PlexAuthStore(database);
         const snapshot = store.getSnapshot();
+        pendingReturnTo = snapshot.pendingSession?.returnTo ?? null;
+        pendingExpiresAt = snapshot.pendingSession?.expiresAt ?? null;
 
         if (
           !snapshot.pendingSession ||
@@ -821,6 +829,30 @@ export function createApiFetch(
           returnTo: snapshot.pendingSession.returnTo,
         });
       } catch (error) {
+        if (error instanceof PlexRateLimitError) {
+          // Surface as soft-pending (like the not-yet-linked case) rather than
+          // a hard failure, and tell the callback page how long to back off —
+          // otherwise it keeps reloading on its normal cadence and re-triggers
+          // the same rate limit.
+          console.warn(
+            `[plex-auth] finalize rate limited; retryAfterMs=${error.retryAfterMs}`,
+          );
+          return Response.json(
+            {
+              pending: true,
+              error:
+                'Plex rate limited the sign-in check; retrying automatically.',
+              returnTo: pendingReturnTo,
+              expiresAt: pendingExpiresAt,
+              retryAfterMs: error.retryAfterMs,
+            },
+            { status: 409 },
+          );
+        }
+        console.error(
+          '[plex-auth] finalize failed:',
+          error instanceof Error ? error.message : error,
+        );
         return Response.json(
           {
             error:

@@ -71,44 +71,73 @@ export async function startPlexPinAuth(
   };
 }
 
-const PIN_POLL_ATTEMPTS = 20;
-const PIN_POLL_DELAY_MS = 1_000;
+/** Thrown when Plex's PIN endpoint returns HTTP 429. Carries the wait Plex asked for. */
+export class PlexRateLimitError extends Error {
+  readonly retryAfterMs: number;
 
+  constructor(retryAfterMs: number) {
+    super(`Plex PIN exchange was rate limited; retry after ${retryAfterMs}ms.`);
+    this.name = 'PlexRateLimitError';
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+const DEFAULT_RATE_LIMIT_RETRY_MS = 5_000;
+
+// Plex redirects to forwardUrl before the PIN is committed server-side, so a
+// single check can legitimately see it not-yet-linked. That's expected and
+// signaled by returning null — the caller's own poll loop (the browser
+// reloading the callback page) is what retries, not this function. A prior
+// version also looped here (up to 20x, 1s apart) *inside* every call, which
+// multiplied against the browser's reload cadence and was enough to trip
+// Plex's rate limit (see docs/synology-runbook.md "Plex PIN exchange 429").
 export async function exchangePlexPinForAuthToken(input: {
   clientIdentifier: string;
   pinId: number;
 }): Promise<string | null> {
-  // Plex redirects to forwardUrl before the PIN is committed server-side.
-  // Poll a few times with a short delay to give Plex time to finalize.
-  for (let attempt = 0; attempt < PIN_POLL_ATTEMPTS; attempt++) {
-    if (attempt > 0) {
-      await new Promise((resolve) => setTimeout(resolve, PIN_POLL_DELAY_MS));
-    }
+  console.log(`[plex-auth] pin exchange check pinId=${input.pinId}`);
 
-    const response = await fetch(
-      `${PLEX_CLIENTS_API}/api/v2/pins/${String(input.pinId)}`,
-      {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          'X-Plex-Client-Identifier': input.clientIdentifier,
-        },
+  const response = await fetch(
+    `${PLEX_CLIENTS_API}/api/v2/pins/${String(input.pinId)}`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'X-Plex-Client-Identifier': input.clientIdentifier,
       },
+    },
+  );
+
+  if (response.status === 429) {
+    const retryAfterRaw = response.headers.get('retry-after');
+    const retryAfterSec = retryAfterRaw !== null ? Number(retryAfterRaw) : NaN;
+    const retryAfterMs =
+      Number.isFinite(retryAfterSec) && retryAfterSec > 0
+        ? retryAfterSec * 1000
+        : DEFAULT_RATE_LIMIT_RETRY_MS;
+    console.warn(
+      `[plex-auth] pin exchange rate limited (429) pinId=${input.pinId} retryAfterMs=${retryAfterMs}`,
     );
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(
-        `Plex PIN exchange failed with HTTP ${response.status}. ${text}`,
-      );
-    }
-
-    const body = (await response.json()) as { authToken?: string | null };
-    if (body.authToken) {
-      return body.authToken;
-    }
+    throw new PlexRateLimitError(retryAfterMs);
   }
 
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    console.error(
+      `[plex-auth] pin exchange failed pinId=${input.pinId} status=${response.status}`,
+    );
+    throw new Error(
+      `Plex PIN exchange failed with HTTP ${response.status}. ${text}`,
+    );
+  }
+
+  const body = (await response.json()) as { authToken?: string | null };
+  if (body.authToken) {
+    console.log(`[plex-auth] pin exchange linked pinId=${input.pinId}`);
+    return body.authToken;
+  }
+
+  console.log(`[plex-auth] pin exchange still pending pinId=${input.pinId}`);
   return null;
 }
 

@@ -5,6 +5,7 @@
 
 	const { data }: { data: PageData } = $props();
 	const MAX_PENDING_RETRY_MS = 60_000;
+	const DEFAULT_RETRY_DELAY_MS = 2_500;
 	const PENDING_SINCE_PARAM = 'pendingSince';
 
 	const pendingSinceMs = $derived(browser && data.pending ? readOrInitPendingSince() : NaN);
@@ -27,9 +28,14 @@
 			return () => clearTimeout(timer);
 		}
 		if (!data.pending || timedOut) return;
+		// Honor a server-supplied backoff (set when Plex rate limited us) instead
+		// of always reloading on the default cadence — reloading regardless of
+		// why we're pending is what caused the reload loop and the daemon's own
+		// internal poll loop to compound into a 429 storm against Plex.
+		const delayMs = data.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
 		const timer = setTimeout(() => {
 			window.location.reload();
-		}, 2500);
+		}, delayMs);
 		return () => clearTimeout(timer);
 	});
 
