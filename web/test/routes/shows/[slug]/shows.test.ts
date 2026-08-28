@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import Page from '../../../../src/routes/shows/[slug]/+page.svelte';
-import type { ShowBreakdown, TorrentStatSnapshot } from '$lib/types';
+import type { ShowBreakdown } from '$lib/types';
 import type { PageData } from '../../../../src/routes/shows/[slug]/$types';
 
 const sharedLayoutData: Pick<
@@ -40,7 +40,6 @@ const detailShow: ShowBreakdown = {
 					episode: 1,
 					identityKey: 'key-s01e01',
 					status: 'queued',
-
 					resolution: '1080p',
 					codec: 'x265',
 					transmissionPercentDone: 0.42,
@@ -83,23 +82,12 @@ const detailShow: ShowBreakdown = {
 	}
 };
 
-const liveTorrent: TorrentStatSnapshot = {
-	hash: 'abc123',
-	name: 'The.Show.S01E01.1080p',
-	status: 'downloading',
-	percentDone: 0.42,
-	rateDownload: 1_048_576,
-	rateUpload: 0,
-	eta: 3600
-};
-
 describe('/shows/[slug]', () => {
 	it('renders the hero metadata, plex status, and refresh button', () => {
 		render(Page, {
 			data: {
 				...sharedLayoutData,
 				show: detailShow,
-				torrents: [liveTorrent],
 				episodeStatus: null,
 				episodeStatusError: null,
 				error: null,
@@ -112,35 +100,8 @@ describe('/shows/[slug]', () => {
 		expect(screen.getByText('HBO')).toBeInTheDocument();
 		expect(screen.getByText('PLEX PLAYS 2')).toBeInTheDocument();
 		expect(screen.getByText('IN LIBRARY')).toBeInTheDocument();
+		expect(screen.getByText('2 seasons')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Refresh TMDB/i })).toBeInTheDocument();
-	});
-
-	it('switches season tabs and shows spec tags with live torrent data', async () => {
-		render(Page, {
-			data: {
-				...sharedLayoutData,
-				show: detailShow,
-				torrents: [liveTorrent],
-				episodeStatus: null,
-				episodeStatusError: null,
-				error: null,
-				canWrite: true
-			},
-			form: undefined
-		});
-
-		expect(screen.getByText('Pilot')).toBeInTheDocument();
-		expect(screen.getByText('1080p')).toBeInTheDocument();
-		expect(screen.getAllByText('x265')[0]).toBeInTheDocument();
-		expect(screen.getByText('42%')).toBeInTheDocument();
-		expect(screen.getByText('1.0 MB/s')).toBeInTheDocument();
-		expect(screen.getByText('1h 0m')).toBeInTheDocument();
-
-		await fireEvent.click(screen.getByRole('button', { name: 'Season 2' }));
-
-		expect(screen.getByText('Season Two Premiere')).toBeInTheDocument();
-		expect(screen.getByText('4K')).toBeInTheDocument();
-		expect(screen.queryByText('Pilot')).not.toBeInTheDocument();
 	});
 
 	it('renders not-found and error states', () => {
@@ -148,7 +109,6 @@ describe('/shows/[slug]', () => {
 			data: {
 				...sharedLayoutData,
 				show: null,
-				torrents: null,
 				episodeStatus: null,
 				episodeStatusError: null,
 				error: null,
@@ -163,7 +123,6 @@ describe('/shows/[slug]', () => {
 			data: {
 				...sharedLayoutData,
 				show: null,
-				torrents: null,
 				episodeStatus: null,
 				episodeStatusError: null,
 				error: 'Could not reach the API.',

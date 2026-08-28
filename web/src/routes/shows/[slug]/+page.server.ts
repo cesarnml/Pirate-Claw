@@ -1,23 +1,20 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { apiFetch, apiRequest } from '$lib/server/api';
-import type { ShowBreakdown, ShowEpisodeStatus, TorrentStatSnapshot } from '$lib/types';
+import type { ShowBreakdown, ShowEpisodeStatus } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const title = params.slug;
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 
-	const [showsResult, torrentsResult] = await Promise.allSettled([
-		apiFetch<{ shows: ShowBreakdown[] }>('/api/shows'),
-		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents')
-	]);
-
-	if (showsResult.status === 'rejected') {
-		console.error('[shows detail] failed to load /api/shows:', showsResult.reason);
+	let shows: ShowBreakdown[];
+	try {
+		shows = (await apiFetch<{ shows: ShowBreakdown[] }>('/api/shows')).shows;
+	} catch (error) {
+		console.error('[shows detail] failed to load /api/shows:', error);
 		return {
 			show: null as ShowBreakdown | null,
-			torrents: null,
 			episodeStatus: null,
 			episodeStatusError: null,
 			error: 'Could not reach the API.',
@@ -25,17 +22,8 @@ export const load: PageServerLoad = async ({ params }) => {
 		};
 	}
 
-	if (torrentsResult.status === 'rejected') {
-		console.error(
-			'[shows detail] failed to load /api/transmission/torrents:',
-			torrentsResult.reason
-		);
-	}
-
 	const show =
-		showsResult.value.shows.find(
-			(entry) => entry.normalizedTitle.toLowerCase() === title.toLowerCase()
-		) ?? null;
+		shows.find((entry) => entry.normalizedTitle.toLowerCase() === title.toLowerCase()) ?? null;
 
 	let episodeStatus: ShowEpisodeStatus | null = null;
 	let episodeStatusError: string | null = null;
@@ -46,8 +34,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			);
 			episodeStatus = response;
 		} catch (error) {
-			// Non-fatal — the rest of the page (TMDB overview, queue history)
-			// still renders fine without this panel.
+			// Non-fatal — the rest of the page (TMDB overview, missing-episodes
+			// panel above) still renders fine without this.
 			console.error('[shows detail] failed to load episode status:', error);
 			episodeStatusError = 'Could not load the missing-episodes panel.';
 		}
@@ -55,7 +43,6 @@ export const load: PageServerLoad = async ({ params }) => {
 
 	return {
 		show,
-		torrents: torrentsResult.status === 'fulfilled' ? torrentsResult.value.torrents : null,
 		episodeStatus,
 		episodeStatusError,
 		error: null,

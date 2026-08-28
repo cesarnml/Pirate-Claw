@@ -7,8 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import type { ShowEpisode, TorrentStatSnapshot } from '$lib/types';
-	import { showHeroBackdropSrc, torrentDisplayState } from '$lib/helpers';
+	import { showHeroBackdropSrc } from '$lib/helpers';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
@@ -19,11 +18,6 @@
 	const props = $props<{ data: PageData; form?: ActionData }>();
 	const data = $derived(props.data);
 	const form = $derived(props.form);
-
-	let selectedSeason = $state<number | null>(null);
-
-	const torrents = $derived(data.torrents ?? []);
-	const liveHashes = $derived(new Set<string>(torrents.map((t: TorrentStatSnapshot) => t.hash)));
 
 	function displayTitle(show: NonNullable<PageData['show']>): string {
 		return show.tmdb?.name ?? show.normalizedTitle;
@@ -38,67 +32,12 @@
 		return show.seasons.reduce((sum, season) => sum + season.episodes.length, 0);
 	}
 
-	/** Transfer speeds come from Transmission and should never be negative. */
-	function formatSpeed(bytesPerSecond: number): string {
-		if (bytesPerSecond <= 0) return '0 KB/s';
-		if (bytesPerSecond >= 1_048_576) return `${(bytesPerSecond / 1_048_576).toFixed(1)} MB/s`;
-		return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
-	}
-
-	function formatEta(eta: number): string {
-		if (eta < 0) return '—';
-		if (eta < 60) return '<1m';
-		const hours = Math.floor(eta / 3600);
-		const minutes = Math.floor((eta % 3600) / 60);
-		if (hours > 0) return `${hours}h ${minutes}m`;
-		return `${minutes}m`;
-	}
-
-	function liveTorrent(episode: ShowEpisode): TorrentStatSnapshot | undefined {
-		if (!episode.transmissionTorrentHash) return undefined;
-		return torrents.find(
-			(torrent: TorrentStatSnapshot) => torrent.hash === episode.transmissionTorrentHash
-		);
-	}
-
-	function isActive(episode: ShowEpisode, live: TorrentStatSnapshot | undefined): boolean {
-		return (
-			live?.status === 'downloading' ||
-			torrentDisplayState(episode, liveHashes) === 'downloading' ||
-			(episode.status === 'queued' && (episode.transmissionPercentDone ?? 0) > 0)
-		);
-	}
-
-	function formatPercent(value: number): string {
-		return `${Math.round(value * 100)}%`;
-	}
-
 	function formatLastWatched(value: string | null): string {
 		if (!value) return 'No Plex activity yet';
 		const date = new Date(value);
 		if (Number.isNaN(date.getTime())) return 'No Plex activity yet';
 		return date.toLocaleDateString();
 	}
-
-	function selectSeason(season: number): void {
-		selectedSeason = season;
-	}
-
-	$effect(() => {
-		if (!data.show || selectedSeason !== null || data.show.seasons.length === 0) return;
-		selectedSeason = data.show.seasons[0].season;
-	});
-
-	const activeSeason = $derived(
-		data.show && selectedSeason !== null
-			? (data.show.seasons.find(
-					(season: NonNullable<PageData['show']>['seasons'][number]) =>
-						season.season === selectedSeason
-				) ??
-					data.show.seasons[0] ??
-					null)
-			: null
-	);
 
 	const enhanceRefresh = () => {
 		return async ({ update }: { update: () => Promise<void> }) => {
@@ -252,157 +191,6 @@
 			episodeStatusError={data.episodeStatusError}
 			canWrite={data.canWrite}
 		/>
-
-		<div class="space-y-4">
-			<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-				<div class="space-y-2">
-					<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase">
-						Season Timeline
-					</p>
-					<h2 class="text-2xl font-semibold tracking-[-0.03em]">Episode operations</h2>
-				</div>
-				<div class="flex flex-wrap gap-2">
-					{#each data.show.seasons as season (season.season)}
-						<button
-							type="button"
-							class={`border-border bg-card/75 text-muted-foreground hover:border-primary/30 hover:text-foreground rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.18em] uppercase transition-colors ${
-								activeSeason?.season === season.season
-									? 'border-primary/35 bg-primary/12 text-primary'
-									: ''
-							}`}
-							onclick={() => selectSeason(season.season)}
-						>
-							Season {season.season}
-						</button>
-					{/each}
-				</div>
-			</div>
-
-			{#if activeSeason}
-				<div class="space-y-3">
-					{#each activeSeason.episodes as episode (episode.identityKey)}
-						{@const live = liveTorrent(episode)}
-						{@const active = isActive(episode, live)}
-						{@const percentDone = live ? live.percentDone : (episode.transmissionPercentDone ?? 0)}
-						<div
-							class="bg-card/74 grid gap-4 rounded-[28px] border border-white/10 p-4 lg:grid-cols-[170px_minmax(0,1fr)_220px]"
-						>
-							<div class="bg-background/70 overflow-hidden rounded-[22px]">
-								{#if episode.tmdb?.stillUrl}
-									<img
-										src={episode.tmdb.stillUrl}
-										alt={episode.tmdb?.name
-											? `Still for ${episode.tmdb.name}`
-											: `Episode ${episode.episode}`}
-										class="h-full min-h-28 w-full object-cover"
-										loading="lazy"
-									/>
-								{:else}
-									<div
-										class="text-muted-foreground flex min-h-28 items-center justify-center text-xs font-semibold tracking-[0.18em] uppercase"
-									>
-										Still pending
-									</div>
-								{/if}
-							</div>
-
-							<div class="min-w-0 space-y-3">
-								<div class="flex flex-wrap items-start justify-between gap-3">
-									<div class="min-w-0">
-										<p
-											class="text-muted-foreground text-[11px] font-semibold tracking-[0.18em] uppercase"
-										>
-											Episode {String(episode.episode).padStart(2, '0')}
-										</p>
-										<p class="truncate text-xl font-semibold">
-											{episode.tmdb?.name ?? 'Untitled episode'}
-										</p>
-									</div>
-									<StatusChip status={episode.status} />
-								</div>
-
-								<div class="flex flex-wrap gap-2">
-									{#if episode.resolution}
-										<Badge variant="outline">{episode.resolution}</Badge>
-									{/if}
-									{#if episode.codec}
-										<Badge variant="outline">{episode.codec}</Badge>
-									{/if}
-									{#if episode.tmdb?.airDate}
-										<Badge variant="outline">{episode.tmdb.airDate}</Badge>
-									{/if}
-									{#if episode.pirateClawDisposition}
-										<Badge variant="secondary">{episode.pirateClawDisposition}</Badge>
-									{/if}
-									{#if data.show.watchCount !== null}
-										<Badge class="border-primary/20 bg-primary/12 text-primary">
-											PLEX WATCHES {data.show.watchCount}
-										</Badge>
-									{/if}
-								</div>
-
-								<div class="space-y-2">
-									<div class="text-muted-foreground flex items-center justify-between text-xs">
-										<span>Transfer progress</span>
-										<span>{formatPercent(percentDone)}</span>
-									</div>
-									<div class="bg-background/70 h-2 rounded-full">
-										<div
-											class={`h-2 rounded-full ${active ? 'bg-secondary' : 'bg-primary'}`}
-											style={`width: ${Math.round(percentDone * 100)}%`}
-										></div>
-									</div>
-								</div>
-							</div>
-
-							<div
-								class="bg-background/44 flex flex-col justify-between rounded-[22px] border border-white/10 px-4 py-4"
-							>
-								<div>
-									<p
-										class="text-muted-foreground text-[11px] font-semibold tracking-[0.18em] uppercase"
-									>
-										Live Torrent
-									</p>
-									<p class="mt-2 text-sm font-medium">{active ? 'In flight' : 'Waiting / idle'}</p>
-								</div>
-								<div class="mt-4 space-y-3">
-									<div>
-										<p
-											class="text-muted-foreground text-[11px] font-semibold tracking-[0.18em] uppercase"
-										>
-											Speed
-										</p>
-										<p class="mt-2 text-sm font-medium">
-											{live && live.status === 'downloading' ? formatSpeed(live.rateDownload) : '—'}
-										</p>
-									</div>
-									<div>
-										<p
-											class="text-muted-foreground text-[11px] font-semibold tracking-[0.18em] uppercase"
-										>
-											ETA
-										</p>
-										<p class="mt-2 text-sm font-medium">
-											{live && live.status === 'downloading' ? formatEta(live.eta) : '—'}
-										</p>
-									</div>
-								</div>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<Card class="bg-card/72 rounded-[28px] border-white/10">
-					<CardContent class="pt-8">
-						<p class="text-lg font-semibold">No season data available.</p>
-						<p class="text-muted-foreground mt-2 text-sm">
-							Run another daemon cycle or refresh TMDB metadata to repopulate the detail view.
-						</p>
-					</CardContent>
-				</Card>
-			{/if}
-		</div>
 
 		<div class="flex justify-end">
 			<Button href="/shows" variant="ghost" class="rounded-full px-3">

@@ -34,7 +34,6 @@ describe('shows detail page server', () => {
 						}
 					]
 				})
-				.mockResolvedValueOnce({ torrents: [] })
 				.mockResolvedValueOnce({ plexReachable: true, seasons: [] });
 
 			const result = await load({ params: { slug: 'the show' } } as never);
@@ -67,7 +66,6 @@ describe('shows detail page server', () => {
 						}
 					]
 				})
-				.mockResolvedValueOnce({ torrents: [] })
 				.mockRejectedValueOnce(new Error('tmdb not configured'));
 
 			const result = await load({ params: { slug: 'the show' } } as never);

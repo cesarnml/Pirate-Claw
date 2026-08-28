@@ -64,7 +64,7 @@ export async function refreshShowLibraryCache(
         ...tvCatalog,
       ]);
 
-      const best = selectBestShowMatch(show, merged);
+      const best = selectBestShowMatch(show.normalizedTitle, merged);
       const cachedAt = new Date().toISOString();
 
       if (!best) {
@@ -127,14 +127,17 @@ function dedupeShows(shows: ShowBreakdown[]): ShowBreakdown[] {
   return unique;
 }
 
-function selectBestShowMatch(
-  show: ShowBreakdown,
+/** Exported for src/shows/episode-status.ts, which needs this same matching
+ * heuristic for its own live (uncached) show lookup — keeping one matching
+ * algorithm rather than a second, possibly-inconsistent one. */
+export function selectBestShowMatch(
+  normalizedTitle: string,
   candidates: PlexSearchResult[],
 ): PlexSearchResult | undefined {
   let best: { score: number; result: PlexSearchResult } | undefined;
 
   for (const candidate of candidates) {
-    const score = showMatchScore(show, candidate);
+    const score = showMatchScore(normalizedTitle, candidate);
     if (score < PLEX_SHOW_MATCH_THRESHOLD) {
       continue;
     }
@@ -147,10 +150,10 @@ function selectBestShowMatch(
 }
 
 function showMatchScore(
-  show: ShowBreakdown,
+  normalizedTitle: string,
   candidate: PlexSearchResult,
 ): number {
-  const title = normalizeForMatch(show.normalizedTitle);
+  const title = normalizeForMatch(normalizedTitle);
   const candidateTitle = normalizeForMatch(candidate.title ?? '');
   if (!candidateTitle) {
     return 0;

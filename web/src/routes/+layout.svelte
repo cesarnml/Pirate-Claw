@@ -166,7 +166,7 @@
 </svelte:head>
 
 {#snippet sidebarContent()}
-	<div class="flex h-full w-full flex-col">
+	<div class="flex h-full w-full flex-col overflow-y-auto">
 		<SidebarBrand onclick={closeMobileNav} onclose={closeMobileNav} />
 		<SidebarNav {nav} onclick={closeMobileNav} />
 		<SidebarStatusFooter

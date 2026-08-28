@@ -1,5 +1,6 @@
 import type { PlexHttpClient } from '../plex/client';
 import type { PlexCache } from '../plex/cache';
+import { selectBestShowMatch } from '../plex/shows';
 import { loadSeasonEpisodes, type TvEnrichDeps } from '../tmdb/tv-enrichment';
 import { tvMatchKey } from '../tmdb/keys';
 import type { ManualGrabsStore } from '../manual-grabs/store';
@@ -165,19 +166,19 @@ async function loadPlexPresence(
     return empty;
   }
 
-  const cacheRow = plex.cache.getTv(show.normalizedTitle);
-  if (!cacheRow) {
-    // Never scanned by the background Plex sweep yet — can't confirm.
+  const ratingKey = await resolveLiveOrCachedRatingKey(show, plex);
+  if (ratingKey === undefined) {
+    // Neither a live search nor the cache could confirm anything right now.
     return empty;
   }
-  if (!cacheRow.inLibrary || !cacheRow.plexRatingKey) {
-    // Plex WAS searched and this show genuinely isn't there — confident
-    // "missing" territory, not "unknown". reachable:true with an empty
-    // seasons map means every episode resolves to 'missing' below.
+  if (ratingKey === null) {
+    // Confidently not in Plex — confident "missing" territory, not
+    // "unknown". reachable:true with an empty seasons map means every
+    // episode resolves to 'missing' below.
     return { reachable: true, seasons: new Map() };
   }
 
-  const plexSeasons = await plex.client.getShowSeasons(cacheRow.plexRatingKey);
+  const plexSeasons = await plex.client.getShowSeasons(ratingKey);
   if (plexSeasons === null) {
     // Have a ratingKey, but the live walk failed just now — transient,
     // not "this show isn't in Plex".
@@ -200,6 +201,46 @@ async function loadPlexPresence(
     }),
   );
   return { reachable: true, seasons: new Map(entries) };
+}
+
+/**
+ * Resolves this show's Plex ratingKey live first, falling back to the
+ * periodically-refreshed plex_tv_cache only when live search can't confirm
+ * anything. A page view here is occasional and manual — same reasoning that
+ * already justifies the uncached per-episode walk above — so there's no
+ * reason to let a stale background-sweep snapshot be the *only* source for
+ * "is this show even in Plex," which was letting a show sit unconfirmed (or
+ * wrongly missing) between sweep runs even though a live check would have
+ * answered it immediately.
+ *
+ * A live search miss does NOT by itself mean "confidently not in library" —
+ * falls through to cache regardless, since /library/search is documented
+ * elsewhere in this codebase (refreshShowLibraryCache) to sometimes omit or
+ * reshape hits. Only a *cached* "not in library" is trusted as confident.
+ *
+ * Returns a ratingKey when found (live or cached); null when confidently not
+ * in the library; undefined when nothing could confirm either way.
+ */
+async function resolveLiveOrCachedRatingKey(
+  show: ShowBreakdown,
+  plex: NonNullable<EpisodeStatusDeps['plex']>,
+): Promise<string | null | undefined> {
+  const liveResults = await plex.client.searchShows(show.normalizedTitle);
+  if (liveResults !== null) {
+    const match = selectBestShowMatch(show.normalizedTitle, liveResults);
+    if (match?.ratingKey) {
+      return match.ratingKey;
+    }
+  }
+
+  const cacheRow = plex.cache.getTv(show.normalizedTitle);
+  if (!cacheRow) {
+    return undefined;
+  }
+  if (!cacheRow.inLibrary || !cacheRow.plexRatingKey) {
+    return null;
+  }
+  return cacheRow.plexRatingKey;
 }
 
 function resolveEpisodeStatus(

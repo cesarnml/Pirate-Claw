@@ -7,6 +7,7 @@ import type { TvEnrichDeps } from '../src/tmdb/tv-enrichment';
 import type {
   PlexEpisodeSummary,
   PlexHttpClient,
+  PlexSearchResult,
   PlexSeasonSummary,
 } from '../src/plex/client';
 import { PlexCache } from '../src/plex/cache';
@@ -98,9 +99,15 @@ describe('buildShowEpisodeStatus', () => {
       cachedAt: new Date().toISOString(),
     });
 
+    const plexClient = {
+      // Live search succeeds but (correctly) finds nothing — falls through
+      // to the cache, which confidently says not in library.
+      searchShows: async (): Promise<PlexSearchResult[]> => [],
+    } as unknown as PlexHttpClient;
+
     const result = await buildShowEpisodeStatus(showFixture(1), {
       tmdb,
-      plex: { client: {} as PlexHttpClient, cache: plexCache },
+      plex: { client: plexClient, cache: plexCache },
       manualGrabs: new ManualGrabsStore(db),
     });
 
@@ -140,6 +147,13 @@ describe('buildShowEpisodeStatus', () => {
     });
 
     const plexClient = {
+      searchShows: async (): Promise<PlexSearchResult[]> => [
+        {
+          ratingKey: '35033',
+          title: 'Star Trek: Strange New Worlds',
+          type: 'show',
+        },
+      ],
       getShowSeasons: async (): Promise<PlexSeasonSummary[]> => [
         { ratingKey: '68673', seasonNumber: 4, episodeCount: 1 },
       ],
@@ -202,6 +216,13 @@ describe('buildShowEpisodeStatus', () => {
     });
 
     const plexClient = {
+      searchShows: async (): Promise<PlexSearchResult[]> => [
+        {
+          ratingKey: '287620',
+          title: 'Stuart Fails to Save the Universe',
+          type: 'show',
+        },
+      ],
       getShowSeasons: async (): Promise<PlexSeasonSummary[]> => [
         { ratingKey: 's1', seasonNumber: 1, episodeCount: 6 },
       ],
@@ -218,6 +239,83 @@ describe('buildShowEpisodeStatus', () => {
     const season1 = result?.seasons.find((s) => s.season === 1);
     expect(season1?.episodeCountMismatch).toBe(false);
     expect(season1?.episodes).toHaveLength(10);
+  });
+
+  it('trusts a live search over a stale "not in library" cache row (the real Shards staleness bug)', async () => {
+    // Reported live: The Shards' episode was actually in Plex, downloaded
+    // and complete, but still showed as missing — because the ratingKey
+    // lookup only ever consulted plex_tv_cache, a periodically-refreshed
+    // background snapshot that can lag behind Plex's actual current state.
+    // A live search must be able to override a stale negative.
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 1: [{ episode_number: 1, name: 'Pilot' }] });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'the shards',
+      plexRatingKey: null,
+      inLibrary: false,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    const plexClient = {
+      searchShows: async (): Promise<PlexSearchResult[]> => [
+        { ratingKey: '99001', title: 'The Shards', type: 'show' },
+      ],
+      getShowSeasons: async (): Promise<PlexSeasonSummary[]> => [
+        { ratingKey: 'ss1', seasonNumber: 1, episodeCount: 1 },
+      ],
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> => [
+        { episodeNumber: 1, title: 'Pilot' },
+      ],
+    } as unknown as PlexHttpClient;
+
+    const result = await buildShowEpisodeStatus(
+      { ...showFixture(1), normalizedTitle: 'the shards' },
+      {
+        tmdb,
+        plex: { client: plexClient, cache: plexCache },
+        manualGrabs: new ManualGrabsStore(db),
+      },
+    );
+
+    expect(result?.plexReachable).toBe(true);
+    expect(result?.seasons[0].episodes[0].plexStatus).toBe('in_library');
+  });
+
+  it('falls back to cache when a live search errors, rather than going unreachable', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 1: [{ episode_number: 1, name: 'Pilot' }] });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'strange new worlds',
+      plexRatingKey: '35033',
+      inLibrary: true,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    const plexClient = {
+      // null == request failed, same contract as the rest of PlexHttpClient.
+      searchShows: async (): Promise<PlexSearchResult[] | null> => null,
+      getShowSeasons: async (): Promise<PlexSeasonSummary[]> => [
+        { ratingKey: '68673', seasonNumber: 1, episodeCount: 1 },
+      ],
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> => [
+        { episodeNumber: 1, title: 'Pilot' },
+      ],
+    } as unknown as PlexHttpClient;
+
+    const result = await buildShowEpisodeStatus(showFixture(1), {
+      tmdb,
+      plex: { client: plexClient, cache: plexCache },
+      manualGrabs: new ManualGrabsStore(db),
+    });
+
+    expect(result?.plexReachable).toBe(true);
+    expect(result?.seasons[0].episodes[0].plexStatus).toBe('in_library');
   });
 
   it('attaches the latest manual grab record to its episode', async () => {

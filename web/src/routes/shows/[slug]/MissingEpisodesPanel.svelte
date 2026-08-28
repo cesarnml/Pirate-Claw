@@ -94,7 +94,7 @@
 
 	let pendingGrabId = $state<number | null>(null);
 
-	function enhanceGrab(torrentId: number) {
+	function enhanceGrab(torrentId: number, key: string) {
 		pendingGrabId = torrentId;
 		return async ({
 			result,
@@ -108,6 +108,13 @@
 			pendingGrabId = null;
 			if (result.type === 'success') {
 				toast('Queued', 'success', (result.data?.grabMessage as string) ?? undefined);
+				// The EZTV results list for this episode is now stale noise —
+				// it's grabbed, other variants of the same episode are just a
+				// duplicate-grab risk. Collapse it and drop the cached results
+				// so a future expand re-searches fresh instead of showing them.
+				if (expandedKey === key) expandedKey = null;
+				const { [key]: _dropped, ...rest } = eztvResults;
+				eztvResults = rest;
 			} else if (result.type === 'failure') {
 				toast('Grab failed', 'error', (result.data?.grabMessage as string) ?? undefined);
 			} else if (result.type === 'error') {
@@ -254,7 +261,7 @@
 												<form
 													method="POST"
 													action="?/manualGrab"
-													use:enhance={() => enhanceGrab(torrent.id)}
+													use:enhance={() => enhanceGrab(torrent.id, key)}
 												>
 													<input type="hidden" name="season" value={activeSeason.season} />
 													<input type="hidden" name="episode" value={episode.episode} />
