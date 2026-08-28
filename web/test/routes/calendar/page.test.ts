@@ -115,6 +115,27 @@ describe('calendar page — client-side pagination', () => {
 		expect(screen.getByText('No Metadata Show')).toBeInTheDocument();
 	});
 
+	it('highlights only Thai/English language pills, leaving other languages a plain pill', async () => {
+		// Regression: the first version styled every language pill identically
+		// (filled/accent), which defeated the actual point — scanning fast for
+		// Thai/English specifically. Corrected live 2026-08-28.
+		render(Page, {
+			data: {
+				...baseData,
+				items: [
+					item({ tmdbId: 1, name: 'Thai Show', language: 'Thai' }),
+					item({ tmdbId: 2, name: 'English Show', language: 'English' }),
+					item({ tmdbId: 3, name: 'Mandarin Show', language: 'Mandarin' })
+				],
+				total: 3
+			}
+		});
+
+		expect(screen.getByText('Thai').className).toContain('bg-primary/18');
+		expect(screen.getByText('English').className).toContain('bg-primary/18');
+		expect(screen.getByText('Mandarin').className).not.toContain('bg-primary/18');
+	});
+
 	it('rolls forward into the next year when the current year is exhausted', async () => {
 		fetchMock.mockReturnValueOnce(
 			jsonResponse(200, {

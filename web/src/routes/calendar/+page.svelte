@@ -22,6 +22,12 @@
 	// rather than either looping forever or stopping after one empty year.
 	const MAX_EMPTY_YEAR_HOPS = 5;
 
+	// The languages worth scanning for at a glance while scrolling fast —
+	// everything else renders as a plain pill so these two actually stand
+	// out instead of every language looking identical (see the initial
+	// version of this feature, corrected live 2026-08-28).
+	const HIGHLIGHTED_LANGUAGES = new Set(['Thai', 'English']);
+
 	// Caps how many pages stay mounted at once. Without this, a long scroll
 	// session accumulates every page ever fetched into one ever-growing
 	// list — confirmed live to reach 100+ full cards (poster + overview
@@ -392,7 +398,9 @@
 									<div class="flex flex-wrap gap-1.5">
 										{#if item.language}
 											<span
-												class="border-primary/35 bg-primary/18 text-primary rounded-full border px-2.5 py-0.5 text-xs font-medium"
+												class={HIGHLIGHTED_LANGUAGES.has(item.language)
+													? 'border-primary/35 bg-primary/18 text-primary rounded-full border px-2.5 py-0.5 text-xs font-medium'
+													: 'border-border text-muted-foreground rounded-full border px-2.5 py-0.5 text-xs font-medium'}
 											>
 												{item.language}
 											</span>
