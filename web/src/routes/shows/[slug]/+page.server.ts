@@ -172,6 +172,10 @@ export const actions: Actions = {
 		const episode = Number(formData.get('episode'));
 		const magnetUrl = String(formData.get('magnetUrl') ?? '').trim();
 		const rawTitle = String(formData.get('rawTitle') ?? '').trim();
+		// Omitted defaults to 'eztv' server-side (see the daemon's manual-grab
+		// handler) — kept optional here too so this action stays backward
+		// compatible if a future form doesn't set it.
+		const source = String(formData.get('source') ?? '').trim();
 
 		if (!Number.isInteger(season) || !Number.isInteger(episode) || !magnetUrl || !rawTitle) {
 			return fail(400, { grabMessage: 'Missing or invalid grab details.' });
@@ -186,7 +190,13 @@ export const actions: Actions = {
 						'content-type': 'application/json',
 						authorization: `Bearer ${writeToken}`
 					},
-					body: JSON.stringify({ season, episode, magnetUrl, rawTitle })
+					body: JSON.stringify({
+						season,
+						episode,
+						magnetUrl,
+						rawTitle,
+						...(source ? { source } : {})
+					})
 				}
 			);
 

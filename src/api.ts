@@ -28,7 +28,9 @@ import type {
 } from './config';
 import { DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV } from './config';
 import { EztvHttpClient } from './eztv/client';
+import { ThePirateBayHttpClient } from './thepiratebay/client';
 import { ManualGrabsStore } from './manual-grabs/store';
+import type { ManualGrabSource } from './manual-grabs/store';
 import { buildShowEpisodeStatus } from './shows/episode-status';
 import { TrackedShowsStore } from './tracked-shows/store';
 import {
@@ -1555,6 +1557,68 @@ export function createApiFetch(
       }
     }
 
+    const showThePirateBayMatch = path.match(
+      /^\/api\/shows\/([^/]+)\/thepiratebay$/,
+    );
+    if (showThePirateBayMatch) {
+      if (request.method !== 'GET') {
+        return jsonMethodNotAllowed('GET');
+      }
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const params = new URL(request.url).searchParams;
+      const seasonRaw = params.get('season');
+      const episodeRaw = params.get('episode');
+      const season = !seasonRaw ? Number.NaN : Number(seasonRaw);
+      const episode = !episodeRaw ? Number.NaN : Number(episodeRaw);
+      if (
+        !Number.isInteger(season) ||
+        season < 0 ||
+        !Number.isInteger(episode) ||
+        episode < 0
+      ) {
+        return Response.json(
+          { error: 'season and episode query params are required' },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const slug = decodeURIComponent(showThePirateBayMatch[1]);
+        const show = await findEnrichedShowBySlug(slug);
+        if (!show) {
+          return Response.json({ error: 'show not found' }, { status: 404 });
+        }
+
+        // No TMDB/IMDB dependency, unlike EZTV — apibay is a plain text
+        // search, so this works even for a show TMDB hasn't matched yet.
+        const displayName = show.tmdb?.name ?? show.normalizedTitle;
+        const query = `${displayName} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+        const thePirateBay = new ThePirateBayHttpClient((msg) =>
+          console.warn(msg),
+        );
+        const torrents = await thePirateBay.search(query);
+        if (torrents === null) {
+          return Response.json(
+            { error: 'The Pirate Bay lookup failed; try again' },
+            { status: 502 },
+          );
+        }
+
+        // Same practical-downloadability ranking as the EZTV route.
+        torrents.sort((a, b) => b.seeds - a.seeds);
+        const withQuality = torrents.map((t) => ({
+          ...t,
+          resolution: extractResolution(t.title)?.value,
+          codec: extractCodec(t.title)?.value,
+        }));
+        return Response.json({ torrents: withQuality });
+      } catch {
+        return json500();
+      }
+    }
+
     const showManualGrabMatch = path.match(
       /^\/api\/shows\/([^/]+)\/manual-grab$/,
     );
@@ -1579,6 +1643,7 @@ export function createApiFetch(
       let episode: number;
       let magnetUrl: string;
       let rawTitle: string;
+      let source: ManualGrabSource;
       try {
         const body: unknown = await request.json();
         const parsed = expectRecord(body, 'request body');
@@ -1592,6 +1657,15 @@ export function createApiFetch(
           parsed.rawTitle,
           'request body rawTitle',
         );
+        // Only the two operator-facing search sources are accepted here —
+        // 'adopted-transmission'/'adopted-filesystem' are the reconciler's
+        // own internal provenance, never something a grab request chooses.
+        // Omitted defaults to 'eztv' for back-compat with callers predating
+        // this field.
+        source =
+          parsed.source === undefined
+            ? 'eztv'
+            : requireManualGrabSource(parsed.source, 'request body source');
       } catch (error) {
         return Response.json(
           {
@@ -1628,7 +1702,7 @@ export function createApiFetch(
           normalizedTitle: show.normalizedTitle,
           season,
           episode,
-          source: 'eztv',
+          source,
           rawTitle,
           transmissionTorrentHash: result.torrentHash ?? null,
           transmissionTorrentId: result.torrentId ?? null,
@@ -3317,6 +3391,20 @@ function requireInt(input: unknown, label: string): number {
     );
   }
   return input;
+}
+
+/** Only the two operator-facing search sources — see the manual-grab
+ * handler's call site for why 'adopted-*' values are rejected here. */
+function requireManualGrabSource(
+  input: unknown,
+  label: string,
+): 'eztv' | 'thepiratebay' {
+  if (input === 'eztv' || input === 'thepiratebay') {
+    return input;
+  }
+  throw new ConfigError(
+    `Config file "${label}" must be one of "eztv", "thepiratebay".`,
+  );
 }
 
 function optionalStringValue(input: unknown): string | undefined {

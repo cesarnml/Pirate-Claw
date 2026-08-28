@@ -1793,6 +1793,101 @@ describe('missing-episodes feature (episodes / eztv / manual-grab)', () => {
     });
   });
 
+  describe('GET /api/shows/:slug/thepiratebay', () => {
+    it('requires season and episode query params', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/thepiratebay', {
+            headers: authHeader,
+          }),
+        );
+        expect(response.status).toBe(400);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('requires write auth', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request(
+            'http://localhost/api/shows/test%20show/thepiratebay?season=1&episode=1',
+          ),
+        );
+        expect(response.status).toBe(401);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('works without TMDB external-id lookup — builds the query from the show name directly', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      let requestedUrl = '';
+      const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (
+        input: RequestInfo | URL,
+      ) => {
+        requestedUrl = String(input);
+        return new Response(
+          JSON.stringify([
+            {
+              id: '1',
+              name: 'Test Show S01E01 480p x264-mSD',
+              info_hash: 'A'.repeat(40),
+              leechers: '0',
+              seeders: '1',
+              size: '100',
+              category: '205',
+              added: '1',
+            },
+            {
+              id: '2',
+              name: 'Test Show S01E01 1080p HEVC x265-MeGusta',
+              info_hash: 'B'.repeat(40),
+              leechers: '2',
+              seeders: '9',
+              size: '200',
+              category: '208',
+              added: '2',
+            },
+          ]),
+          { status: 200 },
+        );
+      }) as unknown as typeof fetch);
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request(
+            'http://localhost/api/shows/test%20show/thepiratebay?season=1&episode=1',
+            { headers: authHeader },
+          ),
+        );
+        expect(response.status).toBe(200);
+        expect(requestedUrl).toContain('Test%20Show');
+        expect(requestedUrl).toContain('S01E01');
+        const body = (await response.json()) as {
+          torrents: Array<{
+            seeds: number;
+            resolution?: string;
+            codec?: string;
+          }>;
+        };
+        expect(body.torrents.map((t) => t.seeds)).toEqual([9, 1]);
+        expect(body.torrents[0]).toMatchObject({
+          resolution: '1080p',
+          codec: 'x265',
+        });
+      } finally {
+        fetchMock.mockRestore();
+        db.close();
+      }
+    });
+  });
+
   describe('POST /api/shows/:slug/manual-grab', () => {
     it('returns 503 when no downloader is configured', async () => {
       const { deps, db } = depsWithTmdbShow();
@@ -1857,6 +1952,68 @@ describe('missing-episodes feature (episodes / eztv / manual-grab)', () => {
         expect(new ManualGrabsStore(db).listForShow('test show')).toHaveLength(
           1,
         );
+      } finally {
+        db.close();
+      }
+    });
+
+    it('records the requested source (e.g. thepiratebay) instead of always defaulting to eztv', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      deps.downloader = {
+        submit: async () => ({
+          ok: true,
+          status: 'queued' as const,
+          torrentId: 7,
+          torrentHash: 'hash123',
+          torrentName: 'Test Show S01E01',
+        }),
+      };
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/manual-grab', {
+            method: 'POST',
+            headers: { ...authHeader, 'content-type': 'application/json' },
+            body: JSON.stringify({
+              season: 1,
+              episode: 1,
+              magnetUrl: 'magnet:?xt=urn:btih:aaa',
+              rawTitle: 'Test Show S01E01',
+              source: 'thepiratebay',
+            }),
+          }),
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as { grab: { source: string } };
+        expect(body.grab.source).toBe('thepiratebay');
+      } finally {
+        db.close();
+      }
+    });
+
+    it('rejects an internal-only source value (e.g. adopted-transmission) from this endpoint', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      deps.downloader = {
+        submit: async () => ({ ok: true, status: 'queued' as const }),
+      };
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/manual-grab', {
+            method: 'POST',
+            headers: { ...authHeader, 'content-type': 'application/json' },
+            body: JSON.stringify({
+              season: 1,
+              episode: 1,
+              magnetUrl: 'magnet:?xt=urn:btih:aaa',
+              rawTitle: 'Test Show S01E01',
+              source: 'adopted-transmission',
+            }),
+          }),
+        );
+        expect(response.status).toBe(400);
       } finally {
         db.close();
       }

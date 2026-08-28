@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 
 export type ManualGrabSource =
   | 'eztv'
+  | 'thepiratebay'
   /** Discovered as a Transmission torrent pirate-claw didn't queue itself
    * (hand-added via Transmission's own web UI) and matched to a tracked show
    * by the library reconciler. See src/adoption/reconciler.ts. */

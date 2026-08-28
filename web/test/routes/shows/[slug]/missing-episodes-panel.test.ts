@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Panel from '../../../../src/routes/shows/[slug]/MissingEpisodesPanel.svelte';
-import type { EztvTorrent, ShowEpisodeStatus } from '$lib/types';
+import type { EztvTorrent, ShowEpisodeStatus, TorrentSearchResult } from '$lib/types';
 
 const statusWithMixedEpisodes: ShowEpisodeStatus = {
 	plexReachable: true,
@@ -197,5 +197,53 @@ describe('MissingEpisodesPanel', () => {
 		});
 		expect(fetchMock).toHaveBeenCalledWith('/shows/the-show/eztv?season=4&episode=1');
 		expect(screen.getByText('9 seeds / 2 peers')).toBeInTheDocument();
+	});
+
+	it('shows a separate "Find on ThePirateBay" button alongside "Find on EZTV"', () => {
+		render(Panel, {
+			slug: 'the-show',
+			episodeStatus: statusWithMixedEpisodes,
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		expect(screen.getAllByRole('button', { name: 'Find on EZTV' }).length).toBeGreaterThan(0);
+		expect(screen.getAllByRole('button', { name: 'Find on ThePirateBay' }).length).toBeGreaterThan(
+			0
+		);
+	});
+
+	it('fetches and renders ThePirateBay results independently of EZTV, and tags the grab form with the right source', async () => {
+		const torrents: TorrentSearchResult[] = [
+			{
+				id: 69899793,
+				title: 'Valles.Marineris.1080p.WEB.h264-ETHEL[TGx]',
+				magnetUrl: 'magnet:?xt=urn:btih:bbb',
+				sizeBytes: 2_800_000_000,
+				seeds: 13,
+				peers: 1,
+				resolution: '1080p',
+				codec: 'x264'
+			}
+		];
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ torrents }), { status: 200 }));
+
+		const { container } = render(Panel, {
+			slug: 'the-show',
+			episodeStatus: statusWithMixedEpisodes,
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		const buttons = screen.getAllByRole('button', { name: 'Find on ThePirateBay' });
+		await fireEvent.click(buttons[0]);
+
+		await waitFor(() => {
+			expect(screen.getByText('Valles.Marineris.1080p.WEB.h264-ETHEL[TGx]')).toBeInTheDocument();
+		});
+		expect(fetchMock).toHaveBeenCalledWith('/shows/the-show/thepiratebay?season=4&episode=1');
+
+		const sourceInput = container.querySelector('input[name="source"]') as HTMLInputElement | null;
+		expect(sourceInput?.value).toBe('thepiratebay');
 	});
 });

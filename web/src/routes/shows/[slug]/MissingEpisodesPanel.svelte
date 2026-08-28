@@ -7,7 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { toast } from '$lib/toast';
-	import type { EztvTorrent, ShowEpisodeStatus } from '$lib/types';
+	import type { ShowEpisodeStatus, TorrentSearchResult } from '$lib/types';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
@@ -39,13 +39,32 @@
 		return airDate !== undefined && airDate > todayIsoDate;
 	}
 
+	type SearchSource = 'eztv' | 'thepiratebay';
+	// shortLabel is its own field, not derived from `label` (e.g. stripping a
+	// "Find on " prefix) — deriving it would silently break if label's text
+	// ever changed without updating every derivation call site to match.
+	const SEARCH_SOURCES: Array<{
+		source: SearchSource;
+		label: string;
+		shortLabel: string;
+		path: string;
+	}> = [
+		{ source: 'eztv', label: 'Find on EZTV', shortLabel: 'EZTV', path: 'eztv' },
+		{
+			source: 'thepiratebay',
+			label: 'Find on ThePirateBay',
+			shortLabel: 'ThePirateBay',
+			path: 'thepiratebay'
+		}
+	];
+
 	let selectedSeason = $state<number | null>(null);
 	let expandedKey = $state<string | null>(null);
-	type EztvLookupState =
+	type LookupState =
 		| { status: 'loading' }
 		| { status: 'error'; message: string }
-		| { status: 'ready'; torrents: EztvTorrent[] };
-	let eztvResults = $state<Record<string, EztvLookupState>>({});
+		| { status: 'ready'; torrents: TorrentSearchResult[] };
+	let searchResults = $state<Record<string, LookupState>>({});
 
 	$effect(() => {
 		if (!props.episodeStatus || selectedSeason !== null || props.episodeStatus.seasons.length === 0)
@@ -61,37 +80,38 @@
 			: null
 	);
 
-	function episodeKey(season: number, episode: number): string {
-		return `${season}:${episode}`;
+	function episodeKey(season: number, episode: number, source: SearchSource): string {
+		return `${season}:${episode}:${source}`;
 	}
 
-	async function findOnEztv(season: number, episode: number): Promise<void> {
-		const key = episodeKey(season, episode);
+	async function findOn(source: SearchSource, season: number, episode: number): Promise<void> {
+		const key = episodeKey(season, episode, source);
 		if (expandedKey === key) {
 			expandedKey = null;
 			return;
 		}
 		expandedKey = key;
-		if (eztvResults[key]) return;
+		if (searchResults[key]) return;
 
-		eztvResults = { ...eztvResults, [key]: { status: 'loading' } };
+		const { label, shortLabel, path } = SEARCH_SOURCES.find((s) => s.source === source)!;
+		searchResults = { ...searchResults, [key]: { status: 'loading' } };
 		try {
 			const res = await fetch(
-				`/shows/${encodeURIComponent(props.slug)}/eztv?season=${season}&episode=${episode}`
+				`/shows/${encodeURIComponent(props.slug)}/${path}?season=${season}&episode=${episode}`
 			);
-			const body = (await res.json()) as { torrents?: EztvTorrent[]; error?: string };
+			const body = (await res.json()) as { torrents?: TorrentSearchResult[]; error?: string };
 			if (!res.ok || !body.torrents) {
-				eztvResults = {
-					...eztvResults,
-					[key]: { status: 'error', message: body.error ?? 'EZTV lookup failed.' }
+				searchResults = {
+					...searchResults,
+					[key]: { status: 'error', message: body.error ?? `${label} failed.` }
 				};
 				return;
 			}
-			eztvResults = { ...eztvResults, [key]: { status: 'ready', torrents: body.torrents } };
+			searchResults = { ...searchResults, [key]: { status: 'ready', torrents: body.torrents } };
 		} catch {
-			eztvResults = {
-				...eztvResults,
-				[key]: { status: 'error', message: 'Could not reach EZTV.' }
+			searchResults = {
+				...searchResults,
+				[key]: { status: 'error', message: `Could not reach ${shortLabel}.` }
 			};
 		}
 	}
@@ -105,7 +125,7 @@
 
 	let pendingGrabId = $state<number | null>(null);
 
-	function enhanceGrab(torrentId: number, key: string) {
+	function enhanceGrab(torrentId: number, season: number, episode: number) {
 		pendingGrabId = torrentId;
 		return async ({
 			result,
@@ -119,13 +139,18 @@
 			pendingGrabId = null;
 			if (result.type === 'success') {
 				toast('Queued', 'success', (result.data?.grabMessage as string) ?? undefined);
-				// The EZTV results list for this episode is now stale noise —
-				// it's grabbed, other variants of the same episode are just a
-				// duplicate-grab risk. Collapse it and drop the cached results
-				// so a future expand re-searches fresh instead of showing them.
-				if (expandedKey === key) expandedKey = null;
-				const { [key]: _dropped, ...rest } = eztvResults;
-				eztvResults = rest;
+				// This episode is grabbed — every source's cached result list
+				// for it is now stale noise, not just the one it was grabbed
+				// from. Leaving another source's list showing (with a live
+				// Grab button) is exactly the duplicate-grab risk this cleanup
+				// exists to prevent. Collapse whichever one is open and drop
+				// every cached result keyed to this episode, regardless of
+				// source, so a future expand re-searches fresh.
+				const episodeKeys = SEARCH_SOURCES.map((s) => episodeKey(season, episode, s.source));
+				if (episodeKeys.includes(expandedKey ?? '')) expandedKey = null;
+				const rest = { ...searchResults };
+				for (const k of episodeKeys) delete rest[k];
+				searchResults = rest;
 			} else if (result.type === 'failure') {
 				toast('Grab failed', 'error', (result.data?.grabMessage as string) ?? undefined);
 			} else if (result.type === 'error') {
@@ -202,8 +227,6 @@
 		{#if activeSeason}
 			<div class="space-y-3">
 				{#each activeSeason.episodes as episode (episode.episode)}
-					{@const key = episodeKey(activeSeason.season, episode.episode)}
-					{@const lookup = eztvResults[key]}
 					{@const displayStatus =
 						episode.plexStatus === 'missing' && isConfirmedUnaired(episode.airDate)
 							? 'unaired'
@@ -234,76 +257,87 @@
 						</div>
 
 						{#if episode.plexStatus === 'missing' && props.canWrite && hasAired(episode.airDate)}
-							<div class="mt-3">
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									class="rounded-full"
-									onclick={() => findOnEztv(activeSeason.season, episode.episode)}
-								>
-									<SearchIcon class="mr-2 h-3.5 w-3.5" />
-									{expandedKey === key ? 'Hide EZTV results' : 'Find on EZTV'}
-								</Button>
+							<div class="mt-3 flex flex-wrap gap-2">
+								{#each SEARCH_SOURCES as { source, label, shortLabel }}
+									{@const key = episodeKey(activeSeason.season, episode.episode, source)}
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										class="rounded-full"
+										onclick={() => findOn(source, activeSeason.season, episode.episode)}
+									>
+										<SearchIcon class="mr-2 h-3.5 w-3.5" />
+										{expandedKey === key ? `Hide ${shortLabel} results` : label}
+									</Button>
+								{/each}
 							</div>
 
-							{#if expandedKey === key && lookup}
-								<div class="mt-3 space-y-2">
-									{#if lookup.status === 'loading'}
-										<p class="text-muted-foreground text-sm">Searching EZTV…</p>
-									{:else if lookup.status === 'error'}
-										<p class="text-destructive text-sm">{lookup.message}</p>
-									{:else if lookup.torrents.length === 0}
-										<p class="text-muted-foreground text-sm">No EZTV results for this episode.</p>
-									{:else}
-										{#each lookup.torrents as torrent (torrent.id)}
-											<div
-												class="bg-background/50 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
-											>
-												<div class="min-w-0 space-y-1">
-													<p class="truncate text-sm font-medium">{torrent.title}</p>
-													<div class="flex flex-wrap gap-2 text-xs">
-														{#if torrent.resolution}
-															<Badge variant="outline">{torrent.resolution}</Badge>
-														{/if}
-														{#if torrent.codec}
-															<Badge variant="outline">{torrent.codec}</Badge>
-														{/if}
-														<Badge variant="outline">{formatSize(torrent.sizeBytes)}</Badge>
-														<Badge variant="outline"
-															>{torrent.seeds} seeds / {torrent.peers} peers</Badge
-														>
-													</div>
-												</div>
-												<form
-													method="POST"
-													action="?/manualGrab"
-													use:enhance={() => enhanceGrab(torrent.id, key)}
+							{#each SEARCH_SOURCES as { source, shortLabel }}
+								{@const key = episodeKey(activeSeason.season, episode.episode, source)}
+								{@const lookup = searchResults[key]}
+								{#if expandedKey === key && lookup}
+									<div class="mt-3 space-y-2">
+										{#if lookup.status === 'loading'}
+											<p class="text-muted-foreground text-sm">Searching {shortLabel}…</p>
+										{:else if lookup.status === 'error'}
+											<p class="text-destructive text-sm">{lookup.message}</p>
+										{:else if lookup.torrents.length === 0}
+											<p class="text-muted-foreground text-sm">
+												No {shortLabel} results for this episode.
+											</p>
+										{:else}
+											{#each lookup.torrents as torrent (torrent.id)}
+												<div
+													class="bg-background/50 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
 												>
-													<input type="hidden" name="season" value={activeSeason.season} />
-													<input type="hidden" name="episode" value={episode.episode} />
-													<input type="hidden" name="magnetUrl" value={torrent.magnetUrl} />
-													<input type="hidden" name="rawTitle" value={torrent.title} />
-													<Button
-														type="submit"
-														size="sm"
-														class="shrink-0 rounded-full"
-														disabled={pendingGrabId !== null}
+													<div class="min-w-0 space-y-1">
+														<p class="truncate text-sm font-medium">{torrent.title}</p>
+														<div class="flex flex-wrap gap-2 text-xs">
+															{#if torrent.resolution}
+																<Badge variant="outline">{torrent.resolution}</Badge>
+															{/if}
+															{#if torrent.codec}
+																<Badge variant="outline">{torrent.codec}</Badge>
+															{/if}
+															<Badge variant="outline">{formatSize(torrent.sizeBytes)}</Badge>
+															<Badge variant="outline"
+																>{torrent.seeds} seeds / {torrent.peers} peers</Badge
+															>
+														</div>
+													</div>
+													<form
+														method="POST"
+														action="?/manualGrab"
+														use:enhance={() =>
+															enhanceGrab(torrent.id, activeSeason.season, episode.episode)}
 													>
-														{#if pendingGrabId === torrent.id}
-															<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
-															Queuing…
-														{:else}
-															<DownloadIcon class="mr-2 h-3.5 w-3.5" />
-															Grab
-														{/if}
-													</Button>
-												</form>
-											</div>
-										{/each}
-									{/if}
-								</div>
-							{/if}
+														<input type="hidden" name="season" value={activeSeason.season} />
+														<input type="hidden" name="episode" value={episode.episode} />
+														<input type="hidden" name="magnetUrl" value={torrent.magnetUrl} />
+														<input type="hidden" name="rawTitle" value={torrent.title} />
+														<input type="hidden" name="source" value={source} />
+														<Button
+															type="submit"
+															size="sm"
+															class="shrink-0 rounded-full"
+															disabled={pendingGrabId !== null}
+														>
+															{#if pendingGrabId === torrent.id}
+																<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+																Queuing…
+															{:else}
+																<DownloadIcon class="mr-2 h-3.5 w-3.5" />
+																Grab
+															{/if}
+														</Button>
+													</form>
+												</div>
+											{/each}
+										{/if}
+									</div>
+								{/if}
+							{/each}
 						{/if}
 					</div>
 				{/each}

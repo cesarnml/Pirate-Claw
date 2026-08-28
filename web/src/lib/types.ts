@@ -140,6 +140,34 @@ export type EztvTorrent = {
 	codec?: string;
 };
 
+export type ThePirateBayTorrent = {
+	id: number;
+	title: string;
+	magnetUrl: string;
+	infoHash: string;
+	sizeBytes: number;
+	seeds: number;
+	peers: number;
+	addedUnix: number;
+	imdbId: string | null;
+	resolution?: string;
+	codec?: string;
+};
+
+/** Fields the missing-episodes panel actually renders — both EztvTorrent
+ * and ThePirateBayTorrent satisfy this structurally, so one lookup-state
+ * shape covers both search sources without a conversion step. */
+export type TorrentSearchResult = {
+	id: number;
+	title: string;
+	magnetUrl: string;
+	sizeBytes: number;
+	seeds: number;
+	peers: number;
+	resolution?: string;
+	codec?: string;
+};
+
 export type TmdbMoviePublic = {
 	tmdbId?: number;
 	title?: string;
