@@ -116,7 +116,12 @@ export function generateSecretToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
-function normalizeInstallRoot(path: string | undefined): string | undefined {
+/** Exported for the library reconciler's directory-discovery pass (see
+ * src/adoption/discover-media-dirs.ts), which needs the raw install root
+ * itself, not one of its known subdirectories. */
+export function normalizeInstallRoot(
+  path: string | undefined,
+): string | undefined {
   if (path === undefined) {
     return undefined;
   }

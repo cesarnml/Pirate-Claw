@@ -36,7 +36,11 @@ import {
   syncTrackedShowsFromConfig,
 } from './tracked-shows/sync';
 import { reconcileShowLibrary } from './adoption/reconciler';
-import { installRootMediaShowsDir } from './install-bootstrap';
+import {
+  installRootMediaShowsDir,
+  normalizeInstallRoot,
+} from './install-bootstrap';
+import { discoverShowDirectories } from './adoption/discover-media-dirs';
 import { extractCodec, extractResolution } from './normalize';
 import {
   ConfigError,
@@ -535,6 +539,33 @@ export function createApiFetch(
     return trackedShows?.list().map((show) => show.normalizedTitle);
   }
 
+  // Discovering extra tv/shows directories walks the whole install root —
+  // cheap once, wasteful on every single show's reconciliation. A personal
+  // NAS's directory layout doesn't change often enough to justify re-walking
+  // it more than once per process lifetime; a daemon restart re-discovers.
+  let cachedMediaShowsDirs: string[] | undefined;
+
+  async function resolveMediaShowsDirs(): Promise<string[]> {
+    if (cachedMediaShowsDirs) return cachedMediaShowsDirs;
+
+    const installRoot = activeConfig.runtime.installRoot;
+    const primary = installRootMediaShowsDir(installRoot);
+    const normalizedRoot = normalizeInstallRoot(installRoot);
+    let discovered: string[] = [];
+    if (normalizedRoot) {
+      try {
+        discovered = await discoverShowDirectories(normalizedRoot);
+      } catch {
+        // Best-effort — a failed discovery pass still leaves the primary
+        // media/shows path usable below.
+      }
+    }
+    cachedMediaShowsDirs = Array.from(
+      new Set([primary, ...discovered].filter((dir): dir is string => !!dir)),
+    );
+    return cachedMediaShowsDirs;
+  }
+
   /** Refreshes at most once per RECONCILE_STALE_AFTER_MS per show, triggered
    * by viewing that show's episode grid — see grill-me: on-demand per show,
    * not a global background job, since this is a single-user NAS app and a
@@ -560,9 +591,7 @@ export function createApiFetch(
       await reconcileShowLibrary(tracked, {
         transmission: activeConfig.transmission,
         manualGrabs: new ManualGrabsStore(database),
-        mediaShowsDir: installRootMediaShowsDir(
-          activeConfig.runtime.installRoot,
-        ),
+        mediaShowsDirs: await resolveMediaShowsDirs(),
       });
     } catch {
       // Best-effort — see doc comment above.

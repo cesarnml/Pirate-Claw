@@ -1500,7 +1500,11 @@ describe('POST /api/shows/:slug/plex/refresh', () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
         ok: boolean;
-        show: { plexStatus: string; watchCount: number | null; plexCheckedAt?: string };
+        show: {
+          plexStatus: string;
+          watchCount: number | null;
+          plexCheckedAt?: string;
+        };
       };
       expect(body.ok).toBe(true);
       expect(body.show.plexStatus).toBe('in_library');
@@ -1548,7 +1552,10 @@ describe('POST /api/shows/:slug/plex/refresh', () => {
       deps.config.runtime.apiWriteToken = 'write-token';
       deps.plexShows = {
         cache,
-        client: { searchShows: async () => [], listAllTvShowsForMatching: async () => [] } as never,
+        client: {
+          searchShows: async () => [],
+          listAllTvShowsForMatching: async () => [],
+        } as never,
         refreshIntervalMinutes: 30,
         log: () => {},
       };

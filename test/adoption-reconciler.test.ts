@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { discoverShowDirectories } from '../src/adoption/discover-media-dirs';
 import { reconcileShowLibrary } from '../src/adoption/reconciler';
 import { titlesMatch } from '../src/adoption/title-match';
 import type { TransmissionConfig } from '../src/config';
@@ -89,6 +90,52 @@ describe('titlesMatch', () => {
   });
 });
 
+describe('discoverShowDirectories', () => {
+  it('finds a "tv" dir nested somewhere other than the canonical media/shows path', async () => {
+    const root = await tempMediaDir();
+    await mkdir(join(root, 'downloads', 'complete', 'tv'), { recursive: true });
+    await mkdir(join(root, 'media', 'shows'), { recursive: true });
+    await mkdir(join(root, 'config'), { recursive: true });
+
+    const found = await discoverShowDirectories(root);
+
+    expect(found.sort()).toEqual(
+      [
+        join(root, 'downloads', 'complete', 'tv'),
+        join(root, 'media', 'shows'),
+      ].sort(),
+    );
+  });
+
+  it('excludes "incomplete" — an in-progress download is not owned yet', async () => {
+    const root = await tempMediaDir();
+    await mkdir(join(root, 'downloads', 'incomplete', 'tv'), {
+      recursive: true,
+    });
+
+    const found = await discoverShowDirectories(root);
+
+    expect(found).toHaveLength(0);
+  });
+
+  it('does not recurse inside a matched "shows" directory looking for nested "tv"/"shows" dirs', async () => {
+    const root = await tempMediaDir();
+    // A show named "TV" would otherwise be a pathological nested match.
+    await mkdir(join(root, 'shows', 'tv'), { recursive: true });
+
+    const found = await discoverShowDirectories(root);
+
+    expect(found).toEqual([join(root, 'shows')]);
+  });
+
+  it('returns an empty list when the root does not exist', async () => {
+    const found = await discoverShowDirectories(
+      '/nonexistent/pirate-claw-root',
+    );
+    expect(found).toEqual([]);
+  });
+});
+
 describe('reconcileShowLibrary', () => {
   it('adopts a matching Transmission torrent pirate-claw did not queue', async () => {
     const transmission = startTransmissionServer([
@@ -110,7 +157,7 @@ describe('reconcileShowLibrary', () => {
     const result = await reconcileShowLibrary(trackedShow(), {
       transmission,
       manualGrabs,
-      mediaShowsDir: undefined,
+      mediaShowsDirs: [],
     });
 
     expect(result.adoptedFromTransmission).toBe(1);
@@ -148,7 +195,7 @@ describe('reconcileShowLibrary', () => {
     const result = await reconcileShowLibrary(trackedShow(), {
       transmission,
       manualGrabs,
-      mediaShowsDir: undefined,
+      mediaShowsDirs: [],
     });
 
     expect(result.adoptedFromTransmission).toBe(0);
@@ -196,7 +243,7 @@ describe('reconcileShowLibrary', () => {
         password: '',
       },
       manualGrabs,
-      mediaShowsDir: mediaDir,
+      mediaShowsDirs: [mediaDir],
     });
 
     expect(result.adoptedFromFilesystem).toBe(1);
@@ -208,6 +255,34 @@ describe('reconcileShowLibrary', () => {
       source: 'adopted-filesystem',
       transmissionTorrentHash: null,
     });
+  });
+
+  it('scans multiple media directories, e.g. media/shows plus a hand-added torrent under downloads/complete/tv', async () => {
+    const mediaShowsDir = await tempMediaDir();
+    const downloadsTvDir = await tempMediaDir();
+    await writeFile(join(mediaShowsDir, 'Dark Matter - S01E05.mkv'), '');
+    await writeFile(join(downloadsTvDir, 'Dark Matter - S01E06.mkv'), '');
+
+    const database = new Database(':memory:');
+    ensureSchema(database);
+    const manualGrabs = new ManualGrabsStore(database);
+
+    const result = await reconcileShowLibrary(trackedShow(), {
+      transmission: {
+        url: 'http://127.0.0.1:1/rpc',
+        username: '',
+        password: '',
+      },
+      manualGrabs,
+      mediaShowsDirs: [mediaShowsDir, downloadsTvDir],
+    });
+
+    expect(result.adoptedFromFilesystem).toBe(2);
+    const episodes = manualGrabs
+      .listForShow('Dark Matter')
+      .map((g) => g.episode)
+      .sort();
+    expect(episodes).toEqual([5, 6]);
   });
 
   it('is a no-op when nothing matches and never throws', async () => {
@@ -222,7 +297,7 @@ describe('reconcileShowLibrary', () => {
         password: '',
       },
       manualGrabs,
-      mediaShowsDir: undefined,
+      mediaShowsDirs: [],
     });
 
     expect(result).toEqual({

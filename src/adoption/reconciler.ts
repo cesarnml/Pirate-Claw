@@ -20,10 +20,15 @@ const VIDEO_EXTENSIONS = new Set([
 export type ReconcileShowLibraryDeps = {
   transmission: TransmissionConfig;
   manualGrabs: ManualGrabsStore;
-  /** Root directory to walk for on-disk episode files, e.g.
-   * `<installRoot>/media/shows` (see installRootMediaShowsDir). Undefined
-   * skips the filesystem sweep entirely (no install root configured). */
-  mediaShowsDir: string | undefined;
+  /** Every root directory to walk for on-disk episode files: pirate-claw's
+   * own canonical `<installRoot>/media/shows` (see installRootMediaShowsDir)
+   * plus any other directory literally named "tv" or "shows" found under the
+   * install root (see discoverShowDirectories) — covers a torrent added by
+   * hand through Transmission's web UI landing somewhere else entirely,
+   * e.g. `downloads/complete/tv`, because of how Transmission's own
+   * download-location was set at the time. Empty skips the filesystem
+   * sweep entirely (no install root configured). */
+  mediaShowsDirs: string[];
   log?: (message: string) => void;
 };
 
@@ -117,11 +122,14 @@ async function adoptFromFilesystem(
   deps: ReconcileShowLibraryDeps,
   log: (message: string) => void,
 ): Promise<number> {
-  if (!deps.mediaShowsDir) return 0;
+  if (deps.mediaShowsDirs.length === 0) return 0;
 
   let filePaths: string[];
   try {
-    filePaths = await walkVideoFiles(deps.mediaShowsDir);
+    const walked = await Promise.all(
+      deps.mediaShowsDirs.map((dir) => walkVideoFiles(dir)),
+    );
+    filePaths = walked.flat();
   } catch (error) {
     log(
       `adoption: filesystem walk failed for ${show.normalizedTitle}: ${formatError(error)}`,

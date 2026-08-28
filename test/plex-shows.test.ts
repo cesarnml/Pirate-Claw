@@ -271,7 +271,12 @@ describe('plex show enrichment', () => {
         cache,
         client: {
           searchShows: async () => [
-            { ratingKey: '99', title: 'On Demand Show', type: 'show', viewCount: 4 },
+            {
+              ratingKey: '99',
+              title: 'On Demand Show',
+              type: 'show',
+              viewCount: 4,
+            },
           ],
           listAllTvShowsForMatching: async () => [],
         } as never,
@@ -280,7 +285,10 @@ describe('plex show enrichment', () => {
       },
     );
 
-    expect(refreshed).toMatchObject({ plexStatus: 'in_library', watchCount: 4 });
+    expect(refreshed).toMatchObject({
+      plexStatus: 'in_library',
+      watchCount: 4,
+    });
     expect(refreshed.plexCheckedAt).toBeDefined();
     expect(cache.getTv('On Demand Show')).toMatchObject({ inLibrary: true });
   });
@@ -319,7 +327,9 @@ describe('plex show enrichment', () => {
       log: () => {},
     });
 
-    expect(cache.getTv('Zero Candidate Show')).toMatchObject({ inLibrary: true });
+    expect(cache.getTv('Zero Candidate Show')).toMatchObject({
+      inLibrary: true,
+    });
   });
 
   it('background refresh without trackedShows still only sweeps candidate-derived shows (regression guard)', async () => {
