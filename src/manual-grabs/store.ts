@@ -93,6 +93,20 @@ export class ManualGrabsStore {
     };
   }
 
+  /** Every distinct Transmission torrent hash any manual grab has ever
+   * recorded, across all shows — used so /api/transmission/torrents can
+   * surface manually-grabbed torrents too, not just candidate_state ones. */
+  listAllTorrentHashes(): string[] {
+    const rows = this.database
+      .query(
+        `SELECT DISTINCT transmission_torrent_hash AS hash
+         FROM manual_grabs
+         WHERE transmission_torrent_hash IS NOT NULL`,
+      )
+      .all() as { hash: string }[];
+    return rows.map((r) => r.hash);
+  }
+
   /** All manual grabs recorded for a show, most recent first — one episode
    * can have more than one row if it was grabbed more than once. */
   listForShow(normalizedTitle: string): ManualGrabRecord[] {

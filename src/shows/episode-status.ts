@@ -67,6 +67,7 @@ export async function buildShowEpisodeStatus(
   }
 
   const matchKey = tvMatchKey(show.normalizedTitle);
+  const todayIsoDate = new Date().toISOString().slice(0, 10);
   const plexPresence = await loadPlexPresence(show, deps.plex);
   const manualGrabsByKey = groupManualGrabsByEpisode(
     deps.manualGrabs.listForShow(show.normalizedTitle),
@@ -113,13 +114,25 @@ export async function buildShowEpisodeStatus(
           };
         });
 
+      // TMDB's season episode list includes unaired future episodes (a
+      // "Returning Series" season lists all planned episodes up front,
+      // most with a future air_date) — Plex's leafCount can only ever
+      // count episodes that actually exist as files, so comparing it
+      // against the *full* TMDB count would flag a mismatch for every
+      // currently-airing show, every time. Compare against aired-so-far
+      // count instead. Confirmed live against a real currently-airing
+      // show (Stuart Fails to Save the Universe): season 1 lists 10
+      // TMDB episodes, 4 of them not yet aired.
+      const airedEpisodeCount = episodes.filter(
+        (ep) => ep.airDate !== undefined && ep.airDate <= todayIsoDate,
+      ).length;
       const season: SeasonWithStatus = {
         season: seasonNumber,
         episodes,
         episodeCountMismatch:
           plexSeason === undefined
             ? undefined
-            : plexSeason.episodeCount !== episodes.length,
+            : plexSeason.episodeCount !== airedEpisodeCount,
       };
       return season;
     }),

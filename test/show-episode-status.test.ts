@@ -112,9 +112,21 @@ describe('buildShowEpisodeStatus', () => {
     const db = freshDb();
     const tmdb = fakeTmdb({
       4: [
-        { episode_number: 1, name: 'Valles Marineris' },
-        { episode_number: 2, name: 'The Griffin Incident' },
-        { episode_number: 3, name: 'Human Best Friend' },
+        {
+          episode_number: 1,
+          name: 'Valles Marineris',
+          air_date: '2026-07-23',
+        },
+        {
+          episode_number: 2,
+          name: 'The Griffin Incident',
+          air_date: '2026-07-30',
+        },
+        {
+          episode_number: 3,
+          name: 'Human Best Friend',
+          air_date: '2026-08-06',
+        },
       ],
     });
     const plexCache = new PlexCache(db);
@@ -149,6 +161,63 @@ describe('buildShowEpisodeStatus', () => {
       [2, 'in_library'],
       [3, 'missing'],
     ]);
+  });
+
+  it('does not flag a mismatch just because TMDB lists unaired future episodes (real Stuart Fails to Save the Universe reproduction)', async () => {
+    // Confirmed live: TMDB's season endpoint lists the full planned season
+    // up front, most with a future air_date — for a currently-airing show,
+    // Plex's leafCount can never match that full count since unaired
+    // episodes don't exist as files yet. Comparing against the aired-so-far
+    // count (not the full list) is what episodeCountMismatch must do.
+    const db = freshDb();
+    // Dates computed relative to the real wall clock (not hardcoded), so
+    // this test keeps reproducing the real scenario indefinitely rather
+    // than silently drifting stale once real time passes fixed dates.
+    const daysFromNow = (n: number): string =>
+      new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    const tmdb = fakeTmdb({
+      1: [
+        { episode_number: 1, name: 'Ep 1', air_date: daysFromNow(-35) },
+        { episode_number: 2, name: 'Ep 2', air_date: daysFromNow(-28) },
+        { episode_number: 3, name: 'Ep 3', air_date: daysFromNow(-21) },
+        { episode_number: 4, name: 'Ep 4', air_date: daysFromNow(-14) },
+        { episode_number: 5, name: 'Ep 5', air_date: daysFromNow(-7) },
+        { episode_number: 6, name: 'Ep 6', air_date: daysFromNow(-1) },
+        // Unaired as of today — must not count toward the mismatch
+        // comparison.
+        { episode_number: 7, name: 'Ep 7', air_date: daysFromNow(6) },
+        { episode_number: 8, name: 'Ep 8', air_date: daysFromNow(13) },
+        { episode_number: 9, name: 'Ep 9', air_date: daysFromNow(20) },
+        { episode_number: 10, name: 'Ep 10', air_date: daysFromNow(27) },
+      ],
+    });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'strange new worlds',
+      plexRatingKey: '287620',
+      inLibrary: true,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    const plexClient = {
+      getShowSeasons: async (): Promise<PlexSeasonSummary[]> => [
+        { ratingKey: 's1', seasonNumber: 1, episodeCount: 6 },
+      ],
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> =>
+        [1, 2, 3, 4, 5, 6].map((n) => ({ episodeNumber: n })),
+    } as unknown as PlexHttpClient;
+
+    const result = await buildShowEpisodeStatus(showFixture(1), {
+      tmdb,
+      plex: { client: plexClient, cache: plexCache },
+      manualGrabs: new ManualGrabsStore(db),
+    });
+
+    const season1 = result?.seasons.find((s) => s.season === 1);
+    expect(season1?.episodeCountMismatch).toBe(false);
+    expect(season1?.episodes).toHaveLength(10);
   });
 
   it('attaches the latest manual grab record to its episode', async () => {

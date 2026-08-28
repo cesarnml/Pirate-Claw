@@ -6,9 +6,11 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import { toast } from '$lib/toast';
 	import type { EztvTorrent, ShowEpisodeStatus } from '$lib/types';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import DownloadIcon from '@lucide/svelte/icons/download';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import type { ActionData } from './$types';
 
 	const props = $props<{
@@ -18,6 +20,15 @@
 		canWrite: boolean;
 		form?: ActionData;
 	}>();
+
+	const todayIsoDate = new Date().toISOString().slice(0, 10);
+
+	/** An episode with a future/no air date can't have leaked online yet —
+	 * "missing" is still technically true, but offering "Find on EZTV" for
+	 * something that hasn't released is pointless noise. */
+	function hasAired(airDate: string | undefined): boolean {
+		return airDate !== undefined && airDate <= todayIsoDate;
+	}
 
 	let selectedSeason = $state<number | null>(null);
 	let expandedKey = $state<string | null>(null);
@@ -83,12 +94,29 @@
 		return `${(bytes / 1_048_576).toFixed(0)} MB`;
 	}
 
-	const enhanceGrab = () => {
-		return async ({ update }: { update: () => Promise<void> }) => {
+	let pendingGrabId = $state<number | null>(null);
+
+	function enhanceGrab(torrentId: number) {
+		pendingGrabId = torrentId;
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; data?: Record<string, unknown> };
+			update: () => Promise<void>;
+		}) => {
 			await update();
 			await invalidateAll();
+			pendingGrabId = null;
+			if (result.type === 'success') {
+				toast('Queued', 'success', (result.data?.grabMessage as string) ?? undefined);
+			} else if (result.type === 'failure') {
+				toast('Grab failed', 'error', (result.data?.grabMessage as string) ?? undefined);
+			} else if (result.type === 'error') {
+				toast('Grab failed', 'error', 'Could not reach the API.');
+			}
 		};
-	};
+	}
 </script>
 
 <div class="space-y-4">
@@ -190,7 +218,7 @@
 							</div>
 						</div>
 
-						{#if episode.plexStatus === 'missing' && props.canWrite}
+						{#if episode.plexStatus === 'missing' && props.canWrite && hasAired(episode.airDate)}
 							<div class="mt-3">
 								<Button
 									type="button"
@@ -232,14 +260,28 @@
 														>
 													</div>
 												</div>
-												<form method="POST" action="?/manualGrab" use:enhance={enhanceGrab}>
+												<form
+													method="POST"
+													action="?/manualGrab"
+													use:enhance={() => enhanceGrab(torrent.id)}
+												>
 													<input type="hidden" name="season" value={activeSeason.season} />
 													<input type="hidden" name="episode" value={episode.episode} />
 													<input type="hidden" name="magnetUrl" value={torrent.magnetUrl} />
 													<input type="hidden" name="rawTitle" value={torrent.title} />
-													<Button type="submit" size="sm" class="shrink-0 rounded-full">
-														<DownloadIcon class="mr-2 h-3.5 w-3.5" />
-														Grab
+													<Button
+														type="submit"
+														size="sm"
+														class="shrink-0 rounded-full"
+														disabled={pendingGrabId !== null}
+													>
+														{#if pendingGrabId === torrent.id}
+															<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+															Queuing…
+														{:else}
+															<DownloadIcon class="mr-2 h-3.5 w-3.5" />
+															Grab
+														{/if}
 													</Button>
 												</form>
 											</div>

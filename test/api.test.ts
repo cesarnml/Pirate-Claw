@@ -4139,6 +4139,68 @@ describe('GET /api/transmission/torrents', () => {
       error: 'transmission unavailable',
     });
   });
+
+  it('includes manually-grabbed torrents even though they have no candidate_state row', async () => {
+    const db = new Database(':memory:');
+    ensureSchema(db);
+    new ManualGrabsStore(db).record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'manual grab',
+      transmissionTorrentHash: 'manual-hash-1',
+      transmissionTorrentId: 99,
+    });
+
+    const deps = createDeps({ listCandidateStates: () => [] });
+    deps.database = db;
+    deps.config = {
+      ...deps.config,
+      transmission: {
+        url: 'http://transmission.test/transmission/rpc',
+        username: 'u',
+        password: 'p',
+      },
+    };
+
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () =>
+        new Response(
+          JSON.stringify({
+            result: 'success',
+            arguments: {
+              torrents: [
+                {
+                  id: 99,
+                  name: 'manual grab',
+                  hashString: 'manual-hash-1',
+                  status: 4,
+                  percentDone: 0.5,
+                  rateDownload: 1000,
+                  rateUpload: 0,
+                  eta: 60,
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        )) as unknown as typeof fetch,
+    );
+
+    try {
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/transmission/torrents'),
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { torrents: { hash: string }[] };
+      expect(body.torrents.map((t) => t.hash)).toEqual(['manual-hash-1']);
+    } finally {
+      fetchMock.mockRestore();
+      db.close();
+    }
+  });
 });
 
 describe('GET /api/transmission/session', () => {

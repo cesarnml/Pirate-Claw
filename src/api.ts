@@ -2237,13 +2237,23 @@ export function createApiFetch(
       const candidates = repository.listCandidateStates(
         API_CANDIDATE_LIST_LIMIT,
       );
-      const hashes = candidates
+      const candidateHashes = candidates
         .filter(
           (c) =>
             c.transmissionTorrentHash !== undefined &&
             c.pirateClawDisposition === undefined,
         )
         .map((c) => c.transmissionTorrentHash as string);
+      // Manual grabs deliberately never write to candidate_state (see
+      // manual-grabs/schema.ts), so without this they'd download for real
+      // in Transmission but never show up here — surfacing as "the Grab
+      // button did nothing" even on a genuine success.
+      const manualGrabHashes = database
+        ? new ManualGrabsStore(database).listAllTorrentHashes()
+        : [];
+      const hashes = Array.from(
+        new Set([...candidateHashes, ...manualGrabHashes]),
+      );
 
       if (hashes.length === 0) {
         return Response.json({ torrents: [] });

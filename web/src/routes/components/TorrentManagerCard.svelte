@@ -166,11 +166,18 @@
 
 			const result = deserialize(await res.text());
 
-			if (result.type === 'error' || result.type === 'failure') {
-				toast('Action failed', 'error');
+			if (result.type === 'redirect') {
 				return;
 			}
-			if (result.type === 'redirect') {
+			// Only a recognized 'success' shape counts as success — anything else
+			// (error, failure, or a response deserialize() couldn't even
+			// recognize, e.g. SvelteKit's own raw CSRF-rejection JSON, which has
+			// no `type` field at all) must not fall through to a false-positive
+			// toast. Confirmed live: a misconfigured ORIGIN made every POST here
+			// 403 with a plain {message} body, and the old `!== error/failure`
+			// check treated that unrecognized shape as success.
+			if (result.type !== 'success') {
+				toast('Action failed', 'error');
 				return;
 			}
 
