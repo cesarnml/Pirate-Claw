@@ -462,7 +462,17 @@ export async function runCli(argv: string[]): Promise<number> {
           database,
           config.tv,
           // Repository default is 20; this backfill needs the full history.
-          repository.listCandidateStates(50_000).map((c) => c.normalizedTitle),
+          // mediaType filter matters: an unfiltered leftover list promotes a
+          // movie candidate's normalized title into a phantom tracked *show*
+          // (TMDB's TV search can resolve a same-titled but unrelated TV
+          // entry for it) — and since candidate_state is untouched by
+          // untrack, that phantom row would silently reappear on every
+          // daemon restart. Found live 2026-08-29 ("Barreda" — a real movie
+          // candidate — surfaced as a bogus tracked TV show).
+          repository
+            .listCandidateStates(50_000)
+            .filter((c) => c.mediaType === 'tv')
+            .map((c) => c.normalizedTitle),
         );
         const downloader = createTransmissionDownloader(config.transmission, {
           warn: log,
