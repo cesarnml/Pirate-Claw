@@ -234,8 +234,17 @@
 						aria-label="Open navigation menu"
 						onclick={() => mobileNavOpen.set(true)}
 					>
-						{#if $navigating}
-							<!-- The drawer already closed by the time a tapped nav link
+						{#if $navigating?.to}
+							<!-- $navigating?.to, not a bare $navigating check: the
+							     Dashboard's own 5s invalidateAll() poll (live torrent
+							     progress, see +page.svelte) also flips $navigating
+							     truthy with no `to` target — a bare check made this
+							     spinner effectively permanent while sitting on the
+							     Dashboard, confirmed live during QA 2026-08-29 ("stuck
+							     on movie calendar nav for eternity" — the drawer never
+							     even opened because the icon looked mid-navigation).
+							     `.to` is only set for a genuine page-to-page navigation.
+							     The drawer already closed by the time a tapped nav link
 							     starts navigating, so the hamburger button is the only
 							     nav affordance left on screen — some routes (TV/Movie
 							     Calendar, Shows) have a real load delay, and a static
