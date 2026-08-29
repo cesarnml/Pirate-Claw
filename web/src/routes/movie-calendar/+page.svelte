@@ -5,7 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import type { PageData } from './$types';
-	import type { CalendarMovieItem } from './+page.server';
+	import type { CalendarMovieItem, MovieGrabSource, PlexStatus } from './+page.server';
 	import MovieGrabPanel from './MovieGrabPanel.svelte';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
@@ -204,11 +204,11 @@
 		return result;
 	});
 
-	function markGrabbed(tmdbId: number): void {
+	function markGrabbed(tmdbId: number, source: MovieGrabSource): void {
 		chunks = chunks.map((chunk) => ({
 			...chunk,
 			items: chunk.items.map((item) =>
-				item.tmdbId === tmdbId ? { ...item, alreadyGrabbed: true } : item
+				item.tmdbId === tmdbId ? { ...item, alreadyGrabbed: true, grabSource: source } : item
 			)
 		}));
 	}
@@ -241,6 +241,8 @@
 		releaseDate: string | null;
 		rating: number | undefined;
 		alreadyGrabbed: boolean;
+		grabSource: MovieGrabSource | null;
+		plexStatus: PlexStatus;
 		formats: { dvd: boolean; bluray: boolean; fourK: boolean };
 	};
 	// topByYear is the single source of truth for fetched rows — topFetchState
@@ -268,6 +270,17 @@
 	let topMetaByYear = $state<Record<number, { fetchedAt: string; fromCache: boolean }>>({});
 	let topFetchState = $state<TopFetchState>({ status: 'idle' });
 	let rescanning = $state(false);
+	// True while the Plex/filesystem adoption sweep is running for a given
+	// year — separate from `rescanning` because a sweep also auto-fires
+	// after a plain first-ever (cold-cache) load, not only after an
+	// explicit Rescan click. With ~7000 Plex movies this can take several
+	// real seconds; the Rescan button spins during it so that isn't silent
+	// background work the user has no way to notice. Keyed by year (not a
+	// single flag) because switching years mid-sweep must not clear the
+	// spinner for a still-in-flight OTHER year's sweep, nor show a stale
+	// spinner for a year whose sweep already finished.
+	let sweepingByYear = $state<Record<number, boolean>>({});
+	const sweeping = $derived(sweepingByYear[topYear] ?? false);
 	let topFilter = $state<'all' | 'missing'>('all');
 
 	const topItems = $derived(topByYear[topYear] ?? []);
@@ -314,10 +327,77 @@
 				fetchedAt: body.fetchedAt ?? '',
 				fromCache: body.fromCache ?? true
 			};
+			// A fresh scrape (cold-cache first view, or this Rescan) is the
+			// only time it's worth asking Plex/the filesystem at all — a plain
+			// cache hit above returns early and never reaches here, so this
+			// never fires on ordinary browsing. Not awaited: the list the user
+			// just requested is already correct on-screen (from the ledger)
+			// and should render now, not wait several seconds on Plex. Skipped
+			// on a failed/empty scrape (scrapeError set) — nothing to sweep,
+			// and firing it anyway just spends a write-auth-gated round trip
+			// for no reason.
+			if (body.fromCache === false && !body.scrapeError && body.items.length > 0) {
+				void sweepTopMovies(year);
+			}
 		} catch {
 			topFetchState = { status: 'error', message: 'Could not reach the API.' };
 		} finally {
 			rescanning = false;
+		}
+	}
+
+	/** Runs the Plex/filesystem adoption sweep for `year` and patches in
+	 * whatever it finds — see loadTopMovies's fromCache check for when this
+	 * fires. Best-effort: a failure here just means the list keeps showing
+	 * whatever the ledger already knew, same as before this call.
+	 *
+	 * Merges onto whatever topByYear[year] holds *at the time the sweep
+	 * response lands*, and only ever flips alreadyGrabbed false -> true,
+	 * never true -> false. This sweep can take several real seconds (~7000
+	 * Plex movies) — a wholesale replace with the response's own item array
+	 * would silently revert a manual grab the user made in the meantime
+	 * (MovieGrabPanel's onGrabbed already optimistically set
+	 * alreadyGrabbed:true via markTopGrabbed before this ever resolves). */
+	async function sweepTopMovies(year: number): Promise<void> {
+		sweepingByYear = { ...sweepingByYear, [year]: true };
+		try {
+			const query = new URLSearchParams({ year: String(year), sweep: 'true' });
+			const res = await fetch(`/movie-calendar/top?${query}`);
+			const body = (await res.json()) as { items?: TopMovieItem[] };
+			if (res.ok && body.items) {
+				const sweptById = new Map(
+					body.items
+						.filter((item) => item.tmdbId !== null && item.alreadyGrabbed)
+						.map((item) => [item.tmdbId, item])
+				);
+				// No `!item.alreadyGrabbed` guard here — sweptById only ever
+				// contains entries the sweep itself reports as grabbed, so
+				// applying it can only set alreadyGrabbed true (already true or
+				// newly true) and refresh grabSource/plexStatus, never revert a
+				// true back to false. Without this, an item already showing
+				// "Queued via X" would never pick up this same sweep's
+				// confirmation that it's now in_library — the "Queued" pill
+				// would keep showing instead of the honest in-library chip
+				// until the next reload.
+				topByYear = {
+					...topByYear,
+					[year]: (topByYear[year] ?? body.items).map((item) => {
+						const swept = item.tmdbId !== null ? sweptById.get(item.tmdbId) : undefined;
+						return swept
+							? {
+									...item,
+									alreadyGrabbed: true,
+									grabSource: swept.grabSource,
+									plexStatus: swept.plexStatus
+								}
+							: item;
+					})
+				};
+			}
+		} catch {
+			// Best-effort — see doc comment above.
+		} finally {
+			sweepingByYear = { ...sweepingByYear, [year]: false };
 		}
 	}
 
@@ -331,11 +411,11 @@
 		void loadTopMovies(topYear);
 	}
 
-	function markTopGrabbed(tmdbId: number): void {
+	function markTopGrabbed(tmdbId: number, source: MovieGrabSource): void {
 		topByYear = {
 			...topByYear,
 			[topYear]: topByYear[topYear]?.map((item) =>
-				item.tmdbId === tmdbId ? { ...item, alreadyGrabbed: true } : item
+				item.tmdbId === tmdbId ? { ...item, alreadyGrabbed: true, grabSource: source } : item
 			)
 		};
 	}
@@ -481,7 +561,9 @@
 										year={item.releaseDate ? Number(item.releaseDate.slice(0, 4)) : null}
 										imdbId={null}
 										alreadyGrabbed={item.alreadyGrabbed}
-										onGrabbed={() => markGrabbed(item.tmdbId)}
+										grabSource={item.grabSource}
+										plexStatus={item.plexStatus}
+										onGrabbed={(source) => markGrabbed(item.tmdbId, source)}
 									/>
 								</li>
 							{/each}
@@ -531,12 +613,15 @@
 			<Button
 				variant="outline"
 				class="ml-auto rounded-full px-4"
-				disabled={rescanning}
+				disabled={rescanning || sweeping}
 				onclick={() => loadTopMovies(topYear, true)}
 			>
 				{#if rescanning}
 					<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
 					Rescanning…
+				{:else if sweeping}
+					<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+					Checking Plex…
 				{:else}
 					Rescan {topYear}
 				{/if}
@@ -548,6 +633,9 @@
 				{topFetchState.fromCache ? 'Cached' : 'Just scraped'} · {formatRelativeTime(
 					topFetchState.fetchedAt
 				)}
+				{#if sweeping}
+					· checking Plex for already-owned movies…
+				{/if}
 			</p>
 		{/if}
 
@@ -653,7 +741,9 @@
 										year={item.releaseDate ? Number(item.releaseDate.slice(0, 4)) : topYear}
 										imdbId={item.imdbId}
 										alreadyGrabbed={item.alreadyGrabbed}
-										onGrabbed={() => markTopGrabbed(item.tmdbId!)}
+										grabSource={item.grabSource}
+										plexStatus={item.plexStatus}
+										onGrabbed={(source) => markTopGrabbed(item.tmdbId!, source)}
 									/>
 								{:else}
 									<p class="text-muted-foreground text-xs">

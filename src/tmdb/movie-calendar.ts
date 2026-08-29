@@ -1,4 +1,5 @@
 import type { TmdbDiscoverMovieResult, TmdbHttpClient } from './client';
+import type { MovieOwnershipStatus, PlexStatus } from '../movie-api-types';
 import { languageDisplayName } from './languages';
 import { movieGenreNames } from './movie-genres';
 
@@ -15,6 +16,11 @@ export type CalendarMovieItem = {
    * notes/public/movie-calendar-scope.md), so this is an ownership check,
    * not a policy-tracking check. */
   alreadyGrabbed: boolean;
+  /** See MovieOwnershipStatus's doc comment — grabbed and "confirmed in
+   * Plex" are deliberately separate signals, not flattened into
+   * alreadyGrabbed. */
+  grabSource: MovieOwnershipStatus['grabSource'];
+  plexStatus: PlexStatus;
   language: string | undefined;
   rating: number | undefined;
   genres: string[];
@@ -158,7 +164,7 @@ const UNDATED_SORT_KEY = '9999-99-99';
 export async function getMovieCalendar(
   deps: MovieCalendarDeps,
   year: number,
-  ownedTmdbIds: Set<number>,
+  ownership: Map<number, MovieOwnershipStatus>,
   pagination: { offset?: number; limit?: number } = {},
 ): Promise<MovieCalendarPage> {
   const limit = pagination.limit ?? DEFAULT_PAGE_LIMIT;
@@ -229,7 +235,9 @@ export async function getMovieCalendar(
           ? `https://image.tmdb.org/t/p/w500${result.poster_path}`
           : null,
         popularity: result.popularity ?? 0,
-        alreadyGrabbed: ownedTmdbIds.has(result.id),
+        alreadyGrabbed: ownership.get(result.id)?.grabbed ?? false,
+        grabSource: ownership.get(result.id)?.grabSource ?? null,
+        plexStatus: ownership.get(result.id)?.plexStatus ?? 'unknown',
         language: languageDisplayName(result.original_language),
         // vote_average of exactly 0 means "no votes yet" in practice, not a
         // genuine 0.0 rating — treat it the same as missing (same rule as

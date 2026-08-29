@@ -177,6 +177,26 @@ export class ManualMovieGrabsStore {
     return new Set(rows.map((r) => r.tmdb_id));
   }
 
+  /** The most recently recorded source per tmdb_id (latest queued_at wins,
+   * for a movie re-grabbed more than once) — backs
+   * MovieOwnershipStatus.grabSource, the "Queued via {source}" language.
+   * Relies on SQLite's documented bare-column behavior: with exactly one
+   * MAX() aggregate and no others, every other selected column takes its
+   * value from that same max row, not an arbitrary one — see
+   * https://www.sqlite.org/lang_select.html#bareagg. */
+  listLatestSourceByTmdbId(): Map<number, ManualMovieGrabSource> {
+    const rows = this.database
+      .query(
+        `SELECT tmdb_id, source, MAX(queued_at) AS latest_queued_at
+         FROM manual_movie_grabs
+         GROUP BY tmdb_id`,
+      )
+      .all() as { tmdb_id: number; source: string }[];
+    return new Map(
+      rows.map((row) => [row.tmdb_id, row.source as ManualMovieGrabSource]),
+    );
+  }
+
   /** One row per distinct tmdb_id, with enough to build a Plex cache lookup
    * key (movie_display_title + movie_year) — used by ownedMovieTmdbIds and
    * the Plex background refresh to check whether a manually/adopted-grabbed

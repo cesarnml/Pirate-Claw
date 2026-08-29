@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import type { TmdbHttpClient } from './client';
 import { scrapeTopMovies } from '../dvdsreleasedates/scraper';
+import type { MovieOwnershipStatus, PlexStatus } from '../movie-api-types';
 
 export type TopMovieItem = {
   rank: number;
@@ -15,6 +16,13 @@ export type TopMovieItem = {
   releaseDate: string | null;
   rating: number | undefined;
   alreadyGrabbed: boolean;
+  /** See MovieOwnershipStatus's doc comment — grabbed and "confirmed in
+   * Plex" are deliberately separate signals here, not flattened into one
+   * boolean. grabSource/plexStatus are the honest detail behind
+   * alreadyGrabbed; alreadyGrabbed itself keeps driving whether the grab
+   * UI shows, unchanged. */
+  grabSource: MovieOwnershipStatus['grabSource'];
+  plexStatus: PlexStatus;
   formats: { dvd: boolean; bluray: boolean; fourK: boolean };
 };
 
@@ -138,7 +146,7 @@ export type TopMoviesDeps = {
 export async function getTopMovies(
   deps: TopMoviesDeps,
   year: number,
-  grabbedTmdbIds: Set<number>,
+  ownership: Map<number, MovieOwnershipStatus>,
   forceRescan = false,
 ): Promise<TopMoviesResult> {
   if (forceRescan) deps.cache.invalidate(year);
@@ -147,7 +155,7 @@ export async function getTopMovies(
   if (cached) {
     return {
       year,
-      items: withGrabbedStatus(cached.items, grabbedTmdbIds),
+      items: withOwnership(cached.items, ownership),
       scrapeError: null,
       fetchedAt: cached.fetchedAt,
       fromCache: true,
@@ -185,7 +193,9 @@ export async function getTopMovies(
           rating: found?.vote_average
             ? Math.round(found.vote_average * 10) / 10
             : undefined,
-          alreadyGrabbed: false, // filled in by withGrabbedStatus below
+          alreadyGrabbed: false, // filled in by withOwnership below
+          grabSource: null,
+          plexStatus: 'unknown',
           formats: movie.formats,
         } satisfies TopMovieItem;
       }),
@@ -196,7 +206,7 @@ export async function getTopMovies(
 
   return {
     year,
-    items: withGrabbedStatus(entry.items, grabbedTmdbIds),
+    items: withOwnership(entry.items, ownership),
     scrapeError:
       entry.items.length === 0 ? 'Could not scrape or enrich this year.' : null,
     fetchedAt: entry.fetchedAt,
@@ -204,12 +214,18 @@ export async function getTopMovies(
   };
 }
 
-function withGrabbedStatus(
+function withOwnership(
   items: TopMovieItem[],
-  grabbedTmdbIds: Set<number>,
+  ownership: Map<number, MovieOwnershipStatus>,
 ): TopMovieItem[] {
-  return items.map((item) => ({
-    ...item,
-    alreadyGrabbed: item.tmdbId !== null && grabbedTmdbIds.has(item.tmdbId),
-  }));
+  return items.map((item) => {
+    const status =
+      item.tmdbId !== null ? ownership.get(item.tmdbId) : undefined;
+    return {
+      ...item,
+      alreadyGrabbed: status?.grabbed ?? false,
+      grabSource: status?.grabSource ?? null,
+      plexStatus: status?.plexStatus ?? 'unknown',
+    };
+  });
 }

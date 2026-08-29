@@ -4,6 +4,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from '$lib/toast';
 	import type { TorrentSearchResult } from '$lib/types';
+	import type { MovieGrabSource, PlexStatus } from './+page.server';
+	import StatusChip from '$lib/components/StatusChip.svelte';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
@@ -20,8 +22,25 @@
 		year: number | null;
 		imdbId: string | null;
 		alreadyGrabbed: boolean;
-		onGrabbed: () => void;
+		grabSource: MovieGrabSource | null;
+		plexStatus: PlexStatus;
+		onGrabbed: (source: 'thepiratebay' | 'yts') => void;
 	}>();
+
+	// Grabbed and "confirmed in Plex" are two different things — see
+	// src/movie-api-types.ts's MovieOwnershipStatus doc comment. Plex is the
+	// golden truth: shown via the same StatusChip TV shows already use.
+	// "Queued via X" is the honest label for the intermediate state —
+	// pirate-claw has a record of grabbing it, but Plex hasn't confirmed it
+	// yet (or has confirmed it missing, in which case alreadyGrabbed is
+	// already false and this branch doesn't apply at all).
+	const GRAB_SOURCE_LABELS: Record<MovieGrabSource, string> = {
+		thepiratebay: 'ThePirateBay',
+		yts: 'YTS',
+		'adopted-filesystem': 'filesystem scan',
+		'adopted-plex': 'Plex',
+		rss: 'RSS feed'
+	};
 
 	type SearchSource = 'thepiratebay' | 'yts';
 	const SEARCH_SOURCES: Array<{
@@ -102,7 +121,7 @@
 		return `${(bytes / 1_048_576).toFixed(0)} MB`;
 	}
 
-	function enhanceGrab(torrentId: number) {
+	function enhanceGrab(torrentId: number, source: SearchSource) {
 		pendingTorrentId = torrentId;
 		return async ({
 			result,
@@ -117,7 +136,7 @@
 				toast('Queued', 'success', (result.data?.grabMessage as string) ?? undefined);
 				expandedSource = null;
 				searchResults = { thepiratebay: undefined, yts: undefined };
-				props.onGrabbed();
+				props.onGrabbed(source);
 			} else if (result.type === 'failure') {
 				toast('Grab failed', 'error', (result.data?.grabMessage as string) ?? undefined);
 			} else if (result.type === 'error') {
@@ -127,11 +146,15 @@
 	}
 </script>
 
-{#if props.alreadyGrabbed}
+{#if props.plexStatus === 'in_library'}
+	<StatusChip status="in_library" class="self-start" />
+{:else if props.alreadyGrabbed}
 	<span
 		class="border-border text-muted-foreground self-start rounded-full border px-3 py-1 text-xs font-medium"
 	>
-		Already grabbed
+		Queued{props.grabSource
+			? ` via ${GRAB_SOURCE_LABELS[props.grabSource as MovieGrabSource]}`
+			: ''}
 	</span>
 {:else}
 	<div class="flex flex-wrap gap-2">
@@ -193,7 +216,7 @@
 							<form
 								method="POST"
 								action="/movie-calendar?/manualGrab"
-								use:enhance={() => enhanceGrab(torrent.id)}
+								use:enhance={() => enhanceGrab(torrent.id, source)}
 							>
 								<input type="hidden" name="tmdbId" value={props.tmdbId} />
 								<input type="hidden" name="imdbId" value={props.imdbId ?? ''} />

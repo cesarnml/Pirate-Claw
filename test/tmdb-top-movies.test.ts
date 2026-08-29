@@ -101,11 +101,11 @@ describe('getTopMovies fromCache', () => {
       log: () => {},
     };
 
-    const first = await getTopMovies(deps, 2026, new Set());
+    const first = await getTopMovies(deps, 2026, new Map());
     expect(first.fromCache).toBe(false);
     expect(first.items).toHaveLength(1);
 
-    const second = await getTopMovies(deps, 2026, new Set());
+    const second = await getTopMovies(deps, 2026, new Map());
     expect(second.fromCache).toBe(true);
     expect(second.fetchedAt).toBe(first.fetchedAt);
   });
@@ -118,10 +118,10 @@ describe('getTopMovies fromCache', () => {
       log: () => {},
     };
 
-    await getTopMovies(deps, 2026, new Set());
+    await getTopMovies(deps, 2026, new Map());
 
     mockScrapeOnce(ONE_ENTRY_HTML);
-    const rescanned = await getTopMovies(deps, 2026, new Set(), true);
+    const rescanned = await getTopMovies(deps, 2026, new Map(), true);
     expect(rescanned.fromCache).toBe(false);
   });
 });

@@ -74,7 +74,12 @@ import {
   validateTmdbConfig,
   loadConfigEnv,
 } from './config';
-import type { MovieBreakdown } from './movie-api-types';
+import type {
+  ManualMovieGrabSourceOrRss,
+  MovieBreakdown,
+  MovieOwnershipStatus,
+  PlexStatus,
+} from './movie-api-types';
 export type { MovieBreakdown, TmdbMoviePublic } from './movie-api-types';
 import type { ShowBreakdown, ShowEpisode, ShowSeason } from './tv-api-types';
 
@@ -611,12 +616,29 @@ export function createApiFetch(
    * ledger says grabbed; a confirmed 'in_library' keeps it in even if the
    * ledger disagrees. When Plex hasn't checked yet ('unknown' — a fresh
    * grab the background refresh hasn't reached), the ledger's own answer is
-   * trusted at face value — that's the "ahead of Plex sync" grace period. */
-  async function ownedMovieTmdbIds(): Promise<Set<number>> {
+   * trusted at face value — that's the "ahead of Plex sync" grace period.
+   *
+   * Returns MovieOwnershipStatus per tmdbId, not a flat boolean — "grabbed"
+   * (pirate-claw's ledger has a record) and "in Plex" (the golden truth)
+   * are two different signals that the UI shows honestly as two different
+   * things (see movie-api-types.ts's doc comment on MovieOwnershipStatus).
+   * `grabbed` itself still gets the same Plex-override treatment described
+   * above — a confirmed 'missing' still clears it, same as before this
+   * became a richer return type — grabSource/plexStatus are purely
+   * additive display detail on top of that unchanged gating logic. */
+  async function ownedMovieStatuses(): Promise<
+    Map<number, MovieOwnershipStatus>
+  > {
     const manualMovieGrabs = database
       ? new ManualMovieGrabsStore(database)
       : undefined;
-    const owned = manualMovieGrabs?.listGrabbedTmdbIds() ?? new Set<number>();
+    const grabSourceByTmdbId = new Map<number, ManualMovieGrabSourceOrRss>(
+      manualMovieGrabs?.listLatestSourceByTmdbId() ?? [],
+    );
+    // Seeded from grabSourceByTmdbId's own keys rather than a second
+    // listGrabbedTmdbIds() query — that method's result was already a
+    // strict subset of this one's keys, so it was just a redundant scan.
+    const owned = new Set(grabSourceByTmdbId.keys());
 
     const candidates = repository.listCandidateStates(API_CANDIDATE_LIST_LIMIT);
     const base = buildMovieBreakdowns(candidates);
@@ -624,48 +646,91 @@ export function createApiFetch(
       ? await enrichMovieBreakdowns(base, tmdbMovies)
       : [];
     for (const movie of candidateBreakdowns) {
-      if (movie.tmdb?.tmdbId) owned.add(movie.tmdb.tmdbId);
-    }
-
-    if (!plexMovies) return owned;
-
-    const manualBreakdowns = manualMovieGrabs
-      ? manualMovieGrabsAsBreakdowns(manualMovieGrabs)
-      : [];
-    const withPlex = enrichMovieBreakdownsFromPlexCache(
-      [...candidateBreakdowns, ...manualBreakdowns],
-      plexMovies,
-    );
-
-    // A movie can appear in both breakdown lists (RSS-grabbed, then also
-    // manually re-grabbed) with two DIFFERENT Plex cache keys — the
-    // candidate one's RSS-derived normalizedTitle vs. the manual one's
-    // TMDB-title-derived normalizedTitle — so their plexStatus can
-    // disagree. Naively applying each in array order let whichever came
-    // last silently win, which could downgrade a Plex-confirmed-owned
-    // movie to missing just because its *other* lookup key hadn't been
-    // checked yet. Aggregate every status seen for a tmdbId instead: any
-    // 'in_library' wins outright (Plex found it somewhere); 'missing' only
-    // overrides the ledger when EVERY lookup for that id came back missing
-    // (none still 'unknown') — a lone unresolved 'unknown' keeps the
-    // ledger's own answer, the same grace period as the single-lookup case.
-    const statusesByTmdbId = new Map<
-      number,
-      Set<(typeof withPlex)[number]['plexStatus']>
-    >();
-    for (const movie of withPlex) {
       const tmdbId = movie.tmdb?.tmdbId;
-      if (!tmdbId) continue;
-      const statuses = statusesByTmdbId.get(tmdbId) ?? new Set();
-      statuses.add(movie.plexStatus);
-      statusesByTmdbId.set(tmdbId, statuses);
+      // candidate_state's status is one of 'queued' | 'failed' |
+      // 'dismissed' | 'skipped_duplicate' (see repository.ts's
+      // CandidateStatus) — only 'queued' means the RSS pipeline actually
+      // sent this to Transmission. buildMovieBreakdowns/enrichMovieBreakdowns
+      // don't filter by outcome (only by pirateClawDisposition), so without
+      // this check a movie the pipeline *rejected* — but still
+      // title-matched to a TMDB id — would count as owned and get labeled
+      // "Queued via RSS feed", a false and more specific claim than the
+      // flat "Already grabbed" chip this whole feature replaced.
+      if (!tmdbId || movie.status !== 'queued') continue;
+      owned.add(tmdbId);
+      // A manual/adopted grab is more specific than "came in via the RSS
+      // pipeline" when a movie somehow has both — don't overwrite it.
+      if (!grabSourceByTmdbId.has(tmdbId))
+        grabSourceByTmdbId.set(tmdbId, 'rss');
     }
-    for (const [tmdbId, statuses] of statusesByTmdbId) {
-      if (statuses.has('in_library')) owned.add(tmdbId);
-      else if (statuses.has('missing') && !statuses.has('unknown'))
-        owned.delete(tmdbId);
+
+    const plexStatusByTmdbId = new Map<number, PlexStatus>();
+
+    if (plexMovies) {
+      const manualBreakdowns = manualMovieGrabs
+        ? manualMovieGrabsAsBreakdowns(manualMovieGrabs)
+        : [];
+      const withPlex = enrichMovieBreakdownsFromPlexCache(
+        [...candidateBreakdowns, ...manualBreakdowns],
+        plexMovies,
+      );
+
+      // A movie can appear in both breakdown lists (RSS-grabbed, then also
+      // manually re-grabbed) with two DIFFERENT Plex cache keys — the
+      // candidate one's RSS-derived normalizedTitle vs. the manual one's
+      // TMDB-title-derived normalizedTitle — so their plexStatus can
+      // disagree. Naively applying each in array order let whichever came
+      // last silently win, which could downgrade a Plex-confirmed-owned
+      // movie to missing just because its *other* lookup key hadn't been
+      // checked yet. Aggregate every status seen for a tmdbId instead: any
+      // 'in_library' wins outright (Plex found it somewhere); 'missing'
+      // only overrides the ledger when EVERY lookup for that id came back
+      // missing (none still 'unknown') — a lone unresolved 'unknown' keeps
+      // the ledger's own answer, the same grace period as the
+      // single-lookup case.
+      const statusesByTmdbId = new Map<number, Set<PlexStatus>>();
+      for (const movie of withPlex) {
+        const tmdbId = movie.tmdb?.tmdbId;
+        if (!tmdbId) continue;
+        const statuses = statusesByTmdbId.get(tmdbId) ?? new Set();
+        statuses.add(movie.plexStatus);
+        statusesByTmdbId.set(tmdbId, statuses);
+      }
+      for (const [tmdbId, statuses] of statusesByTmdbId) {
+        if (statuses.has('in_library')) {
+          owned.add(tmdbId);
+          plexStatusByTmdbId.set(tmdbId, 'in_library');
+        } else if (statuses.has('missing') && !statuses.has('unknown')) {
+          owned.delete(tmdbId);
+          plexStatusByTmdbId.set(tmdbId, 'missing');
+        }
+        // Mixed/unresolved (some 'unknown'): leave plexStatusByTmdbId unset
+        // for this id — resolves to 'unknown' below — and leave `owned`'s
+        // membership exactly as the ledger already had it.
+      }
     }
-    return owned;
+
+    const allTmdbIds = new Set([
+      ...owned,
+      ...grabSourceByTmdbId.keys(),
+      ...plexStatusByTmdbId.keys(),
+    ]);
+    const result = new Map<number, MovieOwnershipStatus>();
+    for (const tmdbId of allTmdbIds) {
+      const grabbed = owned.has(tmdbId);
+      result.set(tmdbId, {
+        grabbed,
+        // Only ever non-null when grabbed — a Plex-confirmed 'missing'
+        // clears `owned` above (via owned.delete) but the ledger's source
+        // stays recorded in grabSourceByTmdbId regardless, so without this
+        // guard a movie Plex has confirmed missing would still report the
+        // stale grab source, contradicting MovieOwnershipStatus's own
+        // documented invariant.
+        grabSource: grabbed ? (grabSourceByTmdbId.get(tmdbId) ?? null) : null,
+        plexStatus: plexStatusByTmdbId.get(tmdbId) ?? 'unknown',
+      });
+    }
+    return result;
   }
 
   // Discovering extra tv/shows directories walks the whole install root —
@@ -762,19 +827,29 @@ export function createApiFetch(
     year: number,
     items: T[],
     toCandidate: (item: T) => MovieAdoptionCandidate | null,
-    withAlreadyGrabbed: (item: T, alreadyGrabbed: true) => T,
-    options: { includePlex?: boolean } = {},
+    withOwnership: (item: T, status: MovieOwnershipStatus) => T,
+    options: { includePlex?: boolean; force?: boolean } = {},
   ): Promise<T[]> {
     if (!database) return items;
 
-    const runFilesystemSweep =
+    // force: true skips the throttle entirely — used by Top Movies of
+    // Year's explicit sweep=true request (see the /api/movie-calendar/top
+    // handler), which by construction only ever runs once per fresh
+    // scrape, so it needs no rate-limiting of its own. The Calendar tab's
+    // automatic per-view call never sets this, keeping its existing
+    // throttled behavior.
+    const filesystemThrottleElapsed =
       Date.now() - (lastFilesystemAdoptionSweepAtByYear.get(year) ?? 0) >=
+      RECONCILE_STALE_AFTER_MS;
+    const runFilesystemSweep = !!options.force || filesystemThrottleElapsed;
+
+    const plexThrottleElapsed =
+      Date.now() - (lastPlexAdoptionSweepAtByYear.get(year) ?? 0) >=
       RECONCILE_STALE_AFTER_MS;
     const runPlexSweep =
       !!options.includePlex &&
       !!plexMovies &&
-      Date.now() - (lastPlexAdoptionSweepAtByYear.get(year) ?? 0) >=
-        RECONCILE_STALE_AFTER_MS;
+      (!!options.force || plexThrottleElapsed);
     if (!runFilesystemSweep && !runPlexSweep) {
       console.log(
         `[movie-adoption] year=${year}: skipped, both sweeps within their ${RECONCILE_STALE_AFTER_MS / 60_000}m cooldown`,
@@ -797,10 +872,12 @@ export function createApiFetch(
         .map(toCandidate)
         .filter((c): c is MovieAdoptionCandidate => c !== null);
       const adopted = new Set<number>();
+      let fsAdopted = new Set<number>();
+      let plexAdopted = new Set<number>();
 
       if (runFilesystemSweep) {
         lastFilesystemAdoptionSweepAtByYear.set(year, Date.now());
-        const fsAdopted = await adoptMoviesFromFilesystem(candidates, {
+        fsAdopted = await adoptMoviesFromFilesystem(candidates, {
           mediaMoviesDirs: await resolveMediaMoviesDirs(),
           manualMovieGrabs,
           log: adoptionLog,
@@ -816,7 +893,7 @@ export function createApiFetch(
         // Candidates the filesystem sweep already claimed don't need a
         // second (network) lookup.
         const stillUnclaimed = candidates.filter((c) => !adopted.has(c.tmdbId));
-        const plexAdopted = await adoptMoviesFromPlex(stillUnclaimed, {
+        plexAdopted = await adoptMoviesFromPlex(stillUnclaimed, {
           plexClient: plexMovies.client,
           manualMovieGrabs,
           log: adoptionLog,
@@ -830,9 +907,27 @@ export function createApiFetch(
       if (adopted.size === 0) return items;
       return items.map((item) => {
         const candidate = toCandidate(item);
-        return candidate && adopted.has(candidate.tmdbId)
-          ? withAlreadyGrabbed(item, true)
-          : item;
+        if (!candidate) return item;
+        // A Plex-guid match IS Plex confirming ownership right now — no
+        // ambiguity, so plexStatus goes straight to 'in_library'. A
+        // filesystem match only proves a file exists on disk, not that
+        // Plex has scanned it yet, so plexStatus stays 'unknown' (the
+        // background refresh will resolve it on its own schedule).
+        if (plexAdopted.has(candidate.tmdbId)) {
+          return withOwnership(item, {
+            grabbed: true,
+            grabSource: 'adopted-plex',
+            plexStatus: 'in_library',
+          });
+        }
+        if (fsAdopted.has(candidate.tmdbId)) {
+          return withOwnership(item, {
+            grabbed: true,
+            grabSource: 'adopted-filesystem',
+            plexStatus: 'unknown',
+          });
+        }
+        return item;
       });
     } catch (error) {
       // Best-effort — see doc comment above — but still logged, not
@@ -1603,7 +1698,7 @@ export function createApiFetch(
             ? undefined
             : clampNonNegativeInt(offsetParam, 0);
         const limit = clampNonNegativeInt(params.get('limit'), 20, 1, 50);
-        const owned = await ownedMovieTmdbIds();
+        const owned = await ownedMovieStatuses();
         const page = await getMovieCalendar(calendarMovie, year, owned, {
           offset,
           limit,
@@ -1619,7 +1714,12 @@ export function createApiFetch(
             posterUrl: item.posterUrl,
             alreadyGrabbed: item.alreadyGrabbed,
           }),
-          (item, alreadyGrabbed) => ({ ...item, alreadyGrabbed }),
+          (item, status) => ({
+            ...item,
+            alreadyGrabbed: status.grabbed,
+            grabSource: status.grabSource,
+            plexStatus: status.plexStatus,
+          }),
         );
         return Response.json({
           year,
@@ -1657,16 +1757,43 @@ export function createApiFetch(
       );
       // Rescanning re-hits a third-party site and (on a cold cache) makes
       // up to 100 TMDB calls — a deliberate operator action, gated like any
-      // other outbound-call-triggering write, not a free read.
+      // other outbound-call-triggering write, not a free read. Same for
+      // sweep=true (see below): it writes adopted movies to
+      // manual_movie_grabs and makes a real Plex round-trip.
       const rescan = params.get('rescan') === 'true';
-      if (rescan) {
+      const sweep = params.get('sweep') === 'true';
+      if (rescan || sweep) {
         const authError = checkWriteAuth(request, activeConfig);
         if (authError) return authError;
       }
 
       try {
-        const owned = await ownedMovieTmdbIds();
+        const owned = await ownedMovieStatuses();
         const result = await getTopMovies(topMovies, year, owned, rescan);
+
+        if (!sweep) {
+          // The plain (non-sweep) response never runs the Plex/filesystem
+          // adoption sweep — that used to happen inline here on every
+          // request, cache hit or not, which meant a routine cache-hit page
+          // view could quietly trigger a real Plex catalog fetch, and a
+          // second near-simultaneous request could land mid-sweep and see
+          // stale data (confirmed live 2026-08-29 while monitoring logs
+          // during QA — see git history for the throttle-only fix that
+          // preceded this one, which narrowed but didn't close that race).
+          // Now the sweep only ever runs via the dedicated sweep=true call
+          // below, which the client fires itself right after any response
+          // with fromCache: false (first-ever view or an explicit Rescan) —
+          // never on a plain cache hit, and never racing itself, since it's
+          // a single deliberate follow-up call, not an automatic per-view
+          // one. See movie-calendar/+page.svelte's loadTopMovies.
+          return Response.json(result);
+        }
+
+        // sweep=true: the client already has result.items from a prior
+        // fast call (this call's own getTopMovies is a cache hit, since
+        // that prior call — cold cache or rescan — already populated it).
+        // Runs both sweeps unconditionally (force: true) — this endpoint
+        // IS the explicit trigger, so there's nothing to throttle against.
         const items = await adoptMoviesForCurrentView(
           year,
           result.items,
@@ -1681,8 +1808,13 @@ export function createApiFetch(
                   posterUrl: item.posterUrl,
                   alreadyGrabbed: item.alreadyGrabbed,
                 },
-          (item, alreadyGrabbed) => ({ ...item, alreadyGrabbed }),
-          { includePlex: true },
+          (item, status) => ({
+            ...item,
+            alreadyGrabbed: status.grabbed,
+            grabSource: status.grabSource,
+            plexStatus: status.plexStatus,
+          }),
+          { includePlex: true, force: true },
         );
         return Response.json({ ...result, items });
       } catch {

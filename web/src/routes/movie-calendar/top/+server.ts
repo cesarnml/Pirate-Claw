@@ -4,18 +4,21 @@ import { apiRequest } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
 // Proxies GET /api/movie-calendar/top — a free read normally, but a
-// rescan=true request hits a third party and can make up to 100 TMDB calls
-// (see getTopMovies), so it requires write auth just like the daemon route
-// itself does for that case.
+// rescan=true or sweep=true request hits a third party (dvdsreleasedates/
+// TMDB, or Plex + a local filesystem walk, respectively) and writes to
+// manual_movie_grabs, so both require write auth just like the daemon
+// route itself does for those cases.
 export const GET: RequestHandler = async ({ url }) => {
 	const year = url.searchParams.get('year') ?? String(new Date().getFullYear());
 	const rescan = url.searchParams.get('rescan') === 'true';
+	const sweep = url.searchParams.get('sweep') === 'true';
 
 	const headers: Record<string, string> = {};
-	if (rescan) {
+	if (rescan || sweep) {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
-			return json({ error: 'Rescan is unavailable without API write access.' }, { status: 403 });
+			const action = rescan ? 'Rescan' : 'Checking Plex';
+			return json({ error: `${action} is unavailable without API write access.` }, { status: 403 });
 		}
 		headers.authorization = `Bearer ${writeToken}`;
 	}
@@ -24,6 +27,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		const params = new URLSearchParams({ year });
 		if (rescan) params.set('rescan', 'true');
+		if (sweep) params.set('sweep', 'true');
 		response = await apiRequest(`/api/movie-calendar/top?${params}`, { headers });
 	} catch (error) {
 		console.error('[movie-calendar] top proxy failed to reach the API:', error);

@@ -4,6 +4,17 @@ import { MOVIE_CALENDAR_PAGE_SIZE } from '$lib/movieCalendarConfig';
 import { apiRequest } from '$lib/server/api';
 import type { Actions, PageServerLoad } from './$types';
 
+/** Which ledger recorded the grab, or null when not grabbed / grabbed
+ * solely because Plex confirms it with no ledger entry at all. */
+export type MovieGrabSource =
+	| 'thepiratebay'
+	| 'yts'
+	| 'adopted-filesystem'
+	| 'adopted-plex'
+	| 'rss';
+
+export type PlexStatus = 'in_library' | 'missing' | 'unknown';
+
 export type CalendarMovieItem = {
 	tmdbId: number;
 	title: string;
@@ -12,6 +23,11 @@ export type CalendarMovieItem = {
 	posterUrl: string | null;
 	popularity: number;
 	alreadyGrabbed: boolean;
+	/** See src/movie-api-types.ts's MovieOwnershipStatus doc comment —
+	 * grabbed and "confirmed in Plex" are deliberately separate signals,
+	 * not flattened into alreadyGrabbed. */
+	grabSource: MovieGrabSource | null;
+	plexStatus: PlexStatus;
 	language: string | undefined;
 	rating: number | undefined;
 	genres: string[];

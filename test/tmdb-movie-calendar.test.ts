@@ -9,6 +9,13 @@ import {
   MovieReleaseDateCache,
   getMovieCalendar,
 } from '../src/tmdb/movie-calendar';
+import type { MovieOwnershipStatus } from '../src/movie-api-types';
+
+function grabbedOwnership(tmdbId: number): Map<number, MovieOwnershipStatus> {
+  return new Map([
+    [tmdbId, { grabbed: true, grabSource: null, plexStatus: 'unknown' }],
+  ]);
+}
 
 /** Mirrors tmdb-calendar.test.ts's fakeClient, movie-shaped — plus a
  * releaseDates map standing in for getUsDigitalOrPhysicalReleaseDate,
@@ -89,7 +96,7 @@ describe('getMovieCalendar', () => {
       ],
     ]);
 
-    const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+    const page = await getMovieCalendar(deps(client), 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
@@ -113,7 +120,7 @@ describe('getMovieCalendar', () => {
       ],
     ]);
 
-    const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+    const page = await getMovieCalendar(deps(client), 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
@@ -135,7 +142,7 @@ describe('getMovieCalendar', () => {
       [result({ id: 10, title: 'Repeated', release_date: '2026-06-04' })],
     ]);
 
-    const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+    const page = await getMovieCalendar(deps(client), 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
@@ -149,10 +156,15 @@ describe('getMovieCalendar', () => {
       [result({ id: 42, title: 'Owned', release_date: '2026-01-01' })],
     ]);
 
-    const page = await getMovieCalendar(deps(client), 2026, new Set([42]), {
-      offset: 0,
-      limit: 20,
-    });
+    const page = await getMovieCalendar(
+      deps(client),
+      2026,
+      grabbedOwnership(42),
+      {
+        offset: 0,
+        limit: 20,
+      },
+    );
 
     expect(page.items[0]?.alreadyGrabbed).toBe(true);
   });
@@ -171,7 +183,7 @@ describe('getMovieCalendar', () => {
       { 1: '2026-02-14' },
     );
 
-    const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+    const page = await getMovieCalendar(deps(client), 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
@@ -194,7 +206,7 @@ describe('getMovieCalendar', () => {
       ],
     ]);
 
-    const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+    const page = await getMovieCalendar(deps(client), 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
@@ -210,7 +222,7 @@ describe('getMovieCalendar', () => {
       [result({ id: 1, title: 'No Date At All' })],
     ]);
 
-    const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+    const page = await getMovieCalendar(deps(client), 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
@@ -232,8 +244,8 @@ describe('getMovieCalendar', () => {
       releaseDateCache: new MovieReleaseDateCache(),
     };
 
-    await getMovieCalendar(cache, 2026, new Set(), { offset: 0, limit: 20 });
-    await getMovieCalendar(cache, 2026, new Set(), { offset: 0, limit: 20 });
+    await getMovieCalendar(cache, 2026, new Map(), { offset: 0, limit: 20 });
+    await getMovieCalendar(cache, 2026, new Map(), { offset: 0, limit: 20 });
 
     expect(releaseDateCalls).toEqual([1]);
   });
@@ -254,11 +266,11 @@ describe('getMovieCalendar', () => {
       releaseDateCache: new MovieReleaseDateCache(),
     };
 
-    const first = await getMovieCalendar(cache, 2026, new Set(), {
+    const first = await getMovieCalendar(cache, 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
-    const second = await getMovieCalendar(cache, 2026, new Set(), {
+    const second = await getMovieCalendar(cache, 2026, new Map(), {
       offset: 0,
       limit: 20,
     });
@@ -284,7 +296,7 @@ describe('getMovieCalendar', () => {
     it('returns only a page-sized slice, with the full count in total', async () => {
       const { client } = fakeClient([manyResults(30)]);
 
-      const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+      const page = await getMovieCalendar(deps(client), 2026, new Map(), {
         offset: 0,
         limit: 10,
       });
@@ -297,7 +309,7 @@ describe('getMovieCalendar', () => {
     it('returns an empty page past the end of the result set', async () => {
       const { client } = fakeClient([manyResults(5)]);
 
-      const page = await getMovieCalendar(deps(client), 2026, new Set(), {
+      const page = await getMovieCalendar(deps(client), 2026, new Map(), {
         offset: 20,
         limit: 10,
       });
