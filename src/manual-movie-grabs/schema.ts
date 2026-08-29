@@ -1,0 +1,30 @@
+import type { Database } from 'bun:sqlite';
+
+/**
+ * Manual movie backfill records — the movie-shaped sibling of manual_grabs
+ * (see src/manual-grabs/schema.ts). Deliberately a separate table, not a
+ * shared one: a movie has no season/episode, and is identified by
+ * tmdb_id/imdb_id rather than a normalized show title, so forcing it into
+ * the TV table's NOT NULL season/episode columns would mean sentinel values
+ * with no real meaning. See notes/public/movie-calendar-scope.md.
+ */
+export function ensureManualMovieGrabsSchema(database: Database): void {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS manual_movie_grabs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tmdb_id INTEGER NOT NULL,
+      imdb_id TEXT,
+      source TEXT NOT NULL,
+      raw_title TEXT NOT NULL,
+      transmission_torrent_hash TEXT,
+      transmission_torrent_id INTEGER,
+      queued_at TEXT NOT NULL,
+      movie_poster_url TEXT,
+      movie_display_title TEXT
+    );
+  `);
+  database.run(`
+    CREATE INDEX IF NOT EXISTS manual_movie_grabs_tmdb_id
+      ON manual_movie_grabs(tmdb_id);
+  `);
+}

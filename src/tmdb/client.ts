@@ -8,6 +8,8 @@ export type TmdbSearchMovieResult = {
   id: number;
   title: string;
   release_date?: string;
+  poster_path?: string | null;
+  vote_average?: number;
 };
 
 export type TmdbMovieDetails = {
@@ -20,6 +22,43 @@ export type TmdbMovieDetails = {
   vote_count?: number;
   genres?: { id: number }[];
   release_date?: string;
+  /** Unlike TV, TMDB returns this directly on /movie/{id} — no separate
+   * external_ids call needed. Null/absent for many titles. */
+  imdb_id?: string | null;
+};
+
+export type TmdbDiscoverMovieResult = {
+  id: number;
+  title: string;
+  release_date?: string;
+  overview?: string;
+  poster_path?: string | null;
+  popularity?: number;
+  vote_average?: number;
+  original_language?: string;
+  genre_ids?: number[];
+};
+
+// TMDB's own release_type taxonomy on /movie/{id}/release_dates (stable,
+// publicly documented): 1 Premiere, 2 Limited Theatrical, 3 Theatrical,
+// 4 Digital, 5 Physical, 6 TV. Digital/Physical are what "a good torrent is
+// plausibly out" actually tracks — theatrical (3) is what a bare
+// discover/movie release_date reports, which is why the calendar needs
+// this separate call to tell the two apart.
+export type TmdbReleaseDateEntry = {
+  release_date: string;
+  type: number;
+};
+
+export type TmdbReleaseDatesResponse = {
+  results?: {
+    iso_3166_1: string;
+    release_dates: TmdbReleaseDateEntry[];
+  }[];
+};
+
+export type TmdbFindResult = {
+  movie_results?: TmdbSearchMovieResult[];
 };
 
 export type TmdbSearchTvResult = {
@@ -148,6 +187,62 @@ export class TmdbHttpClient {
 
   async getMovie(movieId: number): Promise<TmdbMovieDetails | null> {
     return this.getJson<TmdbMovieDetails>(`/movie/${movieId}`);
+  }
+
+  /** Discovers movies with a release-date within [gte, lte] (YYYY-MM-DD),
+   * sorted by popularity. Same month-bucketing rationale as discoverTv —
+   * see src/tmdb/movie-calendar.ts. */
+  async discoverMovie(
+    gte: string,
+    lte: string,
+    page: number,
+  ): Promise<TmdbDiscoverMovieResult[]> {
+    const data = await this.getJson<{ results?: TmdbDiscoverMovieResult[] }>(
+      `/discover/movie?primary_release_date.gte=${gte}&primary_release_date.lte=${lte}&sort_by=popularity.desc&include_adult=false&page=${page}`,
+    );
+    return data?.results ?? [];
+  }
+
+  /** US digital (type 4) or physical (type 5) release date, whichever is
+   * earlier — both signal "a real torrent release is now plausible", not
+   * just theatrical. Returns null when TMDB confirms it has neither yet
+   * (common for a movie still in theaters), which callers fall back from to
+   * a theatrical-date heuristic — and undefined when the call itself failed
+   * (network error, timeout, exhausted 429 retries, bad/rotated key, 5xx;
+   * getJson() collapses all of those to null internally, indistinguishable
+   * from `data` here without this check). That distinction matters to the
+   * caller: MovieReleaseDateCache caches a real `null` for a full TTL, but
+   * must never do the same for a failed call — that would lock in "no
+   * date" for an hour based on a transient TMDB hiccup, self-correcting
+   * only once the TTL expires even after TMDB recovers. Fetched lazily,
+   * per-movie, only when a calendar entry is actually rendered — not worth
+   * append_to_response on every discover result. */
+  async getUsDigitalOrPhysicalReleaseDate(
+    movieId: number,
+  ): Promise<string | null | undefined> {
+    const data = await this.getJson<TmdbReleaseDatesResponse>(
+      `/movie/${movieId}/release_dates`,
+    );
+    if (data === null) return undefined;
+    const us = data.results?.find((r) => r.iso_3166_1 === 'US');
+    if (!us) return null;
+    const dates = us.release_dates
+      .filter((entry) => entry.type === 4 || entry.type === 5)
+      .map((entry) => entry.release_date.slice(0, 10))
+      .sort();
+    return dates[0] ?? null;
+  }
+
+  /** Looks up a TMDB movie by an external IMDb id — used by the Top Movies
+   * of Year scraper (dvdsreleasedates gives an IMDb id per entry, not a
+   * TMDB id) to enrich a scraped ranking with real TMDB metadata. */
+  async findMovieByImdbId(
+    imdbId: string,
+  ): Promise<TmdbSearchMovieResult | null> {
+    const data = await this.getJson<TmdbFindResult>(
+      `/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`,
+    );
+    return data?.movie_results?.[0] ?? null;
   }
 
   async searchTv(query: string): Promise<TmdbSearchTvResult | null> {

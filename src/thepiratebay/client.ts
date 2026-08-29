@@ -14,6 +14,13 @@ const APIBAY_BASE = 'https://apibay.org';
 // keeps movie/other-media false positives out of a title-only text search.
 const TV_CATEGORIES = new Set(['205', '208']);
 
+// 201 = Movies (SD/other), 207 = HD Movies. Same purpose as TV_CATEGORIES,
+// for the movie-calendar manual-grab path. Confirmed live: querying apibay
+// for a 2026 title returns real hits tagged 207.
+const MOVIE_CATEGORIES = new Set(['201', '207']);
+
+export type ThePirateBayMediaType = 'tv' | 'movie';
+
 // apibay doesn't return a magnet link or .torrent file, only an info_hash —
 // the caller has to construct the magnet URI itself. This is the same
 // small set of long-lived public trackers most third-party TPB magnet
@@ -78,9 +85,14 @@ export class ThePirateBayHttpClient {
    * fixes. loggedFetch already records method/URL/status/timing for every
    * attempt to the persistent http.log; the console lines here are the
    * `docker logs`-visible complement for immediate triage. */
-  async search(query: string): Promise<ThePirateBayTorrent[] | null> {
+  async search(
+    query: string,
+    mediaType: ThePirateBayMediaType = 'tv',
+  ): Promise<ThePirateBayTorrent[] | null> {
     const requestUrl = `${APIBAY_BASE}/q.php?q=${encodeURIComponent(query)}`;
-    console.log(`[thepiratebay] searching query="${query}" url=${requestUrl}`);
+    console.log(
+      `[thepiratebay] searching query="${query}" mediaType=${mediaType} url=${requestUrl}`,
+    );
 
     let response: Response;
     try {
@@ -141,23 +153,25 @@ export class ThePirateBayHttpClient {
     // those two causes need different follow-up fixes.
     const rawResults = body as ApibayResult[];
     const realResults = rawResults.filter(isRealResult);
-    const tvResults = realResults.filter((raw) =>
-      TV_CATEGORIES.has(raw.category ?? ''),
+    const allowedCategories =
+      mediaType === 'movie' ? MOVIE_CATEGORIES : TV_CATEGORIES;
+    const categoryResults = realResults.filter((raw) =>
+      allowedCategories.has(raw.category ?? ''),
     );
-    const torrents = tvResults
+    const torrents = categoryResults
       .map(toThePirateBayTorrent)
       .filter((t): t is ThePirateBayTorrent => t !== null);
 
     console.log(
-      `[thepiratebay] query="${query}": ${rawResults.length} raw -> ${realResults.length} real (not the no-results sentinel) -> ${tvResults.length} in TV categories -> ${torrents.length} parsed`,
+      `[thepiratebay] query="${query}" mediaType=${mediaType}: ${rawResults.length} raw -> ${realResults.length} real (not the no-results sentinel) -> ${categoryResults.length} in ${mediaType} categories -> ${torrents.length} parsed`,
     );
     if (
       rawResults.length > 0 &&
       realResults.length > 0 &&
-      tvResults.length === 0
+      categoryResults.length === 0
     ) {
       console.warn(
-        `[thepiratebay] all ${realResults.length} real result(s) were filtered out by category for query="${query}"; categories seen: ${JSON.stringify([...new Set(realResults.map((r) => r.category))])}`,
+        `[thepiratebay] all ${realResults.length} real result(s) were filtered out by category for query="${query}" mediaType=${mediaType}; categories seen: ${JSON.stringify([...new Set(realResults.map((r) => r.category))])}`,
       );
     }
     return torrents;

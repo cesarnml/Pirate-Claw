@@ -17,6 +17,8 @@ export type HttpLogSource =
   | 'feed'
   | 'eztv'
   | 'thepiratebay'
+  | 'yts'
+  | 'dvdsreleasedates'
   // Not an outbound API call — a browser-side rendering crash reported via
   // POST /api/client-error (see logClientError below). Shares this log/
   // rotation rather than a separate file so there's one place to look.

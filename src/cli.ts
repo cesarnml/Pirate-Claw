@@ -53,6 +53,13 @@ import {
 import { runTmdbBackgroundRefresh } from './tmdb/background-refresh';
 import type { CalendarDeps } from './tmdb/calendar';
 import { CalendarCache } from './tmdb/calendar';
+import type { MovieCalendarDeps } from './tmdb/movie-calendar';
+import {
+  MovieCalendarCache,
+  MovieReleaseDateCache,
+} from './tmdb/movie-calendar';
+import type { TopMoviesDeps } from './tmdb/top-movies';
+import { TopMoviesCache } from './tmdb/top-movies';
 import { TmdbCache } from './tmdb/cache';
 import { TmdbHttpClient } from './tmdb/client';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
@@ -151,6 +158,40 @@ function calendarTvDeps(
       log(`[tmdb] ${m}`),
     ),
     cache: new CalendarCache(),
+  };
+}
+
+function calendarMovieDeps(
+  config: AppConfig,
+  log: (message: string) => void,
+): MovieCalendarDeps | undefined {
+  const tmdbResolved = resolveTmdbSettings(config);
+  if (!tmdbResolved) {
+    return undefined;
+  }
+  return {
+    client: new TmdbHttpClient(tmdbResolved.apiKey, (m: string) =>
+      log(`[tmdb] ${m}`),
+    ),
+    cache: new MovieCalendarCache(),
+    releaseDateCache: new MovieReleaseDateCache(),
+  };
+}
+
+function topMoviesDeps(
+  config: AppConfig,
+  log: (message: string) => void,
+): TopMoviesDeps | undefined {
+  const tmdbResolved = resolveTmdbSettings(config);
+  if (!tmdbResolved) {
+    return undefined;
+  }
+  return {
+    client: new TmdbHttpClient(tmdbResolved.apiKey, (m: string) =>
+      log(`[tmdb] ${m}`),
+    ),
+    cache: new TopMoviesCache(),
+    log: (m: string) => log(`[dvdsreleasedates] ${m}`),
   };
 }
 
@@ -504,6 +545,8 @@ export async function runCli(argv: string[]): Promise<number> {
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
         const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
         const calendarTv = calendarTvDeps(config, log);
+        const calendarMovie = calendarMovieDeps(config, log);
+        const topMovies = topMoviesDeps(config, log);
         const plexMovies = plexMovieEnrichDeps(
           database,
           configHolder,
@@ -622,6 +665,8 @@ export async function runCli(argv: string[]): Promise<number> {
                     ),
                   downloader,
                   calendarTv,
+                  calendarMovie,
+                  topMovies,
                   trackedShows,
                 })
               : undefined,

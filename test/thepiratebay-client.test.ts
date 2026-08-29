@@ -200,4 +200,44 @@ describe('ThePirateBayHttpClient', () => {
       fetchMock.mockRestore();
     }
   });
+
+  it('filters to movie categories (201/207) instead of TV when mediaType is "movie"', async () => {
+    const mixedBody = [RESPONSE_BODY[0], RESPONSE_BODY[2]]; // category 208 (TV), category 207 (movie)
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () =>
+        new Response(JSON.stringify(mixedBody), {
+          status: 200,
+        })) as unknown as typeof fetch,
+    );
+
+    try {
+      const client = new ThePirateBayHttpClient(() => {});
+      const torrents = await client.search(
+        'a query matching both media types',
+        'movie',
+      );
+
+      expect(torrents).toHaveLength(1);
+      expect(torrents?.[0]).toMatchObject({ id: 69900412 });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('defaults to TV categories when mediaType is omitted, unchanged from before movie support', async () => {
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () =>
+        new Response(JSON.stringify(RESPONSE_BODY), {
+          status: 200,
+        })) as unknown as typeof fetch,
+    );
+
+    try {
+      const client = new ThePirateBayHttpClient(() => {});
+      const torrents = await client.search('The Walking Dead Dead City S01E03');
+      expect(torrents).toHaveLength(2);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
 });

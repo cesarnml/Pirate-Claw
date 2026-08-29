@@ -26,11 +26,17 @@ import type {
   FeedConfig,
   RuntimeConfig,
 } from './config';
-import { DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV } from './config';
+import {
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE,
+  DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
+} from './config';
 import { EztvHttpClient } from './eztv/client';
 import { ThePirateBayHttpClient } from './thepiratebay/client';
+import { YtsHttpClient } from './yts/client';
 import { ManualGrabsStore } from './manual-grabs/store';
 import type { ManualGrabSource } from './manual-grabs/store';
+import { ManualMovieGrabsStore } from './manual-movie-grabs/store';
+import type { ManualMovieGrabSource } from './manual-movie-grabs/store';
 import { buildShowEpisodeStatus } from './shows/episode-status';
 import type { ShowEpisodeStatus } from './shows/episode-status';
 import type { PlexCache } from './plex/cache';
@@ -78,6 +84,10 @@ import type { TmdbCache } from './tmdb/cache';
 import { enrichCandidatesFromCache } from './tmdb/candidate-cache-enrich';
 import type { CalendarDeps } from './tmdb/calendar';
 import { getTvCalendar } from './tmdb/calendar';
+import type { MovieCalendarDeps } from './tmdb/movie-calendar';
+import { getMovieCalendar } from './tmdb/movie-calendar';
+import type { TopMoviesDeps } from './tmdb/top-movies';
+import { getTopMovies } from './tmdb/top-movies';
 import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import { enrichMovieBreakdowns } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
@@ -174,6 +184,10 @@ export type ApiFetchDeps = {
   downloader?: Downloader;
   /** When set (TMDB configured), GET /api/calendar/tv is available. */
   calendarTv?: CalendarDeps;
+  /** When set (TMDB configured), GET /api/movie-calendar is available. */
+  calendarMovie?: MovieCalendarDeps;
+  /** When set (TMDB configured), GET /api/movie-calendar/top is available. */
+  topMovies?: TopMoviesDeps;
   /**
    * The tracked-show ledger (see src/tracked-shows/). When set, /api/shows
    * and friends include every tracked show even with zero candidate_state
@@ -357,6 +371,7 @@ async function resolveManagedTorrentAction(
   transmissionConfig: AppConfig['transmission'],
   hash: string,
   manualGrabs: ManualGrabsStore | undefined,
+  manualMovieGrabs?: ManualMovieGrabsStore,
 ): Promise<
   | {
       ok: true;
@@ -398,7 +413,10 @@ async function resolveManagedTorrentAction(
     return { ok: true, candidate, rowState: managedTorrentRowState(torrent) };
   }
 
-  if (manualGrabs?.hasTorrentHash(hash)) {
+  if (
+    manualGrabs?.hasTorrentHash(hash) ||
+    manualMovieGrabs?.hasTorrentHash(hash)
+  ) {
     const statsResult = await fetchTorrentStats(transmissionConfig, [hash]);
     if (!statsResult.ok) {
       return {
@@ -514,6 +532,8 @@ export function createApiFetch(
     onCandidateTmdbCacheError,
     downloader,
     calendarTv,
+    calendarMovie,
+    topMovies,
     trackedShows,
   } = deps;
   let activeConfig = configHolder?.current ?? config;
@@ -541,6 +561,29 @@ export function createApiFetch(
 
   function trackedNormalizedTitles(): string[] | undefined {
     return trackedShows?.list().map((show) => show.normalizedTitle);
+  }
+
+  /** TMDB ids for every movie already owned (RSS-feeder-grabbed and
+   * confirmed by candidate_state) or manually grabbed via the movie
+   * calendar — backs CalendarMovieItem.alreadyGrabbed and
+   * TopMovieItem.alreadyGrabbed. Reuses the exact same
+   * candidates -> buildMovieBreakdowns -> enrichMovieBreakdowns pipeline
+   * /api/movies already runs, so this costs nothing beyond what that
+   * endpoint already pays (TMDB enrichment is cache-first — see
+   * tmdb/movie-enrichment.ts). */
+  async function ownedMovieTmdbIds(): Promise<Set<number>> {
+    const grabbed = database
+      ? new ManualMovieGrabsStore(database).listGrabbedTmdbIds()
+      : new Set<number>();
+    if (!tmdbMovies) return grabbed;
+
+    const candidates = repository.listCandidateStates(API_CANDIDATE_LIST_LIMIT);
+    const base = buildMovieBreakdowns(candidates);
+    const enriched = await enrichMovieBreakdowns(base, tmdbMovies);
+    for (const movie of enriched) {
+      if (movie.tmdb?.tmdbId) grabbed.add(movie.tmdb.tmdbId);
+    }
+    return grabbed;
   }
 
   // Discovering extra tv/shows directories walks the whole install root —
@@ -1299,6 +1342,271 @@ export function createApiFetch(
           offset: page.offset,
           limit,
         });
+      } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/movie-calendar') {
+      if (!calendarMovie) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+
+      try {
+        const params = new URL(request.url).searchParams;
+        const currentYear = new Date().getFullYear();
+        const year = clampNonNegativeInt(
+          params.get('year'),
+          currentYear,
+          1900,
+          currentYear + 5,
+        );
+        // Same "omitted means let it auto-anchor" rationale as
+        // /api/calendar/tv — see getMovieCalendar's anchorOffsetForToday.
+        const offsetParam = params.get('offset');
+        const offset =
+          offsetParam === null
+            ? undefined
+            : clampNonNegativeInt(offsetParam, 0);
+        const limit = clampNonNegativeInt(params.get('limit'), 20, 1, 50);
+        const owned = await ownedMovieTmdbIds();
+        const page = await getMovieCalendar(calendarMovie, year, owned, {
+          offset,
+          limit,
+        });
+        return Response.json({
+          year,
+          items: page.items,
+          total: page.total,
+          offset: page.offset,
+          limit,
+        });
+      } catch {
+        return json500();
+      }
+    }
+
+    if (path === '/api/movie-calendar/top') {
+      if (request.method !== 'GET') {
+        return jsonMethodNotAllowed('GET');
+      }
+      if (!topMovies) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+
+      const params = new URL(request.url).searchParams;
+      const currentYear = new Date().getFullYear();
+      const year = clampNonNegativeInt(
+        params.get('year'),
+        currentYear,
+        1900,
+        currentYear + 5,
+      );
+      // Rescanning re-hits a third-party site and (on a cold cache) makes
+      // up to 100 TMDB calls — a deliberate operator action, gated like any
+      // other outbound-call-triggering write, not a free read.
+      const rescan = params.get('rescan') === 'true';
+      if (rescan) {
+        const authError = checkWriteAuth(request, activeConfig);
+        if (authError) return authError;
+      }
+
+      try {
+        const owned = await ownedMovieTmdbIds();
+        const result = await getTopMovies(topMovies, year, owned, rescan);
+        return Response.json(result);
+      } catch {
+        return json500();
+      }
+    }
+
+    const movieApibayMatch = path.match(/^\/api\/movies\/(\d+)\/apibay$/);
+    if (movieApibayMatch) {
+      if (request.method !== 'GET') {
+        return jsonMethodNotAllowed('GET');
+      }
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const params = new URL(request.url).searchParams;
+      const title = params.get('title');
+      const yearRaw = params.get('year');
+      if (!title) {
+        return Response.json(
+          { error: 'title query param is required' },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const query = yearRaw ? `${title} ${yearRaw}` : title;
+        const thePirateBay = new ThePirateBayHttpClient((msg) =>
+          console.warn(msg),
+        );
+        const torrents = await thePirateBay.search(query, 'movie');
+        if (torrents === null) {
+          return Response.json(
+            { error: 'The Pirate Bay lookup failed; try again' },
+            { status: 502 },
+          );
+        }
+        torrents.sort((a, b) => b.seeds - a.seeds);
+        const withQuality = torrents.map((t) => ({
+          ...t,
+          resolution: extractResolution(t.title)?.value,
+          codec: extractCodec(t.title)?.value,
+        }));
+        return Response.json({ torrents: withQuality });
+      } catch {
+        return json500();
+      }
+    }
+
+    const movieYtsMatch = path.match(/^\/api\/movies\/(\d+)\/yts$/);
+    if (movieYtsMatch) {
+      if (request.method !== 'GET') {
+        return jsonMethodNotAllowed('GET');
+      }
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!tmdbMovies) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+
+      try {
+        const tmdbId = Number(movieYtsMatch[1]);
+        const movie = await tmdbMovies.client.getMovie(tmdbId);
+        if (!movie) {
+          return Response.json(
+            { error: 'movie not found on tmdb' },
+            { status: 404 },
+          );
+        }
+        if (!movie.imdb_id) {
+          return Response.json(
+            { error: 'no IMDB id found for this movie on TMDB' },
+            { status: 404 },
+          );
+        }
+
+        const yts = new YtsHttpClient((msg) => console.warn(msg));
+        const torrents = await yts.search(movie.imdb_id);
+        if (torrents === null) {
+          return Response.json(
+            { error: 'YTS lookup failed; try again' },
+            { status: 502 },
+          );
+        }
+        torrents.sort((a, b) => b.seeds - a.seeds);
+        return Response.json({ torrents });
+      } catch {
+        return json500();
+      }
+    }
+
+    const movieManualGrabMatch = path.match(
+      /^\/api\/movies\/(\d+)\/manual-grab$/,
+    );
+    if (movieManualGrabMatch) {
+      if (request.method !== 'POST') {
+        return jsonMethodNotAllowed('POST');
+      }
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!downloader) {
+        return Response.json(
+          { error: 'manual grab is not available' },
+          { status: 503 },
+        );
+      }
+      if (!database) {
+        return json500();
+      }
+
+      let magnetUrl: string;
+      let rawTitle: string;
+      let source: ManualMovieGrabSource;
+      let imdbId: string | null;
+      try {
+        const body: unknown = await request.json();
+        const parsed = expectRecord(body, 'request body');
+        magnetUrl = requireNonEmptyString(
+          parsed.magnetUrl,
+          'request body magnetUrl',
+        );
+        rawTitle = requireNonEmptyString(
+          parsed.rawTitle,
+          'request body rawTitle',
+        );
+        source = requireManualMovieGrabSource(
+          parsed.source,
+          'request body source',
+        );
+        imdbId =
+          parsed.imdbId === undefined || parsed.imdbId === null
+            ? null
+            : requireNonEmptyString(parsed.imdbId, 'request body imdbId');
+      } catch (error) {
+        return Response.json(
+          {
+            error:
+              error instanceof Error ? error.message : 'invalid request body',
+          },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const tmdbId = Number(movieManualGrabMatch[1]);
+        let moviePosterUrl: string | null = null;
+        let movieDisplayTitle: string | null = null;
+        if (tmdbMovies) {
+          const movie = await tmdbMovies.client.getMovie(tmdbId);
+          if (movie) {
+            moviePosterUrl = movie.poster_path
+              ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+              : null;
+            movieDisplayTitle = movie.title;
+          }
+        }
+
+        // Straight to Transmission, no RSS-pipeline policy filtering — same
+        // rationale as the TV manual-grab handler: the operator already
+        // picked the exact variant they want by eye.
+        const result = await downloader.submit({
+          downloadUrl: magnetUrl,
+          downloadDir:
+            activeConfig.transmission.downloadDirs?.movie ??
+            activeConfig.transmission.downloadDir ??
+            DEFAULT_TRANSMISSION_DOWNLOAD_DIR_MOVIE,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.message }, { status: 502 });
+        }
+
+        const recorded = new ManualMovieGrabsStore(database).record({
+          tmdbId,
+          imdbId,
+          source,
+          rawTitle,
+          transmissionTorrentHash: result.torrentHash ?? null,
+          transmissionTorrentId: result.torrentId ?? null,
+          moviePosterUrl,
+          movieDisplayTitle,
+        });
+
+        return Response.json({ ok: true, grab: recorded });
       } catch {
         return json500();
       }
@@ -2669,8 +2977,17 @@ export function createApiFetch(
       const manualGrabDisplayInfo = database
         ? new ManualGrabsStore(database).listAllTorrentDisplayInfo()
         : new Map();
+      // Same rationale, movie-shaped: manual_movie_grabs never writes to
+      // candidate_state either (see manual-movie-grabs/schema.ts).
+      const manualMovieGrabDisplayInfo = database
+        ? new ManualMovieGrabsStore(database).listAllTorrentDisplayInfo()
+        : new Map();
       const hashes = Array.from(
-        new Set([...candidateHashes, ...manualGrabDisplayInfo.keys()]),
+        new Set([
+          ...candidateHashes,
+          ...manualGrabDisplayInfo.keys(),
+          ...manualMovieGrabDisplayInfo.keys(),
+        ]),
       );
 
       if (hashes.length === 0) {
@@ -2693,7 +3010,9 @@ export function createApiFetch(
       const torrents = result.torrents
         .filter((t) => hashSet.has(t.hash))
         .map((t) => {
-          const grabInfo = manualGrabDisplayInfo.get(t.hash);
+          const grabInfo =
+            manualGrabDisplayInfo.get(t.hash) ??
+            manualMovieGrabDisplayInfo.get(t.hash);
           return grabInfo
             ? {
                 ...t,
@@ -2733,6 +3052,7 @@ export function createApiFetch(
         activeConfig.transmission,
         body.hash,
         database ? new ManualGrabsStore(database) : undefined,
+        database ? new ManualMovieGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState !== 'downloading' && ctx.rowState !== 'seeding') {
@@ -2764,6 +3084,7 @@ export function createApiFetch(
         activeConfig.transmission,
         body.hash,
         database ? new ManualGrabsStore(database) : undefined,
+        database ? new ManualMovieGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState !== 'paused') {
@@ -2795,6 +3116,7 @@ export function createApiFetch(
         activeConfig.transmission,
         body.hash,
         database ? new ManualGrabsStore(database) : undefined,
+        database ? new ManualMovieGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState === 'missing') {
@@ -2848,6 +3170,7 @@ export function createApiFetch(
         activeConfig.transmission,
         body.hash,
         database ? new ManualGrabsStore(database) : undefined,
+        database ? new ManualMovieGrabsStore(database) : undefined,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState === 'missing') {
@@ -3499,6 +3822,20 @@ function requireManualGrabSource(
   }
   throw new ConfigError(
     `Config file "${label}" must be one of "eztv", "thepiratebay".`,
+  );
+}
+
+/** Movie-equivalent of requireManualGrabSource — the two movie search
+ * sources only (see ManualMovieGrabSource). */
+function requireManualMovieGrabSource(
+  input: unknown,
+  label: string,
+): ManualMovieGrabSource {
+  if (input === 'thepiratebay' || input === 'yts') {
+    return input;
+  }
+  throw new ConfigError(
+    `Config file "${label}" must be one of "thepiratebay", "yts".`,
   );
 }
 

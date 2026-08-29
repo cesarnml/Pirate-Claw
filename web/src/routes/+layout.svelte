@@ -6,6 +6,7 @@
 	import TvMinimalPlayIcon from '@lucide/svelte/icons/tv-minimal-play';
 	import Settings2Icon from '@lucide/svelte/icons/settings-2';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import CalendarDaysIcon from '@lucide/svelte/icons/calendar-days';
 	import { writable } from 'svelte/store';
 	import '../app.css';
 	import { Toaster } from '$lib/components/ui/sonner';
@@ -40,6 +41,7 @@
 		{ href: '/shows', label: 'TV Shows', icon: TvMinimalPlayIcon },
 		{ href: '/movies', label: 'Movies', icon: ClapperboardIcon },
 		{ href: '/tv-calendar', label: 'TV Calendar', icon: CalendarIcon },
+		{ href: '/movie-calendar', label: 'Movie Calendar', icon: CalendarDaysIcon },
 		{ href: '/config', label: 'Config', icon: Settings2Icon }
 	];
 
