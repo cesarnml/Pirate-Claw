@@ -274,7 +274,7 @@
 					{@const showUpload =
 						rowState === 'completed' || rowState === 'seeding' || rowState === 'paused'}
 					<li
-						class="border-border bg-background/45 flex gap-4 rounded-[26px] border p-4"
+						class="border-border bg-background/45 flex gap-4 rounded-[26px] border p-4 select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
 						class:opacity-60={inFlightRow}
 						class:cursor-wait={inFlightRow}
 						oncontextmenu={(e) => !inFlightRow && openMenu(e, torrent.hash, torrent, candidate)}
