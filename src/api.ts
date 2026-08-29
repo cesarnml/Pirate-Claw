@@ -724,17 +724,19 @@ export function createApiFetch(
   // tracked entity to key a staleness check off of — every request for the
   // Movie Calendar / Top Movies pages would otherwise trigger its own fresh
   // sweep (real NAS I/O for the filesystem one, a real Plex round-trip for
-  // the other), so each sweep throttles itself, globally, to once per
-  // RECONCILE_STALE_AFTER_MS. Deliberately two SEPARATE timers, not one
-  // shared one: the Calendar tab only ever runs the filesystem sweep (see
-  // `includePlex` below), and it's requested far more often (every page
-  // load, every infinite-scroll fetch) than Top Movies of Year. A single
-  // shared timer meant a routine Calendar visit kept resetting the clock
-  // right before the user switched to the Top tab, so the Plex sweep —
-  // this feature's actual point — almost never got a window to run. Found
-  // in code review before this ever shipped.
-  let lastFilesystemAdoptionSweepAt = 0;
-  let lastPlexAdoptionSweepAt = 0;
+  // the other), so each sweep throttles itself to once per
+  // RECONCILE_STALE_AFTER_MS. Keyed by year, and two SEPARATE maps, not one
+  // shared timer and not one global scalar: years are otherwise-independent
+  // candidate sets — sweeping 2026 says nothing about whether 2025 has ever
+  // been checked — so a single process-wide timestamp meant *any* recent
+  // movie-calendar activity (the Calendar tab's routine background load on
+  // every page visit, another year's Top Movies view, a rescan) silently
+  // starved every other year's sweep for a full 10 minutes. Confirmed live
+  // 2026-08-29: viewing 2026 consumed the budget, then switching to 2025
+  // moments later got zero adoption attempts at all — not a matching
+  // failure, the sweep simply never ran.
+  const lastFilesystemAdoptionSweepAtByYear = new Map<number, number>();
+  const lastPlexAdoptionSweepAtByYear = new Map<number, number>();
 
   /** Runs the movie adoption sweeps against whatever movie list is
    * currently being returned (Top Movies of Year / Movie Calendar), then
@@ -757,6 +759,7 @@ export function createApiFetch(
    * CalendarMovieItem and TopMovieItem don't share one (TopMovieItem's
    * tmdbId can be null; CalendarMovieItem has no imdbId at all). */
   async function adoptMoviesForCurrentView<T>(
+    year: number,
     items: T[],
     toCandidate: (item: T) => MovieAdoptionCandidate | null,
     withAlreadyGrabbed: (item: T, alreadyGrabbed: true) => T,
@@ -765,12 +768,19 @@ export function createApiFetch(
     if (!database) return items;
 
     const runFilesystemSweep =
-      Date.now() - lastFilesystemAdoptionSweepAt >= RECONCILE_STALE_AFTER_MS;
+      Date.now() - (lastFilesystemAdoptionSweepAtByYear.get(year) ?? 0) >=
+      RECONCILE_STALE_AFTER_MS;
     const runPlexSweep =
       !!options.includePlex &&
       !!plexMovies &&
-      Date.now() - lastPlexAdoptionSweepAt >= RECONCILE_STALE_AFTER_MS;
-    if (!runFilesystemSweep && !runPlexSweep) return items;
+      Date.now() - (lastPlexAdoptionSweepAtByYear.get(year) ?? 0) >=
+        RECONCILE_STALE_AFTER_MS;
+    if (!runFilesystemSweep && !runPlexSweep) {
+      console.log(
+        `[movie-adoption] year=${year}: skipped, both sweeps within their ${RECONCILE_STALE_AFTER_MS / 60_000}m cooldown`,
+      );
+      return items;
+    }
 
     // Was previously wired to nothing (adoptMoviesFromFilesystem/
     // adoptMoviesFromPlex both default `log` to a silent no-op when the
@@ -789,20 +799,20 @@ export function createApiFetch(
       const adopted = new Set<number>();
 
       if (runFilesystemSweep) {
-        lastFilesystemAdoptionSweepAt = Date.now();
+        lastFilesystemAdoptionSweepAtByYear.set(year, Date.now());
         const fsAdopted = await adoptMoviesFromFilesystem(candidates, {
           mediaMoviesDirs: await resolveMediaMoviesDirs(),
           manualMovieGrabs,
           log: adoptionLog,
         });
         adoptionLog(
-          `filesystem sweep: ${candidates.length} candidate(s), ${fsAdopted.size} adopted`,
+          `year=${year} filesystem sweep: ${candidates.length} candidate(s), ${fsAdopted.size} adopted`,
         );
         for (const tmdbId of fsAdopted) adopted.add(tmdbId);
       }
 
       if (runPlexSweep && plexMovies) {
-        lastPlexAdoptionSweepAt = Date.now();
+        lastPlexAdoptionSweepAtByYear.set(year, Date.now());
         // Candidates the filesystem sweep already claimed don't need a
         // second (network) lookup.
         const stillUnclaimed = candidates.filter((c) => !adopted.has(c.tmdbId));
@@ -812,7 +822,7 @@ export function createApiFetch(
           log: adoptionLog,
         });
         adoptionLog(
-          `plex sweep: ${stillUnclaimed.length} candidate(s) checked, ${plexAdopted.size} adopted`,
+          `year=${year} plex sweep: ${stillUnclaimed.length} candidate(s) checked, ${plexAdopted.size} adopted`,
         );
         for (const tmdbId of plexAdopted) adopted.add(tmdbId);
       }
@@ -1599,6 +1609,7 @@ export function createApiFetch(
           limit,
         });
         const items = await adoptMoviesForCurrentView(
+          year,
           page.items,
           (item) => ({
             tmdbId: item.tmdbId,
@@ -1657,6 +1668,7 @@ export function createApiFetch(
         const owned = await ownedMovieTmdbIds();
         const result = await getTopMovies(topMovies, year, owned, rescan);
         const items = await adoptMoviesForCurrentView(
+          year,
           result.items,
           (item) =>
             item.tmdbId === null
