@@ -180,6 +180,7 @@ function calendarMovieDeps(
 }
 
 function topMoviesDeps(
+  database: Database,
   config: AppConfig,
   log: (message: string) => void,
 ): TopMoviesDeps | undefined {
@@ -191,7 +192,7 @@ function topMoviesDeps(
     client: new TmdbHttpClient(tmdbResolved.apiKey, (m: string) =>
       log(`[tmdb] ${m}`),
     ),
-    cache: new TopMoviesCache(),
+    cache: new TopMoviesCache(database),
     log: (m: string) => log(`[dvdsreleasedates] ${m}`),
   };
 }
@@ -548,7 +549,7 @@ export async function runCli(argv: string[]): Promise<number> {
         const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
         const calendarTv = calendarTvDeps(config, log);
         const calendarMovie = calendarMovieDeps(config, log);
-        const topMovies = topMoviesDeps(config, log);
+        const topMovies = topMoviesDeps(database, config, log);
         const plexMovies = plexMovieEnrichDeps(
           database,
           configHolder,

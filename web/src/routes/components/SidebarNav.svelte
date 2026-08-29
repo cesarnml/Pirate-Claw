@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Component } from 'svelte';
-	import { page } from '$app/stores';
+	import { page, navigating } from '$app/stores';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
 	export interface NavLink {
 		href: string;
@@ -17,6 +18,14 @@
 	function isActive(href: string): boolean {
 		return $page.url.pathname === href;
 	}
+
+	// The link just clicked shows a spinner in place of its own icon until
+	// the navigation lands — some routes (TV/Movie Calendar, Shows) have a
+	// real load delay, and nothing else on this nav gives feedback that the
+	// click registered.
+	function isNavigatingTo(href: string): boolean {
+		return $navigating?.to?.url.pathname === href;
+	}
 </script>
 
 <nav class="flex-1 px-3 py-4" aria-label="Main navigation">
@@ -32,7 +41,11 @@
 						? 'text-primary'
 						: 'text-muted-foreground hover:text-foreground hover:bg-primary/30'}"
 				>
-					<link.icon class="h-5 w-5 shrink-0" />
+					{#if isNavigatingTo(link.href)}
+						<Loader2Icon class="h-5 w-5 shrink-0 animate-spin" />
+					{:else}
+						<link.icon class="h-5 w-5 shrink-0" />
+					{/if}
 					<span class="text-sm font-medium md:sr-only lg:not-sr-only">{link.label}</span>
 				</a>
 			</li>

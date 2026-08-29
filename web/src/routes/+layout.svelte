@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import MenuIcon from '@lucide/svelte/icons/menu';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import ClapperboardIcon from '@lucide/svelte/icons/clapperboard';
 	import TvMinimalPlayIcon from '@lucide/svelte/icons/tv-minimal-play';
 	import Settings2Icon from '@lucide/svelte/icons/settings-2';
@@ -19,7 +20,7 @@
 	import MobileNav from './components/MobileNav.svelte';
 	import TrustOriginBanner from '$lib/components/TrustOriginBanner.svelte';
 	import type { NavLink } from './components/SidebarNav.svelte';
-	import { page } from '$app/stores';
+	import { page, navigating } from '$app/stores';
 	import { toast } from '$lib/toast';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import {
@@ -168,7 +169,13 @@
 </svelte:head>
 
 {#snippet sidebarContent()}
-	<div class="flex h-full w-full flex-col overflow-y-auto">
+	<!-- overflow-x-hidden is load-bearing, not decorative: setting only
+	     overflow-y makes the browser auto-promote overflow-x to 'auto' too
+	     (CSS Overflow spec — one axis non-visible forces the other off
+	     'visible'), so a short viewport with the sidebar content taller than
+	     it would otherwise gain a spurious horizontal scrollbar with nothing
+	     new to show sideways. -->
+	<div class="flex h-full w-full flex-col overflow-x-hidden overflow-y-auto">
 		<SidebarBrand onclick={closeMobileNav} onclose={closeMobileNav} />
 		<SidebarNav {nav} onclick={closeMobileNav} />
 		<SidebarStatusFooter
@@ -227,13 +234,29 @@
 						aria-label="Open navigation menu"
 						onclick={() => mobileNavOpen.set(true)}
 					>
-						<MenuIcon class="h-5 w-5" />
+						{#if $navigating}
+							<!-- The drawer already closed by the time a tapped nav link
+							     starts navigating, so the hamburger button is the only
+							     nav affordance left on screen — some routes (TV/Movie
+							     Calendar, Shows) have a real load delay, and a static
+							     icon here reads as "did my tap register at all?". -->
+							<Loader2Icon class="h-5 w-5 animate-spin" />
+						{:else}
+							<MenuIcon class="h-5 w-5" />
+						{/if}
 					</button>
 				</div>
 			</header>
 		{/if}
 
-		<main class="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:px-6 md:py-8 lg:px-10">
+		<!-- overflow-x-hidden: same rationale as sidebarContent's comment above
+		     — without it, overflow-y-auto alone promotes overflow-x to 'auto'
+		     too, so any page content that's even a hair too wide (a long
+		     unbroken string, a flex item that didn't shrink) turns into a
+		     page-wide horizontal scroll instead of being contained/clipped. -->
+		<main
+			class="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 md:px-6 md:py-8 lg:px-10"
+		>
 			{#if isStarter}
 				<div
 					class="flex flex-col items-center justify-center gap-4 py-24 text-center"

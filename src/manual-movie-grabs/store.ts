@@ -8,7 +8,12 @@ export type ManualMovieGrabSource =
    * "movies" directory with no manual_movie_grabs/candidate_state row
    * behind it — e.g. a torrent added by hand through Transmission's web UI.
    * See src/adoption/movie-reconciler.ts. */
-  | 'adopted-filesystem';
+  | 'adopted-filesystem'
+  /** Adopted by matching a displayed movie's tmdbId/imdbId against Plex's
+   * own resolved Guid for a library item that predates pirate-claw entirely
+   * (never RSS-matched, never manually grabbed) — see
+   * src/adoption/movie-plex-reconciler.ts. */
+  | 'adopted-plex';
 
 export type ManualMovieGrabRecord = {
   id: number;

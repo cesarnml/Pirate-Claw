@@ -19,6 +19,13 @@ export type PlexSearchResult = {
   year?: number;
   viewCount?: number;
   lastViewedAt?: number;
+  /** Plex's own resolved external ids for this item (its `Guid` children),
+   * only present when the request asked for them (`includeGuids=1`) — see
+   * listAllMoviesForMatching. tmdbId is preferred over imdbId wherever both
+   * exist: it's the id space this whole app already keys everything on, so
+   * matching on it needs no cross-referencing at all. */
+  tmdbId?: number;
+  imdbId?: string;
 };
 
 /** One season under a show, from GET /library/metadata/{showRatingKey}/children. */
@@ -131,7 +138,10 @@ export class PlexHttpClient {
   }
 
   /**
-   * Lists every movie in movie library sections (paginated). Fallback for search.
+   * Lists every movie in movie library sections (paginated). Fallback for
+   * search, and — since it requests `includeGuids=1` — the source of the
+   * tmdbId/imdbId used to adopt a pre-existing Plex movie pirate-claw never
+   * ingested (see src/adoption/movie-plex-reconciler.ts).
    */
   async listAllMoviesForMatching(): Promise<PlexSearchResult[]> {
     this.lastFailureKind = null;
@@ -141,7 +151,9 @@ export class PlexHttpClient {
       if (section.type !== 'movie') {
         continue;
       }
-      await this.collectPagedSectionItems(section.key, 'movie', out);
+      await this.collectPagedSectionItems(section.key, 'movie', out, {
+        includeGuids: true,
+      });
     }
     return dedupeSearchResults(out);
   }
@@ -243,12 +255,14 @@ export class PlexHttpClient {
     sectionKey: string,
     expectedChildType: 'show' | 'movie',
     sink: PlexSearchResult[],
+    options?: { includeGuids?: boolean },
   ): Promise<void> {
     const pageSize = 200;
     let start = 0;
+    const guidsParam = options?.includeGuids ? '&includeGuids=1' : '';
 
     for (;;) {
-      const path = `/library/sections/${encodeURIComponent(sectionKey)}/all?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${pageSize}`;
+      const path = `/library/sections/${encodeURIComponent(sectionKey)}/all?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${pageSize}${guidsParam}`;
       const container = await this.getXml(path);
       if (!container?.MediaContainer) {
         break;
@@ -544,7 +558,37 @@ function mapXmlRecordToSearchResult(
     year: optionalNumberField(entry.year),
     viewCount: optionalNumberField(entry.viewCount),
     lastViewedAt: optionalNumberField(entry.lastViewedAt),
+    ...extractPlexGuids(entry),
   };
+}
+
+/** Parses the `<Guid id="tmdb://…"/>` / `<Guid id="imdb://…"/>` children
+ * Plex returns per item when the request asked for `includeGuids=1` — only
+ * populated then; a request without that param leaves entry.Guid absent and
+ * this returns {}. tmdbId wins when both are present (see PlexSearchResult's
+ * doc comment for why). */
+function extractPlexGuids(entry: Record<string, unknown>): {
+  tmdbId?: number;
+  imdbId?: string;
+} {
+  const guids = asArray(
+    entry.Guid as
+      | Record<string, unknown>
+      | Record<string, unknown>[]
+      | undefined,
+  );
+  let tmdbId: number | undefined;
+  let imdbId: string | undefined;
+  for (const guid of guids) {
+    const id = optionalStringField((guid as Record<string, unknown>).id);
+    if (!id) continue;
+    if (id.startsWith('tmdb://')) {
+      tmdbId = optionalNumberField(id.slice('tmdb://'.length)) ?? tmdbId;
+    } else if (id.startsWith('imdb://')) {
+      imdbId = id.slice('imdb://'.length);
+    }
+  }
+  return { tmdbId, imdbId };
 }
 
 export function dedupeSearchResults(

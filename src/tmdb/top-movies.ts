@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import type { TmdbHttpClient } from './client';
 import { scrapeTopMovies } from '../dvdsreleasedates/scraper';
 
@@ -25,21 +26,44 @@ export type TopMoviesResult = {
    * cached, possibly empty on a cold cache. */
   scrapeError: string | null;
   fetchedAt: string;
+  /** True when this response was served from an existing cache entry
+   * (memory or the SQLite-backed store behind it) rather than a scrape that
+   * just happened during this request — lets the UI show "cached, scraped
+   * {fetchedAt}" vs. "just scraped" so a Rescan click is an informed
+   * decision, not a guess. */
+  fromCache: boolean;
 };
 
 type CacheEntry = { fetchedAt: string; items: TopMovieItem[] };
+
+type CacheRow = { year: number; fetched_at: string; items_json: string };
 
 /** In-memory cache, one entry per year, no TTL — a past year's Top 100 is
  * settled history and never needs re-scraping once cached (see
  * notes/public/movie-calendar-scope.md). The current year is the only one
  * that can go stale as the year progresses, which is why rescan() exists
- * as an explicit operator action rather than a background timer. */
+ * as an explicit operator action rather than a background timer.
+ *
+ * Optionally backed by SQLite (top_movies_cache, see tmdb/schema.ts): the
+ * in-memory Map alone is snappy but doesn't survive a daemon restart —
+ * every redeploy or NAS reboot would otherwise force every year to re-pay
+ * its ~100 TMDB lookups (and a dvdsreleasedates scrape) the next time
+ * someone views it. When a database is provided, a write goes to both; a
+ * miss in memory falls back to a SQLite read (and hydrates memory) before
+ * counting as a true cache miss. */
 export class TopMoviesCache {
   private readonly entries = new Map<number, CacheEntry>();
   private readonly inFlight = new Map<number, Promise<CacheEntry>>();
 
+  constructor(private readonly database?: Database) {}
+
   get(year: number): CacheEntry | undefined {
-    return this.entries.get(year);
+    const inMemory = this.entries.get(year);
+    if (inMemory) return inMemory;
+
+    const fromDisk = this.readFromDatabase(year);
+    if (fromDisk) this.entries.set(year, fromDisk);
+    return fromDisk;
   }
 
   async fetchOnce(
@@ -52,7 +76,10 @@ export class TopMoviesCache {
     const promise = fetcher().finally(() => this.inFlight.delete(year));
     this.inFlight.set(year, promise);
     const entry = await promise;
-    if (entry.items.length > 0) this.entries.set(year, entry);
+    if (entry.items.length > 0) {
+      this.entries.set(year, entry);
+      this.writeToDatabase(year, entry);
+    }
     return entry;
   }
 
@@ -61,6 +88,44 @@ export class TopMoviesCache {
    * with nothing cached yet. */
   invalidate(year: number): void {
     this.entries.delete(year);
+    this.database?.run(`DELETE FROM top_movies_cache WHERE year = ?1`, [year]);
+  }
+
+  private readFromDatabase(year: number): CacheEntry | undefined {
+    if (!this.database) return undefined;
+    try {
+      const row = this.database
+        .query(
+          `SELECT year, fetched_at, items_json FROM top_movies_cache WHERE year = ?1`,
+        )
+        .get(year) as CacheRow | null;
+      if (!row) return undefined;
+      return {
+        fetchedAt: row.fetched_at,
+        items: JSON.parse(row.items_json) as TopMovieItem[],
+      };
+    } catch {
+      // A corrupt row (manual DB edit, partial write) shouldn't ever break
+      // the page — treat it as a miss and let a fresh scrape overwrite it.
+      return undefined;
+    }
+  }
+
+  private writeToDatabase(year: number, entry: CacheEntry): void {
+    if (!this.database) return;
+    try {
+      this.database.run(
+        `INSERT INTO top_movies_cache (year, fetched_at, items_json)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(year) DO UPDATE SET
+           fetched_at = excluded.fetched_at,
+           items_json = excluded.items_json`,
+        [year, entry.fetchedAt, JSON.stringify(entry.items)],
+      );
+    } catch {
+      // Best-effort persistence — a write failure just means this year
+      // isn't durable past a restart, not a reason to fail the request.
+    }
   }
 }
 
@@ -85,6 +150,7 @@ export async function getTopMovies(
       items: withGrabbedStatus(cached.items, grabbedTmdbIds),
       scrapeError: null,
       fetchedAt: cached.fetchedAt,
+      fromCache: true,
     };
   }
 
@@ -134,6 +200,7 @@ export async function getTopMovies(
     scrapeError:
       entry.items.length === 0 ? 'Could not scrape or enrich this year.' : null,
     fetchedAt: entry.fetchedAt,
+    fromCache: false,
   };
 }
 

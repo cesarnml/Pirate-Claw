@@ -63,6 +63,7 @@ import {
 } from './adoption/discover-media-dirs';
 import { adoptMoviesFromFilesystem } from './adoption/movie-reconciler';
 import type { MovieAdoptionCandidate } from './adoption/movie-reconciler';
+import { adoptMoviesFromPlex } from './adoption/movie-plex-reconciler';
 import { extractCodec, extractResolution } from './normalize';
 import {
   ConfigError,
@@ -722,19 +723,35 @@ export function createApiFetch(
   // Unlike reconcileShowIfStale's per-show gate, movies have no single
   // tracked entity to key a staleness check off of — every request for the
   // Movie Calendar / Top Movies pages would otherwise trigger its own fresh
-  // recursive filesystem walk (real NAS I/O), so this throttles the sweep
-  // itself, globally, to once per RECONCILE_STALE_AFTER_MS regardless of
-  // how many requests come in during that window.
-  let lastMovieAdoptionSweepAt = 0;
+  // sweep (real NAS I/O for the filesystem one, a real Plex round-trip for
+  // the other), so each sweep throttles itself, globally, to once per
+  // RECONCILE_STALE_AFTER_MS. Deliberately two SEPARATE timers, not one
+  // shared one: the Calendar tab only ever runs the filesystem sweep (see
+  // `includePlex` below), and it's requested far more often (every page
+  // load, every infinite-scroll fetch) than Top Movies of Year. A single
+  // shared timer meant a routine Calendar visit kept resetting the clock
+  // right before the user switched to the Top tab, so the Plex sweep —
+  // this feature's actual point — almost never got a window to run. Found
+  // in code review before this ever shipped.
+  let lastFilesystemAdoptionSweepAt = 0;
+  let lastPlexAdoptionSweepAt = 0;
 
-  /** Runs the movie filesystem adoption sweep against whatever movie list
-   * is currently being returned (Top Movies of Year / Movie Calendar), then
-   * patches alreadyGrabbed for anything it found — best-effort, mirrors
+  /** Runs the movie adoption sweeps against whatever movie list is
+   * currently being returned (Top Movies of Year / Movie Calendar), then
+   * patches alreadyGrabbed for anything found — best-effort, mirrors
    * reconcileShowIfStale's "never break the page that triggered it" rule.
    * Movies have no single-item page to trigger reconciliation from like TV
    * shows do, so this runs inline against the current response instead of
-   * being gated by a per-item staleness check — see lastMovieAdoptionSweepAt
-   * above for the throttle that keeps this affordable.
+   * being gated by a per-item staleness check — see the throttle timers
+   * above for what keeps this affordable.
+   *
+   * Runs the filesystem sweep (adoptMoviesFromFilesystem) on its own
+   * throttle. Also runs the Plex-guid sweep (adoptMoviesFromPlex), on its
+   * own separate throttle, when `includePlex` is set — only worth doing on
+   * Top Movies of Year, whose whole point is backfilling *old* years, where
+   * "already sitting in Plex from before pirate-claw existed" is the common
+   * case; the Calendar tab is forward-looking (current/upcoming releases),
+   * where that case barely comes up.
    *
    * Takes explicit accessors rather than a fixed item shape because
    * CalendarMovieItem and TopMovieItem don't share one (TopMovieItem's
@@ -743,22 +760,46 @@ export function createApiFetch(
     items: T[],
     toCandidate: (item: T) => MovieAdoptionCandidate | null,
     withAlreadyGrabbed: (item: T, alreadyGrabbed: true) => T,
+    options: { includePlex?: boolean } = {},
   ): Promise<T[]> {
     if (!database) return items;
-    if (Date.now() - lastMovieAdoptionSweepAt < RECONCILE_STALE_AFTER_MS) {
-      return items;
-    }
-    lastMovieAdoptionSweepAt = Date.now();
+
+    const runFilesystemSweep =
+      Date.now() - lastFilesystemAdoptionSweepAt >= RECONCILE_STALE_AFTER_MS;
+    const runPlexSweep =
+      !!options.includePlex &&
+      !!plexMovies &&
+      Date.now() - lastPlexAdoptionSweepAt >= RECONCILE_STALE_AFTER_MS;
+    if (!runFilesystemSweep && !runPlexSweep) return items;
 
     try {
       const manualMovieGrabs = new ManualMovieGrabsStore(database);
       const candidates = items
         .map(toCandidate)
         .filter((c): c is MovieAdoptionCandidate => c !== null);
-      const adopted = await adoptMoviesFromFilesystem(candidates, {
-        mediaMoviesDirs: await resolveMediaMoviesDirs(),
-        manualMovieGrabs,
-      });
+      const adopted = new Set<number>();
+
+      if (runFilesystemSweep) {
+        lastFilesystemAdoptionSweepAt = Date.now();
+        const fsAdopted = await adoptMoviesFromFilesystem(candidates, {
+          mediaMoviesDirs: await resolveMediaMoviesDirs(),
+          manualMovieGrabs,
+        });
+        for (const tmdbId of fsAdopted) adopted.add(tmdbId);
+      }
+
+      if (runPlexSweep && plexMovies) {
+        lastPlexAdoptionSweepAt = Date.now();
+        // Candidates the filesystem sweep already claimed don't need a
+        // second (network) lookup.
+        const stillUnclaimed = candidates.filter((c) => !adopted.has(c.tmdbId));
+        const plexAdopted = await adoptMoviesFromPlex(stillUnclaimed, {
+          plexClient: plexMovies.client,
+          manualMovieGrabs,
+        });
+        for (const tmdbId of plexAdopted) adopted.add(tmdbId);
+      }
+
       if (adopted.size === 0) return items;
       return items.map((item) => {
         const candidate = toCandidate(item);
@@ -1608,6 +1649,7 @@ export function createApiFetch(
                   alreadyGrabbed: item.alreadyGrabbed,
                 },
           (item, alreadyGrabbed) => ({ ...item, alreadyGrabbed }),
+          { includePlex: true },
         );
         return Response.json({ ...result, items });
       } catch {

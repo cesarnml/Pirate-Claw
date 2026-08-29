@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { ensureColumn } from '../tmdb/schema';
 
 /**
  * Manual movie backfill records — the movie-shaped sibling of manual_grabs
@@ -34,24 +35,5 @@ export function ensureManualMovieGrabsSchema(database: Database): void {
   // outside the RSS pipeline can never be looked up in that cache, so its
   // "already grabbed" status could never be corrected once Plex confirms it
   // missing (deleted, wrong match, etc.). See notes/public/movie-calendar-scope.md.
-  ensureManualMovieGrabsColumn(database, 'movie_year', 'INTEGER');
-}
-
-function ensureManualMovieGrabsColumn(
-  database: Database,
-  columnName: string,
-  columnType: 'INTEGER' | 'REAL' | 'TEXT',
-): void {
-  const hasColumn =
-    (database
-      .query(
-        `SELECT 1 FROM pragma_table_info('manual_movie_grabs') WHERE name = ?1`,
-      )
-      .get(columnName) as { 1: number } | null | undefined) !== null;
-
-  if (!hasColumn) {
-    database.run(
-      `ALTER TABLE manual_movie_grabs ADD COLUMN ${columnName} ${columnType}`,
-    );
-  }
+  ensureColumn(database, 'manual_movie_grabs', 'movie_year', 'INTEGER');
 }

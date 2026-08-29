@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import { MOVIE_CALENDAR_PAGE_SIZE } from '$lib/movieCalendarConfig';
+	import { formatRelativeTime } from '$lib/helpers';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import type { PageData } from './$types';
@@ -253,13 +254,18 @@
 		| { status: 'idle' }
 		| { status: 'loading' }
 		| { status: 'error'; message: string }
-		| { status: 'ready'; scrapeError: string | null; fetchedAt: string };
+		| { status: 'ready'; scrapeError: string | null; fetchedAt: string; fromCache: boolean };
 	const currentYear = new Date().getFullYear();
 	// ISO date (YYYY-MM-DD) string comparison works fine against TMDB's
 	// release_date, which is always this shape.
 	const todayIso = new Date().toISOString().slice(0, 10);
 	let topYear = $state(currentYear);
 	let topByYear = $state<Record<number, TopMovieItem[] | undefined>>({});
+	// Keyed alongside topByYear so switching back to an already-fetched year
+	// (the short-circuit below) can still show its real fetchedAt/fromCache
+	// instead of blanking it out — this is what backs the "cached, scraped
+	// {when}" vs. "just scraped" freshness line near the Rescan button.
+	let topMetaByYear = $state<Record<number, { fetchedAt: string; fromCache: boolean }>>({});
 	let topFetchState = $state<TopFetchState>({ status: 'idle' });
 	let rescanning = $state(false);
 	let topFilter = $state<'all' | 'missing'>('all');
@@ -271,7 +277,13 @@
 
 	async function loadTopMovies(year: number, rescan = false): Promise<void> {
 		if (!rescan && topByYear[year]) {
-			topFetchState = { status: 'ready', scrapeError: null, fetchedAt: '' };
+			const meta = topMetaByYear[year];
+			topFetchState = {
+				status: 'ready',
+				scrapeError: null,
+				fetchedAt: meta?.fetchedAt ?? '',
+				fromCache: meta?.fromCache ?? true
+			};
 			return;
 		}
 		if (rescan) rescanning = true;
@@ -284,6 +296,7 @@
 				items?: TopMovieItem[];
 				scrapeError?: string | null;
 				fetchedAt?: string;
+				fromCache?: boolean;
 				error?: string;
 			};
 			if (!res.ok || !body.items) {
@@ -291,10 +304,15 @@
 				return;
 			}
 			topByYear = { ...topByYear, [year]: body.items };
+			topMetaByYear = {
+				...topMetaByYear,
+				[year]: { fetchedAt: body.fetchedAt ?? '', fromCache: body.fromCache ?? true }
+			};
 			topFetchState = {
 				status: 'ready',
 				scrapeError: body.scrapeError ?? null,
-				fetchedAt: body.fetchedAt ?? ''
+				fetchedAt: body.fetchedAt ?? '',
+				fromCache: body.fromCache ?? true
 			};
 		} catch {
 			topFetchState = { status: 'error', message: 'Could not reach the API.' };
@@ -524,6 +542,14 @@
 				{/if}
 			</Button>
 		</div>
+
+		{#if topFetchState.status === 'ready' && topFetchState.fetchedAt}
+			<p class="text-muted-foreground text-xs">
+				{topFetchState.fromCache ? 'Cached' : 'Just scraped'} · {formatRelativeTime(
+					topFetchState.fetchedAt
+				)}
+			</p>
+		{/if}
 
 		<div class="flex items-center gap-2">
 			<Button

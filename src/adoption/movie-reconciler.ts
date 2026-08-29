@@ -113,7 +113,8 @@ export async function adoptMoviesFromFilesystem(
   return adopted;
 }
 
-function releaseYear(releaseDate: string): number | undefined {
+/** Exported for movie-plex-reconciler.ts's shared candidate-filtering. */
+export function releaseYear(releaseDate: string): number | undefined {
   const year = Number(releaseDate.slice(0, 4));
   return Number.isFinite(year) ? year : undefined;
 }

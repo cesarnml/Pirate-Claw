@@ -137,6 +137,36 @@ describe('plex search XML (hub-aware)', () => {
     });
   });
 
+  it('parses tmdb:// and imdb:// Guid children onto the search result (includeGuids=1 shape)', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1">
+  <Video ratingKey="1" type="movie" title="The Odyssey" year="2026">
+    <Guid id="tmdb://942353"/>
+    <Guid id="imdb://tt22084616"/>
+    <Guid id="tvdb://123456"/>
+  </Video>
+</MediaContainer>`;
+    const container = parser.parse(xml) as Parameters<
+      typeof plexMovieSearchResultsFromContainer
+    >[0];
+    const [result] = plexMovieSearchResultsFromContainer(container);
+    expect(result.tmdbId).toBe(942353);
+    expect(result.imdbId).toBe('tt22084616');
+  });
+
+  it('leaves tmdbId/imdbId undefined when no Guid children are present', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1">
+  <Video ratingKey="1" type="movie" title="The Odyssey" year="2026"/>
+</MediaContainer>`;
+    const container = parser.parse(xml) as Parameters<
+      typeof plexMovieSearchResultsFromContainer
+    >[0];
+    const [result] = plexMovieSearchResultsFromContainer(container);
+    expect(result.tmdbId).toBeUndefined();
+    expect(result.imdbId).toBeUndefined();
+  });
+
   it('dedupes the same ratingKey from top-level and hub shelves', () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <MediaContainer size="2">

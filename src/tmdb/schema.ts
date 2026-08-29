@@ -51,10 +51,27 @@ export function ensureTmdbSchema(database: Database): void {
         PRIMARY KEY (show_match_key, season_number)
       );
     `);
+    // Top Movies of Year's scrape+enrich cache (see TopMoviesCache) —
+    // deliberately no TTL/expires_at column, unlike the caches above: a past
+    // year's ranking is settled history that never needs re-scraping once
+    // cached, so this is closer to "durable record" than "cache" for any
+    // year that isn't the current one. Persisted (not just in-memory) so a
+    // daemon restart/redeploy doesn't force every year to re-pay its ~100
+    // TMDB lookups the next time someone views it.
+    database.run(`
+      CREATE TABLE IF NOT EXISTS top_movies_cache (
+        year INTEGER PRIMARY KEY NOT NULL,
+        fetched_at TEXT NOT NULL,
+        items_json TEXT NOT NULL
+      );
+    `);
   })();
 }
 
-function ensureColumn(
+/** Idempotently adds `column` to `table` if it isn't already there — shared
+ * by every TMDB-adjacent SQLite schema in this codebase (not just tmdb's
+ * own) rather than each reimplementing the same pragma_table_info check. */
+export function ensureColumn(
   database: Database,
   table: string,
   column: string,
