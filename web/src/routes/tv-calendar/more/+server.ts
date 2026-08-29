@@ -34,7 +34,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		response = await apiRequest(`/api/calendar/tv?${params}`);
 	} catch (error) {
-		console.error('[calendar] /more failed to reach /api/calendar/tv:', error);
+		console.error('[tv-calendar] /more failed to reach /api/calendar/tv:', error);
 		return json({ error: 'Could not reach the API.' }, { status: 503 });
 	}
 
@@ -53,11 +53,11 @@ export const GET: RequestHandler = async ({ url }) => {
 			offset: number;
 		};
 		console.log(
-			`[calendar] /more requested year=${year} offset=${offset ?? 'auto'} -> resolved year=${body.year} offset=${body.offset} items=${body.items.length}/${body.total}`
+			`[tv-calendar] /more requested year=${year} offset=${offset ?? 'auto'} -> resolved year=${body.year} offset=${body.offset} items=${body.items.length}/${body.total}`
 		);
 		return json({ year: body.year, items: body.items, total: body.total, offset: body.offset });
 	} catch (error) {
-		console.error('[calendar] /more failed to parse response:', error);
+		console.error('[tv-calendar] /more failed to parse response:', error);
 		return json({ error: 'Calendar response was invalid.' }, { status: 502 });
 	}
 };

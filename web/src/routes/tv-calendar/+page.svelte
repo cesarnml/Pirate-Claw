@@ -64,7 +64,7 @@
 			for (const item of chunk.items) {
 				if (seen.has(item.tmdbId)) {
 					console.warn(
-						`[calendar] dropped duplicate tmdbId ${item.tmdbId} (${item.name}) — would have crashed the keyed each`
+						`[tv-calendar] dropped duplicate tmdbId ${item.tmdbId} (${item.name}) — would have crashed the keyed each`
 					);
 					continue;
 				}
@@ -97,7 +97,7 @@
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 		try {
-			const res = await fetch(`/calendar/more?${query}`, { signal: controller.signal });
+			const res = await fetch(`/tv-calendar/more?${query}`, { signal: controller.signal });
 			const body = (await res.json()) as Partial<CalendarPage> & { error?: string };
 			if (!res.ok || body.error) {
 				throw new Error(body.error ?? `Request failed (${res.status}).`);
@@ -271,11 +271,11 @@
 	function handleRenderCrash(error: unknown): void {
 		const message = error instanceof Error ? error.message : String(error);
 		const stack = error instanceof Error ? error.stack : undefined;
-		console.error('[calendar] render crash contained by boundary:', error);
+		console.error('[tv-calendar] render crash contained by boundary:', error);
 		fetch('/api/client-error', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ message, stack, url: location.href, label: 'calendar' })
+			body: JSON.stringify({ message, stack, url: location.href, label: 'tv-calendar' })
 		}).catch(() => {
 			// Best-effort — a failed error report must never itself throw.
 		});

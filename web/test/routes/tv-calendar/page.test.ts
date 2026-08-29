@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import Page from '../../../src/routes/calendar/+page.svelte';
-import type { CalendarTvItem } from '../../../src/routes/calendar/+page.server';
+import Page from '../../../src/routes/tv-calendar/+page.svelte';
+import type { CalendarTvItem } from '../../../src/routes/tv-calendar/+page.server';
 
 vi.mock('svelte-sonner', () => ({
 	toast: {

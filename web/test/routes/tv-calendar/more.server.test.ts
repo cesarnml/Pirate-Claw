@@ -15,18 +15,18 @@ function requestEvent(url: string) {
 
 const thisYear = new Date().getFullYear();
 
-describe('GET /calendar/more', () => {
+describe('GET /tv-calendar/more', () => {
 	beforeEach(() => {
 		apiRequestMock.mockReset();
 	});
 
 	it('proxies the offset and year to GET /api/calendar/tv', async () => {
-		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		const { GET } = await import('../../../src/routes/tv-calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, { year: 2020, items: [{ tmdbId: 1, name: 'Show' }], total: 30, offset: 16 })
 		);
 
-		const response = await GET(requestEvent('http://localhost/calendar/more?year=2020&offset=16'));
+		const response = await GET(requestEvent('http://localhost/tv-calendar/more?year=2020&offset=16'));
 		const body = await response.json();
 
 		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16&offset=16');
@@ -39,12 +39,12 @@ describe('GET /calendar/more', () => {
 	});
 
 	it('defaults year to the current year when missing', async () => {
-		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		const { GET } = await import('../../../src/routes/tv-calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, { year: thisYear, items: [], total: 0, offset: 0 })
 		);
 
-		await GET(requestEvent('http://localhost/calendar/more?offset=16'));
+		await GET(requestEvent('http://localhost/tv-calendar/more?offset=16'));
 
 		expect(apiRequestMock).toHaveBeenCalledWith(
 			`/api/calendar/tv?year=${thisYear}&limit=16&offset=16`
@@ -56,12 +56,12 @@ describe('GET /calendar/more', () => {
 		// previous year omits offset on purpose, so the daemon's auto-anchor
 		// (anchorOffsetForToday) lands on that year's *last* page, not its
 		// first. Silently defaulting offset to 0 here would defeat that.
-		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		const { GET } = await import('../../../src/routes/tv-calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, { year: 2020, items: [], total: 40, offset: 24 })
 		);
 
-		await GET(requestEvent('http://localhost/calendar/more?year=2020'));
+		await GET(requestEvent('http://localhost/tv-calendar/more?year=2020'));
 
 		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16');
 	});
@@ -70,23 +70,23 @@ describe('GET /calendar/more', () => {
 		// A garbage offset (e.g. a tampered request) should behave like no
 		// offset was supplied at all, not silently collapse to 0 — otherwise
 		// it would defeat the daemon's auto-anchor-to-today behavior.
-		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		const { GET } = await import('../../../src/routes/tv-calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, { year: thisYear, items: [], total: 0, offset: 0 })
 		);
 
-		await GET(requestEvent('http://localhost/calendar/more?year=2020&offset=abc'));
+		await GET(requestEvent('http://localhost/tv-calendar/more?year=2020&offset=abc'));
 
 		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16');
 	});
 
 	it('clamps a requested limit above the page size', async () => {
-		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		const { GET } = await import('../../../src/routes/tv-calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, { year: thisYear, items: [], total: 0, offset: 0 })
 		);
 
-		await GET(requestEvent('http://localhost/calendar/more?offset=0&limit=9999'));
+		await GET(requestEvent('http://localhost/tv-calendar/more?offset=0&limit=9999'));
 
 		expect(apiRequestMock).toHaveBeenCalledWith(
 			`/api/calendar/tv?year=${thisYear}&limit=16&offset=0`
@@ -94,19 +94,19 @@ describe('GET /calendar/more', () => {
 	});
 
 	it('returns 503 when the daemon is unreachable', async () => {
-		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		const { GET } = await import('../../../src/routes/tv-calendar/more/+server');
 		apiRequestMock.mockRejectedValueOnce(new Error('connection refused'));
 
-		const response = await GET(requestEvent('http://localhost/calendar/more?offset=0'));
+		const response = await GET(requestEvent('http://localhost/tv-calendar/more?offset=0'));
 
 		expect(response.status).toBe(503);
 	});
 
 	it('forwards the daemon status code on a non-ok response', async () => {
-		const { GET } = await import('../../../src/routes/calendar/more/+server');
+		const { GET } = await import('../../../src/routes/tv-calendar/more/+server');
 		apiRequestMock.mockResolvedValueOnce(jsonResponse(409, { error: 'tmdb is not configured' }));
 
-		const response = await GET(requestEvent('http://localhost/calendar/more?offset=0'));
+		const response = await GET(requestEvent('http://localhost/tv-calendar/more?offset=0'));
 
 		expect(response.status).toBe(409);
 	});

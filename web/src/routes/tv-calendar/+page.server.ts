@@ -21,7 +21,7 @@ export type CalendarTvItem = {
 // shows) was found to be large enough to break client-side hydration over
 // some mobile/VPN network paths. Only the first page loads with the initial
 // SSR response; the client fetches more via infinite scroll (see
-// routes/calendar/more/+server.ts).
+// routes/tv-calendar/more/+server.ts).
 export const _PAGE_SIZE = CALENDAR_PAGE_SIZE;
 
 export const load: PageServerLoad = async () => {
@@ -33,7 +33,7 @@ export const load: PageServerLoad = async () => {
 	try {
 		response = await apiRequest(`/api/calendar/tv?limit=${_PAGE_SIZE}`);
 	} catch (error) {
-		console.error('[calendar] failed to reach /api/calendar/tv:', error);
+		console.error('[tv-calendar] failed to reach /api/calendar/tv:', error);
 		return {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
@@ -82,7 +82,7 @@ export const load: PageServerLoad = async () => {
 			error: null
 		};
 	} catch (error) {
-		console.error('[calendar] failed to parse /api/calendar/tv response:', error);
+		console.error('[tv-calendar] failed to parse /api/calendar/tv response:', error);
 		return {
 			year: new Date().getFullYear(),
 			items: [] as CalendarTvItem[],
@@ -107,7 +107,7 @@ export const actions: Actions = {
 		try {
 			configResponse = await apiRequest('/api/config');
 		} catch (error) {
-			console.error('[calendar] failed to load current config:', error);
+			console.error('[tv-calendar] failed to load current config:', error);
 			return fail(503, { addShowMessage: 'Could not reach the API.' });
 		}
 
@@ -151,7 +151,7 @@ export const actions: Actions = {
 
 			return { addShowSuccess: true, addedName: name, message: `${name} added to your watchlist.` };
 		} catch (error) {
-			console.error('[calendar] addShow failed:', error);
+			console.error('[tv-calendar] addShow failed:', error);
 			return fail(500, { addShowMessage: 'Could not add show.' });
 		}
 	}

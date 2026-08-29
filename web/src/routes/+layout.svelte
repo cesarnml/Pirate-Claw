@@ -39,7 +39,7 @@
 		{ href: '/', label: 'Dashboard', icon: ClapperboardIcon },
 		{ href: '/shows', label: 'TV Shows', icon: TvMinimalPlayIcon },
 		{ href: '/movies', label: 'Movies', icon: ClapperboardIcon },
-		{ href: '/calendar', label: 'Calendar', icon: CalendarIcon },
+		{ href: '/tv-calendar', label: 'TV Calendar', icon: CalendarIcon },
 		{ href: '/config', label: 'Config', icon: Settings2Icon }
 	];
 

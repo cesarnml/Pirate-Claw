@@ -25,7 +25,7 @@ describe('calendar page server load', () => {
 	});
 
 	it('returns year, items, total, and offset on a successful calendar fetch', async () => {
-		const { load } = await import('../../../src/routes/calendar/+page.server');
+		const { load } = await import('../../../src/routes/tv-calendar/+page.server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, {
 				year: 2026,
@@ -52,7 +52,7 @@ describe('calendar page server load', () => {
 		// and it must NOT pass offset=0, since omitting it is what lets the
 		// daemon land the visitor on today's part of the calendar instead of
 		// always page 1 / January.
-		const { load, _PAGE_SIZE } = await import('../../../src/routes/calendar/+page.server');
+		const { load, _PAGE_SIZE } = await import('../../../src/routes/tv-calendar/+page.server');
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, { year: 2026, items: [], total: 0, offset: 0 })
 		);
@@ -63,7 +63,7 @@ describe('calendar page server load', () => {
 	});
 
 	it('reports tmdbConfigured=false when the daemon returns 409', async () => {
-		const { load } = await import('../../../src/routes/calendar/+page.server');
+		const { load } = await import('../../../src/routes/tv-calendar/+page.server');
 		apiRequestMock.mockResolvedValueOnce(jsonResponse(409, { error: 'tmdb is not configured' }));
 
 		const result = (await load({} as never)) as LoadResult;
@@ -74,7 +74,7 @@ describe('calendar page server load', () => {
 	});
 
 	it('surfaces an error when the daemon is unreachable', async () => {
-		const { load } = await import('../../../src/routes/calendar/+page.server');
+		const { load } = await import('../../../src/routes/tv-calendar/+page.server');
 		apiRequestMock.mockRejectedValueOnce(new Error('connection refused'));
 
 		const result = (await load({} as never)) as LoadResult;
@@ -98,7 +98,7 @@ describe('calendar page addShow action', () => {
 
 	it('fails when no write token is configured', async () => {
 		vi.doMock('$env/dynamic/private', () => ({ env: {} }));
-		const { actions } = await import('../../../src/routes/calendar/+page.server');
+		const { actions } = await import('../../../src/routes/tv-calendar/+page.server');
 
 		const result = (await actions.addShow({ request: formRequest('New Show') } as never)) as {
 			status: number;
@@ -110,7 +110,7 @@ describe('calendar page addShow action', () => {
 
 	it('prepends the new show to the existing list and PUTs the merged config', async () => {
 		vi.doMock('$env/dynamic/private', () => ({ env: { PIRATE_CLAW_API_WRITE_TOKEN: 'token' } }));
-		const { actions } = await import('../../../src/routes/calendar/+page.server');
+		const { actions } = await import('../../../src/routes/tv-calendar/+page.server');
 
 		apiRequestMock
 			.mockResolvedValueOnce(
@@ -139,7 +139,7 @@ describe('calendar page addShow action', () => {
 
 	it('is a no-op (no PUT) when the show is already tracked', async () => {
 		vi.doMock('$env/dynamic/private', () => ({ env: { PIRATE_CLAW_API_WRITE_TOKEN: 'token' } }));
-		const { actions } = await import('../../../src/routes/calendar/+page.server');
+		const { actions } = await import('../../../src/routes/tv-calendar/+page.server');
 
 		apiRequestMock.mockResolvedValueOnce(
 			jsonResponse(200, { tv: [{ name: 'Already Here' }] }, { etag: '"abc"' })
@@ -155,7 +155,7 @@ describe('calendar page addShow action', () => {
 
 	it('fails when name is blank', async () => {
 		vi.doMock('$env/dynamic/private', () => ({ env: { PIRATE_CLAW_API_WRITE_TOKEN: 'token' } }));
-		const { actions } = await import('../../../src/routes/calendar/+page.server');
+		const { actions } = await import('../../../src/routes/tv-calendar/+page.server');
 
 		const result = (await actions.addShow({ request: formRequest('   ') } as never)) as {
 			status: number;
