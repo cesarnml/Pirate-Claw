@@ -17,6 +17,9 @@
 	import { toast } from '$lib/toast';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import PauseIcon from '@lucide/svelte/icons/pause';
+	import PlayIcon from '@lucide/svelte/icons/play';
+	import CircleXIcon from '@lucide/svelte/icons/circle-x';
 
 	type ActiveDownload = {
 		torrent: TorrentStatSnapshot;
@@ -384,7 +387,13 @@
 						: (torrent.posterUrl ?? null)}
 					{@const rowState = rowDisplayState(torrent, candidate)}
 					{@const inFlightRow =
-						inflightAction === torrent.hash || (bulkRemovingSeeding && rowState === 'seeding')}
+						inflightAction === torrent.hash ||
+						// executeAction blocks every row while a bulk remove is
+						// running (see its own guard), not just seeding ones — the
+						// disabled state here has to match that exactly, or a
+						// non-seeding row's buttons render enabled while clicking
+						// them is silently a no-op.
+						bulkRemovingSeeding}
 					{@const showUpload =
 						rowState === 'completed' || rowState === 'seeding' || rowState === 'paused'}
 					<li
@@ -456,8 +465,89 @@
 									<span class="rounded-full bg-white/6 px-2 py-1">{candidate.codec}</span>
 								{/if}
 							</div>
-							<div class="mt-1.5">
+							<div class="mt-1.5 flex flex-wrap items-center gap-2">
 								<StatusChip status={getTorrentDisplayStatus(torrent)} />
+								{#if rowState !== 'removed' && rowState !== 'deleted'}
+									<!-- Long-press/right-click still opens the same actions as a
+									     context menu, but iPad's WebKit consistently preempts the
+									     touch sequence before it fires (see the long-press comment
+									     above) even with the drag/callout workarounds in place —
+									     confirmed still broken live across Safari/Chrome/Brave on
+									     iPad. These always-visible icon buttons are the reliable
+									     fallback: plain taps, no gesture recognizer to fight.
+
+									     stopPropagation on both touchstart and click is load-bearing,
+									     not defensive: this whole group renders inside the <li> that
+									     owns the long-press timer (ontouchstart above). Without it, a
+									     tap lasting >=500ms both runs the button's own action AND
+									     bubbles to the row, starting the long-press timer, which then
+									     fires openMenu() on top of it — the exact "gesture recognizer
+									     fight" this fallback exists to avoid. Confirmed live. -->
+									<span class="bg-border h-4 w-px" aria-hidden="true"></span>
+									<div
+										class="flex items-center gap-1.5"
+										role="group"
+										aria-label="Torrent actions"
+										ontouchstart={(e) => e.stopPropagation()}
+									>
+										{#if rowState === 'paused'}
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												aria-label="Resume"
+												disabled={inFlightRow}
+												onclick={(e) => {
+													e.stopPropagation();
+													executeAction('resume', torrent.hash);
+												}}
+											>
+												<PlayIcon />
+											</Button>
+										{:else if rowState === 'downloading' || rowState === 'seeding'}
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												aria-label="Pause"
+												disabled={inFlightRow}
+												onclick={(e) => {
+													e.stopPropagation();
+													executeAction('pause', torrent.hash);
+												}}
+											>
+												<PauseIcon />
+											</Button>
+										{/if}
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon-sm"
+											class="hover:text-destructive"
+											aria-label="Remove"
+											disabled={inFlightRow}
+											onclick={(e) => {
+												e.stopPropagation();
+												executeAction('remove', torrent.hash);
+											}}
+										>
+											<CircleXIcon />
+										</Button>
+										<Button
+											type="button"
+											variant="destructive"
+											size="icon-sm"
+											aria-label="Remove and delete data"
+											disabled={inFlightRow}
+											onclick={(e) => {
+												e.stopPropagation();
+												executeAction('removeAndDelete', torrent.hash);
+											}}
+										>
+											<Trash2Icon />
+										</Button>
+									</div>
+								{/if}
 							</div>
 							{#if torrent.percentDone !== 1}
 								<div class="mt-1">
