@@ -412,7 +412,14 @@ describe('/config', () => {
 			runtimeChangesPending: false,
 			enhanceTestConnection: vi.fn(),
 			enhanceSaveRuntime: vi.fn(),
-			enhanceRestartDaemon: vi.fn()
+			enhanceRestartDaemon: vi.fn(),
+			activeTorrentCount: 0,
+			downloadQueueEnabled: true,
+			downloadQueueSize: 5,
+			seedQueueEnabled: true,
+			seedQueueSize: 5,
+			queueCapsSubmitting: false,
+			enhanceSaveQueueCaps: vi.fn()
 		});
 
 		expect(
@@ -445,7 +452,14 @@ describe('/config', () => {
 			runtimeChangesPending: false,
 			enhanceTestConnection: vi.fn(),
 			enhanceSaveRuntime: vi.fn(),
-			enhanceRestartDaemon: vi.fn()
+			enhanceRestartDaemon: vi.fn(),
+			activeTorrentCount: 0,
+			downloadQueueEnabled: true,
+			downloadQueueSize: 5,
+			seedQueueEnabled: true,
+			seedQueueSize: 5,
+			queueCapsSubmitting: false,
+			enhanceSaveQueueCaps: vi.fn()
 		};
 
 		const rendered = render(TransmissionCard, {

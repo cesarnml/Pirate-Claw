@@ -63,7 +63,14 @@ export type Downloader = {
 export type TorrentStatSnapshot = {
   hash: string;
   name: string;
-  status: 'downloading' | 'seeding' | 'stopped' | 'error';
+  /** 'queued' means Transmission itself is holding the torrent back to
+   * respect the download/seed queue cap (status codes 1/2/3/5) — distinct
+   * from 'stopped', which means a person (or pirate-claw) actually paused
+   * it (status 0). Collapsing the two used to make a cap-blocked torrent
+   * look identical to a paused one, so resume ("torrent-start") would
+   * "succeed" against the RPC yet the torrent stayed put — see
+   * resumeTorrentNow() for the escape hatch. */
+  status: 'downloading' | 'seeding' | 'queued' | 'stopped' | 'error';
   percentDone: number;
   rateDownload: number;
   rateUpload: number;
@@ -83,11 +90,29 @@ export type SessionInfo = {
   cumulativeUploadedBytes: number;
   currentDownloadedBytes: number;
   currentUploadedBytes: number;
+  /** Transmission's own active-torrent queue caps (session-get). A torrent
+   * beyond the size limit sits in Transmission's queue (status 3/5, surfaced
+   * here as 'queued') until a slot opens — see resumeTorrentNow() for the
+   * per-torrent bypass and setTransmissionQueueSettings() for adjusting the
+   * cap itself. */
+  downloadQueueEnabled: boolean;
+  downloadQueueSize: number;
+  seedQueueEnabled: boolean;
+  seedQueueSize: number;
 };
 
 export type FetchSessionInfoResult =
   | { ok: true; session: SessionInfo }
   | SubmissionFailure;
+
+export type QueueSettingsInput = {
+  downloadQueueEnabled?: boolean;
+  downloadQueueSize?: number;
+  seedQueueEnabled?: boolean;
+  seedQueueSize?: number;
+};
+
+export type SetQueueSettingsResult = { ok: true } | SubmissionFailure;
 
 export type FetchFreeSpaceResult =
   | { ok: true; path: string; sizeBytes: number }
@@ -296,9 +321,20 @@ export async function resumeTorrent(
   return sendTorrentActionRpc(config, 'torrent-start', hash);
 }
 
+/** Bypasses Transmission's download/seed queue cap for this one torrent —
+ * the manual "Resume Now" escape hatch. `torrent-start` (resumeTorrent
+ * above) is queue-obedient: if the active-torrent cap is already full it
+ * just leaves the torrent queued, so a plain resume can silently no-op. */
+export async function resumeTorrentNow(
+  config: TransmissionConfig,
+  hash: string,
+): Promise<TorrentActionResult> {
+  return sendTorrentActionRpc(config, 'torrent-start-now', hash);
+}
+
 async function sendTorrentActionRpc(
   config: TransmissionConfig,
-  method: 'torrent-stop' | 'torrent-start',
+  method: 'torrent-stop' | 'torrent-start' | 'torrent-start-now',
   hash: string,
 ): Promise<TorrentActionResult> {
   const body = { method, arguments: { ids: [hash] } };
@@ -664,6 +700,94 @@ export async function fetchSessionInfo(
     sessionGetParsed.parsed,
     sessionStatsParsed.parsed,
   );
+}
+
+/** Live-applies Transmission's queue caps via session-set — unlike
+ * pirate-claw's own RuntimeConfig, this takes effect immediately with no
+ * daemon restart. */
+export async function setTransmissionQueueSettings(
+  config: TransmissionConfig,
+  input: QueueSettingsInput,
+): Promise<SetQueueSettingsResult> {
+  const args: Record<string, boolean | number> = {};
+  if (input.downloadQueueEnabled !== undefined)
+    args['download-queue-enabled'] = input.downloadQueueEnabled;
+  if (input.downloadQueueSize !== undefined)
+    args['download-queue-size'] = input.downloadQueueSize;
+  if (input.seedQueueEnabled !== undefined)
+    args['seed-queue-enabled'] = input.seedQueueEnabled;
+  if (input.seedQueueSize !== undefined)
+    args['seed-queue-size'] = input.seedQueueSize;
+
+  const body = { method: 'session-set', arguments: args };
+  const firstResponse = await sendRpcRequest(config, body);
+
+  if (!firstResponse.ok) {
+    return firstResponse.error;
+  }
+
+  let response = firstResponse.response;
+
+  if (response.status === 409) {
+    const sessionId = response.headers.get('x-transmission-session-id');
+    if (!sessionId) {
+      return {
+        ok: false,
+        code: 'session_error',
+        message:
+          'Transmission session negotiation failed: missing X-Transmission-Session-Id header.',
+      };
+    }
+    const retryResponse = await sendRpcRequest(config, body, sessionId);
+    if (!retryResponse.ok) {
+      return retryResponse.error;
+    }
+    response = retryResponse.response;
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code: 'http_error',
+      message: `Transmission RPC request failed with HTTP ${response.status}.`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message: 'Transmission RPC response was not valid JSON.',
+    };
+  }
+
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    !('result' in parsed) ||
+    typeof (parsed as { result: unknown }).result !== 'string'
+  ) {
+    return {
+      ok: false,
+      code: 'invalid_response',
+      message: 'Transmission session-set response was malformed.',
+    };
+  }
+
+  const result = (parsed as { result: string }).result;
+  if (result !== 'success') {
+    return {
+      ok: false,
+      code: 'rpc_error',
+      message: `Transmission rejected session-set: ${result}.`,
+      rpcResult: result,
+    };
+  }
+
+  return { ok: true };
 }
 
 export async function fetchFreeSpace(
@@ -1147,6 +1271,10 @@ type TransmissionSessionGetResponse = {
   result: string;
   arguments: {
     version?: string;
+    'download-queue-enabled'?: boolean;
+    'download-queue-size'?: number;
+    'seed-queue-enabled'?: boolean;
+    'seed-queue-size'?: number;
   };
 };
 
@@ -1182,9 +1310,19 @@ function readTransferBytes(
 function mapStatusCode(
   code: number | undefined,
 ): TorrentStatSnapshot['status'] {
-  if (code === 4) return 'downloading';
+  // Transmission's real status codes: 0 stopped, 1 queued-to-verify,
+  // 2 verifying, 3 queued-to-download, 4 downloading, 5 queued-to-seed,
+  // 6 seeding, 7 error. Codes 1/3/5 mean "Transmission is holding this back
+  // for a queue cap," not "stopped" — see the TorrentStatSnapshot['status']
+  // doc comment. Code 2 (actively verifying) is not held back by anything;
+  // it's genuine in-progress work, so it's grouped with 'downloading' rather
+  // than 'queued' — folding it into 'queued' would offer a "Resume Now" that
+  // does nothing (there's no queue cap to bypass) and a cap-based hint that
+  // doesn't apply.
+  if (code === 4 || code === 2) return 'downloading';
   if (code === 6) return 'seeding';
   if (code === 7) return 'error';
+  if (code === 1 || code === 3 || code === 5) return 'queued';
   return 'stopped';
 }
 
@@ -1349,6 +1487,22 @@ function parseSessionInfoResult(
         stats.arguments['current-stats'],
         'uploaded',
       ),
+      downloadQueueEnabled:
+        typeof get.arguments['download-queue-enabled'] === 'boolean'
+          ? get.arguments['download-queue-enabled']
+          : true,
+      downloadQueueSize:
+        typeof get.arguments['download-queue-size'] === 'number'
+          ? get.arguments['download-queue-size']
+          : 5,
+      seedQueueEnabled:
+        typeof get.arguments['seed-queue-enabled'] === 'boolean'
+          ? get.arguments['seed-queue-enabled']
+          : true,
+      seedQueueSize:
+        typeof get.arguments['seed-queue-size'] === 'number'
+          ? get.arguments['seed-queue-size']
+          : 5,
     },
   };
 }

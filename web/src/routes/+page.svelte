@@ -178,7 +178,12 @@
 		<StatusCardGrid {statusCards} />
 
 		<div class="grid grid-cols-1 gap-6 min-[1280px]:grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)]">
-			<TorrentManagerCard {activeDownloads} {missingCandidates} {transmissionLoaded} />
+			<TorrentManagerCard
+				{activeDownloads}
+				{missingCandidates}
+				{transmissionLoaded}
+				session={data.transmissionSession}
+			/>
 			<TransmissionFailuresCard {outcomes} />
 		</div>
 

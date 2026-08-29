@@ -18,6 +18,8 @@ import {
   pauseTorrent,
   removeTorrent,
   resumeTorrent,
+  resumeTorrentNow,
+  setTransmissionQueueSettings,
 } from './transmission';
 import type { Downloader, TorrentStatSnapshot } from './transmission';
 import type {
@@ -231,6 +233,7 @@ type ManagedTorrentRowState =
   | 'missing'
   | 'downloading'
   | 'seeding'
+  | 'queued'
   | 'paused'
   | 'completed';
 
@@ -244,6 +247,7 @@ function managedTorrentRowState(
   if (torrent.status === 'seeding') return 'seeding';
   if (torrent.percentDone >= 1) return 'completed';
   if (torrent.status === 'downloading') return 'downloading';
+  if (torrent.status === 'queued') return 'queued';
   return 'paused';
 }
 
@@ -3038,6 +3042,70 @@ export function createApiFetch(
     }
 
     if (
+      path === '/api/transmission/queue-settings' &&
+      request.method === 'PUT'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      let parsed: unknown;
+      try {
+        parsed = await request.json();
+      } catch {
+        return Response.json(
+          { error: 'request body must be valid JSON' },
+          { status: 400 },
+        );
+      }
+      if (!parsed || typeof parsed !== 'object') {
+        return Response.json(
+          { error: 'request body must be a JSON object' },
+          { status: 400 },
+        );
+      }
+      const record = parsed as Record<string, unknown>;
+      const input: {
+        downloadQueueEnabled?: boolean;
+        downloadQueueSize?: number;
+        seedQueueEnabled?: boolean;
+        seedQueueSize?: number;
+      } = {};
+      for (const [key, sizeKey] of [
+        ['downloadQueueEnabled', 'downloadQueueSize'],
+        ['seedQueueEnabled', 'seedQueueSize'],
+      ] as const) {
+        if (record[key] !== undefined) {
+          if (typeof record[key] !== 'boolean') {
+            return Response.json(
+              { error: `"${key}" must be a boolean` },
+              { status: 400 },
+            );
+          }
+          input[key] = record[key] as boolean;
+        }
+        if (record[sizeKey] !== undefined) {
+          const size = record[sizeKey];
+          if (typeof size !== 'number' || !Number.isInteger(size) || size < 0) {
+            return Response.json(
+              { error: `"${sizeKey}" must be a non-negative integer` },
+              { status: 400 },
+            );
+          }
+          input[sizeKey] = size;
+        }
+      }
+
+      const rpc = await setTransmissionQueueSettings(
+        activeConfig.transmission,
+        input,
+      );
+      if (!rpc.ok) {
+        return Response.json({ error: rpc.message }, { status: 502 });
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (
       path === '/api/transmission/torrent/pause' &&
       request.method === 'POST'
     ) {
@@ -3102,6 +3170,40 @@ export function createApiFetch(
     }
 
     if (
+      path === '/api/transmission/torrent/resume-now' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const body = await parseJsonTorrentHash(request);
+      if (!body.ok) return body.response;
+
+      const ctx = await resolveManagedTorrentAction(
+        repository,
+        activeConfig.transmission,
+        body.hash,
+        database ? new ManualGrabsStore(database) : undefined,
+        database ? new ManualMovieGrabsStore(database) : undefined,
+      );
+      if (!ctx.ok) return ctx.response;
+      // Unlike plain resume, this also applies to 'queued' — the whole
+      // point is bypassing the queue cap that's holding it there.
+      if (ctx.rowState !== 'paused' && ctx.rowState !== 'queued') {
+        return Response.json(
+          { error: 'torrent is not in a state that can be resumed' },
+          { status: 400 },
+        );
+      }
+
+      const rpc = await resumeTorrentNow(activeConfig.transmission, body.hash);
+      if (!rpc.ok) {
+        return Response.json({ error: rpc.message }, { status: 502 });
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (
       path === '/api/transmission/torrent/remove' &&
       request.method === 'POST'
     ) {
@@ -3143,6 +3245,7 @@ export function createApiFetch(
         ctx.candidate &&
         (ctx.rowState === 'downloading' ||
           ctx.rowState === 'seeding' ||
+          ctx.rowState === 'queued' ||
           ctx.rowState === 'paused' ||
           ctx.rowState === 'completed')
       ) {

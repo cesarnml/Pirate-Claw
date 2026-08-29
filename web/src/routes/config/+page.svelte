@@ -73,6 +73,7 @@
 	let newFeedMediaType = $state<'tv' | 'movie'>('tv');
 	let feedsSubmitting = $state(false);
 	let testingConnection = $state(false);
+	let queueCapsSubmitting = $state(false);
 	let transmissionCompatibility = $state<import('$lib/types').TransmissionCompatibility | null>(
 		null
 	);
@@ -434,6 +435,20 @@
 		};
 	};
 
+	const enhanceSaveQueueCaps: SubmitFunction = () => {
+		queueCapsSubmitting = true;
+		return async ({ result, update }) => {
+			queueCapsSubmitting = false;
+			if (result.type === 'success') {
+				toast('Queue caps saved — applied immediately.', 'success');
+			} else if (result.type === 'failure') {
+				const message = (result.data as { queueCapsMessage?: string })?.queueCapsMessage;
+				toast(message ?? 'Save failed — see errors above', 'error');
+			}
+			await update();
+		};
+	};
+
 	const enhanceSaveFeeds: SubmitFunction = () => {
 		feedsSubmitting = true;
 		return async ({ result, update }) => {
@@ -635,6 +650,14 @@
 				{enhanceTestConnection}
 				{enhanceSaveRuntime}
 				{enhanceRestartDaemon}
+				activeTorrentCount={data.transmissionSession?.activeTorrentCount ?? null}
+				downloadQueueEnabled={data.transmissionSession?.downloadQueueEnabled ?? true}
+				downloadQueueSize={data.transmissionSession?.downloadQueueSize ?? 5}
+				seedQueueEnabled={data.transmissionSession?.seedQueueEnabled ?? true}
+				seedQueueSize={data.transmissionSession?.seedQueueSize ?? 5}
+				queueCapsMessage={form?.queueCapsMessage}
+				{queueCapsSubmitting}
+				{enhanceSaveQueueCaps}
 			/>
 
 			<FeedsCard

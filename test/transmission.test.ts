@@ -662,11 +662,13 @@ describe('fetchTorrentStats', () => {
       expected: TorrentStatSnapshot['status'];
     }> = [
       { code: 4, expected: 'downloading' },
+      { code: 2, expected: 'downloading' }, // verifying: active work, not queue-held
       { code: 6, expected: 'seeding' },
       { code: 7, expected: 'error' },
       { code: 0, expected: 'stopped' },
-      { code: 1, expected: 'stopped' },
-      { code: 5, expected: 'stopped' },
+      { code: 1, expected: 'queued' },
+      { code: 3, expected: 'queued' },
+      { code: 5, expected: 'queued' },
     ];
 
     for (const { code, expected } of statusCases) {
@@ -769,7 +771,13 @@ describe('fetchSessionInfo', () => {
       if (body.method === 'session-get') {
         return Response.json({
           result: 'success',
-          arguments: { version: '3.00 (bb6b5a062ef)' },
+          arguments: {
+            version: '3.00 (bb6b5a062ef)',
+            'download-queue-enabled': true,
+            'download-queue-size': 5,
+            'seed-queue-enabled': false,
+            'seed-queue-size': 10,
+          },
         });
       }
       return Response.json({
@@ -805,6 +813,10 @@ describe('fetchSessionInfo', () => {
         cumulativeUploadedBytes: 1_060_143_431_680,
         currentDownloadedBytes: 2_147_483_648,
         currentUploadedBytes: 536_870_912,
+        downloadQueueEnabled: true,
+        downloadQueueSize: 5,
+        seedQueueEnabled: false,
+        seedQueueSize: 10,
       },
     });
   });

@@ -9,6 +9,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import CableIcon from '@lucide/svelte/icons/cable';
+	import GaugeIcon from '@lucide/svelte/icons/gauge';
 
 	interface Props {
 		canWrite: boolean;
@@ -37,6 +38,17 @@
 		enhanceTestConnection: SubmitFunction;
 		enhanceSaveRuntime: SubmitFunction;
 		enhanceRestartDaemon: SubmitFunction;
+		/** Transmission's own active-torrent queue caps (session-get) — a
+		 * torrent past these limits sits queued in Transmission itself, not
+		 * paused by pirate-claw. Null when the session couldn't be reached. */
+		activeTorrentCount: number | null;
+		downloadQueueEnabled: boolean;
+		downloadQueueSize: number;
+		seedQueueEnabled: boolean;
+		seedQueueSize: number;
+		queueCapsMessage?: string;
+		queueCapsSubmitting: boolean;
+		enhanceSaveQueueCaps: SubmitFunction;
 	}
 
 	const {
@@ -65,7 +77,15 @@
 		transmissionAdvisory = null,
 		enhanceTestConnection,
 		enhanceSaveRuntime,
-		enhanceRestartDaemon
+		enhanceRestartDaemon,
+		activeTorrentCount,
+		downloadQueueEnabled,
+		downloadQueueSize,
+		seedQueueEnabled,
+		seedQueueSize,
+		queueCapsMessage,
+		queueCapsSubmitting,
+		enhanceSaveQueueCaps
 	}: Props = $props();
 </script>
 
@@ -263,6 +283,93 @@
 					Revision <code>{currentEtag ?? 'missing'}</code>
 				</p>
 			</div>
+		</form>
+
+		<form
+			method="POST"
+			action="?/saveQueueCaps"
+			class="space-y-4 border-t border-white/8 pt-5"
+			use:enhance={enhanceSaveQueueCaps}
+		>
+			<div class="space-y-2">
+				<p
+					class="text-muted-foreground font-mono text-xs font-semibold tracking-[0.18em] uppercase"
+				>
+					Queue Caps
+				</p>
+				<p class="text-muted-foreground text-sm">
+					Transmission's own active-torrent limits — a torrent past these caps sits queued in
+					Transmission itself (not paused by pirate-claw) until a slot frees up. Applies
+					immediately; no restart needed.
+					{#if activeTorrentCount !== null}
+						Currently {activeTorrentCount} active.
+					{/if}
+				</p>
+			</div>
+
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="border-border bg-background/50 space-y-2 rounded-2xl border p-4">
+					<label class="flex items-center gap-2 text-sm">
+						<input
+							name="downloadQueueEnabled"
+							type="checkbox"
+							checked={downloadQueueEnabled}
+							disabled={!canWrite}
+							title={!canWrite ? writeDisabledTooltip : undefined}
+							class="accent-primary size-4"
+						/>
+						<span class="text-muted-foreground">Cap downloading torrents</span>
+					</label>
+					<input
+						name="downloadQueueSize"
+						type="number"
+						min="0"
+						step="1"
+						value={downloadQueueSize}
+						disabled={!canWrite}
+						title={!canWrite ? writeDisabledTooltip : undefined}
+						class="border-input bg-background ring-offset-background focus-visible:ring-ring h-10 w-full rounded-xl border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+					/>
+				</div>
+				<div class="border-border bg-background/50 space-y-2 rounded-2xl border p-4">
+					<label class="flex items-center gap-2 text-sm">
+						<input
+							name="seedQueueEnabled"
+							type="checkbox"
+							checked={seedQueueEnabled}
+							disabled={!canWrite}
+							title={!canWrite ? writeDisabledTooltip : undefined}
+							class="accent-primary size-4"
+						/>
+						<span class="text-muted-foreground">Cap seeding torrents</span>
+					</label>
+					<input
+						name="seedQueueSize"
+						type="number"
+						min="0"
+						step="1"
+						value={seedQueueSize}
+						disabled={!canWrite}
+						title={!canWrite ? writeDisabledTooltip : undefined}
+						class="border-input bg-background ring-offset-background focus-visible:ring-ring h-10 w-full rounded-xl border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+					/>
+				</div>
+			</div>
+
+			{#if queueCapsMessage}
+				<p class="text-destructive text-xs">{queueCapsMessage}</p>
+			{/if}
+
+			<Button
+				type="submit"
+				variant="outline"
+				class="rounded-full px-5"
+				disabled={!canWrite || queueCapsSubmitting}
+				title={!canWrite ? writeDisabledTooltip : undefined}
+			>
+				<GaugeIcon class="size-4" />
+				{queueCapsSubmitting ? 'Saving…' : 'Save queue caps'}
+			</Button>
 		</form>
 
 		<form

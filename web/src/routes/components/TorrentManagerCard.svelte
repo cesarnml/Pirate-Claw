@@ -10,7 +10,7 @@
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import type { CandidateStateRecord, TorrentStatSnapshot } from '$lib/types';
+	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
 	import { deserialize, enhance } from '$app/forms';
 	import { base } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
@@ -19,6 +19,7 @@
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import PauseIcon from '@lucide/svelte/icons/pause';
 	import PlayIcon from '@lucide/svelte/icons/play';
+	import FastForwardIcon from '@lucide/svelte/icons/fast-forward';
 	import CircleXIcon from '@lucide/svelte/icons/circle-x';
 
 	type ActiveDownload = {
@@ -26,19 +27,34 @@
 		candidate: CandidateStateRecord | null;
 	};
 
-	type MenuAction = 'pause' | 'resume' | 'remove' | 'removeAndDelete';
+	type MenuAction = 'pause' | 'resume' | 'resumeNow' | 'remove' | 'removeAndDelete';
 	type MenuItem = { label: string; action: MenuAction; destructive?: boolean };
 	type MenuState = { hash: string; x: number; y: number; items: MenuItem[] };
 
 	const {
 		activeDownloads,
 		missingCandidates,
-		transmissionLoaded
+		transmissionLoaded,
+		session
 	}: {
 		activeDownloads: ActiveDownload[];
 		missingCandidates: CandidateStateRecord[];
 		transmissionLoaded: boolean;
+		/** Powers the "why is this queued?" hint on queued rows. Null when
+		 * Transmission's session-get couldn't be reached — the hint just omits
+		 * the cap in that case. */
+		session: SessionInfo | null;
 	} = $props();
+
+	// Both download and seed caps can hold a torrent back, so this can't say
+	// which one specifically without per-torrent queuePosition (not fetched
+	// today) — deliberately naming both caps rather than picking one (e.g.
+	// downloadQueueSize) and risking it being the wrong one for this row.
+	const queueHint = $derived(
+		session
+			? `Waiting for a slot — download cap ${session.downloadQueueSize}, seed cap ${session.seedQueueSize}`
+			: 'Waiting for a download/seed slot to free up'
+	);
 
 	let inflightDispose = $state<string | null>(null);
 
@@ -124,11 +140,17 @@
 	function rowDisplayState(
 		torrent: TorrentStatSnapshot,
 		candidate: CandidateStateRecord | null
-	): 'downloading' | 'seeding' | 'paused' | 'completed' | 'removed' | 'deleted' {
+	): 'downloading' | 'seeding' | 'queued' | 'paused' | 'completed' | 'removed' | 'deleted' {
 		if (candidate?.pirateClawDisposition === 'deleted') return 'deleted';
 		if (torrent.status === 'seeding') return 'seeding';
 		if (torrent.percentDone === 1) return 'completed';
 		if (candidate?.pirateClawDisposition === 'removed') return 'removed';
+		// 'queued' means Transmission itself is holding the torrent back for
+		// its active-torrent cap (see Queue Caps on the config page) — distinct
+		// from 'stopped', an actual pause. A plain "Resume" is a no-op on a
+		// queued torrent since Transmission already considers it started; only
+		// "Resume Now" (torrent-start-now, bypassing the cap) applies there.
+		if (torrent.status === 'queued') return 'queued';
 		if (torrent.status === 'stopped') return 'paused';
 		return 'downloading';
 	}
@@ -140,7 +162,14 @@
 		];
 		if (state === 'downloading' || state === 'seeding')
 			return [{ label: 'Pause', action: 'pause' }, ...destructiveItems];
-		if (state === 'paused') return [{ label: 'Resume', action: 'resume' }, ...destructiveItems];
+		if (state === 'paused')
+			return [
+				{ label: 'Resume', action: 'resume' },
+				{ label: 'Resume Now (skip queue)', action: 'resumeNow' },
+				...destructiveItems
+			];
+		if (state === 'queued')
+			return [{ label: 'Resume Now (skip queue)', action: 'resumeNow' }, ...destructiveItems];
 		if (state === 'completed') return destructiveItems;
 		return [];
 	}
@@ -164,6 +193,7 @@
 	const actionToasts: Record<MenuAction, string> = {
 		pause: 'Paused',
 		resume: 'Resumed',
+		resumeNow: 'Resumed now — skipped the queue',
 		remove: 'Torrent removed',
 		removeAndDelete: 'Torrent removed and data deleted'
 	};
@@ -223,7 +253,13 @@
 			// overwrite a newer invalidate (e.g. pause right after requeue finishes invalidating).
 			await invalidateAll();
 			// Follow-up load: Transmission can lag one torrent-get behind stop/remove RPCs.
-			if (action === 'pause' || action === 'remove' || action === 'removeAndDelete') {
+			if (
+				action === 'pause' ||
+				action === 'resume' ||
+				action === 'resumeNow' ||
+				action === 'remove' ||
+				action === 'removeAndDelete'
+			) {
 				await new Promise((r) => setTimeout(r, 150));
 				await invalidateAll();
 			}
@@ -395,7 +431,10 @@
 						// them is silently a no-op.
 						bulkRemovingSeeding}
 					{@const showUpload =
-						rowState === 'completed' || rowState === 'seeding' || rowState === 'paused'}
+						rowState === 'completed' ||
+						rowState === 'seeding' ||
+						rowState === 'paused' ||
+						rowState === 'queued'}
 					<li
 						class="border-border bg-background/45 flex touch-pan-y gap-4 rounded-[26px] border p-4 select-none [-webkit-touch-callout:none] [-webkit-user-drag:none] [-webkit-user-select:none]"
 						class:opacity-60={inFlightRow}
@@ -467,6 +506,11 @@
 							</div>
 							<div class="mt-1.5 flex flex-wrap items-center gap-2">
 								<StatusChip status={getTorrentDisplayStatus(torrent)} />
+								{#if rowState === 'queued'}
+									<span class="text-muted-foreground text-[11px]" title={queueHint}>
+										{queueHint}
+									</span>
+								{/if}
 								{#if rowState !== 'removed' && rowState !== 'deleted'}
 									<!-- Long-press/right-click still opens the same actions as a
 									     context menu, but iPad's WebKit consistently preempts the
@@ -503,6 +547,22 @@
 												}}
 											>
 												<PlayIcon />
+											</Button>
+										{/if}
+										{#if rowState === 'paused' || rowState === 'queued'}
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												aria-label="Resume now — skip the queue cap"
+												title="Resume now — skip the queue cap"
+												disabled={inFlightRow}
+												onclick={(e) => {
+													e.stopPropagation();
+													executeAction('resumeNow', torrent.hash);
+												}}
+											>
+												<FastForwardIcon />
 											</Button>
 										{:else if rowState === 'downloading' || rowState === 'seeding'}
 											<Button

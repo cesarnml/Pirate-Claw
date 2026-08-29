@@ -8,6 +8,7 @@ import type {
 	OnboardingStatus,
 	RunSummaryRecord,
 	ReviewOutcomeRecord,
+	SessionInfo,
 	TorrentStatSnapshot
 } from '$lib/types';
 import { fail } from '@sveltejs/kit';
@@ -21,14 +22,18 @@ export const load: PageServerLoad = async () => {
 		candidatesResult,
 		statusResult,
 		outcomesResult,
-		configResult
+		configResult,
+		sessionResult
 	] = await Promise.allSettled([
 		apiFetch<DaemonHealth>('/api/health'),
 		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents'),
 		apiFetch<{ candidates: CandidateStateRecord[] }>('/api/candidates'),
 		apiFetch<{ runs: RunSummaryRecord[] }>('/api/status'),
 		apiFetch<{ outcomes: ReviewOutcomeRecord[] }>('/api/outcomes?status=failed_enqueue'),
-		apiFetch<AppConfig>('/api/config')
+		apiFetch<AppConfig>('/api/config'),
+		// Powers the "why is this torrent queued" hint on Torrent Manager rows
+		// (session.activeTorrentCount / .downloadQueueSize) — see TorrentManagerCard.
+		apiFetch<SessionInfo>('/api/transmission/session')
 	]);
 
 	const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
@@ -38,6 +43,7 @@ export const load: PageServerLoad = async () => {
 		candidatesResult.status === 'fulfilled' ? candidatesResult.value.candidates : null;
 	const runSummaries = statusResult.status === 'fulfilled' ? statusResult.value.runs : null;
 	const outcomes = outcomesResult.status === 'fulfilled' ? outcomesResult.value.outcomes : null;
+	const transmissionSession = sessionResult.status === 'fulfilled' ? sessionResult.value : null;
 	const onboarding: OnboardingStatus | null =
 		configResult.status === 'fulfilled'
 			? deriveOnboardingStatus(configResult.value, canWrite)
@@ -71,6 +77,7 @@ export const load: PageServerLoad = async () => {
 		runSummaries,
 		outcomes,
 		onboarding,
+		transmissionSession,
 		error
 	};
 };
@@ -152,6 +159,7 @@ export const actions: Actions = {
 
 	pause: async ({ request }) => torrentAction('/api/transmission/torrent/pause', request),
 	resume: async ({ request }) => torrentAction('/api/transmission/torrent/resume', request),
+	resumeNow: async ({ request }) => torrentAction('/api/transmission/torrent/resume-now', request),
 	remove: async ({ request }) => torrentAction('/api/transmission/torrent/remove', request),
 	removeAndDelete: async ({ request }) =>
 		torrentAction('/api/transmission/torrent/remove-and-delete', request),

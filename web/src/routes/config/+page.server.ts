@@ -724,6 +724,62 @@ export const actions: Actions = {
 		}
 	},
 
+	saveQueueCaps: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) return fail(403, { queueCapsMessage: 'Config writes are disabled.' });
+
+		const formData = await request.formData();
+		const downloadQueueEnabled = formData.get('downloadQueueEnabled') === 'on';
+		const seedQueueEnabled = formData.get('seedQueueEnabled') === 'on';
+		const downloadQueueSize = parseOptionalInt(formData.get('downloadQueueSize'));
+		const seedQueueSize = parseOptionalInt(formData.get('seedQueueSize'));
+
+		if (Number.isNaN(downloadQueueSize) || Number.isNaN(seedQueueSize)) {
+			return fail(400, { queueCapsMessage: 'Queue sizes must be whole numbers.' });
+		}
+		if (
+			(downloadQueueSize !== undefined && downloadQueueSize < 0) ||
+			(seedQueueSize !== undefined && seedQueueSize < 0)
+		) {
+			return fail(400, { queueCapsMessage: 'Queue sizes must not be negative.' });
+		}
+
+		try {
+			// Live Transmission session-set — unlike saveRuntime above, this is
+			// not part of pirate-claw's own RuntimeConfig/etag and applies
+			// immediately, no daemon restart involved.
+			const response = await apiRequest('/api/transmission/queue-settings', {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`
+				},
+				body: JSON.stringify({
+					downloadQueueEnabled,
+					downloadQueueSize,
+					seedQueueEnabled,
+					seedQueueSize
+				})
+			});
+
+			if (!response.ok) {
+				let queueCapsMessage = `Save failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) queueCapsMessage = body.error;
+				} catch {
+					// keep fallback message
+				}
+				return fail(response.status, { queueCapsMessage });
+			}
+
+			return { queueCapsSuccess: true, message: 'Queue caps saved — applied immediately.' };
+		} catch (error) {
+			console.error('[config] saveQueueCaps failed:', error);
+			return fail(500, { queueCapsMessage: 'Could not save queue caps.' });
+		}
+	},
+
 	saveFeeds: async ({ request }) => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) return fail(403, { feedsMessage: 'Config writes are disabled.' });

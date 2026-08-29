@@ -4922,6 +4922,49 @@ describe('managing a manually-grabbed torrent (pause/resume/remove)', () => {
       db.close();
     }
   });
+
+  it('resume-now bypasses the queue cap for a queued torrent (was silently rejected as "not paused")', async () => {
+    const { deps, db } = depsForManualGrab();
+    const handler = createApiFetch(deps);
+
+    // status 3 = queued-to-download: Transmission is holding this back for
+    // the queue cap, not the same as a person having paused it.
+    const fetchMock = mockTransmissionRpc(3);
+    try {
+      const response = await handler(
+        new Request('http://localhost/api/transmission/torrent/resume-now', {
+          method: 'POST',
+          headers: { ...authHeader, 'content-type': 'application/json' },
+          body: JSON.stringify({ hash: 'manual-hash-1' }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+    } finally {
+      fetchMock.mockRestore();
+      db.close();
+    }
+  });
+
+  it('resume-now rejects an already-downloading torrent', async () => {
+    const { deps, db } = depsForManualGrab();
+    const handler = createApiFetch(deps);
+
+    const fetchMock = mockTransmissionRpc(4); // downloading
+    try {
+      const response = await handler(
+        new Request('http://localhost/api/transmission/torrent/resume-now', {
+          method: 'POST',
+          headers: { ...authHeader, 'content-type': 'application/json' },
+          body: JSON.stringify({ hash: 'manual-hash-1' }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    } finally {
+      fetchMock.mockRestore();
+      db.close();
+    }
+  });
 });
 
 describe('GET /api/transmission/session', () => {
@@ -4945,6 +4988,94 @@ describe('GET /api/transmission/session', () => {
     expect(await response.json()).toMatchObject({
       error: 'transmission unavailable',
     });
+  });
+});
+
+describe('PUT /api/transmission/queue-settings', () => {
+  function depsWithWriteToken() {
+    const deps = createDeps();
+    deps.config = {
+      ...deps.config,
+      runtime: { ...deps.config.runtime, apiWriteToken: 'write-token' },
+      transmission: {
+        url: 'http://transmission.test/transmission/rpc',
+        username: 'u',
+        password: 'p',
+      },
+    };
+    return deps;
+  }
+  const authHeader = { Authorization: 'Bearer write-token' };
+
+  it('returns 403 when writes are disabled', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+    const res = await handler(
+      new Request('http://localhost/api/transmission/queue-settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ downloadQueueSize: 10 }),
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('applies the caps live via session-set, no restart involved', async () => {
+    const deps = depsWithWriteToken();
+    const handler = createApiFetch(deps);
+
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        method?: string;
+        arguments?: Record<string, unknown>;
+      };
+      expect(body.method).toBe('session-set');
+      expect(body.arguments).toEqual({
+        'download-queue-enabled': true,
+        'download-queue-size': 10,
+        'seed-queue-enabled': true,
+        'seed-queue-size': 10,
+      });
+      return new Response(
+        JSON.stringify({ result: 'success', arguments: {} }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch);
+
+    try {
+      const res = await handler(
+        new Request('http://localhost/api/transmission/queue-settings', {
+          method: 'PUT',
+          headers: { ...authHeader, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            downloadQueueEnabled: true,
+            downloadQueueSize: 10,
+            seedQueueEnabled: true,
+            seedQueueSize: 10,
+          }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('rejects a negative queue size', async () => {
+    const deps = depsWithWriteToken();
+    const handler = createApiFetch(deps);
+    const res = await handler(
+      new Request('http://localhost/api/transmission/queue-settings', {
+        method: 'PUT',
+        headers: { ...authHeader, 'content-type': 'application/json' },
+        body: JSON.stringify({ downloadQueueSize: -1 }),
+      }),
+    );
+    expect(res.status).toBe(400);
   });
 });
 

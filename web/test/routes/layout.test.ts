@@ -58,7 +58,11 @@ const mockSession: SessionInfo = {
 	cumulativeDownloadedBytes: 0,
 	cumulativeUploadedBytes: 0,
 	currentDownloadedBytes: 0,
-	currentUploadedBytes: 0
+	currentUploadedBytes: 0,
+	downloadQueueEnabled: true,
+	downloadQueueSize: 5,
+	seedQueueEnabled: true,
+	seedQueueSize: 5
 };
 
 const sharedLayoutData = {

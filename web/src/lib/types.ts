@@ -324,7 +324,7 @@ export type OnboardingStatus = {
 export type TorrentStatSnapshot = {
 	hash: string;
 	name: string;
-	status: 'downloading' | 'seeding' | 'stopped' | 'error';
+	status: 'downloading' | 'seeding' | 'queued' | 'stopped' | 'error';
 	percentDone: number;
 	rateDownload: number;
 	rateUpload: number;
@@ -345,6 +345,10 @@ export type SessionInfo = {
 	cumulativeUploadedBytes: number;
 	currentDownloadedBytes: number;
 	currentUploadedBytes: number;
+	downloadQueueEnabled: boolean;
+	downloadQueueSize: number;
+	seedQueueEnabled: boolean;
+	seedQueueSize: number;
 };
 
 export type FeedItemOutcomeStatus = 'queued' | 'failed' | 'skipped_duplicate' | 'skipped_no_match';
