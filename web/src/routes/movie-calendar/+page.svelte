@@ -270,15 +270,17 @@
 	let topMetaByYear = $state<Record<number, { fetchedAt: string; fromCache: boolean }>>({});
 	let topFetchState = $state<TopFetchState>({ status: 'idle' });
 	let rescanning = $state(false);
-	// True while the Plex/filesystem adoption sweep is running for a given
-	// year — separate from `rescanning` because a sweep also auto-fires
-	// after a plain first-ever (cold-cache) load, not only after an
-	// explicit Rescan click. With ~7000 Plex movies this can take several
-	// real seconds; the Rescan button spins during it so that isn't silent
-	// background work the user has no way to notice. Keyed by year (not a
-	// single flag) because switching years mid-sweep must not clear the
-	// spinner for a still-in-flight OTHER year's sweep, nor show a stale
-	// spinner for a year whose sweep already finished.
+	// True while the filesystem adoption sweep is running for a given year
+	// (movies added by hand via Transmission's raw web UI) — separate from
+	// `rescanning` because a sweep also auto-fires after a plain first-ever
+	// (cold-cache) load, not only after an explicit Rescan click. The
+	// Rescan button spins during it so that isn't silent background work
+	// the user has no way to notice. Keyed by year (not a single flag)
+	// because switching years mid-sweep must not clear the spinner for a
+	// still-in-flight OTHER year's sweep, nor show a stale spinner for a
+	// year whose sweep already finished. The Plex sweep is a separate,
+	// deliberate Config action now — see the Plex Movie Sync card — not
+	// something this page triggers at all.
 	let sweepingByYear = $state<Record<number, boolean>>({});
 	const sweeping = $derived(sweepingByYear[topYear] ?? false);
 	let topFilter = $state<'all' | 'missing'>('all');
@@ -328,14 +330,14 @@
 				fromCache: body.fromCache ?? true
 			};
 			// A fresh scrape (cold-cache first view, or this Rescan) is the
-			// only time it's worth asking Plex/the filesystem at all — a plain
+			// only time it's worth checking the filesystem at all — a plain
 			// cache hit above returns early and never reaches here, so this
 			// never fires on ordinary browsing. Not awaited: the list the user
 			// just requested is already correct on-screen (from the ledger)
-			// and should render now, not wait several seconds on Plex. Skipped
-			// on a failed/empty scrape (scrapeError set) — nothing to sweep,
-			// and firing it anyway just spends a write-auth-gated round trip
-			// for no reason.
+			// and should render now, not wait on a filesystem walk. Skipped on
+			// a failed/empty scrape (scrapeError set) — nothing to sweep, and
+			// firing it anyway just spends a write-auth-gated round trip for
+			// no reason.
 			if (body.fromCache === false && !body.scrapeError && body.items.length > 0) {
 				void sweepTopMovies(year);
 			}
@@ -346,17 +348,18 @@
 		}
 	}
 
-	/** Runs the Plex/filesystem adoption sweep for `year` and patches in
-	 * whatever it finds — see loadTopMovies's fromCache check for when this
-	 * fires. Best-effort: a failure here just means the list keeps showing
-	 * whatever the ledger already knew, same as before this call.
+	/** Runs the filesystem adoption sweep for `year` and patches in whatever
+	 * it finds — see loadTopMovies's fromCache check for when this fires.
+	 * Best-effort: a failure here just means the list keeps showing
+	 * whatever the ledger already knew, same as before this call. (This is
+	 * filesystem only — checking Plex is a separate, deliberate Config
+	 * action; see the Plex Movie Sync card.)
 	 *
 	 * Merges onto whatever topByYear[year] holds *at the time the sweep
 	 * response lands*, and only ever flips alreadyGrabbed false -> true,
-	 * never true -> false. This sweep can take several real seconds (~7000
-	 * Plex movies) — a wholesale replace with the response's own item array
-	 * would silently revert a manual grab the user made in the meantime
-	 * (MovieGrabPanel's onGrabbed already optimistically set
+	 * never true -> false — a wholesale replace with the response's own
+	 * item array would silently revert a manual grab the user made in the
+	 * meantime (MovieGrabPanel's onGrabbed already optimistically set
 	 * alreadyGrabbed:true via markTopGrabbed before this ever resolves). */
 	async function sweepTopMovies(year: number): Promise<void> {
 		sweepingByYear = { ...sweepingByYear, [year]: true };
@@ -621,7 +624,7 @@
 					Rescanning…
 				{:else if sweeping}
 					<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
-					Checking Plex…
+					Checking files…
 				{:else}
 					Rescan {topYear}
 				{/if}
@@ -634,7 +637,7 @@
 					topFetchState.fetchedAt
 				)}
 				{#if sweeping}
-					· checking Plex for already-owned movies…
+					· checking for movies already on disk…
 				{/if}
 			</p>
 		{/if}

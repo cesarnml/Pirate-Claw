@@ -90,6 +90,43 @@ describe('TopMoviesCache persistence', () => {
     cache.invalidate(2025);
     expect(cache.get(2025)).toBeUndefined();
   });
+
+  it('listAllCachedItems merges every cached year, deduped by tmdbId', async () => {
+    const database = new Database(':memory:');
+    ensureTmdbSchema(database);
+    const cache = new TopMoviesCache(database);
+
+    await cache.fetchOnce(2025, async () => ({
+      fetchedAt: '2026-01-01T00:00:00.000Z',
+      items: [
+        { rank: 1, tmdbId: 1 } as TopMovieItem,
+        { rank: 2, tmdbId: 2 } as TopMovieItem,
+      ],
+    }));
+    await cache.fetchOnce(2026, async () => ({
+      fetchedAt: '2026-01-01T00:00:00.000Z',
+      // tmdbId 2 also appears in 2026 (e.g. a re-release) — should only
+      // show up once in the merged list, and null-tmdbId entries (an
+      // enrichment miss) should be dropped, not crash the dedupe.
+      items: [
+        { rank: 1, tmdbId: 2 } as TopMovieItem,
+        { rank: 2, tmdbId: 3 } as TopMovieItem,
+        { rank: 3, tmdbId: null } as TopMovieItem,
+      ],
+    }));
+
+    const all = cache.listAllCachedItems();
+    expect(all.map((item) => item.tmdbId).sort()).toEqual([1, 2, 3]);
+  });
+
+  it('listAllCachedItems falls back to the in-memory map when there is no database', async () => {
+    const cache = new TopMoviesCache();
+    await cache.fetchOnce(2025, async () => ({
+      fetchedAt: '2026-01-01T00:00:00.000Z',
+      items: [{ rank: 1, tmdbId: 1 } as TopMovieItem],
+    }));
+    expect(cache.listAllCachedItems().map((item) => item.tmdbId)).toEqual([1]);
+  });
 });
 
 describe('getTopMovies fromCache', () => {

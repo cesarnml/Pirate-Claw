@@ -3,9 +3,52 @@ import type { ManualMovieGrabsStore } from '../manual-movie-grabs/store';
 import type { MovieAdoptionCandidate } from './movie-reconciler';
 import { releaseYear } from './movie-reconciler';
 
+const DEFAULT_CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
+
+/** Caches Plex's full movie catalog (with guids) across sweep calls —
+ * without this, every year's sweep re-walks the entire Plex library from
+ * scratch (paginated, ~7000 movies takes real seconds), even though
+ * consecutive sweeps (checking 2025, then 2026; a rescan minutes later)
+ * are asking Plex the exact same "what do you have" question. The catalog
+ * itself doesn't change meaningfully between one sweep and the next, so
+ * this reuses it for DEFAULT_CATALOG_CACHE_TTL_MS instead of re-fetching
+ * per call — the actual per-request work (matching ~100 displayed movies
+ * against it) is cheap; the catalog walk was the expensive, wastefully
+ * repeated part. Confirmed live 2026-08-29: this was the whole reason a
+ * single sweep took ~19s and tripped Bun's idle-connection timeout. */
+export class PlexMovieCatalogCache {
+  private entry: { fetchedAt: number; catalog: PlexSearchResult[] } | undefined;
+  private inFlight: Promise<PlexSearchResult[]> | undefined;
+
+  constructor(private readonly ttlMs: number = DEFAULT_CATALOG_CACHE_TTL_MS) {}
+
+  async get(client: PlexHttpClient): Promise<PlexSearchResult[]> {
+    if (this.entry && Date.now() - this.entry.fetchedAt < this.ttlMs) {
+      return this.entry.catalog;
+    }
+    if (this.inFlight) return this.inFlight;
+
+    const promise = client
+      .listAllMoviesForMatching()
+      .finally(() => (this.inFlight = undefined));
+    this.inFlight = promise;
+    const catalog = await promise;
+    this.entry = { fetchedAt: Date.now(), catalog };
+    return catalog;
+  }
+
+  /** Forces the next get() to do a real fetch — used by the manual "Sync
+   * Now" Config action, whose entire point is a deliberate, guaranteed-
+   * fresh look at Plex, not whatever happened to be cached moments ago. */
+  invalidate(): void {
+    this.entry = undefined;
+  }
+}
+
 export type AdoptMoviesFromPlexDeps = {
   plexClient: PlexHttpClient;
   manualMovieGrabs: ManualMovieGrabsStore;
+  catalogCache: PlexMovieCatalogCache;
   log?: (message: string) => void;
 };
 
@@ -41,7 +84,7 @@ export async function adoptMoviesFromPlex(
 
   let catalog: PlexSearchResult[];
   try {
-    catalog = await deps.plexClient.listAllMoviesForMatching();
+    catalog = await deps.catalogCache.get(deps.plexClient);
   } catch (error) {
     log(`plex movie adoption: catalog fetch failed: ${formatError(error)}`);
     return adopted;

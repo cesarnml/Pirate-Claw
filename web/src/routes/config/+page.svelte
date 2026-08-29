@@ -15,6 +15,7 @@
 	import DeleteShowModal from './components/DeleteShowModal.svelte';
 	import FeedsCard from './components/FeedsCard.svelte';
 	import MoviePolicyCard from './components/MoviePolicyCard.svelte';
+	import PlexMovieSyncCard from './components/PlexMovieSyncCard.svelte';
 	import RemoveMovieYearModal from './components/RemoveMovieYearModal.svelte';
 	import ShowWatchlistEditor from './components/ShowWatchlistEditor.svelte';
 	import TmdbPanel from './components/TmdbPanel.svelte';
@@ -94,6 +95,18 @@
 	let restartRequestId = $state<string | null>(null);
 	let restartRequestedAt = $state<string | null>(null);
 	let restartPollTimer = $state<number | null>(null);
+	let plexMovieSyncing = $state(false);
+	// undefined = "no optimistic override yet, trust data" — a bare $state
+	// seeded once from data.plexMovieSyncLastSyncedAt would go stale the
+	// moment any OTHER form's use:enhance re-invalidates and reruns load
+	// (e.g. the auto-bootstrap sync finishing in the background while this
+	// page happens to be open, or just saving an unrelated setting) — this
+	// stays reactive to `data` until this page's own sync actually
+	// completes, then reflects that immediately without waiting on load.
+	let plexMovieSyncOverride = $state<string | null | undefined>(undefined);
+	const plexMovieSyncLastSyncedAt = $derived(
+		plexMovieSyncOverride !== undefined ? plexMovieSyncOverride : data.plexMovieSyncLastSyncedAt
+	);
 
 	const restartInProgress = $derived(
 		restarting || restartPhase === 'requested' || restartPhase === 'restarting'
@@ -588,6 +601,36 @@
 			await update({ reset: false });
 		};
 	};
+
+	const enhancePlexMovieSync: SubmitFunction = () => {
+		plexMovieSyncing = true;
+		return async ({ result, update }) => {
+			plexMovieSyncing = false;
+			if (result.type === 'success') {
+				const resultData = result.data as {
+					plexMovieSyncLastSyncedAt?: string | null;
+					plexMovieSyncAdoptedCount?: number;
+					plexMovieSyncCheckedCount?: number;
+				} | null;
+				plexMovieSyncOverride = resultData?.plexMovieSyncLastSyncedAt ?? null;
+				const adopted = resultData?.plexMovieSyncAdoptedCount ?? 0;
+				const checked = resultData?.plexMovieSyncCheckedCount ?? 0;
+				toast(
+					'Plex sync complete',
+					'success',
+					`Checked ${checked} movie${checked === 1 ? '' : 's'}, found ${adopted} already in Plex.`
+				);
+			} else {
+				const errorMessage =
+					result.type === 'failure'
+						? ((result.data as { plexMovieSyncError?: string } | null)?.plexMovieSyncError ??
+							'Plex sync failed — try again.')
+						: 'Plex sync failed — try again.';
+				toast('Plex sync failed', 'error', errorMessage);
+			}
+			await update({ reset: false });
+		};
+	};
 </script>
 
 <svelte:window onkeydown={handleDeleteModalKeydown} />
@@ -791,6 +834,14 @@
 				onToggleMovieResolution={toggleMovieResolution}
 				onToggleMovieCodec={toggleMovieCodec}
 				onMovieCodecPolicyChange={updateMovieCodecPolicy}
+			/>
+
+			<PlexMovieSyncCard
+				{canWrite}
+				syncing={plexMovieSyncing}
+				lastSyncedAt={plexMovieSyncLastSyncedAt}
+				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+				{enhancePlexMovieSync}
 			/>
 		</div>
 		<DeleteShowModal

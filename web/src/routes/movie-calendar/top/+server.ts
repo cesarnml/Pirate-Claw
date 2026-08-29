@@ -5,9 +5,10 @@ import type { RequestHandler } from './$types';
 
 // Proxies GET /api/movie-calendar/top — a free read normally, but a
 // rescan=true or sweep=true request hits a third party (dvdsreleasedates/
-// TMDB, or Plex + a local filesystem walk, respectively) and writes to
+// TMDB, or a local filesystem walk, respectively) and writes to
 // manual_movie_grabs, so both require write auth just like the daemon
-// route itself does for those cases.
+// route itself does for those cases. (Plex is NOT checked by sweep=true —
+// that's a separate, deliberate action at /api/movie-calendar/plex-sync.)
 export const GET: RequestHandler = async ({ url }) => {
 	const year = url.searchParams.get('year') ?? String(new Date().getFullYear());
 	const rescan = url.searchParams.get('rescan') === 'true';
@@ -17,7 +18,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (rescan || sweep) {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (!writeToken) {
-			const action = rescan ? 'Rescan' : 'Checking Plex';
+			const action = rescan ? 'Rescan' : 'Checking files';
 			return json({ error: `${action} is unavailable without API write access.` }, { status: 403 });
 		}
 		headers.authorization = `Bearer ${writeToken}`;

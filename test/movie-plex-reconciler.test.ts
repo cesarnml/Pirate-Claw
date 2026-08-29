@@ -1,7 +1,10 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, it } from 'bun:test';
 
-import { adoptMoviesFromPlex } from '../src/adoption/movie-plex-reconciler';
+import {
+  adoptMoviesFromPlex,
+  PlexMovieCatalogCache,
+} from '../src/adoption/movie-plex-reconciler';
 import type { MovieAdoptionCandidate } from '../src/adoption/movie-reconciler';
 import { ManualMovieGrabsStore } from '../src/manual-movie-grabs/store';
 import { PlexHttpClient } from '../src/plex/client';
@@ -70,6 +73,7 @@ describe('adoptMoviesFromPlex', () => {
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      catalogCache: new PlexMovieCatalogCache(),
     });
 
     expect(adopted).toEqual(new Set([942353]));
@@ -88,6 +92,7 @@ describe('adoptMoviesFromPlex', () => {
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      catalogCache: new PlexMovieCatalogCache(),
     });
 
     expect(adopted).toEqual(new Set([942353]));
@@ -102,6 +107,7 @@ describe('adoptMoviesFromPlex', () => {
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      catalogCache: new PlexMovieCatalogCache(),
     });
 
     expect(adopted.size).toBe(0);
@@ -117,6 +123,7 @@ describe('adoptMoviesFromPlex', () => {
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      catalogCache: new PlexMovieCatalogCache(),
     });
 
     expect(adopted.size).toBe(0);
@@ -140,10 +147,95 @@ describe('adoptMoviesFromPlex', () => {
 
     const adopted = await adoptMoviesFromPlex(
       [candidate({ alreadyGrabbed: true })],
-      { plexClient, manualMovieGrabs },
+      {
+        plexClient,
+        manualMovieGrabs,
+        catalogCache: new PlexMovieCatalogCache(),
+      },
     );
 
     expect(adopted.size).toBe(0);
     expect(requested).toBe(false);
+  });
+});
+
+describe('PlexMovieCatalogCache', () => {
+  it('reuses the catalog across calls sharing the same cache instance — only one request to Plex', async () => {
+    let sectionRequests = 0;
+    let allRequests = 0;
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      routes: {
+        '/library/sections': () => {
+          sectionRequests += 1;
+          return new Response(
+            `<MediaContainer size="1"><Directory key="1" type="movie" title="Movies"/></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          );
+        },
+        '/library/sections/1/all': () => {
+          allRequests += 1;
+          return new Response(
+            `<MediaContainer size="1" totalSize="1" offset="0"><Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/></Video></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          );
+        },
+      },
+    });
+    servers.push(server);
+    const plexClient = new PlexHttpClient(server.url.origin, 'token', () => {});
+    const catalogCache = new PlexMovieCatalogCache();
+
+    await adoptMoviesFromPlex([candidate({ tmdbId: 1 })], {
+      plexClient,
+      manualMovieGrabs: freshStore(),
+      catalogCache,
+    });
+    await adoptMoviesFromPlex([candidate({ tmdbId: 2 })], {
+      plexClient,
+      manualMovieGrabs: freshStore(),
+      catalogCache,
+    });
+
+    expect(sectionRequests).toBe(1);
+    expect(allRequests).toBe(1);
+  });
+
+  it('does NOT reuse the catalog across two independent cache instances', async () => {
+    let allRequests = 0;
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      routes: {
+        '/library/sections': () =>
+          new Response(
+            `<MediaContainer size="1"><Directory key="1" type="movie" title="Movies"/></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          ),
+        '/library/sections/1/all': () => {
+          allRequests += 1;
+          return new Response(
+            `<MediaContainer size="1" totalSize="0" offset="0"></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          );
+        },
+      },
+    });
+    servers.push(server);
+    const plexClient = new PlexHttpClient(server.url.origin, 'token', () => {});
+
+    await adoptMoviesFromPlex([candidate()], {
+      plexClient,
+      manualMovieGrabs: freshStore(),
+      catalogCache: new PlexMovieCatalogCache(),
+    });
+    await adoptMoviesFromPlex([candidate()], {
+      plexClient,
+      manualMovieGrabs: freshStore(),
+      catalogCache: new PlexMovieCatalogCache(),
+    });
+
+    expect(allRequests).toBe(2);
   });
 });

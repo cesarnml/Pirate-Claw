@@ -63,7 +63,11 @@ import {
 } from './adoption/discover-media-dirs';
 import { adoptMoviesFromFilesystem } from './adoption/movie-reconciler';
 import type { MovieAdoptionCandidate } from './adoption/movie-reconciler';
-import { adoptMoviesFromPlex } from './adoption/movie-plex-reconciler';
+import {
+  adoptMoviesFromPlex,
+  PlexMovieCatalogCache,
+} from './adoption/movie-plex-reconciler';
+import { PlexMovieSyncStateStore } from './plex/movie-sync-state';
 import { extractCodec, extractResolution } from './normalize';
 import {
   ConfigError,
@@ -788,37 +792,42 @@ export function createApiFetch(
   // Unlike reconcileShowIfStale's per-show gate, movies have no single
   // tracked entity to key a staleness check off of — every request for the
   // Movie Calendar / Top Movies pages would otherwise trigger its own fresh
-  // sweep (real NAS I/O for the filesystem one, a real Plex round-trip for
-  // the other), so each sweep throttles itself to once per
-  // RECONCILE_STALE_AFTER_MS. Keyed by year, and two SEPARATE maps, not one
-  // shared timer and not one global scalar: years are otherwise-independent
-  // candidate sets — sweeping 2026 says nothing about whether 2025 has ever
-  // been checked — so a single process-wide timestamp meant *any* recent
-  // movie-calendar activity (the Calendar tab's routine background load on
-  // every page visit, another year's Top Movies view, a rescan) silently
-  // starved every other year's sweep for a full 10 minutes. Confirmed live
-  // 2026-08-29: viewing 2026 consumed the budget, then switching to 2025
-  // moments later got zero adoption attempts at all — not a matching
-  // failure, the sweep simply never ran.
+  // filesystem walk, so it throttles itself to once per
+  // RECONCILE_STALE_AFTER_MS, keyed by year (not one shared timer): years
+  // are otherwise-independent candidate sets, so a single process-wide
+  // timestamp let any recent movie-calendar activity (the Calendar tab's
+  // routine background load, another year's Top Movies view, a rescan)
+  // silently starve every other year's sweep for a full 10 minutes.
+  // Confirmed live 2026-08-29.
+  //
+  // The Plex-guid sweep is NOT here — see runFullMoviePlexSync below.
+  // Walking Plex's whole catalog (~7000 movies on a real library) took
+  // ~19s live and tripped Bun's idle-connection timeout when it ran
+  // automatically per-view; moved to a deliberate, occasional Config
+  // action instead, per user feedback 2026-08-29 ("pay the price once").
   const lastFilesystemAdoptionSweepAtByYear = new Map<number, number>();
-  const lastPlexAdoptionSweepAtByYear = new Map<number, number>();
+  // Shared across every full Plex sync for the daemon's whole process
+  // lifetime — see PlexMovieCatalogCache's own doc comment.
+  const plexMovieCatalogCache = new PlexMovieCatalogCache();
 
-  /** Runs the movie adoption sweeps against whatever movie list is
-   * currently being returned (Top Movies of Year / Movie Calendar), then
-   * patches alreadyGrabbed for anything found — best-effort, mirrors
-   * reconcileShowIfStale's "never break the page that triggered it" rule.
-   * Movies have no single-item page to trigger reconciliation from like TV
-   * shows do, so this runs inline against the current response instead of
-   * being gated by a per-item staleness check — see the throttle timers
-   * above for what keeps this affordable.
-   *
-   * Runs the filesystem sweep (adoptMoviesFromFilesystem) on its own
-   * throttle. Also runs the Plex-guid sweep (adoptMoviesFromPlex), on its
-   * own separate throttle, when `includePlex` is set — only worth doing on
-   * Top Movies of Year, whose whole point is backfilling *old* years, where
-   * "already sitting in Plex from before pirate-claw existed" is the common
-   * case; the Calendar tab is forward-looking (current/upcoming releases),
-   * where that case barely comes up.
+  // Was previously wired to nothing (adoptMoviesFromFilesystem/
+  // adoptMoviesFromPlex both default `log` to a silent no-op when the
+  // caller omits it), so every run of these sweeps — including failures —
+  // was completely invisible in the daemon logs. Same console.log([prefix])
+  // convention already used elsewhere in this file for paths with no
+  // dedicated log dep (see e.g. the [plex-auth] lines).
+  const adoptionLog = (message: string) =>
+    console.log(`[movie-adoption] ${message}`);
+
+  /** Runs the filesystem adoption sweep (adoptMoviesFromFilesystem) against
+   * whatever movie list is currently being returned (Top Movies of Year /
+   * Movie Calendar), then patches alreadyGrabbed for anything found —
+   * best-effort, mirrors reconcileShowIfStale's "never break the page that
+   * triggered it" rule. Movies have no single-item page to trigger
+   * reconciliation from like TV shows do, so this runs inline against the
+   * current response instead of being gated by a per-item staleness check
+   * — see lastFilesystemAdoptionSweepAtByYear above for the throttle that
+   * keeps this affordable.
    *
    * Takes explicit accessors rather than a fixed item shape because
    * CalendarMovieItem and TopMovieItem don't share one (TopMovieItem's
@@ -828,114 +837,166 @@ export function createApiFetch(
     items: T[],
     toCandidate: (item: T) => MovieAdoptionCandidate | null,
     withOwnership: (item: T, status: MovieOwnershipStatus) => T,
-    options: { includePlex?: boolean; force?: boolean } = {},
+    options: { force?: boolean } = {},
   ): Promise<T[]> {
     if (!database) return items;
 
     // force: true skips the throttle entirely — used by Top Movies of
-    // Year's explicit sweep=true request (see the /api/movie-calendar/top
-    // handler), which by construction only ever runs once per fresh
-    // scrape, so it needs no rate-limiting of its own. The Calendar tab's
-    // automatic per-view call never sets this, keeping its existing
-    // throttled behavior.
+    // Year's explicit sweep=true request, which by construction only ever
+    // runs once per fresh scrape, so it needs no rate-limiting of its own.
+    // The Calendar tab's automatic per-view call never sets this, keeping
+    // its existing throttled behavior.
     const filesystemThrottleElapsed =
       Date.now() - (lastFilesystemAdoptionSweepAtByYear.get(year) ?? 0) >=
       RECONCILE_STALE_AFTER_MS;
-    const runFilesystemSweep = !!options.force || filesystemThrottleElapsed;
-
-    const plexThrottleElapsed =
-      Date.now() - (lastPlexAdoptionSweepAtByYear.get(year) ?? 0) >=
-      RECONCILE_STALE_AFTER_MS;
-    const runPlexSweep =
-      !!options.includePlex &&
-      !!plexMovies &&
-      (!!options.force || plexThrottleElapsed);
-    if (!runFilesystemSweep && !runPlexSweep) {
-      console.log(
-        `[movie-adoption] year=${year}: skipped, both sweeps within their ${RECONCILE_STALE_AFTER_MS / 60_000}m cooldown`,
+    if (!options.force && !filesystemThrottleElapsed) {
+      adoptionLog(
+        `year=${year}: filesystem sweep skipped, within its ${RECONCILE_STALE_AFTER_MS / 60_000}m cooldown`,
       );
       return items;
     }
-
-    // Was previously wired to nothing (adoptMoviesFromFilesystem/
-    // adoptMoviesFromPlex both default `log` to a silent no-op when the
-    // caller omits it), so every run of this sweep — including its
-    // failures — was completely invisible in the daemon logs. Same
-    // console.log([prefix]) convention already used elsewhere in this file
-    // for paths with no dedicated log dep (see e.g. the [plex-auth] lines).
-    const adoptionLog = (message: string) =>
-      console.log(`[movie-adoption] ${message}`);
 
     try {
       const manualMovieGrabs = new ManualMovieGrabsStore(database);
       const candidates = items
         .map(toCandidate)
         .filter((c): c is MovieAdoptionCandidate => c !== null);
-      const adopted = new Set<number>();
-      let fsAdopted = new Set<number>();
-      let plexAdopted = new Set<number>();
 
-      if (runFilesystemSweep) {
-        lastFilesystemAdoptionSweepAtByYear.set(year, Date.now());
-        fsAdopted = await adoptMoviesFromFilesystem(candidates, {
-          mediaMoviesDirs: await resolveMediaMoviesDirs(),
-          manualMovieGrabs,
-          log: adoptionLog,
-        });
-        adoptionLog(
-          `year=${year} filesystem sweep: ${candidates.length} candidate(s), ${fsAdopted.size} adopted`,
-        );
-        for (const tmdbId of fsAdopted) adopted.add(tmdbId);
-      }
+      lastFilesystemAdoptionSweepAtByYear.set(year, Date.now());
+      const fsAdopted = await adoptMoviesFromFilesystem(candidates, {
+        mediaMoviesDirs: await resolveMediaMoviesDirs(),
+        manualMovieGrabs,
+        log: adoptionLog,
+      });
+      adoptionLog(
+        `year=${year} filesystem sweep: ${candidates.length} candidate(s), ${fsAdopted.size} adopted`,
+      );
+      if (fsAdopted.size === 0) return items;
 
-      if (runPlexSweep && plexMovies) {
-        lastPlexAdoptionSweepAtByYear.set(year, Date.now());
-        // Candidates the filesystem sweep already claimed don't need a
-        // second (network) lookup.
-        const stillUnclaimed = candidates.filter((c) => !adopted.has(c.tmdbId));
-        plexAdopted = await adoptMoviesFromPlex(stillUnclaimed, {
-          plexClient: plexMovies.client,
-          manualMovieGrabs,
-          log: adoptionLog,
-        });
-        adoptionLog(
-          `year=${year} plex sweep: ${stillUnclaimed.length} candidate(s) checked, ${plexAdopted.size} adopted`,
-        );
-        for (const tmdbId of plexAdopted) adopted.add(tmdbId);
-      }
-
-      if (adopted.size === 0) return items;
       return items.map((item) => {
         const candidate = toCandidate(item);
-        if (!candidate) return item;
-        // A Plex-guid match IS Plex confirming ownership right now — no
-        // ambiguity, so plexStatus goes straight to 'in_library'. A
-        // filesystem match only proves a file exists on disk, not that
-        // Plex has scanned it yet, so plexStatus stays 'unknown' (the
-        // background refresh will resolve it on its own schedule).
-        if (plexAdopted.has(candidate.tmdbId)) {
-          return withOwnership(item, {
-            grabbed: true,
-            grabSource: 'adopted-plex',
-            plexStatus: 'in_library',
-          });
-        }
-        if (fsAdopted.has(candidate.tmdbId)) {
-          return withOwnership(item, {
-            grabbed: true,
-            grabSource: 'adopted-filesystem',
-            plexStatus: 'unknown',
-          });
-        }
-        return item;
+        // A filesystem match only proves a file exists on disk, not that
+        // Plex has scanned it yet, so plexStatus stays 'unknown' — the
+        // full Plex sync (or the background refresh) resolves that later.
+        return candidate && fsAdopted.has(candidate.tmdbId)
+          ? withOwnership(item, {
+              grabbed: true,
+              grabSource: 'adopted-filesystem',
+              plexStatus: 'unknown',
+            })
+          : item;
       });
     } catch (error) {
       // Best-effort — see doc comment above — but still logged, not
       // silently swallowed, for the same reason as adoptionLog's own
       // comment above.
       const message = error instanceof Error ? error.message : String(error);
-      console.log(`[movie-adoption] sweep failed: ${message}`);
+      console.log(`[movie-adoption] filesystem sweep failed: ${message}`);
       return items;
+    }
+  }
+
+  // Single-flight guard: without this, the fire-and-forget auto-bootstrap
+  // sync (unawaited, can take a while on a real library) could run
+  // concurrently with a manual Config "Sync Now" click, or with itself
+  // across two browser tabs both racing the bootstrap claim. Both runs
+  // would build their own ownedMovieStatuses() snapshot before either
+  // committed anything, so both could independently record a grab for the
+  // same movie — manual_movie_grabs has no uniqueness constraint on
+  // tmdb_id (deliberately: multiple legitimate grabs per movie are
+  // allowed, see its own schema doc comment), so nothing else would catch
+  // this. A concurrent caller just awaits the same in-flight run instead.
+  let fullSyncInFlight: Promise<{
+    adoptedCount: number;
+    checkedCount: number;
+  } | null> | null = null;
+
+  /** The deliberate, occasional full Plex movie sweep — walks Plex's whole
+   * catalog once (forced fresh, bypassing PlexMovieCatalogCache's TTL: this
+   * IS the "pay the price" action) and checks it against every movie ever
+   * cached across every year of Top Movies of Year (not just whatever's
+   * currently displayed — there's no "current view" to scope to here, since
+   * this isn't triggered by a page view). Triggered by the Config "Sync
+   * Now" button, or automatically exactly once — see
+   * PlexMovieSyncStateStore.claimBootstrap.
+   *
+   * Best-effort: any failure here must never break whatever triggered it
+   * (a page load, for the bootstrap case), so failures are logged and
+   * swallowed, matching every other sweep in this file. */
+  async function runFullMoviePlexSync(): Promise<{
+    adoptedCount: number;
+    checkedCount: number;
+  } | null> {
+    if (!database || !plexMovies || !topMovies) return null;
+    if (fullSyncInFlight) return fullSyncInFlight;
+
+    const promise = runFullMoviePlexSyncUncached(
+      database,
+      plexMovies,
+      topMovies,
+    ).finally(() => (fullSyncInFlight = null));
+    fullSyncInFlight = promise;
+    return promise;
+  }
+
+  async function runFullMoviePlexSyncUncached(
+    database: Database,
+    plexMovies: PlexMovieEnrichDeps,
+    topMovies: TopMoviesDeps,
+  ): Promise<{ adoptedCount: number; checkedCount: number } | null> {
+    try {
+      const manualMovieGrabs = new ManualMovieGrabsStore(database);
+      const owned = await ownedMovieStatuses();
+      const candidates: MovieAdoptionCandidate[] = topMovies.cache
+        .listAllCachedItems()
+        .filter(
+          (item): item is typeof item & { tmdbId: number } =>
+            item.tmdbId !== null,
+        )
+        .map((item) => ({
+          tmdbId: item.tmdbId,
+          title: item.title,
+          releaseDate: item.releaseDate,
+          imdbId: item.imdbId,
+          posterUrl: item.posterUrl,
+          alreadyGrabbed: owned.get(item.tmdbId)?.grabbed ?? false,
+        }));
+
+      plexMovieCatalogCache.invalidate();
+      const adopted = await adoptMoviesFromPlex(candidates, {
+        plexClient: plexMovies.client,
+        manualMovieGrabs,
+        catalogCache: plexMovieCatalogCache,
+        log: adoptionLog,
+      });
+
+      const syncedAt = new Date().toISOString();
+      new PlexMovieSyncStateStore(database).recordSync(syncedAt);
+      adoptionLog(
+        `full plex sync: ${candidates.length} candidate(s) checked, ${adopted.size} adopted`,
+      );
+      return { adoptedCount: adopted.size, checkedCount: candidates.length };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[movie-adoption] full plex sync failed: ${message}`);
+      return null;
+    }
+  }
+
+  /** Claims the one-time auto-bootstrap slot (best-effort, never blocks the
+   * caller) and, if this call actually won it, kicks off the full sync in
+   * the background — fire-and-forget, not awaited, so a first-ever Movie
+   * Calendar visit doesn't sit waiting on a ~7000-movie Plex walk before
+   * rendering anything. */
+  function triggerPlexSyncBootstrapIfNeeded(): void {
+    if (!database) return;
+    try {
+      const claimed = new PlexMovieSyncStateStore(database).claimBootstrap();
+      if (!claimed) return;
+      adoptionLog('full plex sync: auto-triggered (first-ever visit)');
+      void runFullMoviePlexSync();
+    } catch {
+      // Best-effort — see runFullMoviePlexSync's own doc comment.
     }
   }
 
@@ -1680,6 +1741,10 @@ export function createApiFetch(
           { status: 409 },
         );
       }
+      // No triggerPlexSyncBootstrapIfNeeded() here — this route never
+      // populates topMovies.cache (that's Top Movies of Year's job), so
+      // bootstrapping from here had nothing to actually sync yet and would
+      // burn the one-time claim for good. See the Top Movies handler below.
 
       try {
         const params = new URL(request.url).searchParams;
@@ -1759,7 +1824,9 @@ export function createApiFetch(
       // up to 100 TMDB calls — a deliberate operator action, gated like any
       // other outbound-call-triggering write, not a free read. Same for
       // sweep=true (see below): it writes adopted movies to
-      // manual_movie_grabs and makes a real Plex round-trip.
+      // manual_movie_grabs. (The Plex catalog sweep is a separate,
+      // deliberate Config action — see runFullMoviePlexSync — not part of
+      // this endpoint at all anymore.)
       const rescan = params.get('rescan') === 'true';
       const sweep = params.get('sweep') === 'true';
       if (rescan || sweep) {
@@ -1771,18 +1838,29 @@ export function createApiFetch(
         const owned = await ownedMovieStatuses();
         const result = await getTopMovies(topMovies, year, owned, rescan);
 
+        // Only after a real result — Plex configured AND there's actually
+        // at least one movie now cached to check. Triggering this
+        // unconditionally on route entry (the original version of this
+        // fix) burned the one-time claim on installs where Plex wasn't
+        // configured yet, or on a request that landed before any year had
+        // ever been cached, permanently losing the "run once ever"
+        // catch-up. Found in code review before this ever shipped.
+        if (plexMovies && result.items.length > 0) {
+          triggerPlexSyncBootstrapIfNeeded();
+        }
+
         if (!sweep) {
-          // The plain (non-sweep) response never runs the Plex/filesystem
+          // The plain (non-sweep) response never runs the filesystem
           // adoption sweep — that used to happen inline here on every
           // request, cache hit or not, which meant a routine cache-hit page
-          // view could quietly trigger a real Plex catalog fetch, and a
-          // second near-simultaneous request could land mid-sweep and see
-          // stale data (confirmed live 2026-08-29 while monitoring logs
-          // during QA — see git history for the throttle-only fix that
-          // preceded this one, which narrowed but didn't close that race).
-          // Now the sweep only ever runs via the dedicated sweep=true call
-          // below, which the client fires itself right after any response
-          // with fromCache: false (first-ever view or an explicit Rescan) —
+          // view could quietly trigger real work, and a second
+          // near-simultaneous request could land mid-sweep and see stale
+          // data (confirmed live 2026-08-29 while monitoring logs during
+          // QA — see git history for the throttle-only fix that preceded
+          // this one, which narrowed but didn't close that race). Now it
+          // only ever runs via the dedicated sweep=true call below, which
+          // the client fires itself right after any response with
+          // fromCache: false (first-ever view or an explicit Rescan) —
           // never on a plain cache hit, and never racing itself, since it's
           // a single deliberate follow-up call, not an automatic per-view
           // one. See movie-calendar/+page.svelte's loadTopMovies.
@@ -1792,8 +1870,9 @@ export function createApiFetch(
         // sweep=true: the client already has result.items from a prior
         // fast call (this call's own getTopMovies is a cache hit, since
         // that prior call — cold cache or rescan — already populated it).
-        // Runs both sweeps unconditionally (force: true) — this endpoint
-        // IS the explicit trigger, so there's nothing to throttle against.
+        // Runs the filesystem sweep unconditionally (force: true) — this
+        // endpoint IS the explicit trigger, so there's nothing to throttle
+        // against. Plex is NOT checked here — see runFullMoviePlexSync.
         const items = await adoptMoviesForCurrentView(
           year,
           result.items,
@@ -1814,12 +1893,62 @@ export function createApiFetch(
             grabSource: status.grabSource,
             plexStatus: status.plexStatus,
           }),
-          { includePlex: true, force: true },
+          { force: true },
         );
         return Response.json({ ...result, items });
       } catch {
         return json500();
       }
+    }
+
+    // Backs the Config page's "Plex Movie Sync" card: GET reads the last
+    // sync time for display (never touches Plex); POST actually runs it
+    // (walks the whole catalog, write-auth gated like every other
+    // outbound-call-triggering action). This is the ONLY way the full Plex
+    // sweep runs now, aside from the one-time auto-bootstrap — see
+    // triggerPlexSyncBootstrapIfNeeded and runFullMoviePlexSync's own doc
+    // comments for why it moved out of the per-view flow entirely.
+    if (path === '/api/movie-calendar/plex-sync') {
+      if (!database) {
+        return Response.json(
+          { error: 'database is not configured' },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      if (request.method === 'GET') {
+        const state = new PlexMovieSyncStateStore(database).get();
+        return Response.json({ lastSyncedAt: state.lastSyncedAt });
+      }
+
+      if (request.method === 'POST') {
+        if (!plexMovies) {
+          return Response.json(
+            { error: 'Plex is not configured' },
+            { status: 409 },
+          );
+        }
+        const authError = checkWriteAuth(request, activeConfig);
+        if (authError) return authError;
+
+        const result = await runFullMoviePlexSync();
+        if (!result) {
+          return Response.json(
+            { error: 'Plex sync failed — see daemon logs.' },
+            { status: 502 },
+          );
+        }
+        const state = new PlexMovieSyncStateStore(database).get();
+        return Response.json({
+          lastSyncedAt: state.lastSyncedAt,
+          adoptedCount: result.adoptedCount,
+          checkedCount: result.checkedCount,
+        });
+      }
+
+      return jsonMethodNotAllowed('GET, POST');
     }
 
     const movieApibayMatch = path.match(/^\/api\/movies\/(\d+)\/apibay$/);

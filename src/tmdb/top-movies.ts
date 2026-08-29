@@ -99,6 +99,26 @@ export class TopMoviesCache {
     this.database?.run(`DELETE FROM top_movies_cache WHERE year = ?1`, [year]);
   }
 
+  /** Every movie from every year ever cached (memory or SQLite), deduped
+   * by tmdbId — backs the full Plex sync's "check everything the user has
+   * ever looked at" scope, since that sync has no single "currently
+   * displayed year" to scope itself to the way the per-view sweeps do. */
+  listAllCachedItems(): TopMovieItem[] {
+    if (!this.database)
+      return dedupeByTmdbId([...this.entries.values()].flatMap((e) => e.items));
+    try {
+      const rows = this.database
+        .query(`SELECT items_json FROM top_movies_cache`)
+        .all() as { items_json: string }[];
+      const fromDb = rows.flatMap(
+        (row) => JSON.parse(row.items_json) as TopMovieItem[],
+      );
+      return dedupeByTmdbId(fromDb);
+    } catch {
+      return dedupeByTmdbId([...this.entries.values()].flatMap((e) => e.items));
+    }
+  }
+
   private readFromDatabase(year: number): CacheEntry | undefined {
     if (!this.database) return undefined;
     try {
@@ -228,4 +248,15 @@ function withOwnership(
       plexStatus: status?.plexStatus ?? 'unknown',
     };
   });
+}
+
+function dedupeByTmdbId(items: TopMovieItem[]): TopMovieItem[] {
+  const seen = new Set<number>();
+  const out: TopMovieItem[] = [];
+  for (const item of items) {
+    if (item.tmdbId === null || seen.has(item.tmdbId)) continue;
+    seen.add(item.tmdbId);
+    out.push(item);
+  }
+  return out;
 }

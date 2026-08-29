@@ -16,12 +16,14 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async () => {
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 
-	const [configResult, sessionResult, statusResult, plexAuthResult] = await Promise.allSettled([
-		apiRequest('/api/config'),
-		apiRequest('/api/transmission/session'),
-		apiRequest('/api/status'),
-		apiRequest('/api/plex/auth/status')
-	]);
+	const [configResult, sessionResult, statusResult, plexAuthResult, plexMovieSyncResult] =
+		await Promise.allSettled([
+			apiRequest('/api/config'),
+			apiRequest('/api/transmission/session'),
+			apiRequest('/api/status'),
+			apiRequest('/api/plex/auth/status'),
+			apiRequest('/api/movie-calendar/plex-sync')
+		]);
 
 	let config: AppConfig | null = null;
 	let etag: string | null = null;
@@ -30,6 +32,7 @@ export const load: PageServerLoad = async () => {
 	let runSummaries: RunSummaryRecord[] | null = null;
 	let onboarding: OnboardingStatus | null = null;
 	let plexAuth: PlexAuthStatusResponse | null = null;
+	let plexMovieSyncLastSyncedAt: string | null = null;
 
 	if (configResult.status === 'fulfilled' && configResult.value.ok) {
 		config = (await configResult.value.json()) as AppConfig;
@@ -55,6 +58,11 @@ export const load: PageServerLoad = async () => {
 		console.error('[config] failed to load plex auth status');
 	}
 
+	if (plexMovieSyncResult.status === 'fulfilled' && plexMovieSyncResult.value.ok) {
+		const body = (await plexMovieSyncResult.value.json()) as { lastSyncedAt?: string | null };
+		plexMovieSyncLastSyncedAt = body.lastSyncedAt ?? null;
+	}
+
 	return {
 		config,
 		etag,
@@ -63,7 +71,8 @@ export const load: PageServerLoad = async () => {
 		transmissionSession,
 		runSummaries,
 		onboarding,
-		plexAuth
+		plexAuth,
+		plexMovieSyncLastSyncedAt
 	};
 };
 
@@ -675,6 +684,52 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[config] restartDaemon failed:', error);
 			return fail(502, { restartError: 'Could not reach the API to restart.' });
+		}
+	},
+
+	// Walks Plex's whole movie catalog and checks it against every year of
+	// Top Movies of Year ever viewed — deliberately manual, not automatic
+	// per-view (a real ~7000-movie library takes real seconds; see
+	// src/api.ts's runFullMoviePlexSync doc comment for the full story).
+	plexMovieSync: async () => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (writeToken === undefined || writeToken === null)
+			return fail(401, { plexMovieSyncError: 'Write token not configured.' });
+		if (!writeToken) return fail(403, { plexMovieSyncError: 'Config writes are disabled.' });
+
+		try {
+			const response = await apiRequest('/api/movie-calendar/plex-sync', {
+				method: 'POST',
+				headers: {
+					authorization: `Bearer ${writeToken}`
+				}
+			});
+
+			if (!response.ok) {
+				let plexMovieSyncError = `Plex sync failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) plexMovieSyncError = body.error;
+				} catch {
+					// keep fallback
+				}
+				return fail(response.status, { plexMovieSyncError });
+			}
+
+			const body = (await response.json()) as {
+				lastSyncedAt?: string | null;
+				adoptedCount?: number;
+				checkedCount?: number;
+			};
+			return {
+				plexMovieSynced: true,
+				plexMovieSyncLastSyncedAt: body.lastSyncedAt ?? null,
+				plexMovieSyncAdoptedCount: body.adoptedCount ?? 0,
+				plexMovieSyncCheckedCount: body.checkedCount ?? 0
+			};
+		} catch (error) {
+			console.error('[config] plexMovieSync failed:', error);
+			return fail(502, { plexMovieSyncError: 'Could not reach the API to sync.' });
 		}
 	},
 
