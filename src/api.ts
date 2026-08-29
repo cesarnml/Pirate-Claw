@@ -772,6 +772,15 @@ export function createApiFetch(
       Date.now() - lastPlexAdoptionSweepAt >= RECONCILE_STALE_AFTER_MS;
     if (!runFilesystemSweep && !runPlexSweep) return items;
 
+    // Was previously wired to nothing (adoptMoviesFromFilesystem/
+    // adoptMoviesFromPlex both default `log` to a silent no-op when the
+    // caller omits it), so every run of this sweep — including its
+    // failures — was completely invisible in the daemon logs. Same
+    // console.log([prefix]) convention already used elsewhere in this file
+    // for paths with no dedicated log dep (see e.g. the [plex-auth] lines).
+    const adoptionLog = (message: string) =>
+      console.log(`[movie-adoption] ${message}`);
+
     try {
       const manualMovieGrabs = new ManualMovieGrabsStore(database);
       const candidates = items
@@ -784,7 +793,11 @@ export function createApiFetch(
         const fsAdopted = await adoptMoviesFromFilesystem(candidates, {
           mediaMoviesDirs: await resolveMediaMoviesDirs(),
           manualMovieGrabs,
+          log: adoptionLog,
         });
+        adoptionLog(
+          `filesystem sweep: ${candidates.length} candidate(s), ${fsAdopted.size} adopted`,
+        );
         for (const tmdbId of fsAdopted) adopted.add(tmdbId);
       }
 
@@ -796,7 +809,11 @@ export function createApiFetch(
         const plexAdopted = await adoptMoviesFromPlex(stillUnclaimed, {
           plexClient: plexMovies.client,
           manualMovieGrabs,
+          log: adoptionLog,
         });
+        adoptionLog(
+          `plex sweep: ${stillUnclaimed.length} candidate(s) checked, ${plexAdopted.size} adopted`,
+        );
         for (const tmdbId of plexAdopted) adopted.add(tmdbId);
       }
 
@@ -807,8 +824,12 @@ export function createApiFetch(
           ? withAlreadyGrabbed(item, true)
           : item;
       });
-    } catch {
-      // Best-effort — see doc comment above.
+    } catch (error) {
+      // Best-effort — see doc comment above — but still logged, not
+      // silently swallowed, for the same reason as adoptionLog's own
+      // comment above.
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[movie-adoption] sweep failed: ${message}`);
       return items;
     }
   }
