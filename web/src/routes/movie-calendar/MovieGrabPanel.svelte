@@ -35,7 +35,7 @@
 
 	let expandedSource = $state<SearchSource | null>(null);
 	type LookupState =
-		| { status: 'loading' }
+		| { status: 'loading'; startedAt: number }
 		| { status: 'error'; message: string }
 		| { status: 'ready'; torrents: TorrentSearchResult[] };
 	let searchResults = $state<Record<SearchSource, LookupState | undefined>>({
@@ -44,16 +44,20 @@
 	});
 	let pendingTorrentId = $state<number | null>(null);
 
-	async function findOn(source: SearchSource): Promise<void> {
-		if (expandedSource === source) {
-			expandedSource = null;
-			return;
-		}
-		expandedSource = source;
-		if (searchResults[source]) return;
+	// Drives the "still searching… Ns" text below — a bare spinner for the
+	// full 30s search timeout reads as frozen, same complaint as the error
+	// message this ships alongside. Ticks for the component's whole
+	// lifetime rather than only while something's loading; one interval is
+	// cheap and avoids start/stop bookkeeping racing the searches it times.
+	let now = $state(Date.now());
+	$effect(() => {
+		const id = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(id);
+	});
 
+	async function runSearch(source: SearchSource): Promise<void> {
 		const { label, shortLabel } = SEARCH_SOURCES.find((s) => s.source === source)!;
-		searchResults = { ...searchResults, [source]: { status: 'loading' } };
+		searchResults = { ...searchResults, [source]: { status: 'loading', startedAt: Date.now() } };
 		try {
 			// The daemon endpoint for thepiratebay is title/year-keyed (a plain
 			// text search); yts is imdb-id-keyed and the daemon resolves that
@@ -79,6 +83,16 @@
 				[source]: { status: 'error', message: `Could not reach ${shortLabel}.` }
 			};
 		}
+	}
+
+	async function findOn(source: SearchSource): Promise<void> {
+		if (expandedSource === source) {
+			expandedSource = null;
+			return;
+		}
+		expandedSource = source;
+		if (searchResults[source]) return;
+		await runSearch(source);
 	}
 
 	function formatSize(bytes: number): string {
@@ -140,9 +154,22 @@
 		{#if expandedSource === source && lookup}
 			<div class="mt-2 space-y-2">
 				{#if lookup.status === 'loading'}
-					<p class="text-muted-foreground text-sm">Searching {shortLabel}…</p>
+					<p class="text-muted-foreground text-sm">
+						Searching {shortLabel}… ({Math.floor((now - lookup.startedAt) / 1000)}s)
+					</p>
 				{:else if lookup.status === 'error'}
-					<p class="text-destructive text-sm">{lookup.message}</p>
+					<div class="flex flex-wrap items-center gap-2">
+						<p class="text-destructive text-sm">{lookup.message}</p>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="rounded-full"
+							onclick={() => runSearch(source)}
+						>
+							Retry
+						</Button>
+					</div>
 				{:else if lookup.torrents.length === 0}
 					<p class="text-muted-foreground text-sm">No {shortLabel} results for this movie.</p>
 				{:else}

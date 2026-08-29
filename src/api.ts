@@ -33,7 +33,10 @@ import {
   DEFAULT_TRANSMISSION_DOWNLOAD_DIR_TV,
 } from './config';
 import { EztvHttpClient } from './eztv/client';
-import { ThePirateBayHttpClient } from './thepiratebay/client';
+import {
+  ThePirateBayHttpClient,
+  type ThePirateBaySearchOutcome,
+} from './thepiratebay/client';
 import { YtsHttpClient } from './yts/client';
 import { ManualGrabsStore } from './manual-grabs/store';
 import type { ManualGrabSource } from './manual-grabs/store';
@@ -203,6 +206,20 @@ export type ApiFetchDeps = {
 
 function json500(): Response {
   return Response.json({ error: 'internal server error' }, { status: 500 });
+}
+
+/** Says honestly which of the two things happened: we gave up at our own
+ * deadline (apibay may well still be fine, just slow) vs. apibay itself
+ * broke the request (bad status, unparseable body, network failure).
+ * "Lookup failed; try again" for both was misleading — a timeout getting
+ * called a "failure" reads as apibay being down when it might just be
+ * slow. */
+function thePirateBayErrorMessage(
+  reason: Extract<ThePirateBaySearchOutcome, { ok: false }>['reason'],
+): string {
+  return reason === 'timeout'
+    ? "The Pirate Bay didn't respond in time; try again"
+    : 'The Pirate Bay lookup failed; try again';
 }
 
 function jsonConfigWriteFailure(): Response {
@@ -1453,13 +1470,14 @@ export function createApiFetch(
         const thePirateBay = new ThePirateBayHttpClient((msg) =>
           console.warn(msg),
         );
-        const torrents = await thePirateBay.search(query, 'movie');
-        if (torrents === null) {
+        const outcome = await thePirateBay.search(query, 'movie');
+        if (!outcome.ok) {
           return Response.json(
-            { error: 'The Pirate Bay lookup failed; try again' },
+            { error: thePirateBayErrorMessage(outcome.reason) },
             { status: 502 },
           );
         }
+        const { torrents } = outcome;
         torrents.sort((a, b) => b.seeds - a.seeds);
         const withQuality = torrents.map((t) => ({
           ...t,
@@ -1971,13 +1989,14 @@ export function createApiFetch(
         const thePirateBay = new ThePirateBayHttpClient((msg) =>
           console.warn(msg),
         );
-        const torrents = await thePirateBay.search(query);
-        if (torrents === null) {
+        const outcome = await thePirateBay.search(query);
+        if (!outcome.ok) {
           return Response.json(
-            { error: 'The Pirate Bay lookup failed; try again' },
+            { error: thePirateBayErrorMessage(outcome.reason) },
             { status: 502 },
           );
         }
+        const { torrents } = outcome;
 
         // Same practical-downloadability ranking as the EZTV route.
         torrents.sort((a, b) => b.seeds - a.seeds);

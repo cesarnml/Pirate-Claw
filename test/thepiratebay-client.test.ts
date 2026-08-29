@@ -70,21 +70,23 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      const torrents = await client.search('The Walking Dead Dead City S01E03');
+      const outcome = await client.search('The Walking Dead Dead City S01E03');
 
+      if (!outcome.ok) throw new Error('expected ok outcome');
+      const { torrents } = outcome;
       expect(torrents).toHaveLength(2);
-      expect(torrents?.[0]).toMatchObject({
+      expect(torrents[0]).toMatchObject({
         id: 69899793,
         title: 'The.Walking.Dead.Dead.City.S01E03.1080p.WEB.h264-ETHEL[TGx]',
         seeds: 13,
         peers: 1,
         imdbId: 'tt18546730',
       });
-      expect(torrents?.[0].magnetUrl).toContain(
+      expect(torrents[0].magnetUrl).toContain(
         'xt=urn:btih:3DE1EA029B5AAFF6C401A6F8830B04E39516BA15',
       );
-      expect(torrents?.[0].magnetUrl).toContain('&tr=');
-      expect(torrents?.[1].imdbId).toBeNull();
+      expect(torrents[0].magnetUrl).toContain('&tr=');
+      expect(torrents[1].imdbId).toBeNull();
     } finally {
       fetchMock.mockRestore();
     }
@@ -100,14 +102,14 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      const torrents = await client.search('a show that does not exist');
-      expect(torrents).toEqual([]);
+      const outcome = await client.search('a show that does not exist');
+      expect(outcome).toEqual({ ok: true, torrents: [] });
     } finally {
       fetchMock.mockRestore();
     }
   });
 
-  it('returns null on a non-200 response, best-effort with no retry', async () => {
+  it('returns ok:false reason:"error" on a non-200 response, best-effort with no retry', async () => {
     const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
       (async () =>
         new Response('nope', { status: 503 })) as unknown as typeof fetch,
@@ -115,14 +117,17 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      expect(await client.search('anything')).toBeNull();
+      expect(await client.search('anything')).toEqual({
+        ok: false,
+        reason: 'error',
+      });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       fetchMock.mockRestore();
     }
   });
 
-  it('returns null on a network failure', async () => {
+  it('returns ok:false reason:"error" on a network failure', async () => {
     const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
       (async () => {
         throw new Error('ECONNRESET');
@@ -131,7 +136,28 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      expect(await client.search('anything')).toBeNull();
+      expect(await client.search('anything')).toEqual({
+        ok: false,
+        reason: 'error',
+      });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('returns ok:false reason:"timeout" when our own deadline elapses first, distinct from a genuine network failure', async () => {
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () => {
+        throw new DOMException('The operation timed out.', 'TimeoutError');
+      }) as unknown as typeof fetch,
+    );
+
+    try {
+      const client = new ThePirateBayHttpClient(() => {});
+      expect(await client.search('anything')).toEqual({
+        ok: false,
+        reason: 'timeout',
+      });
     } finally {
       fetchMock.mockRestore();
     }
@@ -149,9 +175,9 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      const torrents = await client.search('a query matching only a movie');
+      const outcome = await client.search('a query matching only a movie');
 
-      expect(torrents).toEqual([]);
+      expect(outcome).toEqual({ ok: true, torrents: [] });
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy.mock.calls[0][0]).toContain(
         'all 1 real result(s) were filtered out by category',
@@ -174,7 +200,10 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      expect(await client.search('anything')).toBeNull();
+      expect(await client.search('anything')).toEqual({
+        ok: false,
+        reason: 'error',
+      });
       expect(errorSpy.mock.calls[0][0]).toContain('status=429');
       expect(errorSpy.mock.calls[0][0]).toContain(
         'rate limited, try again later',
@@ -185,7 +214,7 @@ describe('ThePirateBayHttpClient', () => {
     }
   });
 
-  it('returns null on a malformed (non-array) response body', async () => {
+  it('returns ok:false reason:"error" on a malformed (non-array) response body', async () => {
     const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
       (async () =>
         new Response(JSON.stringify({ unexpected: 'shape' }), {
@@ -195,7 +224,10 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      expect(await client.search('anything')).toBeNull();
+      expect(await client.search('anything')).toEqual({
+        ok: false,
+        reason: 'error',
+      });
     } finally {
       fetchMock.mockRestore();
     }
@@ -212,13 +244,14 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      const torrents = await client.search(
+      const outcome = await client.search(
         'a query matching both media types',
         'movie',
       );
 
-      expect(torrents).toHaveLength(1);
-      expect(torrents?.[0]).toMatchObject({ id: 69900412 });
+      if (!outcome.ok) throw new Error('expected ok outcome');
+      expect(outcome.torrents).toHaveLength(1);
+      expect(outcome.torrents[0]).toMatchObject({ id: 69900412 });
     } finally {
       fetchMock.mockRestore();
     }
@@ -234,8 +267,9 @@ describe('ThePirateBayHttpClient', () => {
 
     try {
       const client = new ThePirateBayHttpClient(() => {});
-      const torrents = await client.search('The Walking Dead Dead City S01E03');
-      expect(torrents).toHaveLength(2);
+      const outcome = await client.search('The Walking Dead Dead City S01E03');
+      if (!outcome.ok) throw new Error('expected ok outcome');
+      expect(outcome.torrents).toHaveLength(2);
     } finally {
       fetchMock.mockRestore();
     }

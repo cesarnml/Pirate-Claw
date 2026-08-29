@@ -1,6 +1,11 @@
 import { loggedFetch } from '../http-log';
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+// Bumped from 15s after 2026-08-29 field data showed apibay.org sitting
+// right at the old deadline often enough to matter (6 of 9 calls in one
+// 21-minute window). A longer deadline is a slower coin-flip, not a more
+// reliable one by itself — the UI-side retry button is what actually gets a
+// second roll of the dice; this just gives any one attempt more room.
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 // apibay.org is an unofficial JSON mirror of The Pirate Bay's catalog — used
 // here as a fallback when EZTV's (much smaller, TV-only) catalog doesn't
@@ -48,6 +53,20 @@ export type ThePirateBayTorrent = {
   imdbId: string | null;
 };
 
+/**
+ * search()'s outcome, replacing a bare `T[] | null`. A caller (and
+ * ultimately the end user) needs to tell "we gave up waiting" apart from
+ * "apibay actively rejected/broke the request" — those call for different
+ * copy ("try again" vs "check back later") and only one of them is honestly
+ * describable as a timeout. `reason` stays coarse (two buckets, not four)
+ * because that's the only distinction the UI currently acts on; the
+ * `this.log`/console lines above already capture the finer-grained cause
+ * (HTTP status, parse failure, etc.) for after-the-fact diagnosis.
+ */
+export type ThePirateBaySearchOutcome =
+  | { ok: true; torrents: ThePirateBayTorrent[] }
+  | { ok: false; reason: 'timeout' | 'error' };
+
 type ApibayResult = {
   id?: string;
   name?: string;
@@ -73,8 +92,9 @@ export class ThePirateBayHttpClient {
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
   ) {}
 
-  /** Returns null on any failure (network, non-200, malformed body) —
-   * best-effort, no retry. Returns [] for a genuine no-match.
+  /** Returns `{ ok: false, reason }` on any failure (network, non-200,
+   * malformed body) — best-effort, no retry. Returns `{ ok: true, torrents:
+   * [] }` for a genuine no-match.
    *
    * Every branch below logs enough to diagnose a real failure after the
    * fact without reproducing it live: apibay is an unofficial, undocumented
@@ -84,11 +104,14 @@ export class ThePirateBayHttpClient {
    * TV-category filter zeroed them out" — four very different follow-up
    * fixes. loggedFetch already records method/URL/status/timing for every
    * attempt to the persistent http.log; the console lines here are the
-   * `docker logs`-visible complement for immediate triage. */
+   * `docker logs`-visible complement for immediate triage. The `reason`
+   * returned to the caller only distinguishes "we gave up at our own
+   * deadline" (`timeout`) from everything else (`error`) — that's the one
+   * distinction the UI currently needs to word its message honestly. */
   async search(
     query: string,
     mediaType: ThePirateBayMediaType = 'tv',
-  ): Promise<ThePirateBayTorrent[] | null> {
+  ): Promise<ThePirateBaySearchOutcome> {
     const requestUrl = `${APIBAY_BASE}/q.php?q=${encodeURIComponent(query)}`;
     console.log(
       `[thepiratebay] searching query="${query}" mediaType=${mediaType} url=${requestUrl}`,
@@ -107,7 +130,15 @@ export class ThePirateBayHttpClient {
       console.error(
         `[thepiratebay] request failed query="${query}": ${message}`,
       );
-      return null;
+      // AbortSignal.timeout() rejects with a DOMException named
+      // "TimeoutError" — the one reliable way to tell "our own deadline
+      // elapsed" apart from a genuine network failure (DNS, connection
+      // reset, TLS failure, etc.), which surfaces under other names/types.
+      const reason =
+        error instanceof Error && error.name === 'TimeoutError'
+          ? 'timeout'
+          : 'error';
+      return { ok: false, reason };
     }
 
     if (!response.ok) {
@@ -122,7 +153,7 @@ export class ThePirateBayHttpClient {
       console.error(
         `[thepiratebay] request failed query="${query}" status=${response.status} body=${JSON.stringify(bodyPreview)}`,
       );
-      return null;
+      return { ok: false, reason: 'error' };
     }
 
     const rawText = await response.text();
@@ -135,7 +166,7 @@ export class ThePirateBayHttpClient {
       console.error(
         `[thepiratebay] parse failed query="${query}": ${message} body=${JSON.stringify(truncate(rawText))}`,
       );
-      return null;
+      return { ok: false, reason: 'error' };
     }
 
     if (!Array.isArray(body)) {
@@ -143,7 +174,7 @@ export class ThePirateBayHttpClient {
       console.error(
         `[thepiratebay] unexpected response shape query="${query}" type=${typeof body} body=${JSON.stringify(truncate(rawText))}`,
       );
-      return null;
+      return { ok: false, reason: 'error' };
     }
 
     // Broken out per stage rather than one final count — a real-world
@@ -174,7 +205,7 @@ export class ThePirateBayHttpClient {
         `[thepiratebay] all ${realResults.length} real result(s) were filtered out by category for query="${query}" mediaType=${mediaType}; categories seen: ${JSON.stringify([...new Set(realResults.map((r) => r.category))])}`,
       );
     }
-    return torrents;
+    return { ok: true, torrents };
   }
 }
 
