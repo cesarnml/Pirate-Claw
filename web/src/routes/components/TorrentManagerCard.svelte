@@ -9,11 +9,14 @@
 	} from '$lib/helpers';
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
 	import type { CandidateStateRecord, TorrentStatSnapshot } from '$lib/types';
 	import { deserialize, enhance } from '$app/forms';
 	import { base } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from '$lib/toast';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
 	type ActiveDownload = {
 		torrent: TorrentStatSnapshot;
@@ -36,6 +39,22 @@
 
 	let inflightDispose = $state<string | null>(null);
 
+	// This 500ms setTimeout is the whole long-press mechanism — the row's own
+	// CSS (`touch-pan-y`, `-webkit-user-drag:none`, `draggable="false"` on the
+	// poster <img>) exists purely to stop iPadOS from preempting it before it
+	// fires. Confirmed live: Safari/Chrome/Brave on iPad all broke here (fixed
+	// in an earlier pass by disabling text-selection/callout only), while
+	// phones — including iPhone Safari, same WebKit engine — worked fine. The
+	// difference is iPadOS-specific: WebKit enables native image drag-lift by
+	// default (its own OS-level drag-and-drop), and a long-press starting on
+	// the poster <img> gets claimed by that gesture recognizer instead of
+	// reaching this timer. Apple mandates WebKit for every iOS/iPadOS browser,
+	// so "3 different browsers, same bug" was the tell that this was an
+	// engine/OS quirk, not app-browser-compat. `-webkit-user-drag:none` (plus
+	// the belt-and-suspenders `draggable="false"`) is the actual fix;
+	// `touch-pan-y` further restricts the row to vertical-scroll-only so no
+	// other native gesture (pinch, double-tap-zoom) can grab the touch either,
+	// while still letting the list itself scroll normally.
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 	let longPressTouchOrigin = { x: 0, y: 0 };
 
@@ -146,37 +165,52 @@
 		removeAndDelete: 'Torrent removed and data deleted'
 	};
 
-	async function executeAction(action: MenuAction, hash: string) {
-		if (inflightAction) return;
-		menuState = null;
-		inflightAction = hash;
+	/** The bare POST + result-shape check, with no toast/invalidate side
+	 * effects — shared by executeAction (single torrent, own toast + refresh)
+	 * and bulkRemoveSeeding (many torrents, one summary toast + one refresh
+	 * at the end rather than N of each). Returns whether the daemon actually
+	 * confirmed success; a redirect (session expired mid-action) counts as
+	 * neither success nor failure — the caller just stops. */
+	async function postAction(action: MenuAction, hash: string): Promise<boolean | 'redirect'> {
 		const formData = new FormData();
 		formData.append('hash', hash);
 		const actionHref = `${base}/?/${action}`;
+		const res = await fetch(actionHref, {
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'x-sveltekit-action': 'true'
+			},
+			body: formData,
+			cache: 'no-store'
+		});
+
+		const result = deserialize(await res.text());
+		if (result.type === 'redirect') return 'redirect';
+		// Only a recognized 'success' shape counts as success — anything else
+		// (error, failure, or a response deserialize() couldn't even
+		// recognize, e.g. SvelteKit's own raw CSRF-rejection JSON, which has
+		// no `type` field at all) must not fall through to a false-positive
+		// result. Confirmed live: a misconfigured ORIGIN made every POST here
+		// 403 with a plain {message} body, and the old `!== error/failure`
+		// check treated that unrecognized shape as success.
+		return result.type === 'success';
+	}
+
+	async function executeAction(action: MenuAction, hash: string) {
+		// Also blocked while a bulk remove is running, not just another single
+		// action — bulkRemoveSeeding's sequential loop exists specifically to
+		// avoid a burst of simultaneous RPCs against Transmission (see its own
+		// comment); a concurrent single-row action from a non-seeding row
+		// (which bulkRemovingSeeding's per-row inFlightRow check doesn't cover)
+		// would defeat that.
+		if (inflightAction || bulkRemovingSeeding) return;
+		menuState = null;
+		inflightAction = hash;
 		try {
-			const res = await fetch(actionHref, {
-				method: 'POST',
-				headers: {
-					accept: 'application/json',
-					'x-sveltekit-action': 'true'
-				},
-				body: formData,
-				cache: 'no-store'
-			});
-
-			const result = deserialize(await res.text());
-
-			if (result.type === 'redirect') {
-				return;
-			}
-			// Only a recognized 'success' shape counts as success — anything else
-			// (error, failure, or a response deserialize() couldn't even
-			// recognize, e.g. SvelteKit's own raw CSRF-rejection JSON, which has
-			// no `type` field at all) must not fall through to a false-positive
-			// toast. Confirmed live: a misconfigured ORIGIN made every POST here
-			// 403 with a plain {message} body, and the old `!== error/failure`
-			// check treated that unrecognized shape as success.
-			if (result.type !== 'success') {
+			const outcome = await postAction(action, hash);
+			if (outcome === 'redirect') return;
+			if (!outcome) {
 				toast('Action failed', 'error');
 				return;
 			}
@@ -194,6 +228,65 @@
 			toast('Action failed', 'error');
 		} finally {
 			if (inflightAction === hash) inflightAction = null;
+		}
+	}
+
+	let bulkRemovingSeeding = $state(false);
+
+	const seedingHashes = $derived(
+		activeDownloads
+			.filter(({ torrent, candidate }) => rowDisplayState(torrent, candidate) === 'seeding')
+			.map(({ torrent }) => torrent.hash)
+	);
+
+	/** Sequential, not Promise.all — a burst of N simultaneous remove RPCs
+	 * against Transmission's single-threaded RPC server risks the daemon's
+	 * own request handling piling up under load in a way one-at-a-time never
+	 * does; this list is not expected to be large enough for sequential
+	 * latency to matter in practice. Same "remove" semantics as the per-row
+	 * menu item — stops seeding and drops the torrent from Transmission, does
+	 * not touch files on disk (that's the separate "Remove + Delete Data"
+	 * action, deliberately not offered in bulk here). */
+	async function bulkRemoveSeeding() {
+		if (bulkRemovingSeeding || inflightAction) return;
+		const hashes = seedingHashes;
+		if (hashes.length === 0) return;
+
+		bulkRemovingSeeding = true;
+		let failCount = 0;
+		let redirected = false;
+		try {
+			for (const hash of hashes) {
+				try {
+					const outcome = await postAction('remove', hash);
+					if (outcome === 'redirect') {
+						// Session expired mid-loop — stop attempting further
+						// removals, but whatever already succeeded before this
+						// point is real and must not be left stale in the UI (see
+						// the refresh below, unlike a single-item redirect where
+						// nothing could have succeeded yet).
+						redirected = true;
+						break;
+					}
+					if (!outcome) failCount++;
+				} catch {
+					failCount++;
+				}
+			}
+			await new Promise((r) => setTimeout(r, 150));
+			await invalidateAll();
+			if (redirected) return;
+
+			const succeeded = hashes.length - failCount;
+			if (failCount === 0) {
+				toast(`Removed ${succeeded} seeding torrent${succeeded === 1 ? '' : 's'}`, 'success');
+			} else if (succeeded === 0) {
+				toast('Bulk remove failed', 'error');
+			} else {
+				toast(`Removed ${succeeded}/${hashes.length} — ${failCount} failed`, 'error');
+			}
+		} finally {
+			bulkRemovingSeeding = false;
 		}
 	}
 
@@ -253,6 +346,26 @@
 		</div>
 	</CardHeader>
 	<CardContent class="thin-scroll space-y-4 overflow-y-auto">
+		{#if seedingHashes.length > 0}
+			<div class="flex justify-end">
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
+					disabled={bulkRemovingSeeding || inflightAction !== null}
+					onclick={bulkRemoveSeeding}
+				>
+					{#if bulkRemovingSeeding}
+						<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+						Removing…
+					{:else}
+						<Trash2Icon class="mr-2 h-3.5 w-3.5" />
+						Remove {seedingHashes.length} seeding
+					{/if}
+				</Button>
+			</div>
+		{/if}
 		{#if activeDownloads.length === 0}
 			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
 				<p class="text-sm font-medium">No active downloads right now.</p>
@@ -269,12 +382,13 @@
 					{@const posterUrl = candidate
 						? candidatePosterUrl(candidate)
 						: (torrent.posterUrl ?? null)}
-					{@const inFlightRow = inflightAction === torrent.hash}
 					{@const rowState = rowDisplayState(torrent, candidate)}
+					{@const inFlightRow =
+						inflightAction === torrent.hash || (bulkRemovingSeeding && rowState === 'seeding')}
 					{@const showUpload =
 						rowState === 'completed' || rowState === 'seeding' || rowState === 'paused'}
 					<li
-						class="border-border bg-background/45 flex gap-4 rounded-[26px] border p-4 select-none [-webkit-touch-callout:none] [-webkit-user-select:none]"
+						class="border-border bg-background/45 flex touch-pan-y gap-4 rounded-[26px] border p-4 select-none [-webkit-touch-callout:none] [-webkit-user-drag:none] [-webkit-user-select:none]"
 						class:opacity-60={inFlightRow}
 						class:cursor-wait={inFlightRow}
 						oncontextmenu={(e) => !inFlightRow && openMenu(e, torrent.hash, torrent, candidate)}
@@ -287,7 +401,8 @@
 							<img
 								src={posterUrl}
 								alt={title}
-								class="h-24 w-16 shrink-0 rounded-2xl object-cover"
+								draggable="false"
+								class="h-24 w-16 shrink-0 rounded-2xl object-cover [-webkit-user-drag:none]"
 								loading="lazy"
 							/>
 						{:else}
