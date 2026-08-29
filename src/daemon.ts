@@ -64,6 +64,17 @@ export async function runDaemonLoop(input: {
         port: options.apiPort,
         hostname: apiHost,
         fetch: input.fetch,
+        // Bun.serve's default idle-connection timeout is 10s — fine for
+        // ordinary requests, but /api/movie-calendar/top?sweep=true sends
+        // zero bytes until its Plex catalog fetch + matching pass is fully
+        // done, and that can legitimately run well past 10s on a large
+        // library (confirmed live 2026-08-29: a ~7000-movie Plex library
+        // took ~19s, and the connection was killed by Bun at ~10s with
+        // "SocketError: other side closed" on the web proxy side — the
+        // sweep was still genuinely working, not hung). 120s covers that
+        // with real headroom without leaving truly-dead connections open
+        // indefinitely.
+        idleTimeout: 120,
       });
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
