@@ -199,6 +199,75 @@ describe('MissingEpisodesPanel', () => {
 		expect(screen.getByText('9 seeds / 2 peers')).toBeInTheDocument();
 	});
 
+	it('suffixes the season button with (owned/aired) computed from the already-loaded episode grid', () => {
+		render(Panel, {
+			slug: 'the-show',
+			episodeStatus: statusWithMixedEpisodes,
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		// Season 4: 3 episodes, all aired (past air dates), only 1 owned.
+		expect(screen.getByRole('button', { name: 'Season 4 (1/3)' })).toBeInTheDocument();
+	});
+
+	it('omits the season suffix entirely when nothing in that season has aired yet', () => {
+		const farFuture = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+		render(Panel, {
+			slug: 'the-show',
+			episodeStatus: {
+				plexReachable: true,
+				seasons: [
+					{
+						season: 1,
+						episodeCountMismatch: undefined,
+						episodes: [
+							{
+								episode: 1,
+								name: 'Pilot',
+								airDate: farFuture,
+								plexStatus: 'missing',
+								manualGrab: null
+							}
+						]
+					}
+				]
+			},
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		expect(screen.getByRole('button', { name: 'Season 1' })).toBeInTheDocument();
+	});
+
+	it('shows a bare aired-count suffix, with no slash, when every aired episode is owned', () => {
+		render(Panel, {
+			slug: 'the-show',
+			episodeStatus: {
+				plexReachable: true,
+				seasons: [
+					{
+						season: 1,
+						episodeCountMismatch: undefined,
+						episodes: [
+							{
+								episode: 1,
+								name: 'Pilot',
+								airDate: '2026-01-01',
+								plexStatus: 'in_library',
+								manualGrab: null
+							}
+						]
+					}
+				]
+			},
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		expect(screen.getByRole('button', { name: 'Season 1 (1)' })).toBeInTheDocument();
+	});
+
 	it('shows a separate "Find on ThePirateBay" button alongside "Find on EZTV"', () => {
 		render(Panel, {
 			slug: 'the-show',

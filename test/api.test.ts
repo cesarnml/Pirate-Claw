@@ -1386,6 +1386,7 @@ describe('POST /api/shows/:slug/tmdb/refresh', () => {
             vote_average: 8.8,
             vote_count: 120,
             number_of_seasons: 1,
+            first_air_date: '2026-01-01',
           }),
           getTvSeason: async () => ({
             season_number: 1,
@@ -1417,12 +1418,13 @@ describe('POST /api/shows/:slug/tmdb/refresh', () => {
       const body = (await response.json()) as {
         ok: boolean;
         show: {
-          tmdb?: { network?: string };
+          tmdb?: { network?: string; firstAirDate?: string };
           seasons: Array<{ episodes: Array<{ tmdb?: { name?: string } }> }>;
         };
       };
       expect(body.ok).toBe(true);
       expect(body.show.tmdb?.network).toBe('HBO');
+      expect(body.show.tmdb?.firstAirDate).toBe('2026-01-01');
       expect(body.show.seasons[0].episodes[0].tmdb?.name).toBe('Pilot');
     } finally {
       db.close();
@@ -1511,6 +1513,81 @@ describe('POST /api/shows/:slug/plex/refresh', () => {
       expect(body.show.watchCount).toBe(3);
       expect(body.show.plexCheckedAt).toBeDefined();
       expect(cache.getTv('test show')).toMatchObject({ inLibrary: true });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('also refreshes per-season completion counts when TMDB is configured', async () => {
+    const db = new Database(':memory:');
+    try {
+      // Full schema, not just plex+tmdb — buildShowEpisodeStatus also reads
+      // manual_grabs (ManualGrabsStore) internally.
+      ensureSchema(db);
+      const cache = new PlexCache(db);
+      const deps = createDeps({
+        listCandidateStates: () =>
+          [
+            tvCandidate({
+              identityKey: 'k1',
+              normalizedTitle: 'test show',
+              season: 1,
+              episode: 1,
+              resolution: '1080p',
+              codec: 'x265',
+            }),
+          ] as never,
+      });
+      deps.config.runtime.apiWriteToken = 'write-token';
+      deps.database = db;
+      deps.plexShows = {
+        cache,
+        client: {
+          searchShows: async () => [
+            { ratingKey: '1', title: 'Test Show', type: 'show', viewCount: 3 },
+          ],
+          listAllTvShowsForMatching: async () => [],
+          getShowSeasons: async () => [
+            { ratingKey: 's1', seasonNumber: 1, episodeCount: 1 },
+          ],
+          getSeasonEpisodes: async () => [{ episodeNumber: 1 }],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      };
+      deps.tmdbShows = {
+        cache: new TmdbCache(db),
+        client: {
+          searchTv: async () => ({ id: 42, name: 'Test Show' }),
+          getTv: async () => ({
+            id: 42,
+            name: 'Test Show',
+            number_of_seasons: 1,
+          }),
+          getTvSeason: async () => ({
+            season_number: 1,
+            episodes: [
+              { episode_number: 1, name: 'Pilot', air_date: '2026-01-01' },
+            ],
+          }),
+        } as never,
+        cacheTtlMs: 60_000,
+        negativeCacheTtlMs: 10_000,
+        log: () => {},
+      };
+
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/shows/test%20show/plex/refresh', {
+          method: 'POST',
+          headers: { authorization: 'Bearer write-token' },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(cache.getSeasonCompletions('test show')).toEqual([
+        expect.objectContaining({ season: 1, airedCount: 1, ownedCount: 1 }),
+      ]);
     } finally {
       db.close();
     }
@@ -1677,6 +1754,66 @@ describe('missing-episodes feature (episodes / eztv / manual-grab)', () => {
         new Request('http://localhost/api/shows/test%20show/episodes'),
       );
       expect(response.status).toBe(409);
+    });
+
+    it('persists per-season aired/owned counts to PlexCache when Plex is reachable', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      const plexCache = new PlexCache(db);
+      deps.plexShows = {
+        cache: plexCache,
+        client: {
+          searchShows: async () => [
+            { ratingKey: '1', title: 'Test Show', type: 'show' },
+          ],
+          getShowSeasons: async () => [
+            { ratingKey: 's1', seasonNumber: 1, episodeCount: 1 },
+          ],
+          getSeasonEpisodes: async () => [{ episodeNumber: 1 }],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      };
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/episodes'),
+        );
+        expect(response.status).toBe(200);
+
+        const rows = plexCache.getSeasonCompletions('test show');
+        // depsWithTmdbShow's TMDB mock has 2 episodes in season 1, both
+        // with past air dates — both count as aired regardless of "today."
+        expect(rows).toEqual([
+          expect.objectContaining({ season: 1, airedCount: 2, ownedCount: 1 }),
+        ]);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('does not persist season completions when Plex could not be confirmed (avoids caching a false "all missing")', async () => {
+      const { deps, db } = depsWithTmdbShow();
+      const plexCache = new PlexCache(db);
+      deps.plexShows = {
+        cache: plexCache,
+        client: {
+          searchShows: async () => null,
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      };
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/episodes'),
+        );
+        expect(response.status).toBe(200);
+        expect(plexCache.getSeasonCompletions('test show')).toEqual([]);
+      } finally {
+        db.close();
+      }
     });
   });
 

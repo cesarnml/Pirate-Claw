@@ -2,12 +2,12 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
-	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { formatRelativeTime, showHeroBackdropSrc } from '$lib/helpers';
+	import ShowCompletionBadge from '$lib/components/ShowCompletionBadge.svelte';
+	import { showHeroBackdropSrc } from '$lib/helpers';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
@@ -202,14 +202,9 @@
 							>
 								Plex Status
 							</p>
-							<div class="mt-3">
-								<StatusChip status={data.show.plexStatus} />
+							<div class="mt-3 flex flex-col items-start gap-1">
+								<ShowCompletionBadge show={data.show} showUnknownFallback />
 							</div>
-							{#if formatRelativeTime(data.show.plexCheckedAt)}
-								<p class="text-muted-foreground mt-2 text-xs">
-									Synced {formatRelativeTime(data.show.plexCheckedAt)}
-								</p>
-							{/if}
 						</div>
 						<div class="rounded-3xl border border-white/10 bg-slate-950/46 px-4 py-4">
 							<p

@@ -11,6 +11,31 @@ export type TmdbTvShowMeta = {
   voteAverage?: number;
   voteCount?: number;
   numberOfSeasons?: number;
+  /** The air date of the show's first episode ever — cheap, already part
+   * of the same TMDB show-details call as numberOfSeasons, no extra
+   * request. Lets the UI say "hasn't aired yet" (future date) honestly and
+   * immediately, without needing the deeper per-season Plex cache below. */
+  firstAirDate?: string;
+};
+
+/** Aired-vs-owned episode counts for one season, cached from the show
+ * detail page's (or "Refresh Plex"'s) per-episode Plex walk — see
+ * PlexTvSeasonCompletionRow. Powers an honest COMPLETE/MISSING(N) signal on
+ * the /shows grid without a live per-episode walk per card. Absent
+ * entirely (undefined on ShowBreakdown, not an empty array) means this
+ * show's completion has never been computed yet. */
+export type ShowSeasonCompletion = {
+  season: number;
+  airedCount: number;
+  ownedCount: number;
+  /** When this season's counts were computed — deliberately per-season, not
+   * a single show-level timestamp, since seasons can be refreshed at
+   * different times (e.g. only the active season on a detail-page visit
+   * once the per-season lazy-load remedy for the Simpsons-scale problem
+   * lands). The UI should treat the oldest of these as the trustworthy
+   * "as of" bound for any whole-show claim (COMPLETE/MISSING) built from
+   * all of them together. */
+  cachedAt: string;
 };
 
 /** Per-episode TMDB fields merged next to local candidate state. */
@@ -52,5 +77,7 @@ export type ShowBreakdown = {
    * checked" vs. "checked a while ago, due for another look." Undefined
    * when no cache row exists at all for this show yet. */
   plexCheckedAt?: string | null;
+  /** Undefined = never computed; see ShowSeasonCompletion. */
+  seasonCompletions?: ShowSeasonCompletion[];
   tmdb?: TmdbTvShowMeta;
 };

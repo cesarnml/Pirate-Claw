@@ -66,6 +66,10 @@ const exampleShow: ShowBreakdown = {
 			]
 		}
 	],
+	seasonCompletions: [
+		{ season: 1, airedCount: 2, ownedCount: 1, cachedAt: '2026-04-15T00:00:00.000Z' },
+		{ season: 2, airedCount: 1, ownedCount: 0, cachedAt: '2026-04-15T00:00:00.000Z' }
+	],
 	tmdb: {
 		name: 'The Example Show',
 		posterUrl: 'https://example.com/poster.jpg',
@@ -117,7 +121,7 @@ const liveTorrent: TorrentStatSnapshot = {
 };
 
 describe('/shows', () => {
-	it('renders poster-first cards with rating, network badge, and plex chip', () => {
+	it('renders poster-first cards with rating, network badge, and completion badge', () => {
 		render(Page, {
 			data: {
 				...sharedLayoutData,
@@ -130,7 +134,7 @@ describe('/shows', () => {
 		expect(screen.getByRole('heading', { name: 'Shows' })).toBeInTheDocument();
 		expect(screen.getByText('The Example Show')).toBeInTheDocument();
 		expect(screen.getByText('HBO')).toBeInTheDocument();
-		expect(screen.getByText('IN LIBRARY')).toBeInTheDocument();
+		expect(screen.getByText('MISSING (2)')).toBeInTheDocument();
 		expect(screen.getByText('7')).toBeInTheDocument();
 		expect(screen.getByText(/watched/i)).toBeInTheDocument();
 		expect(screen.getByText('8.1')).toBeInTheDocument();
@@ -213,28 +217,42 @@ describe('/shows', () => {
 		expect(screen.getByText('2 seasons')).toBeInTheDocument();
 	});
 
-	it('shows a "Plex synced" relative-time caption when the cache has checked this show, even if plexStatus is unknown', () => {
-		const staleCheckedShow: ShowBreakdown = {
+	it('shows a "Completion checked" relative-time caption sourced from the oldest seasonCompletions cachedAt', () => {
+		const recentlyCheckedShow: ShowBreakdown = {
 			...exampleShow,
 			normalizedTitle: 'Recently Checked Show',
-			plexStatus: 'unknown',
-			plexCheckedAt: new Date(Date.now() - 5 * 60_000).toISOString()
+			seasonCompletions: [
+				{
+					season: 1,
+					airedCount: 2,
+					ownedCount: 1,
+					cachedAt: new Date(Date.now() - 5 * 60_000).toISOString()
+				},
+				{
+					season: 2,
+					airedCount: 1,
+					ownedCount: 0,
+					// Older than season 1's — the caption must reflect this one,
+					// the oldest, not the more-recent season.
+					cachedAt: new Date(Date.now() - 60 * 60_000).toISOString()
+				}
+			]
 		};
 
 		render(Page, {
 			data: {
 				...sharedLayoutData,
-				shows: [staleCheckedShow],
+				shows: [recentlyCheckedShow],
 				torrents: [liveTorrent],
 				error: null
 			}
 		});
 
-		expect(screen.getByText('Plex synced 5m ago')).toBeInTheDocument();
+		expect(screen.getByText('Completion checked 1h ago')).toBeInTheDocument();
 	});
 
-	it('omits the "Plex synced" caption when the show has never been checked', () => {
-		const neverCheckedShow: ShowBreakdown = { ...exampleShow, plexCheckedAt: undefined };
+	it('omits the "Completion checked" caption when seasonCompletions has never been computed', () => {
+		const neverCheckedShow: ShowBreakdown = { ...exampleShow, seasonCompletions: undefined };
 
 		render(Page, {
 			data: {
@@ -245,7 +263,7 @@ describe('/shows', () => {
 			}
 		});
 
-		expect(screen.queryByText(/Plex synced/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/Completion checked/)).not.toBeInTheDocument();
 	});
 
 	it('"Needs Content" filters down to tracked shows with zero known episodes', async () => {

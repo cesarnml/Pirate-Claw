@@ -29,6 +29,7 @@ function tvRowToShowMeta(row: {
   voteAverage: number | null;
   voteCount: number | null;
   numberOfSeasons: number | null;
+  firstAirDate?: string | null;
 }): TmdbTvShowMeta {
   return {
     tmdbId: row.tmdbId ?? undefined,
@@ -40,6 +41,7 @@ function tvRowToShowMeta(row: {
     voteAverage: row.voteAverage ?? undefined,
     voteCount: row.voteCount ?? undefined,
     numberOfSeasons: row.numberOfSeasons ?? undefined,
+    firstAirDate: row.firstAirDate ?? undefined,
   };
 }
 
@@ -137,6 +139,7 @@ async function resolveShow(
       voteAverage: details.vote_average ?? null,
       voteCount: details.vote_count ?? null,
       numberOfSeasons: details.number_of_seasons ?? null,
+      firstAirDate: details.first_air_date ?? null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

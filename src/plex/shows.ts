@@ -20,9 +20,29 @@ export function enrichShowBreakdownsFromPlexCache(
   deps: Pick<PlexShowEnrichDeps, 'cache' | 'refreshIntervalMinutes'>,
 ): ShowBreakdown[] {
   return shows.map((show) => {
-    const row = deps.cache.getTv(show.normalizedTitle);
+    // No TTL here, unlike the whole-show flag below — see
+    // PlexCache.upsertSeasonCompletion's doc comment for why. Omitted
+    // entirely (not an empty array) when nothing's been computed yet, so
+    // the UI can tell "never checked" apart from "checked, and it's empty."
+    const seasonCompletionRows = deps.cache.getSeasonCompletions(
+      show.normalizedTitle,
+    );
+    const withSeasonCompletions =
+      seasonCompletionRows.length > 0
+        ? {
+            ...show,
+            seasonCompletions: seasonCompletionRows.map((r) => ({
+              season: r.season,
+              airedCount: r.airedCount,
+              ownedCount: r.ownedCount,
+              cachedAt: r.cachedAt,
+            })),
+          }
+        : show;
+
+    const row = deps.cache.getTv(withSeasonCompletions.normalizedTitle);
     if (!row) {
-      return show;
+      return withSeasonCompletions;
     }
 
     // plexCheckedAt is surfaced even when the row is stale (below) — the
@@ -30,11 +50,11 @@ export function enrichShowBreakdownsFromPlexCache(
     // ago, due for another look," which the UI can't do from plexStatus
     // alone once it's reset to 'unknown'.
     if (isPlexShowCacheExpired(row.cachedAt, deps.refreshIntervalMinutes)) {
-      return { ...show, plexCheckedAt: row.cachedAt };
+      return { ...withSeasonCompletions, plexCheckedAt: row.cachedAt };
     }
 
     return {
-      ...show,
+      ...withSeasonCompletions,
       plexStatus: row.inLibrary ? 'in_library' : 'missing',
       watchCount: row.watchCount ?? 0,
       lastWatchedAt: row.lastWatchedAt,

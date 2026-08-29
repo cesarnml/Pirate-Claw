@@ -32,6 +32,8 @@ import { ThePirateBayHttpClient } from './thepiratebay/client';
 import { ManualGrabsStore } from './manual-grabs/store';
 import type { ManualGrabSource } from './manual-grabs/store';
 import { buildShowEpisodeStatus } from './shows/episode-status';
+import type { ShowEpisodeStatus } from './shows/episode-status';
+import type { PlexCache } from './plex/cache';
 import { TrackedShowsStore } from './tracked-shows/store';
 import {
   normalizeShowName,
@@ -1424,6 +1426,41 @@ export function createApiFetch(
         }
 
         const refreshed = await refreshPlexShowBreakdown(show, plexShows);
+
+        // Also refresh the deeper per-season completion counts, not just the
+        // whole-show flag above — this is the one explicit action that
+        // should bring everything up to date, per the operator's own
+        // expectation ("as long as when I manually refresh it updates").
+        // Best-effort: TMDB not being configured, or this specific walk
+        // failing, must not fail the whole-show refresh that already
+        // succeeded.
+        if (database && tmdbShows) {
+          try {
+            // buildShowEpisodeStatus needs show.tmdb populated (season
+            // count, per-episode air dates) — refreshPlexShowBreakdown only
+            // touches the whole-show Plex flag above, so this show has no
+            // TMDB data attached yet.
+            const [withTmdb] = await enrichShowBreakdowns(
+              [refreshed],
+              tmdbShows,
+            );
+            const status = await buildShowEpisodeStatus(withTmdb, {
+              tmdb: tmdbShows,
+              plex: { client: plexShows.client, cache: plexShows.cache },
+              manualGrabs: new ManualGrabsStore(database),
+            });
+            if (status) {
+              persistSeasonCompletions(
+                plexShows.cache,
+                refreshed.normalizedTitle,
+                status,
+              );
+            }
+          } catch {
+            // Best-effort — see doc comment above.
+          }
+        }
+
         return Response.json({ ok: true, show: refreshed });
       } catch {
         return json500();
@@ -1466,6 +1503,13 @@ export function createApiFetch(
           return Response.json(
             { error: 'no tmdb match for this show yet' },
             { status: 409 },
+          );
+        }
+        if (plexShows) {
+          persistSeasonCompletions(
+            plexShows.cache,
+            show.normalizedTitle,
+            status,
           );
         }
         return Response.json(status);
@@ -3391,6 +3435,40 @@ function requireInt(input: unknown, label: string): number {
     );
   }
   return input;
+}
+
+/**
+ * Persists per-season aired-vs-owned episode counts from an already-computed
+ * ShowEpisodeStatus (the show detail page's episode grid, or "Refresh Plex")
+ * into PlexCache — see PlexCache.upsertSeasonCompletion's doc comment. This
+ * never does its own Plex/TMDB work; it only records what buildShowEpisodeStatus
+ * already computed, so it's free wherever that's already running.
+ *
+ * Skips entirely when Plex wasn't reachable for this computation — writing
+ * "0 owned" while every episode reads 'unknown' would cache a false
+ * "everything missing" signal that outlives the transient failure that
+ * produced it.
+ */
+function persistSeasonCompletions(
+  cache: PlexCache,
+  normalizedTitle: string,
+  status: ShowEpisodeStatus,
+): void {
+  if (!status.plexReachable) return;
+
+  const cachedAt = new Date().toISOString();
+  for (const season of status.seasons) {
+    const ownedCount = season.episodes.filter(
+      (episode) => episode.plexStatus === 'in_library',
+    ).length;
+    cache.upsertSeasonCompletion({
+      normalizedTitle,
+      season: season.season,
+      airedCount: season.airedEpisodeCount,
+      ownedCount,
+      cachedAt,
+    });
+  }
 }
 
 /** Only the two operator-facing search sources — see the manual-grab

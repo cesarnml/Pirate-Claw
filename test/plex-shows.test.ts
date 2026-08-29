@@ -586,3 +586,120 @@ describe('plex show enrichment', () => {
     expect(log).toContain('[plex] background refresh completed');
   });
 });
+
+describe('PlexCache season completion', () => {
+  it('upserts and reads back per-season aired/owned counts, ordered by season', () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+
+    cache.upsertSeasonCompletion({
+      normalizedTitle: 'Example Show',
+      season: 2,
+      airedCount: 10,
+      ownedCount: 10,
+      cachedAt: '2026-01-01T00:00:00.000Z',
+    });
+    cache.upsertSeasonCompletion({
+      normalizedTitle: 'Example Show',
+      season: 1,
+      airedCount: 8,
+      ownedCount: 6,
+      cachedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const rows = cache.getSeasonCompletions('Example Show');
+    expect(rows.map((r) => r.season)).toEqual([1, 2]);
+    expect(rows[0]).toMatchObject({ airedCount: 8, ownedCount: 6 });
+  });
+
+  it('a repeat upsert for the same show+season overwrites rather than duplicating', () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+
+    cache.upsertSeasonCompletion({
+      normalizedTitle: 'Example Show',
+      season: 1,
+      airedCount: 8,
+      ownedCount: 6,
+      cachedAt: '2026-01-01T00:00:00.000Z',
+    });
+    cache.upsertSeasonCompletion({
+      normalizedTitle: 'Example Show',
+      season: 1,
+      airedCount: 8,
+      ownedCount: 8,
+      cachedAt: '2026-01-02T00:00:00.000Z',
+    });
+
+    const rows = cache.getSeasonCompletions('Example Show');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ ownedCount: 8 });
+  });
+
+  it('returns an empty array (not undefined) when nothing has been computed yet', () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+    expect(cache.getSeasonCompletions('Never Checked Show')).toEqual([]);
+  });
+});
+
+describe('enrichShowBreakdownsFromPlexCache season completions', () => {
+  it('attaches seasonCompletions from the cache, independent of the whole-show flag/TTL', () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+    cache.upsertSeasonCompletion({
+      normalizedTitle: 'Example Show',
+      season: 1,
+      airedCount: 8,
+      ownedCount: 6,
+      cachedAt: '2020-01-01T00:00:00.000Z', // very stale — must not matter
+    });
+
+    const shows = enrichShowBreakdownsFromPlexCache(
+      [
+        {
+          normalizedTitle: 'Example Show',
+          seasons: [],
+          plexStatus: 'unknown',
+          watchCount: null,
+          lastWatchedAt: null,
+        },
+      ],
+      { cache, refreshIntervalMinutes: 30 },
+    );
+
+    expect(shows[0].seasonCompletions).toEqual([
+      {
+        season: 1,
+        airedCount: 8,
+        ownedCount: 6,
+        cachedAt: '2020-01-01T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('leaves seasonCompletions undefined (not []) when nothing has been computed yet', () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+
+    const shows = enrichShowBreakdownsFromPlexCache(
+      [
+        {
+          normalizedTitle: 'Never Checked Show',
+          seasons: [],
+          plexStatus: 'unknown',
+          watchCount: null,
+          lastWatchedAt: null,
+        },
+      ],
+      { cache, refreshIntervalMinutes: 30 },
+    );
+
+    expect(shows[0].seasonCompletions).toBeUndefined();
+  });
+});

@@ -55,6 +55,25 @@ export type TmdbTvShowMeta = {
 	voteAverage?: number;
 	voteCount?: number;
 	numberOfSeasons?: number;
+	/** Air date of the show's very first episode — a future date (or an
+	 * empty show entirely) means nothing has aired yet at all. */
+	firstAirDate?: string;
+};
+
+/** Aired-vs-owned episode counts for one season, cached server-side from a
+ * real per-episode Plex walk (the show detail page, or "Refresh Plex") —
+ * see src/tv-api-types.ts on the server. Absent entirely on ShowBreakdown
+ * (not an empty array) means this show's completion has never been
+ * computed yet. */
+export type ShowSeasonCompletion = {
+	season: number;
+	airedCount: number;
+	ownedCount: number;
+	/** Per-season, not a single show-level timestamp — see
+	 * src/tv-api-types.ts on the server. Use the oldest one as the
+	 * trustworthy "as of" bound for any whole-show claim built from all of
+	 * them together. */
+	cachedAt: string;
 };
 
 export type PlexStatus = 'in_library' | 'missing' | 'unknown';
@@ -87,6 +106,7 @@ export type ShowBreakdown = {
 	/** When the Plex cache last checked this show, even if stale — undefined
 	 * when no cache row exists yet. See src/tv-api-types.ts on the server. */
 	plexCheckedAt?: string | null;
+	seasonCompletions?: ShowSeasonCompletion[];
 	tmdb?: TmdbTvShowMeta;
 };
 

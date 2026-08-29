@@ -25,6 +25,16 @@ export function ensurePlexSchema(database: Database): void {
       );
     `);
     database.run(`
+      CREATE TABLE IF NOT EXISTS plex_tv_season_completion (
+        normalized_title TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        aired_count INTEGER NOT NULL,
+        owned_count INTEGER NOT NULL,
+        cached_at TEXT NOT NULL,
+        PRIMARY KEY (normalized_title, season)
+      );
+    `);
+    database.run(`
       CREATE TABLE IF NOT EXISTS plex_auth_identity (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         client_identifier TEXT NOT NULL,

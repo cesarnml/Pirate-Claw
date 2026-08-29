@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp as createTempDir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,17 @@ import {
   ensureSchema,
   openDatabase,
 } from '../src/repository';
+
+// Every test in this file spawns a real `bin/pirate-claw` subprocess
+// (runSimpleCommand/runSimpleCommandWithEnv below) — bin/pirate-claw is a
+// shell wrapper around `bun run src/cli.ts`, a genuinely slow cold start
+// (full module graph re-transpiled fresh, no compiled binary, no warm
+// cache) with no shortcut available. bun:test's 5000ms default is fine in
+// isolation but starves under full-suite parallel load — this was flaking
+// intermittently (always this file, never a real logic failure) for
+// exactly that reason. Scoped to this file only, not the global test
+// timeout, since these subprocess-spawn tests are the outlier, not the norm.
+setDefaultTimeout(20_000);
 
 const RUN_INTERVAL_MINUTES_DEFAULT = 15;
 const RECONCILE_INTERVAL_SECONDS_DEFAULT = 30;

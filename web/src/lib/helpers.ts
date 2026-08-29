@@ -207,6 +207,71 @@ export function hasPlexChip(plexStatus: string | undefined | null): boolean {
 	return plexStatus === 'in_library' || plexStatus === 'missing';
 }
 
+export type ShowCompletion =
+	| { status: 'unaired' }
+	| { status: 'complete' }
+	| { status: 'missing'; missingCount: number }
+	| { status: null };
+
+/**
+ * A show's real completion state — replaces the old whole-show
+ * in_library/missing dichotomy with something actually actionable: how many
+ * aired episodes are missing, or whether the show simply hasn't aired at
+ * all yet ("Golden Axe" case: MISSING was never an honest label for a show
+ * with zero episodes out).
+ *
+ * 'unaired' is cheap and immediate — TMDB's firstAirDate is fetched for
+ * every show already, no per-episode Plex data needed. 'complete'/'missing'
+ * need the deeper per-season cache (seasonCompletions), which is only
+ * populated once a show's detail page has been viewed or "Refresh Plex"
+ * clicked at least once — `{ status: null }` means that hasn't happened
+ * yet, and the caller should show nothing rather than guess.
+ */
+export function computeShowCompletion(show: ShowBreakdown): ShowCompletion {
+	const todayIsoDate = new Date().toISOString().slice(0, 10);
+	const firstAirDate = show.tmdb?.firstAirDate;
+	if (firstAirDate !== undefined && firstAirDate > todayIsoDate) {
+		return { status: 'unaired' };
+	}
+
+	const completions = show.seasonCompletions;
+	if (!completions || completions.length === 0) {
+		return { status: null };
+	}
+
+	const totalAired = completions.reduce((sum, c) => sum + c.airedCount, 0);
+	const totalOwned = completions.reduce((sum, c) => sum + c.ownedCount, 0);
+	if (totalAired === 0) {
+		// Confirms the same conclusion as the firstAirDate check above, from
+		// the season-level data instead — belt and suspenders for a show
+		// whose firstAirDate wasn't available for some reason.
+		return { status: 'unaired' };
+	}
+	if (totalOwned >= totalAired) {
+		return { status: 'complete' };
+	}
+	return { status: 'missing', missingCount: totalAired - totalOwned };
+}
+
+/**
+ * The oldest per-season cachedAt across a show's seasonCompletions — the
+ * honest "as of" bound for a whole-show COMPLETE/MISSING claim built by
+ * summing all of them. Deliberately the oldest, not the newest or an
+ * average: a show is only as fresh as its stalest contributing season, and
+ * showing a more-recent unrelated timestamp next to the claim (e.g. the
+ * whole-show Plex flag's own, separately-triggered refresh time) would
+ * imply more freshness than the completion badge actually has. Returns null
+ * when seasonCompletions is absent (nothing computed yet).
+ */
+export function completionCheckedAt(show: ShowBreakdown): string | null {
+	const completions = show.seasonCompletions;
+	if (!completions || completions.length === 0) return null;
+	return completions.reduce(
+		(oldest, c) => (c.cachedAt < oldest ? c.cachedAt : oldest),
+		completions[0].cachedAt
+	);
+}
+
 /**
  * Validates an image URL is https-only. Returns null for missing, non-https, or malformed URLs.
  * Use `movieBackdropSrc` for backdrop images that should fall back to the static default.

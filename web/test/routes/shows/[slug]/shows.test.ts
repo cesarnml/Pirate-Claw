@@ -71,6 +71,10 @@ const detailShow: ShowBreakdown = {
 			]
 		}
 	],
+	seasonCompletions: [
+		{ season: 1, airedCount: 1, ownedCount: 1, cachedAt: '2026-04-15T00:00:00.000Z' },
+		{ season: 2, airedCount: 0, ownedCount: 0, cachedAt: '2026-04-15T00:00:00.000Z' }
+	],
 	tmdb: {
 		name: 'The Show',
 		posterUrl: 'https://example.com/poster.jpg',
@@ -83,7 +87,7 @@ const detailShow: ShowBreakdown = {
 };
 
 describe('/shows/[slug]', () => {
-	it('renders the hero metadata, plex status, and refresh button', () => {
+	it('renders the hero metadata, completion badge, and refresh button', () => {
 		render(Page, {
 			data: {
 				...sharedLayoutData,
@@ -99,7 +103,7 @@ describe('/shows/[slug]', () => {
 		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The Show');
 		expect(screen.getByText('HBO')).toBeInTheDocument();
 		expect(screen.getByText('PLEX PLAYS 2')).toBeInTheDocument();
-		expect(screen.getByText('IN LIBRARY')).toBeInTheDocument();
+		expect(screen.getByText('COMPLETE')).toBeInTheDocument();
 		expect(screen.getByText('2 seasons')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Refresh TMDB/i })).toBeInTheDocument();
 	});

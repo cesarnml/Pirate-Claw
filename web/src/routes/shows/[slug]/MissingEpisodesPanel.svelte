@@ -80,6 +80,19 @@
 			: null
 	);
 
+	/** "(8)" when every aired episode of this season is owned, "(6/8)" when
+	 * only some are — computed straight from the episode grid already loaded
+	 * for this page, no new data. Empty string for a season with nothing
+	 * aired yet (a bare "(0/0)" would just be noise). */
+	function seasonCompletionSuffix(season: {
+		episodes: Array<{ airDate?: string; plexStatus: string }>;
+	}): string {
+		const aired = season.episodes.filter((e) => hasAired(e.airDate)).length;
+		if (aired === 0) return '';
+		const owned = season.episodes.filter((e) => e.plexStatus === 'in_library').length;
+		return owned >= aired ? ` (${aired})` : ` (${owned}/${aired})`;
+	}
+
 	function episodeKey(season: number, episode: number, source: SearchSource): string {
 		return `${season}:${episode}:${source}`;
 	}
@@ -180,7 +193,7 @@
 						}`}
 						onclick={() => (selectedSeason = season.season)}
 					>
-						Season {season.season}
+						Season {season.season}{seasonCompletionSuffix(season)}
 					</button>
 				{/each}
 			</div>
