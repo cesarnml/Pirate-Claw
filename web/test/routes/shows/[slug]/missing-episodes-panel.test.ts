@@ -1,7 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Panel from '../../../../src/routes/shows/[slug]/MissingEpisodesPanel.svelte';
-import type { EztvTorrent, ShowEpisodeStatus, TorrentSearchResult } from '$lib/types';
+import type {
+	EztvTorrent,
+	ShowBreakdown,
+	ShowEpisodeStatus,
+	TorrentSearchResult
+} from '$lib/types';
+
+/** Minimal show fixture — the panel only reads tmdb.numberOfSeasons (to
+ * enumerate season buttons) and seasonCompletions (for suffixes on seasons
+ * that haven't been fetched yet) off this. */
+function showWithSeasons(numberOfSeasons: number): ShowBreakdown {
+	return {
+		normalizedTitle: 'the show',
+		plexStatus: 'unknown',
+		watchCount: null,
+		lastWatchedAt: null,
+		seasons: [],
+		tmdb: { name: 'The Show', numberOfSeasons }
+	};
+}
 
 const statusWithMixedEpisodes: ShowEpisodeStatus = {
 	plexReachable: true,
@@ -55,6 +74,7 @@ describe('MissingEpisodesPanel', () => {
 	it('renders no-TMDB-match state when episodeStatus is null and there is no error', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(1),
 			episodeStatus: null,
 			episodeStatusError: null,
 			canWrite: true
@@ -66,6 +86,7 @@ describe('MissingEpisodesPanel', () => {
 	it('renders the error state when the episode status fetch failed', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(1),
 			episodeStatus: null,
 			episodeStatusError: 'Could not load the missing-episodes panel.',
 			canWrite: true
@@ -77,6 +98,7 @@ describe('MissingEpisodesPanel', () => {
 	it('renders per-episode status, the season-count-mismatch banner, and manual-grab info', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
 			canWrite: true
@@ -92,6 +114,7 @@ describe('MissingEpisodesPanel', () => {
 	it('shows the not-yet-confirmed banner (not an "unreachable" claim) and hides "Find on EZTV" when Plex could not be confirmed', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(1),
 			episodeStatus: {
 				plexReachable: false,
 				seasons: [
@@ -115,6 +138,7 @@ describe('MissingEpisodesPanel', () => {
 		const farFuture = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(1),
 			episodeStatus: {
 				plexReachable: true,
 				seasons: [
@@ -155,6 +179,7 @@ describe('MissingEpisodesPanel', () => {
 	it('does not show "Find on EZTV" for missing episodes when canWrite is false', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
 			canWrite: false
@@ -184,6 +209,7 @@ describe('MissingEpisodesPanel', () => {
 
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
 			canWrite: true
@@ -202,6 +228,7 @@ describe('MissingEpisodesPanel', () => {
 	it('suffixes the season button with (owned/aired) computed from the already-loaded episode grid', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
 			canWrite: true
@@ -215,6 +242,7 @@ describe('MissingEpisodesPanel', () => {
 		const farFuture = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(1),
 			episodeStatus: {
 				plexReachable: true,
 				seasons: [
@@ -243,6 +271,7 @@ describe('MissingEpisodesPanel', () => {
 	it('shows a bare aired-count suffix, with no slash, when every aired episode is owned', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(1),
 			episodeStatus: {
 				plexReachable: true,
 				seasons: [
@@ -271,6 +300,7 @@ describe('MissingEpisodesPanel', () => {
 	it('shows a separate "Find on ThePirateBay" button alongside "Find on EZTV"', () => {
 		render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
 			canWrite: true
@@ -299,6 +329,7 @@ describe('MissingEpisodesPanel', () => {
 
 		const { container } = render(Panel, {
 			slug: 'the-show',
+			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
 			canWrite: true
@@ -314,5 +345,172 @@ describe('MissingEpisodesPanel', () => {
 
 		const sourceInput = container.querySelector('input[name="source"]') as HTMLInputElement | null;
 		expect(sourceInput?.value).toBe('thepiratebay');
+	});
+
+	it('shows a season-completion suffix from show.seasonCompletions for a season that has not been clicked into yet', () => {
+		const show: ShowBreakdown = {
+			...showWithSeasons(4),
+			seasonCompletions: [
+				{ season: 1, airedCount: 10, ownedCount: 10, cachedAt: '2026-01-01T00:00:00.000Z' },
+				{ season: 2, airedCount: 8, ownedCount: 3, cachedAt: '2026-01-01T00:00:00.000Z' }
+			]
+		};
+		render(Panel, {
+			slug: 'the-show',
+			show,
+			episodeStatus: statusWithMixedEpisodes,
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		// Season 1 and 2 were never fetched this visit — their suffixes come
+		// straight from the cached seasonCompletions counts, no extra fetch.
+		expect(screen.getByRole('button', { name: 'Season 1 (10)' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Season 2 (3/8)' })).toBeInTheDocument();
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('does not leak a cached season from a previously-viewed show into a newly-navigated one with the same season number', () => {
+		const { rerender } = render(Panel, {
+			slug: 'show-a',
+			show: showWithSeasons(1),
+			episodeStatus: {
+				plexReachable: true,
+				seasons: [
+					{
+						season: 1,
+						episodeCountMismatch: undefined,
+						episodes: [
+							{
+								episode: 1,
+								name: 'Show A Ep1',
+								airDate: '2026-01-01',
+								plexStatus: 'in_library',
+								manualGrab: null
+							}
+						]
+					}
+				]
+			},
+			episodeStatusError: null,
+			canWrite: true
+		});
+		expect(screen.getByText('Show A Ep1')).toBeInTheDocument();
+
+		// SvelteKit reuses this same component instance across a client-side
+		// navigation between two shows' detail pages — simulated here via
+		// rerender rather than a fresh render call.
+		rerender({
+			slug: 'show-b',
+			show: showWithSeasons(1),
+			episodeStatus: {
+				plexReachable: true,
+				seasons: [
+					{
+						season: 1,
+						episodeCountMismatch: undefined,
+						episodes: [
+							{
+								episode: 1,
+								name: 'Show B Ep1',
+								airDate: '2026-01-01',
+								plexStatus: 'missing',
+								manualGrab: null
+							}
+						]
+					}
+				]
+			},
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		expect(screen.getByText('Show B Ep1')).toBeInTheDocument();
+		expect(screen.queryByText('Show A Ep1')).not.toBeInTheDocument();
+	});
+
+	it('shows freshly-reloaded data for the default season instead of the pre-reload cached grid (e.g. after "Refresh Plex")', () => {
+		const { rerender } = render(Panel, {
+			slug: 'the-show',
+			show: showWithSeasons(4),
+			episodeStatus: statusWithMixedEpisodes,
+			episodeStatusError: null,
+			canWrite: true
+		});
+		expect(screen.getByText('The Griffin Incident')).toBeInTheDocument();
+
+		// Same show, same season 4 — but a "Refresh Plex" reload delivered a
+		// new episodeStatus object with updated content for that season.
+		rerender({
+			slug: 'the-show',
+			show: showWithSeasons(4),
+			episodeStatus: {
+				...statusWithMixedEpisodes,
+				seasons: [
+					{
+						...statusWithMixedEpisodes.seasons[0],
+						episodes: statusWithMixedEpisodes.seasons[0].episodes.map((e) =>
+							e.episode === 2 ? { ...e, name: 'Refreshed Episode Name' } : e
+						)
+					}
+				]
+			},
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		expect(screen.getByText('Refreshed Episode Name')).toBeInTheDocument();
+		expect(screen.queryByText('The Griffin Incident')).not.toBeInTheDocument();
+	});
+
+	it('lazy-fetches a season only once it is clicked into, and renders its episode grid', async () => {
+		fetchMock.mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: undefined,
+							episodes: [
+								{
+									episode: 1,
+									name: 'Season One Pilot',
+									airDate: '2026-01-01',
+									plexStatus: 'in_library',
+									manualGrab: null
+								}
+							]
+						}
+					]
+				}),
+				{ status: 200 }
+			)
+		);
+
+		render(Panel, {
+			slug: 'the-show',
+			show: showWithSeasons(4),
+			episodeStatus: statusWithMixedEpisodes,
+			episodeStatusError: null,
+			canWrite: true
+		});
+
+		// Only season 4 (the server-preloaded default) is fetched at first —
+		// clicking season 4's own button again, or any button before this
+		// point, would be a bug worth catching.
+		expect(fetchMock).not.toHaveBeenCalled();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Season 1' }));
+
+		expect(fetchMock).toHaveBeenCalledWith('/shows/the-show/episodes?season=1');
+		await waitFor(() => {
+			expect(screen.getByText('Season One Pilot')).toBeInTheDocument();
+		});
+		// Switching back to season 4 shows its grid again without re-fetching
+		// (already cached from the initial server-side load).
+		await fireEvent.click(screen.getByRole('button', { name: /Season 4/ }));
+		expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 });

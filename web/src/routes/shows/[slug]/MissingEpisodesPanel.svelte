@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import StatusChip from '$lib/components/StatusChip.svelte';
@@ -7,13 +8,19 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { toast } from '$lib/toast';
-	import type { ShowEpisodeStatus, TorrentSearchResult } from '$lib/types';
+	import type {
+		ShowBreakdown,
+		ShowEpisodeStatus,
+		SeasonWithStatus,
+		TorrentSearchResult
+	} from '$lib/types';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
 	const props = $props<{
 		slug: string;
+		show: ShowBreakdown;
 		episodeStatus: ShowEpisodeStatus | null;
 		episodeStatusError: string | null;
 		canWrite: boolean;
@@ -58,6 +65,18 @@
 		}
 	];
 
+	// The full episode grid is only ever fetched for whichever season the
+	// operator is actually looking at — a show with 30+ seasons (the
+	// "Simpsons case") would otherwise force a live Plex+TMDB walk of every
+	// season on every page view just to compute season-button suffixes.
+	// Other seasons' buttons get their "(6/8)" suffix from show.seasonCompletions
+	// (cached counts, no live fetch) until the operator actually clicks into
+	// them, at which point their full grid is fetched once and cached here.
+	type SeasonFetchState =
+		| { status: 'loading' }
+		| { status: 'error'; message: string }
+		| { status: 'ready'; plexReachable: boolean; season: SeasonWithStatus };
+	let seasonCache = $state<Record<number, SeasonFetchState>>({});
 	let selectedSeason = $state<number | null>(null);
 	let expandedKey = $state<string | null>(null);
 	type LookupState =
@@ -65,32 +84,145 @@
 		| { status: 'error'; message: string }
 		| { status: 'ready'; torrents: TorrentSearchResult[] };
 	let searchResults = $state<Record<string, LookupState>>({});
+	// Tracks which show's data seasonCache currently holds — SvelteKit
+	// reuses this same component instance across client-side navigations
+	// between shows, so without this a season cached for Show A (e.g.
+	// season 3) would render verbatim under Show B's heading the moment
+	// Show B also has a season 3, since the old seeding guard only wrote a
+	// season key the first time it was ever missing.
+	let seenSlug = $state<string | null>(null);
 
+	// Seeds the cache with whatever season the server just loaded — the
+	// page's default season on first mount, but also whenever a fresh
+	// episodeStatus arrives later (a client-side show-to-show navigation,
+	// or an explicit "Refresh Plex"/"Refresh TMDB" reload). Every prior
+	// season entry is dropped rather than merged: a full reload can mean
+	// Refresh Plex just re-walked every season server-side, so a stale
+	// cached grid for some other season is no longer trustworthy either —
+	// safer to force a re-fetch next time it's viewed than to keep
+	// showing pre-refresh data under a "fresh" banner.
 	$effect(() => {
-		if (!props.episodeStatus || selectedSeason !== null || props.episodeStatus.seasons.length === 0)
+		// Reactive dependencies of this effect are deliberately just
+		// props.episodeStatus and props.slug — every read of selectedSeason
+		// below is wrapped in untrack so that clicking a season button
+		// (which sets selectedSeason from outside this effect) never
+		// re-triggers it. Without that, this effect would also depend on
+		// selectedSeason, and its own conditional loadSeason call below
+		// would double up with the click handler's own call every time.
+		if (!props.episodeStatus || props.episodeStatus.seasons.length === 0) {
+			seasonCache = {};
+			untrack(() => {
+				if (props.slug !== seenSlug) {
+					seenSlug = props.slug;
+					selectedSeason = null;
+				}
+			});
 			return;
-		selectedSeason = props.episodeStatus.seasons[0].season;
+		}
+		const initial = props.episodeStatus.seasons[0];
+		const isNewShow = props.slug !== seenSlug;
+		seenSlug = props.slug;
+		seasonCache = {
+			[initial.season]: {
+				status: 'ready',
+				plexReachable: props.episodeStatus.plexReachable,
+				season: initial
+			}
+		};
+		untrack(() => {
+			if (isNewShow || selectedSeason === null) {
+				selectedSeason = initial.season;
+			} else if (selectedSeason !== initial.season) {
+				// The operator was viewing a different season than the one
+				// this fresh load carries — that season's cache entry was
+				// just dropped above, so re-fetch it now instead of leaving
+				// the panel stuck on "Loading season…" until they click its
+				// button again.
+				void loadSeason(selectedSeason);
+			}
+		});
 	});
 
-	const activeSeason = $derived(
-		props.episodeStatus && selectedSeason !== null
-			? (props.episodeStatus.seasons.find((s: { season: number }) => s.season === selectedSeason) ??
-					props.episodeStatus.seasons[0] ??
-					null)
-			: null
+	// Every season TMDB knows about gets a button — independent of whether
+	// its full grid has been fetched yet — sourced from numberOfSeasons
+	// (already known, no extra data) rather than from episodeStatus.seasons,
+	// which now only ever contains whichever season(s) have actually been
+	// fetched.
+	const seasonNumbers = $derived(
+		props.show?.tmdb?.numberOfSeasons
+			? Array.from({ length: props.show.tmdb.numberOfSeasons }, (_, i) => i + 1)
+			: (props.episodeStatus?.seasons.map((s: { season: number }) => s.season) ?? [])
 	);
 
-	/** "(8)" when every aired episode of this season is owned, "(6/8)" when
-	 * only some are — computed straight from the episode grid already loaded
-	 * for this page, no new data. Empty string for a season with nothing
-	 * aired yet (a bare "(0/0)" would just be noise). */
-	function seasonCompletionSuffix(season: {
-		episodes: Array<{ airDate?: string; plexStatus: string }>;
-	}): string {
-		const aired = season.episodes.filter((e) => hasAired(e.airDate)).length;
+	const activeSeasonState = $derived(
+		selectedSeason !== null ? seasonCache[selectedSeason] : undefined
+	);
+	const activeSeason = $derived(
+		activeSeasonState?.status === 'ready' ? activeSeasonState.season : null
+	);
+
+	function suffixFromCounts(aired: number, owned: number): string {
 		if (aired === 0) return '';
-		const owned = season.episodes.filter((e) => e.plexStatus === 'in_library').length;
 		return owned >= aired ? ` (${aired})` : ` (${owned}/${aired})`;
+	}
+
+	/** "(8)" when every aired episode of this season is owned, "(6/8)" when
+	 * only some are, "" when nothing's aired yet. Prefers this season's own
+	 * fetched grid when available (exact, current); falls back to the cached
+	 * completion counts (see PlexCache.upsertSeasonCompletion) for a season
+	 * that hasn't been clicked into this visit. */
+	function seasonButtonSuffix(seasonNumber: number): string {
+		const cached = seasonCache[seasonNumber];
+		if (cached?.status === 'ready') {
+			const aired = cached.season.episodes.filter((e) => hasAired(e.airDate)).length;
+			const owned = cached.season.episodes.filter((e) => e.plexStatus === 'in_library').length;
+			return suffixFromCounts(aired, owned);
+		}
+		const completion = props.show?.seasonCompletions?.find(
+			(c: { season: number }) => c.season === seasonNumber
+		);
+		if (completion) return suffixFromCounts(completion.airedCount, completion.ownedCount);
+		return '';
+	}
+
+	async function loadSeason(season: number): Promise<void> {
+		const existing = seasonCache[season];
+		if (existing && existing.status !== 'error') return;
+
+		seasonCache = { ...seasonCache, [season]: { status: 'loading' } };
+		try {
+			const res = await fetch(`/shows/${encodeURIComponent(props.slug)}/episodes?season=${season}`);
+			const body = (await res.json()) as {
+				seasons?: SeasonWithStatus[];
+				plexReachable?: boolean;
+				error?: string;
+			};
+			if (!res.ok || !body.seasons || body.seasons.length === 0) {
+				seasonCache = {
+					...seasonCache,
+					[season]: { status: 'error', message: body.error ?? 'Could not load this season.' }
+				};
+				return;
+			}
+			seasonCache = {
+				...seasonCache,
+				[season]: {
+					status: 'ready',
+					plexReachable: body.plexReachable ?? false,
+					season: body.seasons[0]
+				}
+			};
+		} catch {
+			seasonCache = {
+				...seasonCache,
+				[season]: { status: 'error', message: 'Could not reach the API.' }
+			};
+		}
+	}
+
+	function selectSeason(season: number): void {
+		selectedSeason = season;
+		void loadSeason(season);
 	}
 
 	function episodeKey(season: number, episode: number, source: SearchSource): string {
@@ -164,6 +296,14 @@
 				const rest = { ...searchResults };
 				for (const k of episodeKeys) delete rest[k];
 				searchResults = rest;
+				// This season's owned/missing counts just changed — the cached
+				// grid (and the button suffix derived from it) is now stale.
+				// Re-fetch it rather than leave a manual grab invisible until
+				// the next unrelated reload.
+				const stale = { ...seasonCache };
+				delete stale[season];
+				seasonCache = stale;
+				void loadSeason(season);
 			} else if (result.type === 'failure') {
 				toast('Grab failed', 'error', (result.data?.grabMessage as string) ?? undefined);
 			} else if (result.type === 'error') {
@@ -183,17 +323,15 @@
 		</div>
 		{#if props.episodeStatus}
 			<div class="flex flex-wrap gap-2">
-				{#each props.episodeStatus.seasons as season (season.season)}
+				{#each seasonNumbers as seasonNumber (seasonNumber)}
 					<button
 						type="button"
 						class={`border-border bg-card/75 text-muted-foreground hover:border-primary/30 hover:text-foreground rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.18em] uppercase transition-colors ${
-							activeSeason?.season === season.season
-								? 'border-primary/35 bg-primary/12 text-primary'
-								: ''
+							selectedSeason === seasonNumber ? 'border-primary/35 bg-primary/12 text-primary' : ''
 						}`}
-						onclick={() => (selectedSeason = season.season)}
+						onclick={() => selectSeason(seasonNumber)}
 					>
-						Season {season.season}{seasonCompletionSuffix(season)}
+						Season {seasonNumber}{seasonButtonSuffix(seasonNumber)}
 					</button>
 				{/each}
 			</div>
@@ -214,8 +352,15 @@
 				</p>
 			</CardContent>
 		</Card>
+	{:else if activeSeasonState?.status === 'error'}
+		<Alert variant="destructive">
+			<AlertTitle>Could not load this season</AlertTitle>
+			<AlertDescription>{activeSeasonState.message}</AlertDescription>
+		</Alert>
+	{:else if activeSeasonState?.status === 'loading' || !activeSeasonState}
+		<p class="text-muted-foreground text-sm">Loading season…</p>
 	{:else}
-		{#if !props.episodeStatus.plexReachable}
+		{#if !activeSeasonState.plexReachable}
 			<Alert>
 				<AlertTitle>Plex hasn't confirmed this show yet</AlertTitle>
 				<AlertDescription>

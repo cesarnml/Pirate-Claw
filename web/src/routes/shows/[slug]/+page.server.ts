@@ -29,6 +29,11 @@ export const load: PageServerLoad = async ({ params }) => {
 	let episodeStatusError: string | null = null;
 	if (show) {
 		try {
+			// Season omitted here — the daemon defaults to the most recent
+			// season on its own (same value MissingEpisodesPanel would compute
+			// as its initial selection), so this stays the single source of
+			// truth for "which season opens by default" instead of duplicating
+			// that choice on both sides.
 			const response = await apiFetch<ShowEpisodeStatus>(
 				`/api/shows/${encodeURIComponent(title)}/episodes`
 			);

@@ -1815,6 +1815,151 @@ describe('missing-episodes feature (episodes / eztv / manual-grab)', () => {
         db.close();
       }
     });
+
+    it('scopes the live walk to just the requested season (the "36-season" fix) — other seasons are neither TMDB- nor Plex-fetched', async () => {
+      const db = new Database(':memory:');
+      ensureSchema(db);
+      const getTvSeasonCalls: number[] = [];
+      const getSeasonEpisodesCalls: string[] = [];
+      const deps: ApiFetchDeps = {
+        ...createDeps({
+          listCandidateStates: () =>
+            [
+              tvCandidate({
+                identityKey: 'k1',
+                normalizedTitle: 'test show',
+                season: 1,
+                episode: 1,
+              }),
+            ] as never,
+        }),
+        database: db,
+        tmdbShows: {
+          cache: new TmdbCache(db),
+          client: {
+            searchTv: async () => ({ id: 42, name: 'Test Show' }),
+            getTv: async () => ({
+              id: 42,
+              name: 'Test Show',
+              number_of_seasons: 3,
+            }),
+            getTvSeason: async (_tvId: unknown, seasonNumber: number) => {
+              getTvSeasonCalls.push(seasonNumber);
+              return {
+                season_number: seasonNumber,
+                episodes: [
+                  { episode_number: 1, name: 'Ep 1', air_date: '2026-01-01' },
+                ],
+              };
+            },
+            getTvExternalIds: async () => ({ imdbId: 'tt1234567' }),
+          } as never,
+          cacheTtlMs: 60_000,
+          negativeCacheTtlMs: 10_000,
+          log: () => {},
+        },
+        plexShows: {
+          cache: new PlexCache(db),
+          client: {
+            searchShows: async () => [
+              { ratingKey: '1', title: 'Test Show', type: 'show' },
+            ],
+            getShowSeasons: async () => [
+              { ratingKey: 's1', seasonNumber: 1, episodeCount: 1 },
+              { ratingKey: 's2', seasonNumber: 2, episodeCount: 1 },
+              { ratingKey: 's3', seasonNumber: 3, episodeCount: 1 },
+            ],
+            getSeasonEpisodes: async (ratingKey: string) => {
+              getSeasonEpisodesCalls.push(ratingKey);
+              return [{ episodeNumber: 1 }];
+            },
+          } as never,
+          refreshIntervalMinutes: 30,
+          log: () => {},
+        },
+      };
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request(
+            'http://localhost/api/shows/test%20show/episodes?season=2',
+          ),
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          seasons: Array<{ season: number }>;
+        };
+        expect(body.seasons).toHaveLength(1);
+        expect(body.seasons[0].season).toBe(2);
+        // Season 3 never triggered a TMDB or Plex round trip at all — the
+        // whole point of the scoping. (Season 1 legitimately gets its own
+        // TMDB fetch too, independent of this: it's in this show's
+        // candidate_state, so findEnrichedShowBySlug's own per-season
+        // enrichment — unrelated to buildShowEpisodeStatus — fetches it
+        // regardless of ?season=.)
+        expect(getTvSeasonCalls).toContain(2);
+        expect(getTvSeasonCalls).not.toContain(3);
+        expect(getSeasonEpisodesCalls).toEqual(['s2']);
+      } finally {
+        db.close();
+      }
+    });
+
+    it('defaults to the most recent season when ?season= is omitted', async () => {
+      const db = new Database(':memory:');
+      ensureSchema(db);
+      const deps: ApiFetchDeps = {
+        ...createDeps({
+          listCandidateStates: () =>
+            [
+              tvCandidate({
+                identityKey: 'k1',
+                normalizedTitle: 'test show',
+                season: 1,
+                episode: 1,
+              }),
+            ] as never,
+        }),
+        database: db,
+        tmdbShows: {
+          cache: new TmdbCache(db),
+          client: {
+            searchTv: async () => ({ id: 42, name: 'Test Show' }),
+            getTv: async () => ({
+              id: 42,
+              name: 'Test Show',
+              number_of_seasons: 3,
+            }),
+            getTvSeason: async (_tvId: unknown, seasonNumber: number) => ({
+              season_number: seasonNumber,
+              episodes: [
+                { episode_number: 1, name: 'Ep 1', air_date: '2026-01-01' },
+              ],
+            }),
+            getTvExternalIds: async () => ({ imdbId: 'tt1234567' }),
+          } as never,
+          cacheTtlMs: 60_000,
+          negativeCacheTtlMs: 10_000,
+          log: () => {},
+        },
+      };
+
+      try {
+        const handler = createApiFetch(deps);
+        const response = await handler(
+          new Request('http://localhost/api/shows/test%20show/episodes'),
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          seasons: Array<{ season: number }>;
+        };
+        expect(body.seasons).toHaveLength(1);
+        expect(body.seasons[0].season).toBe(3);
+      } finally {
+        db.close();
+      }
+    });
   });
 
   describe('GET /api/shows/:slug/eztv', () => {

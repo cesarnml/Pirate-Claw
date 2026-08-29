@@ -53,6 +53,59 @@ function showFixture(numberOfSeasons: number): ShowBreakdown {
 }
 
 describe('buildShowEpisodeStatus', () => {
+  it('restricts the walk to a single season when options.season is given — no TMDB or Plex call for other seasons (the "36-season" fix)', async () => {
+    const tvCalls: number[] = [];
+    const tmdb: TvEnrichDeps = {
+      cache: new TmdbCache(freshDb()),
+      client: {
+        getTvSeason: async (_tvId: number, seasonNumber: number) => {
+          tvCalls.push(seasonNumber);
+          return {
+            season_number: seasonNumber,
+            episodes: [{ episode_number: 1, air_date: '2026-01-01' }],
+          };
+        },
+      } as unknown as TmdbHttpClient,
+      cacheTtlMs: 1000 * 60,
+      negativeCacheTtlMs: 1000 * 60,
+      log: () => {},
+    };
+
+    const plexCalls: number[] = [];
+    const plex = {
+      client: {
+        searchShows: async () =>
+          [
+            { ratingKey: 'rk-show', title: 'Strange New Worlds', type: 'show' },
+          ] as PlexSearchResult[],
+        getShowSeasons: async () =>
+          [1, 2, 3].map(
+            (n): PlexSeasonSummary => ({
+              ratingKey: `rk-s${n}`,
+              seasonNumber: n,
+              episodeCount: 1,
+            }),
+          ),
+        getSeasonEpisodes: async (ratingKey: string) => {
+          plexCalls.push(Number(ratingKey.slice(-1)));
+          return [{ episodeNumber: 1 }] as PlexEpisodeSummary[];
+        },
+      } as unknown as PlexHttpClient,
+      cache: new PlexCache(freshDb()),
+    };
+
+    const status = await buildShowEpisodeStatus(
+      showFixture(3),
+      { tmdb, plex, manualGrabs: new ManualGrabsStore(freshDb()) },
+      { season: 2 },
+    );
+
+    expect(status?.seasons).toHaveLength(1);
+    expect(status?.seasons[0].season).toBe(2);
+    expect(tvCalls).toEqual([2]);
+    expect(plexCalls).toEqual([2]);
+  });
+
   it('returns null when the show has no TMDB match yet', async () => {
     const db = freshDb();
     const result = await buildShowEpisodeStatus(

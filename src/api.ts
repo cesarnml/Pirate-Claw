@@ -1492,13 +1492,30 @@ export function createApiFetch(
 
         await reconcileShowIfStale(show.normalizedTitle);
 
-        const status = await buildShowEpisodeStatus(show, {
-          tmdb: tmdbShows,
-          plex: plexShows
-            ? { client: plexShows.client, cache: plexShows.cache }
-            : undefined,
-          manualGrabs: new ManualGrabsStore(database),
-        });
+        // `?season=` scopes the live Plex+TMDB walk to just that one season
+        // (see buildShowEpisodeStatus's doc comment) — the passive per-page-
+        // view load path this route serves must stay O(1) regardless of how
+        // many seasons a show has. Default to the most recent season when
+        // omitted: that's the one an operator opening this page is almost
+        // always here to check, and it needs no extra data to compute (just
+        // TMDB's already-known numberOfSeasons).
+        const seasonParam = new URL(request.url).searchParams.get('season');
+        const parsedSeason = seasonParam === null ? NaN : Number(seasonParam);
+        const season = Number.isInteger(parsedSeason)
+          ? parsedSeason
+          : show.tmdb?.numberOfSeasons;
+
+        const status = await buildShowEpisodeStatus(
+          show,
+          {
+            tmdb: tmdbShows,
+            plex: plexShows
+              ? { client: plexShows.client, cache: plexShows.cache }
+              : undefined,
+            manualGrabs: new ManualGrabsStore(database),
+          },
+          { season },
+        );
         if (!status) {
           return Response.json(
             { error: 'no tmdb match for this show yet' },

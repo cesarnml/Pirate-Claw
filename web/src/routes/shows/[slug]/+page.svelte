@@ -231,6 +231,7 @@
 
 		<MissingEpisodesPanel
 			slug={data.show.normalizedTitle}
+			show={data.show}
 			episodeStatus={data.episodeStatus}
 			episodeStatusError={data.episodeStatusError}
 			canWrite={data.canWrite}

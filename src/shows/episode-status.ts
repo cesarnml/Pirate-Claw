@@ -60,10 +60,22 @@ export type EpisodeStatusDeps = {
  * canonical per-season episode list (independent of local queue history) +
  * Plex's live per-episode presence + any manual-grab records for this show.
  * Returns null when the show has no TMDB match yet (nothing to build from).
+ *
+ * `options.season`, when given, restricts the *entire* walk (TMDB per-season
+ * fetch AND the Plex per-season episode fetch) to just that one season —
+ * this is the difference between an O(seasons) live walk and an O(1) one. A
+ * show with 30+ seasons (the "Simpsons case") would otherwise re-fetch every
+ * season's Plex + TMDB data on every single page view. Season buttons for
+ * *other* seasons are rendered by the caller from the already-cached
+ * plex_tv_season_completion rows (see ShowBreakdown.seasonCompletions), not
+ * from this function's output — so omitting them here costs nothing in the
+ * UI. Omitting `options.season` entirely still walks every season (used by
+ * the explicit "Refresh Plex" action, which is deliberately a full refresh).
  */
 export async function buildShowEpisodeStatus(
   show: ShowBreakdown,
   deps: EpisodeStatusDeps,
+  options?: { season?: number },
 ): Promise<ShowEpisodeStatus | null> {
   const tmdbId = show.tmdb?.tmdbId;
   const numberOfSeasons = show.tmdb?.numberOfSeasons;
@@ -73,7 +85,8 @@ export async function buildShowEpisodeStatus(
 
   const matchKey = tvMatchKey(show.normalizedTitle);
   const todayIsoDate = new Date().toISOString().slice(0, 10);
-  const plexPresence = await loadPlexPresence(show, deps.plex);
+  const targetSeason = options?.season;
+  const plexPresence = await loadPlexPresence(show, deps.plex, targetSeason);
   const manualGrabsByKey = groupManualGrabsByEpisode(
     deps.manualGrabs.listForShow(show.normalizedTitle),
   );
@@ -81,10 +94,10 @@ export async function buildShowEpisodeStatus(
   // Each season's TMDB lookup is independent (own cache row, own possible
   // HTTP call) — run them concurrently rather than one at a time, the same
   // way enrichShowBreakdowns already does for its own per-show TMDB calls.
-  const seasonNumbers = Array.from(
-    { length: numberOfSeasons },
-    (_, i) => i + 1,
-  );
+  const seasonNumbers =
+    targetSeason !== undefined
+      ? [targetSeason]
+      : Array.from({ length: numberOfSeasons }, (_, i) => i + 1);
   const seasonResults = await Promise.all(
     seasonNumbers.map(async (seasonNumber) => {
       const tmdbEpisodes = await loadSeasonEpisodes(
@@ -165,6 +178,7 @@ type PlexPresence = {
 async function loadPlexPresence(
   show: ShowBreakdown,
   plex: EpisodeStatusDeps['plex'],
+  targetSeason?: number,
 ): Promise<PlexPresence> {
   const empty: PlexPresence = { reachable: false, seasons: new Map() };
   if (!plex) {
@@ -183,12 +197,20 @@ async function loadPlexPresence(
     return { reachable: true, seasons: new Map() };
   }
 
-  const plexSeasons = await plex.client.getShowSeasons(ratingKey);
-  if (plexSeasons === null) {
+  const allPlexSeasons = await plex.client.getShowSeasons(ratingKey);
+  if (allPlexSeasons === null) {
     // Have a ratingKey, but the live walk failed just now — transient,
     // not "this show isn't in Plex".
     return empty;
   }
+  // getShowSeasons is one cheap PMS call returning every season's metadata
+  // (no per-episode walk yet) — filtering here only skips the *heavier*
+  // per-season getSeasonEpisodes call below, one per season, for whichever
+  // seasons the caller didn't ask for.
+  const plexSeasons =
+    targetSeason === undefined
+      ? allPlexSeasons
+      : allPlexSeasons.filter((s) => s.seasonNumber === targetSeason);
 
   // Same reasoning as the TMDB season loop above — one PMS round trip per
   // season, independent of the others, so run them concurrently.
