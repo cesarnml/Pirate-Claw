@@ -104,6 +104,15 @@ export function installRootMediaShowsDir(
   return normalized ? join(normalized, 'media', 'shows') : undefined;
 }
 
+/** The movie sibling of {@link installRootMediaShowsDir} — used by the movie
+ * library reconciler to walk the real files on disk. */
+export function installRootMediaMoviesDir(
+  installRoot: string | undefined = process.env.PIRATE_CLAW_INSTALL_ROOT,
+): string | undefined {
+  const normalized = normalizeInstallRoot(installRoot);
+  return normalized ? join(normalized, 'media', 'movies') : undefined;
+}
+
 export function generatedDaemonApiWriteTokenPath(configPath: string): string {
   return join(
     dirname(configPath),

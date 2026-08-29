@@ -27,4 +27,31 @@ export function ensureManualMovieGrabsSchema(database: Database): void {
     CREATE INDEX IF NOT EXISTS manual_movie_grabs_tmdb_id
       ON manual_movie_grabs(tmdb_id);
   `);
+
+  // A manual/adopted grab has no candidate_state row to pull a release year
+  // from, but the Plex cache (see plex/movies.ts) is keyed by
+  // (normalized title, year) — without a year stored here, a movie grabbed
+  // outside the RSS pipeline can never be looked up in that cache, so its
+  // "already grabbed" status could never be corrected once Plex confirms it
+  // missing (deleted, wrong match, etc.). See notes/public/movie-calendar-scope.md.
+  ensureManualMovieGrabsColumn(database, 'movie_year', 'INTEGER');
+}
+
+function ensureManualMovieGrabsColumn(
+  database: Database,
+  columnName: string,
+  columnType: 'INTEGER' | 'REAL' | 'TEXT',
+): void {
+  const hasColumn =
+    (database
+      .query(
+        `SELECT 1 FROM pragma_table_info('manual_movie_grabs') WHERE name = ?1`,
+      )
+      .get(columnName) as { 1: number } | null | undefined) !== null;
+
+  if (!hasColumn) {
+    database.run(
+      `ALTER TABLE manual_movie_grabs ADD COLUMN ${columnName} ${columnType}`,
+    );
+  }
 }

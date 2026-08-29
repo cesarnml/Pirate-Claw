@@ -248,17 +248,19 @@ export async function getMovieCalendar(
 }
 
 /** Same mechanism as anchorOffsetForToday in calendar.ts — see its comment
- * for the full rationale (current/past/future year all resolved by one
- * formula because `sorted` is date-ascending). */
+ * for the full rationale (anchors on the 1st of the current month rather
+ * than today's exact date, so the current month isn't skipped when nothing
+ * releases in whatever's left of it; current/past/future year all resolved
+ * by one formula because `sorted` is date-ascending). */
 function anchorOffsetForToday(
   sorted: (TmdbDiscoverMovieResult & { title: string })[],
   total: number,
   limit: number,
 ): number {
   if (total === 0) return 0;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const monthStartIso = `${new Date().toISOString().slice(0, 7)}-01`;
   let rawIndex = sorted.findIndex(
-    (result) => (result.release_date || UNDATED_SORT_KEY) >= todayIso,
+    (result) => (result.release_date || UNDATED_SORT_KEY) >= monthStartIso,
   );
   if (rawIndex === -1) rawIndex = total;
   return Math.min(rawIndex, Math.max(0, total - limit));

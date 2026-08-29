@@ -7,7 +7,7 @@ import type { TrackedShowRecord } from '../tracked-shows/store';
 import { normalizeFeedItem } from '../normalize';
 import { titlesMatch } from './title-match';
 
-const VIDEO_EXTENSIONS = new Set([
+export const VIDEO_EXTENSIONS = new Set([
   '.mkv',
   '.mp4',
   '.avi',
@@ -178,7 +178,7 @@ async function adoptFromFilesystem(
   return adopted;
 }
 
-async function walkVideoFiles(root: string): Promise<string[]> {
+export async function walkVideoFiles(root: string): Promise<string[]> {
   const results: string[] = [];
   const stack = [root];
 

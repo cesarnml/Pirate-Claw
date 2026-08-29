@@ -1,5 +1,7 @@
 import { buildMovieBreakdowns } from '../api';
 import { buildShowBreakdowns } from '../api';
+import { manualMovieGrabsAsBreakdowns } from '../manual-movie-grabs/store';
+import type { ManualMovieGrabsStore } from '../manual-movie-grabs/store';
 import type { Repository } from '../repository';
 import type { TrackedShowsStore } from '../tracked-shows/store';
 import type { PlexMovieEnrichDeps } from './movies';
@@ -19,9 +21,22 @@ export async function runPlexBackgroundRefresh(input: {
    * buildShowBreakdowns only seeds tracked-but-empty stubs when given a
    * tracked-title list. See api.ts's own callers for the same wiring. */
   trackedShows?: TrackedShowsStore;
+  /** Without this, a movie that only ever exists via a manual/adopted grab
+   * (no candidate_state row) never gets its plexStatus checked at all —
+   * ownedMovieTmdbIds's Plex override (api.ts) then has nothing to read and
+   * falls back to trusting the ledger forever, exactly the bug this whole
+   * mechanism exists to fix. */
+  manualMovieGrabs?: ManualMovieGrabsStore;
   log: (message: string) => void;
 }): Promise<void> {
-  const { repository, plexMovies, plexShows, trackedShows, log } = input;
+  const {
+    repository,
+    plexMovies,
+    plexShows,
+    trackedShows,
+    manualMovieGrabs,
+    log,
+  } = input;
   if (!plexMovies && !plexShows) {
     return;
   }
@@ -29,8 +44,14 @@ export async function runPlexBackgroundRefresh(input: {
   const candidates = repository.listCandidateStates();
   if (plexMovies) {
     try {
-      const movies = buildMovieBreakdowns(candidates);
-      await refreshMovieLibraryCache(movies, plexMovies);
+      const candidateMovies = buildMovieBreakdowns(candidates);
+      const manualMovies = manualMovieGrabs
+        ? manualMovieGrabsAsBreakdowns(manualMovieGrabs)
+        : [];
+      await refreshMovieLibraryCache(
+        [...candidateMovies, ...manualMovies],
+        plexMovies,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`[plex] movie refresh failed: ${message}`);

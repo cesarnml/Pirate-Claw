@@ -1,7 +1,8 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const TARGET_DIR_NAMES = new Set(['tv', 'shows']);
+const SHOW_DIR_NAMES = new Set(['tv', 'shows']);
+const MOVIE_DIR_NAMES = new Set(['movies', 'movie']);
 
 /** Directories never worth descending into: known non-media state
  * (`config`, `data`, `transmission`), and `incomplete` specifically because
@@ -33,6 +34,27 @@ const MAX_DEPTH = 8;
 export async function discoverShowDirectories(
   installRoot: string,
 ): Promise<string[]> {
+  return discoverMediaDirectories(installRoot, SHOW_DIR_NAMES);
+}
+
+/**
+ * Same idea as {@link discoverShowDirectories}, for movies: finds every
+ * directory under `installRoot` named exactly "movies" or "movie"
+ * (case-insensitive), beyond pirate-claw's own canonical `media/movies`.
+ * Lets the movie library reconciler notice a torrent added by hand through
+ * Transmission's web UI even though pirate-claw never ingested it — see
+ * src/adoption/movie-reconciler.ts.
+ */
+export async function discoverMovieDirectories(
+  installRoot: string,
+): Promise<string[]> {
+  return discoverMediaDirectories(installRoot, MOVIE_DIR_NAMES);
+}
+
+async function discoverMediaDirectories(
+  installRoot: string,
+  targetDirNames: Set<string>,
+): Promise<string[]> {
   const found: string[] = [];
   await walk(installRoot, 0);
   return found;
@@ -55,7 +77,7 @@ export async function discoverShowDirectories(
       if (EXCLUDED_DIR_NAMES.has(lowerName)) continue;
 
       const fullPath = join(dir, entry.name);
-      if (TARGET_DIR_NAMES.has(lowerName)) {
+      if (targetDirNames.has(lowerName)) {
         found.push(fullPath);
         continue;
       }

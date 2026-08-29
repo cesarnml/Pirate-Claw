@@ -42,6 +42,7 @@ import { ManualGrabsStore } from './manual-grabs/store';
 import type { ManualGrabSource } from './manual-grabs/store';
 import { ManualMovieGrabsStore } from './manual-movie-grabs/store';
 import type { ManualMovieGrabSource } from './manual-movie-grabs/store';
+import { manualMovieGrabsAsBreakdowns } from './manual-movie-grabs/store';
 import { buildShowEpisodeStatus } from './shows/episode-status';
 import type { ShowEpisodeStatus } from './shows/episode-status';
 import type { PlexCache } from './plex/cache';
@@ -52,10 +53,16 @@ import {
 } from './tracked-shows/sync';
 import { reconcileShowLibrary } from './adoption/reconciler';
 import {
+  installRootMediaMoviesDir,
   installRootMediaShowsDir,
   normalizeInstallRoot,
 } from './install-bootstrap';
-import { discoverShowDirectories } from './adoption/discover-media-dirs';
+import {
+  discoverMovieDirectories,
+  discoverShowDirectories,
+} from './adoption/discover-media-dirs';
+import { adoptMoviesFromFilesystem } from './adoption/movie-reconciler';
+import type { MovieAdoptionCandidate } from './adoption/movie-reconciler';
 import { extractCodec, extractResolution } from './normalize';
 import {
   ConfigError,
@@ -585,26 +592,79 @@ export function createApiFetch(
   }
 
   /** TMDB ids for every movie already owned (RSS-feeder-grabbed and
-   * confirmed by candidate_state) or manually grabbed via the movie
+   * confirmed by candidate_state) or manually/adopted-grabbed via the movie
    * calendar — backs CalendarMovieItem.alreadyGrabbed and
    * TopMovieItem.alreadyGrabbed. Reuses the exact same
    * candidates -> buildMovieBreakdowns -> enrichMovieBreakdowns pipeline
    * /api/movies already runs, so this costs nothing beyond what that
    * endpoint already pays (TMDB enrichment is cache-first — see
-   * tmdb/movie-enrichment.ts). */
+   * tmdb/movie-enrichment.ts).
+   *
+   * candidate_state and manual_movie_grabs are both insert-only ledgers —
+   * neither one is ever corrected when the file is later deleted, whether
+   * via Plex, the media directory, or Transmission (see
+   * notes/public/movie-calendar-scope.md). Plex's own cache (plexStatus) is
+   * the one signal here that actually reflects deletions, so when it has a
+   * confirmed answer it overrides the ledger in both directions: a
+   * confirmed 'missing' drops a movie out of the owned set even though the
+   * ledger says grabbed; a confirmed 'in_library' keeps it in even if the
+   * ledger disagrees. When Plex hasn't checked yet ('unknown' — a fresh
+   * grab the background refresh hasn't reached), the ledger's own answer is
+   * trusted at face value — that's the "ahead of Plex sync" grace period. */
   async function ownedMovieTmdbIds(): Promise<Set<number>> {
-    const grabbed = database
-      ? new ManualMovieGrabsStore(database).listGrabbedTmdbIds()
-      : new Set<number>();
-    if (!tmdbMovies) return grabbed;
+    const manualMovieGrabs = database
+      ? new ManualMovieGrabsStore(database)
+      : undefined;
+    const owned = manualMovieGrabs?.listGrabbedTmdbIds() ?? new Set<number>();
 
     const candidates = repository.listCandidateStates(API_CANDIDATE_LIST_LIMIT);
     const base = buildMovieBreakdowns(candidates);
-    const enriched = await enrichMovieBreakdowns(base, tmdbMovies);
-    for (const movie of enriched) {
-      if (movie.tmdb?.tmdbId) grabbed.add(movie.tmdb.tmdbId);
+    const candidateBreakdowns = tmdbMovies
+      ? await enrichMovieBreakdowns(base, tmdbMovies)
+      : [];
+    for (const movie of candidateBreakdowns) {
+      if (movie.tmdb?.tmdbId) owned.add(movie.tmdb.tmdbId);
     }
-    return grabbed;
+
+    if (!plexMovies) return owned;
+
+    const manualBreakdowns = manualMovieGrabs
+      ? manualMovieGrabsAsBreakdowns(manualMovieGrabs)
+      : [];
+    const withPlex = enrichMovieBreakdownsFromPlexCache(
+      [...candidateBreakdowns, ...manualBreakdowns],
+      plexMovies,
+    );
+
+    // A movie can appear in both breakdown lists (RSS-grabbed, then also
+    // manually re-grabbed) with two DIFFERENT Plex cache keys — the
+    // candidate one's RSS-derived normalizedTitle vs. the manual one's
+    // TMDB-title-derived normalizedTitle — so their plexStatus can
+    // disagree. Naively applying each in array order let whichever came
+    // last silently win, which could downgrade a Plex-confirmed-owned
+    // movie to missing just because its *other* lookup key hadn't been
+    // checked yet. Aggregate every status seen for a tmdbId instead: any
+    // 'in_library' wins outright (Plex found it somewhere); 'missing' only
+    // overrides the ledger when EVERY lookup for that id came back missing
+    // (none still 'unknown') — a lone unresolved 'unknown' keeps the
+    // ledger's own answer, the same grace period as the single-lookup case.
+    const statusesByTmdbId = new Map<
+      number,
+      Set<(typeof withPlex)[number]['plexStatus']>
+    >();
+    for (const movie of withPlex) {
+      const tmdbId = movie.tmdb?.tmdbId;
+      if (!tmdbId) continue;
+      const statuses = statusesByTmdbId.get(tmdbId) ?? new Set();
+      statuses.add(movie.plexStatus);
+      statusesByTmdbId.set(tmdbId, statuses);
+    }
+    for (const [tmdbId, statuses] of statusesByTmdbId) {
+      if (statuses.has('in_library')) owned.add(tmdbId);
+      else if (statuses.has('missing') && !statuses.has('unknown'))
+        owned.delete(tmdbId);
+    }
+    return owned;
   }
 
   // Discovering extra tv/shows directories walks the whole install root —
@@ -632,6 +692,84 @@ export function createApiFetch(
       new Set([primary, ...discovered].filter((dir): dir is string => !!dir)),
     );
     return cachedMediaShowsDirs;
+  }
+
+  // Movie sibling of cachedMediaShowsDirs/resolveMediaShowsDirs above —
+  // same once-per-process-lifetime rationale.
+  let cachedMediaMoviesDirs: string[] | undefined;
+
+  async function resolveMediaMoviesDirs(): Promise<string[]> {
+    if (cachedMediaMoviesDirs) return cachedMediaMoviesDirs;
+
+    const installRoot = activeConfig.runtime.installRoot;
+    const primary = installRootMediaMoviesDir(installRoot);
+    const normalizedRoot = normalizeInstallRoot(installRoot);
+    let discovered: string[] = [];
+    if (normalizedRoot) {
+      try {
+        discovered = await discoverMovieDirectories(normalizedRoot);
+      } catch {
+        // Best-effort — a failed discovery pass still leaves the primary
+        // media/movies path usable below.
+      }
+    }
+    cachedMediaMoviesDirs = Array.from(
+      new Set([primary, ...discovered].filter((dir): dir is string => !!dir)),
+    );
+    return cachedMediaMoviesDirs;
+  }
+
+  // Unlike reconcileShowIfStale's per-show gate, movies have no single
+  // tracked entity to key a staleness check off of — every request for the
+  // Movie Calendar / Top Movies pages would otherwise trigger its own fresh
+  // recursive filesystem walk (real NAS I/O), so this throttles the sweep
+  // itself, globally, to once per RECONCILE_STALE_AFTER_MS regardless of
+  // how many requests come in during that window.
+  let lastMovieAdoptionSweepAt = 0;
+
+  /** Runs the movie filesystem adoption sweep against whatever movie list
+   * is currently being returned (Top Movies of Year / Movie Calendar), then
+   * patches alreadyGrabbed for anything it found — best-effort, mirrors
+   * reconcileShowIfStale's "never break the page that triggered it" rule.
+   * Movies have no single-item page to trigger reconciliation from like TV
+   * shows do, so this runs inline against the current response instead of
+   * being gated by a per-item staleness check — see lastMovieAdoptionSweepAt
+   * above for the throttle that keeps this affordable.
+   *
+   * Takes explicit accessors rather than a fixed item shape because
+   * CalendarMovieItem and TopMovieItem don't share one (TopMovieItem's
+   * tmdbId can be null; CalendarMovieItem has no imdbId at all). */
+  async function adoptMoviesForCurrentView<T>(
+    items: T[],
+    toCandidate: (item: T) => MovieAdoptionCandidate | null,
+    withAlreadyGrabbed: (item: T, alreadyGrabbed: true) => T,
+  ): Promise<T[]> {
+    if (!database) return items;
+    if (Date.now() - lastMovieAdoptionSweepAt < RECONCILE_STALE_AFTER_MS) {
+      return items;
+    }
+    lastMovieAdoptionSweepAt = Date.now();
+
+    try {
+      const manualMovieGrabs = new ManualMovieGrabsStore(database);
+      const candidates = items
+        .map(toCandidate)
+        .filter((c): c is MovieAdoptionCandidate => c !== null);
+      const adopted = await adoptMoviesFromFilesystem(candidates, {
+        mediaMoviesDirs: await resolveMediaMoviesDirs(),
+        manualMovieGrabs,
+      });
+      if (adopted.size === 0) return items;
+      return items.map((item) => {
+        const candidate = toCandidate(item);
+        return candidate && adopted.has(candidate.tmdbId)
+          ? withAlreadyGrabbed(item, true)
+          : item;
+      });
+    } catch {
+      // Best-effort — see doc comment above.
+      return items;
+    }
   }
 
   /** Refreshes at most once per RECONCILE_STALE_AFTER_MS per show, triggered
@@ -1398,9 +1536,21 @@ export function createApiFetch(
           offset,
           limit,
         });
+        const items = await adoptMoviesForCurrentView(
+          page.items,
+          (item) => ({
+            tmdbId: item.tmdbId,
+            title: item.title,
+            releaseDate: item.releaseDate,
+            imdbId: null,
+            posterUrl: item.posterUrl,
+            alreadyGrabbed: item.alreadyGrabbed,
+          }),
+          (item, alreadyGrabbed) => ({ ...item, alreadyGrabbed }),
+        );
         return Response.json({
           year,
-          items: page.items,
+          items,
           total: page.total,
           offset: page.offset,
           limit,
@@ -1423,11 +1573,14 @@ export function createApiFetch(
 
       const params = new URL(request.url).searchParams;
       const currentYear = new Date().getFullYear();
+      // No future years: TMDB has no reliable "top movies" ranking for a
+      // year that hasn't released yet, and even released titles don't have
+      // torrents worth scraping until well after their theatrical run.
       const year = clampNonNegativeInt(
         params.get('year'),
         currentYear,
         1900,
-        currentYear + 5,
+        currentYear,
       );
       // Rescanning re-hits a third-party site and (on a cold cache) makes
       // up to 100 TMDB calls — a deliberate operator action, gated like any
@@ -1441,7 +1594,22 @@ export function createApiFetch(
       try {
         const owned = await ownedMovieTmdbIds();
         const result = await getTopMovies(topMovies, year, owned, rescan);
-        return Response.json(result);
+        const items = await adoptMoviesForCurrentView(
+          result.items,
+          (item) =>
+            item.tmdbId === null
+              ? null
+              : {
+                  tmdbId: item.tmdbId,
+                  title: item.title,
+                  releaseDate: item.releaseDate,
+                  imdbId: item.imdbId,
+                  posterUrl: item.posterUrl,
+                  alreadyGrabbed: item.alreadyGrabbed,
+                },
+          (item, alreadyGrabbed) => ({ ...item, alreadyGrabbed }),
+        );
+        return Response.json({ ...result, items });
       } catch {
         return json500();
       }
@@ -1593,6 +1761,7 @@ export function createApiFetch(
         const tmdbId = Number(movieManualGrabMatch[1]);
         let moviePosterUrl: string | null = null;
         let movieDisplayTitle: string | null = null;
+        let movieYear: number | null = null;
         if (tmdbMovies) {
           const movie = await tmdbMovies.client.getMovie(tmdbId);
           if (movie) {
@@ -1600,6 +1769,9 @@ export function createApiFetch(
               ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
               : null;
             movieDisplayTitle = movie.title;
+            movieYear = movie.release_date
+              ? Number(movie.release_date.slice(0, 4))
+              : null;
           }
         }
 
@@ -1626,6 +1798,7 @@ export function createApiFetch(
           transmissionTorrentId: result.torrentId ?? null,
           moviePosterUrl,
           movieDisplayTitle,
+          movieYear,
         });
 
         return Response.json({ ok: true, grab: recorded });

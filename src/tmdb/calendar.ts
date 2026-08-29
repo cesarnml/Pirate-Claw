@@ -205,11 +205,16 @@ export async function getTvCalendar(
  * special-case "which direction am I coming from".
  *
  * One formula covers every case because `sorted` is date-ascending:
- * - current year: lands on the page containing today's date.
- * - a past year (every date < today): the index search runs off the end,
- *   so this clamps to the last full page — exactly "load earlier months"
- *   rolling into the previous year wants.
- * - a future year (every date > today): the index search matches
+ * - current year: lands on the page containing the 1st of this month, not
+ *   today's exact date — anchoring on today would skip straight into next
+ *   month whenever nothing releases in the handful of days left in this one
+ *   (e.g. viewing on the 29th with nothing scheduled the 29th-31st), which
+ *   reads as "the current month isn't shown at all" even though it's
+ *   genuinely still the current month.
+ * - a past year (every date < this month): the index search runs off the
+ *   end, so this clamps to the last full page — exactly "load earlier
+ *   months" rolling into the previous year wants.
+ * - a future year (every date > this month): the index search matches
  *   immediately at 0 — exactly "load more" rolling into next year wants.
  */
 function anchorOffsetForToday(
@@ -218,9 +223,9 @@ function anchorOffsetForToday(
   limit: number,
 ): number {
   if (total === 0) return 0;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const monthStartIso = `${new Date().toISOString().slice(0, 7)}-01`;
   let rawIndex = sorted.findIndex(
-    (result) => (result.first_air_date || UNDATED_SORT_KEY) >= todayIso,
+    (result) => (result.first_air_date || UNDATED_SORT_KEY) >= monthStartIso,
   );
   if (rawIndex === -1) rawIndex = total;
   return Math.min(rawIndex, Math.max(0, total - limit));

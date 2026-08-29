@@ -254,12 +254,20 @@
 		| { status: 'loading' }
 		| { status: 'error'; message: string }
 		| { status: 'ready'; scrapeError: string | null; fetchedAt: string };
-	let topYear = $state(new Date().getFullYear());
+	const currentYear = new Date().getFullYear();
+	// ISO date (YYYY-MM-DD) string comparison works fine against TMDB's
+	// release_date, which is always this shape.
+	const todayIso = new Date().toISOString().slice(0, 10);
+	let topYear = $state(currentYear);
 	let topByYear = $state<Record<number, TopMovieItem[] | undefined>>({});
 	let topFetchState = $state<TopFetchState>({ status: 'idle' });
 	let rescanning = $state(false);
+	let topFilter = $state<'all' | 'missing'>('all');
 
 	const topItems = $derived(topByYear[topYear] ?? []);
+	const filteredTopItems = $derived(
+		topFilter === 'missing' ? topItems.filter((item) => !item.alreadyGrabbed) : topItems
+	);
 
 	async function loadTopMovies(year: number, rescan = false): Promise<void> {
 		if (!rescan && topByYear[year]) {
@@ -494,7 +502,12 @@
 			<Button variant="outline" class="rounded-full px-3" onclick={() => changeTopYear(-1)}>
 				← {topYear - 1}
 			</Button>
-			<Button variant="outline" class="rounded-full px-3" onclick={() => changeTopYear(1)}>
+			<Button
+				variant="outline"
+				class="rounded-full px-3"
+				disabled={topYear >= currentYear}
+				onclick={() => changeTopYear(1)}
+			>
 				{topYear + 1} →
 			</Button>
 			<Button
@@ -509,6 +522,23 @@
 				{:else}
 					Rescan {topYear}
 				{/if}
+			</Button>
+		</div>
+
+		<div class="flex items-center gap-2">
+			<Button
+				variant={topFilter === 'all' ? 'default' : 'outline'}
+				class="rounded-full px-4"
+				onclick={() => (topFilter = 'all')}
+			>
+				All
+			</Button>
+			<Button
+				variant={topFilter === 'missing' ? 'default' : 'outline'}
+				class="rounded-full px-4"
+				onclick={() => (topFilter = 'missing')}
+			>
+				Missing
 			</Button>
 		</div>
 
@@ -531,10 +561,14 @@
 			{/if}
 			{#if topItems.length === 0}
 				<p class="text-muted-foreground text-sm">No Top Movies data for {topYear}.</p>
+			{:else if filteredTopItems.length === 0}
+				<p class="text-muted-foreground text-sm">
+					Nothing missing — every Top {topYear} movie is already grabbed.
+				</p>
 			{:else}
 				<svelte:boundary onerror={handleRenderCrash}>
 					<ul class="space-y-3">
-						{#each topItems as item (item.rank)}
+						{#each filteredTopItems as item (item.rank)}
 							<li class="bg-card/75 flex flex-col gap-3 rounded-3xl border border-white/10 p-4">
 								<div class="flex gap-4">
 									<span class="text-muted-foreground w-8 shrink-0 text-lg font-semibold">
@@ -582,7 +616,11 @@
 									</div>
 								</div>
 
-								{#if item.tmdbId}
+								{#if item.releaseDate && item.releaseDate > todayIso}
+									<p class="text-muted-foreground text-xs">
+										Not released yet — no torrents to find until {shortDate(item.releaseDate)}.
+									</p>
+								{:else if item.tmdbId}
 									<MovieGrabPanel
 										tmdbId={item.tmdbId}
 										title={item.title}

@@ -66,6 +66,7 @@ import type { MovieEnrichDeps } from './tmdb/movie-enrichment';
 import type { TvEnrichDeps } from './tmdb/tv-enrichment';
 import { resolveTmdbSettings } from './tmdb/settings';
 import { createTransmissionDownloader } from './transmission';
+import { ManualMovieGrabsStore } from './manual-movie-grabs/store';
 import { TrackedShowsStore } from './tracked-shows/store';
 import { syncTrackedShowsFromConfig } from './tracked-shows/sync';
 
@@ -338,6 +339,7 @@ export async function runCli(argv: string[]): Promise<number> {
           plexMovies,
           plexShows,
           trackedShows,
+          manualMovieGrabs: new ManualMovieGrabsStore(database),
           log,
         });
       } finally {
@@ -626,6 +628,7 @@ export async function runCli(argv: string[]): Promise<number> {
                   plexMovies,
                   plexShows,
                   trackedShows,
+                  manualMovieGrabs: new ManualMovieGrabsStore(database),
                   log,
                 });
               }
