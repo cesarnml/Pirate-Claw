@@ -846,6 +846,8 @@ describe('GET /api/candidates', () => {
         firstAirDate: null,
         numberOfSeasons: 1,
         seasonsJson: null,
+        status: null,
+        inProduction: null,
       });
       const candidates = [tvCandidate()];
       const deps: ApiFetchDeps = {

@@ -80,6 +80,11 @@ export type TmdbTvDetails = {
   first_air_date?: string;
   number_of_seasons?: number;
   seasons?: { season_number: number; episode_count: number }[];
+  /** 'Returning Series' | 'Planned' | 'In Production' | 'Ended' | 'Canceled'
+   * | 'Pilot' — TMDB's own documented vocabulary, not enumerated here since
+   * pirate_claw only ever pattern-matches on 'Ended'/'Canceled'. */
+  status?: string;
+  in_production?: boolean;
 };
 
 export type TmdbDiscoverTvResult = {

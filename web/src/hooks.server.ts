@@ -7,8 +7,23 @@ import {
 	SESSION_COOKIE_NAME
 } from '$lib/server/session';
 import { apiRequest } from '$lib/server/api';
+import { logTimedRequest } from '$lib/server/route-timing';
 
 const PUBLIC_PATHS = new Set(['/setup', '/login', '/logout']);
+
+/** Times every route resolution (page loads and +server.ts handlers alike)
+ * so an occasional hang leaves a trace instead of only being visible as "the
+ * user hit refresh and it was fine the second time." The /api/shows-style
+ * TMDB fan-out hangs this is meant to catch resolve in seconds-to-minutes,
+ * not milliseconds — see api.ts's per-upstream-call logging (shares this
+ * same slow-request bar) for which specific daemon call was the culprit. */
+function timedResolve(
+	event: Parameters<Handle>[0]['event'],
+	resolve: Parameters<Handle>[0]['resolve']
+): Promise<Response> {
+	const { pathname } = event.url;
+	return logTimedRequest('[route]', event.request.method, pathname, async () => resolve(event));
+}
 
 export function init() {
 	if (!process.env.PIRATE_CLAW_API_WRITE_TOKEN) {
@@ -59,11 +74,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// visitor to `/` (see routes/login and routes/setup +page.server.ts).
 	// Forcing locals.user = null here would defeat that guard.
 	if (PUBLIC_PATHS.has(path)) {
-		return resolve(event);
+		return timedResolve(event, resolve);
 	}
 
 	if (user) {
-		return resolve(event);
+		return timedResolve(event, resolve);
 	}
 
 	// API routes return 401 rather than redirecting

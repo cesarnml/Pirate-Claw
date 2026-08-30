@@ -16,6 +16,17 @@ export type TmdbTvShowMeta = {
    * request. Lets the UI say "hasn't aired yet" (future date) honestly and
    * immediately, without needing the deeper per-season Plex cache below. */
   firstAirDate?: string;
+  /** TMDB's own lifecycle status ('Ended' | 'Canceled' | 'Returning Series' |
+   * 'In Production' | 'Planned' | 'Pilot') — also free on the same
+   * show-details call. Lets the TMDB cache stop re-checking a show that will
+   * never air again on the same clock as one still airing; see
+   * isDormantShow in tmdb/tv-enrichment.ts. */
+  status?: string;
+  /** TMDB's "currently producing new episodes" flag. Checked alongside
+   * status rather than alone — a 'Returning Series' between seasons can
+   * still report this false during an ordinary hiatus, so it takes both
+   * together to call a show truly done. */
+  inProduction?: boolean;
 };
 
 /** Aired-vs-owned episode counts for one season, cached from the show

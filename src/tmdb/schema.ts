@@ -42,6 +42,9 @@ export function ensureTmdbSchema(database: Database): void {
       );
     `);
     ensureColumn(database, 'tmdb_tv_cache', 'network_name', 'TEXT');
+    // 'Ended' | 'Canceled' | 'Returning Series' | ... — see TmdbTvDetails.
+    ensureColumn(database, 'tmdb_tv_cache', 'status', 'TEXT');
+    ensureColumn(database, 'tmdb_tv_cache', 'in_production', 'INTEGER');
     database.run(`
       CREATE TABLE IF NOT EXISTS tmdb_tv_season_cache (
         show_match_key TEXT NOT NULL,

@@ -31,6 +31,11 @@ export type TmdbTvCacheRow = {
   firstAirDate: string | null;
   numberOfSeasons: number | null;
   seasonsJson: string | null;
+  /** TMDB's own lifecycle status ('Ended', 'Canceled', 'Returning Series',
+   * ...) — null for rows cached before this column existed, or for a
+   * negative (search-miss) row. See isDormantShow in tv-enrichment.ts. */
+  status: string | null;
+  inProduction: boolean | null;
 };
 
 export type TmdbTvSeasonCacheRow = {
@@ -127,19 +132,28 @@ export class TmdbCache {
           genre_ids_json AS genreIdsJson,
           first_air_date AS firstAirDate,
           number_of_seasons AS numberOfSeasons,
-          seasons_json AS seasonsJson
+          seasons_json AS seasonsJson,
+          status,
+          in_production AS inProduction
         FROM tmdb_tv_cache
         WHERE match_key = ?1`,
       )
       .get(matchKey) as
-      | (Omit<TmdbTvCacheRow, 'isNegative'> & { isNegative: number })
+      | (Omit<TmdbTvCacheRow, 'isNegative' | 'inProduction'> & {
+          isNegative: number;
+          inProduction: number | null;
+        })
       | null
       | undefined;
 
     if (!row) {
       return undefined;
     }
-    return { ...row, isNegative: row.isNegative === 1 };
+    return {
+      ...row,
+      isNegative: row.isNegative === 1,
+      inProduction: row.inProduction === null ? null : row.inProduction === 1,
+    };
   }
 
   upsertTv(row: TmdbTvCacheRow): void {
@@ -148,8 +162,9 @@ export class TmdbCache {
         match_key, tmdb_id, is_negative, expires_at,
         name, overview, poster_path, backdrop_path, network_name,
         vote_average, vote_count, genre_ids_json,
-        first_air_date, number_of_seasons, seasons_json
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        first_air_date, number_of_seasons, seasons_json,
+        status, in_production
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
       ON CONFLICT(match_key) DO UPDATE SET
         tmdb_id = excluded.tmdb_id,
         is_negative = excluded.is_negative,
@@ -164,7 +179,9 @@ export class TmdbCache {
         genre_ids_json = excluded.genre_ids_json,
         first_air_date = excluded.first_air_date,
         number_of_seasons = excluded.number_of_seasons,
-        seasons_json = excluded.seasons_json`,
+        seasons_json = excluded.seasons_json,
+        status = excluded.status,
+        in_production = excluded.in_production`,
       [
         row.matchKey,
         row.tmdbId,
@@ -181,6 +198,8 @@ export class TmdbCache {
         row.firstAirDate,
         row.numberOfSeasons,
         row.seasonsJson,
+        row.status,
+        row.inProduction === null ? null : row.inProduction ? 1 : 0,
       ],
     );
   }

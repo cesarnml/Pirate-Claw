@@ -149,8 +149,10 @@ describe('handle — public paths still resolve locals.user from a valid session
 	});
 
 	function fakeEvent(path: string, cookieValue: string | undefined): RequestEvent {
+		const url = new URL(`http://localhost:8888${path}`);
 		return {
-			url: new URL(`http://localhost:8888${path}`),
+			url,
+			request: new Request(url),
 			cookies: { get: (name: string) => (name === SESSION_COOKIE_NAME ? cookieValue : undefined) },
 			locals: {}
 		} as unknown as RequestEvent;

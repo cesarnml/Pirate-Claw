@@ -19,6 +19,32 @@ export type TvEnrichDeps = {
   log: (message: string) => void;
 };
 
+// A show TMDB itself says is 'Ended'/'Canceled' and not currently producing
+// won't have new episode/status data to report — caching it this much
+// longer than an active show is what keeps a big, mostly-finished library
+// from re-checking its dead shows on the same clock as its live ones (the
+// thundering-herd cause behind occasional /api/shows stalls). Still finite,
+// not permanent, so a revival self-heals within this window even if nobody
+// hits the manual "Refresh TMDB" escape hatch on the show detail page.
+const DORMANT_CACHE_TTL_MULTIPLIER = 6;
+
+/** True once TMDB itself says a show is done and not currently in
+ * production — both checked together because a 'Returning Series' between
+ * seasons can report in_production: false during an ordinary hiatus, so
+ * status alone isn't enough to call it truly finished. Unknown/missing
+ * status (undefined, or a value outside TMDB's own vocabulary) is never
+ * treated as dormant — better to keep checking than to silently go stale
+ * forever on a misread. */
+export function isDormantShow(meta: {
+  status?: string | null;
+  inProduction?: boolean | null;
+}): boolean {
+  return (
+    (meta.status === 'Ended' || meta.status === 'Canceled') &&
+    meta.inProduction !== true
+  );
+}
+
 function tvRowToShowMeta(row: {
   tmdbId: number | null;
   name: string | null;
@@ -30,6 +56,8 @@ function tvRowToShowMeta(row: {
   voteCount: number | null;
   numberOfSeasons: number | null;
   firstAirDate?: string | null;
+  status?: string | null;
+  inProduction?: boolean | null;
 }): TmdbTvShowMeta {
   return {
     tmdbId: row.tmdbId ?? undefined,
@@ -42,6 +70,8 @@ function tvRowToShowMeta(row: {
     voteCount: row.voteCount ?? undefined,
     numberOfSeasons: row.numberOfSeasons ?? undefined,
     firstAirDate: row.firstAirDate ?? undefined,
+    status: row.status ?? undefined,
+    inProduction: row.inProduction ?? undefined,
   };
 }
 
@@ -91,6 +121,8 @@ async function resolveShow(
         firstAirDate: null,
         numberOfSeasons: null,
         seasonsJson: null,
+        status: null,
+        inProduction: null,
       });
       deps.log(`tmdb tv search miss: ${matchKey}`);
       return undefined;
@@ -110,12 +142,23 @@ async function resolveShow(
     const seasonsJson = details.seasons
       ? JSON.stringify(details.seasons)
       : null;
+    const dormant = isDormantShow({
+      status: details.status,
+      inProduction: details.in_production,
+    });
+    if (dormant) {
+      deps.log(`tmdb tv dormant, extending cache: ${matchKey}`);
+    }
 
     deps.cache.upsertTv({
       matchKey,
       tmdbId: details.id,
       isNegative: false,
-      expiresAt: expiresAtIso(deps.cacheTtlMs),
+      expiresAt: expiresAtIso(
+        dormant
+          ? deps.cacheTtlMs * DORMANT_CACHE_TTL_MULTIPLIER
+          : deps.cacheTtlMs,
+      ),
       name: details.name,
       overview: details.overview ?? null,
       posterPath: details.poster_path ?? null,
@@ -127,6 +170,8 @@ async function resolveShow(
       firstAirDate: details.first_air_date ?? null,
       numberOfSeasons: details.number_of_seasons ?? null,
       seasonsJson,
+      status: details.status ?? null,
+      inProduction: details.in_production ?? null,
     });
 
     return tvRowToShowMeta({
@@ -140,6 +185,8 @@ async function resolveShow(
       voteCount: details.vote_count ?? null,
       numberOfSeasons: details.number_of_seasons ?? null,
       firstAirDate: details.first_air_date ?? null,
+      status: details.status ?? null,
+      inProduction: details.in_production ?? null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -158,7 +205,10 @@ export async function loadSeasonEpisodes(
   tvId: number,
   seasonNumber: number,
   deps: TvEnrichDeps,
-  options?: { forceRefresh?: boolean },
+  /** `dormant`: the parent show is TMDB-confirmed done (see isDormantShow)
+   * — a past season's episode list won't change once that's true, so this
+   * season's cache row gets the same extended TTL as the show row itself. */
+  options?: { forceRefresh?: boolean; dormant?: boolean },
 ): Promise<
   | {
       episode_number: number;
@@ -203,7 +253,11 @@ export async function loadSeasonEpisodes(
     deps.cache.upsertTvSeason({
       showMatchKey,
       seasonNumber,
-      expiresAt: expiresAtIso(deps.cacheTtlMs),
+      expiresAt: expiresAtIso(
+        options?.dormant
+          ? deps.cacheTtlMs * DORMANT_CACHE_TTL_MULTIPLIER
+          : deps.cacheTtlMs,
+      ),
       episodesJson,
     });
 
@@ -237,7 +291,7 @@ async function enrichSeason(
   tvId: number,
   season: ShowSeason,
   deps: TvEnrichDeps,
-  options?: { forceRefresh?: boolean },
+  options?: { forceRefresh?: boolean; dormant?: boolean },
 ): Promise<ShowSeason> {
   const tmdbEps = await loadSeasonEpisodes(
     showMatchKey,
@@ -278,8 +332,11 @@ export async function enrichShowBreakdowns(
       }
 
       const tvId = showMeta.tmdbId;
+      const dormant = isDormantShow(showMeta);
       const seasons = await Promise.all(
-        show.seasons.map((season) => enrichSeason(key, tvId, season, deps)),
+        show.seasons.map((season) =>
+          enrichSeason(key, tvId, season, deps, { dormant }),
+        ),
       );
 
       return {
@@ -304,9 +361,13 @@ export async function refreshShowBreakdown(
     return showMeta ? { ...show, tmdb: showMeta } : show;
   }
 
+  const dormant = isDormantShow(showMeta);
   const seasons = await Promise.all(
     show.seasons.map((season) =>
-      enrichSeason(key, showMeta.tmdbId!, season, deps, { forceRefresh: true }),
+      enrichSeason(key, showMeta.tmdbId!, season, deps, {
+        forceRefresh: true,
+        dormant,
+      }),
     ),
   );
 
