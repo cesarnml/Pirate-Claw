@@ -38,6 +38,15 @@ export function ensureManualGrabsSchema(database: Database): void {
   // /api/transmission/torrents fill that in without a second lookup.
   ensureManualGrabsColumn(database, 'show_poster_url', 'TEXT');
   ensureManualGrabsColumn(database, 'show_display_title', 'TEXT');
+
+  // percentDone/doneDate only exist in Transmission's live torrent-get
+  // response — once a torrent is removed from Transmission (e.g. bulk
+  // "Remove seeding"), that's gone for good. Recording the first moment
+  // /api/transmission/torrents observes this hash at 100% lets Your Haul
+  // keep showing a manually-grabbed completion after the torrent itself is
+  // gone, the same way transmissionDoneDate survives on a candidate_state
+  // row. Written once (see ManualGrabsStore.markDone), never overwritten.
+  ensureManualGrabsColumn(database, 'done_at', 'TEXT');
 }
 
 function ensureManualGrabsColumn(

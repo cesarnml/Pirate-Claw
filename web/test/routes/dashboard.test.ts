@@ -90,6 +90,7 @@ const baseData = {
 	candidates: [],
 	runSummaries: [],
 	outcomes: [],
+	manualGrabArchive: [],
 	onboarding: null as OnboardingStatus | null,
 	error: null
 };

@@ -139,4 +139,59 @@ describe('ManualGrabsStore', () => {
       episode: 1,
     });
   });
+
+  describe('markDone / listCompleted', () => {
+    it('records a completion once and keeps the first timestamp on repeat calls', () => {
+      const store = freshStore();
+      store.record({
+        normalizedTitle: 'show a',
+        season: 1,
+        episode: 1,
+        source: 'eztv',
+        rawTitle: 'Show A S01E01',
+        transmissionTorrentHash: 'hash-1',
+        transmissionTorrentId: 1,
+        showPosterUrl: 'https://example.test/poster.jpg',
+        showDisplayTitle: 'Show A',
+      });
+
+      store.markDone('hash-1', '2026-02-01T00:00:00.000Z');
+      // A later call must not overwrite the first-observed timestamp — see
+      // markDone's own comment on why the first completion sticks.
+      store.markDone('hash-1', '2026-03-01T00:00:00.000Z');
+
+      const completed = store.listCompleted();
+      expect(completed.get('hash-1')).toEqual({
+        posterUrl: 'https://example.test/poster.jpg',
+        displayTitle: 'Show A',
+        normalizedTitle: 'show a',
+        season: 1,
+        episode: 1,
+        doneAt: '2026-02-01T00:00:00.000Z',
+      });
+    });
+
+    it('omits grabs with no recorded completion', () => {
+      const store = freshStore();
+      store.record({
+        normalizedTitle: 'show a',
+        season: 1,
+        episode: 1,
+        source: 'eztv',
+        rawTitle: 'Show A S01E01',
+        transmissionTorrentHash: 'hash-1',
+        transmissionTorrentId: 1,
+      });
+
+      expect(store.listCompleted().size).toBe(0);
+    });
+
+    it('is a no-op for a hash with no matching grab', () => {
+      const store = freshStore();
+      expect(() =>
+        store.markDone('missing-hash', '2026-01-01T00:00:00.000Z'),
+      ).not.toThrow();
+      expect(store.listCompleted().size).toBe(0);
+    });
+  });
 });

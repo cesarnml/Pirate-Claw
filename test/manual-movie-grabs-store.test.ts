@@ -132,4 +132,43 @@ describe('ManualMovieGrabsStore', () => {
       displayTitle: 'New Title',
     });
   });
+
+  describe('markDone / listCompleted', () => {
+    it('records a completion once and keeps the first timestamp on repeat calls', () => {
+      const store = freshStore();
+      store.record({
+        tmdbId: 1,
+        imdbId: null,
+        source: 'yts',
+        rawTitle: 'Movie A',
+        transmissionTorrentHash: 'hash-1',
+        transmissionTorrentId: 1,
+        moviePosterUrl: 'https://example.test/poster.jpg',
+        movieDisplayTitle: 'Movie A',
+      });
+
+      store.markDone('hash-1', '2026-02-01T00:00:00.000Z');
+      store.markDone('hash-1', '2026-03-01T00:00:00.000Z');
+
+      expect(store.listCompleted().get('hash-1')).toEqual({
+        posterUrl: 'https://example.test/poster.jpg',
+        displayTitle: 'Movie A',
+        doneAt: '2026-02-01T00:00:00.000Z',
+      });
+    });
+
+    it('omits grabs with no recorded completion', () => {
+      const store = freshStore();
+      store.record({
+        tmdbId: 1,
+        imdbId: null,
+        source: 'yts',
+        rawTitle: 'Movie A',
+        transmissionTorrentHash: 'hash-1',
+        transmissionTorrentId: 1,
+      });
+
+      expect(store.listCompleted().size).toBe(0);
+    });
+  });
 });

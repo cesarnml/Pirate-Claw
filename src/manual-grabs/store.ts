@@ -189,6 +189,65 @@ export class ManualGrabsStore {
     return map;
   }
 
+  /** Records the first observed completion for a manually-grabbed torrent —
+   * called from /api/transmission/torrents whenever it sees this hash at
+   * 100% done. Idempotent: only rows still NULL are touched, so the first
+   * completion timestamp sticks even if this fires again later (e.g. after
+   * a re-seed cycle resets Transmission's own doneDate). See done_at's
+   * schema comment for why this can't just be read live from Transmission. */
+  markDone(hash: string, doneAt: string): void {
+    this.database
+      .query(
+        `UPDATE manual_grabs SET done_at = ?2
+         WHERE transmission_torrent_hash = ?1 AND done_at IS NULL`,
+      )
+      .run(hash, doneAt);
+  }
+
+  /** Every manually-grabbed torrent with a recorded completion, keyed by
+   * hash — the manual-grab-sourced half of Your Haul (see
+   * +page.svelte:manualGrabArchiveItems). Survives the torrent itself being
+   * removed from Transmission, unlike listAllTorrentDisplayInfo's live-join
+   * fields. When a hash has more than one grab, the most recently queued
+   * one's display info wins, same as listAllTorrentDisplayInfo. */
+  listCompleted(): Map<string, ManualGrabDisplayInfo & { doneAt: string }> {
+    const rows = this.database
+      .query(
+        `SELECT transmission_torrent_hash AS hash,
+                show_poster_url AS posterUrl,
+                show_display_title AS displayTitle,
+                normalized_title AS normalizedTitle,
+                season,
+                episode,
+                done_at AS doneAt
+         FROM manual_grabs
+         WHERE done_at IS NOT NULL
+         ORDER BY queued_at ASC`,
+      )
+      .all() as {
+      hash: string;
+      posterUrl: string | null;
+      displayTitle: string | null;
+      normalizedTitle: string;
+      season: number;
+      episode: number;
+      doneAt: string;
+    }[];
+
+    const map = new Map<string, ManualGrabDisplayInfo & { doneAt: string }>();
+    for (const row of rows) {
+      map.set(row.hash, {
+        posterUrl: row.posterUrl,
+        displayTitle: row.displayTitle,
+        normalizedTitle: row.normalizedTitle,
+        season: row.season,
+        episode: row.episode,
+        doneAt: row.doneAt,
+      });
+    }
+    return map;
+  }
+
   /** All manual grabs recorded for a show, most recent first — one episode
    * can have more than one row if it was grabbed more than once. */
   listForShow(normalizedTitle: string): ManualGrabRecord[] {

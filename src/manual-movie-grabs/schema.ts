@@ -36,4 +36,10 @@ export function ensureManualMovieGrabsSchema(database: Database): void {
   // "already grabbed" status could never be corrected once Plex confirms it
   // missing (deleted, wrong match, etc.). See notes/public/movie-calendar-scope.md.
   ensureColumn(database, 'manual_movie_grabs', 'movie_year', 'INTEGER');
+
+  // Same rationale as manual_grabs.done_at (see src/manual-grabs/schema.ts):
+  // percentDone/doneDate only exist in Transmission's live response, so
+  // recording the first observed 100% here lets Your Haul keep this
+  // completion after the torrent is removed from Transmission.
+  ensureColumn(database, 'manual_movie_grabs', 'done_at', 'TEXT');
 }

@@ -9,7 +9,6 @@
 		initialBox
 	} from '$lib/helpers';
 	import StatusChip from '$lib/components/StatusChip.svelte';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
@@ -450,30 +449,21 @@
 						ontouchcancel={cancelLongPress}
 						ontouchmove={onTouchMove}
 					>
-						<div class="relative h-24 w-16 shrink-0">
-							{#if posterUrl}
-								<img
-									src={posterUrl}
-									alt={title}
-									draggable="false"
-									class="h-24 w-16 rounded-2xl object-cover [-webkit-user-drag:none]"
-									loading="lazy"
-								/>
-							{:else}
-								<div
-									class="bg-muted text-muted-foreground flex h-24 w-16 items-center justify-center rounded-2xl text-lg font-semibold"
-								>
-									{initialBox(title)}
-								</div>
-							{/if}
-							{#if mediaType === 'tv' && season != null && episode != null}
-								<Badge
-									class="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-red-900/70 text-[9px] font-bold text-amber-50"
-								>
-									S{String(season).padStart(2, '0')}E{String(episode).padStart(2, '0')}
-								</Badge>
-							{/if}
-						</div>
+						{#if posterUrl}
+							<img
+								src={posterUrl}
+								alt={title}
+								draggable="false"
+								class="h-24 w-16 shrink-0 rounded-2xl object-cover [-webkit-user-drag:none]"
+								loading="lazy"
+							/>
+						{:else}
+							<div
+								class="bg-muted text-muted-foreground flex h-24 w-16 shrink-0 items-center justify-center rounded-2xl text-lg font-semibold"
+							>
+								{initialBox(title)}
+							</div>
+						{/if}
 
 						<div class="min-w-0 flex-1">
 							<div class="flex items-start justify-between gap-3">

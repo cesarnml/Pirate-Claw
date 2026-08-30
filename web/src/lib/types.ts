@@ -341,10 +341,24 @@ export type TorrentStatSnapshot = {
 	posterUrl?: string | null;
 	displayTitle?: string | null;
 	mediaType?: 'tv' | 'movie';
-	/** TV manual grabs only — used for the S/E pill and the /shows/:slug link. */
+	/** TV manual grabs only — used for the row's meta chips. */
+	season?: number;
+	episode?: number;
+};
+
+/** One completed manually-grabbed torrent (see GET /api/manual-grabs/completed)
+ * — the persisted half of Your Haul's manual-grab source, independent of
+ * whether Transmission still has the torrent (see done_at's schema comment
+ * in src/manual-grabs/schema.ts). */
+export type ManualGrabArchiveEntry = {
+	hash: string;
+	mediaType: 'tv' | 'movie';
+	posterUrl: string | null;
+	displayTitle: string | null;
 	normalizedTitle?: string;
 	season?: number;
 	episode?: number;
+	doneAt: string;
 };
 
 export type SessionInfo = {

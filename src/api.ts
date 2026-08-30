@@ -3643,14 +3643,16 @@ export function createApiFetch(
       // manual-grabs/schema.ts), so without this they'd download for real
       // in Transmission but never show up here — surfacing as "the Grab
       // button did nothing" even on a genuine success.
-      const manualGrabDisplayInfo = database
-        ? new ManualGrabsStore(database).listAllTorrentDisplayInfo()
-        : new Map();
+      const manualGrabsStore = database ? new ManualGrabsStore(database) : null;
+      const manualGrabDisplayInfo =
+        manualGrabsStore?.listAllTorrentDisplayInfo() ?? new Map();
       // Same rationale, movie-shaped: manual_movie_grabs never writes to
       // candidate_state either (see manual-movie-grabs/schema.ts).
-      const manualMovieGrabDisplayInfo = database
-        ? new ManualMovieGrabsStore(database).listAllTorrentDisplayInfo()
-        : new Map();
+      const manualMovieGrabsStore = database
+        ? new ManualMovieGrabsStore(database)
+        : null;
+      const manualMovieGrabDisplayInfo =
+        manualMovieGrabsStore?.listAllTorrentDisplayInfo() ?? new Map();
       const hashes = Array.from(
         new Set([
           ...candidateHashes,
@@ -3672,13 +3674,36 @@ export function createApiFetch(
         );
       }
 
+      // First-observed-completion bookkeeping for manual grabs — see
+      // done_at's schema comment. Transmission's own doneDate is the source
+      // of truth when present (a torrent added already-complete never sets
+      // it, so this falls back to "now": the first moment pirate-claw itself
+      // observed 100%, which is the best available estimate). Fire-and-check
+      // per response is fine: markDone is a no-op once done_at is set.
+      for (const t of result.torrents) {
+        if (t.percentDone !== 1) continue;
+        if (manualGrabDisplayInfo.has(t.hash)) {
+          manualGrabsStore!.markDone(
+            t.hash,
+            t.doneDate ?? new Date().toISOString(),
+          );
+        } else if (manualMovieGrabDisplayInfo.has(t.hash)) {
+          manualMovieGrabsStore!.markDone(
+            t.hash,
+            t.doneDate ?? new Date().toISOString(),
+          );
+        }
+      }
+
       const hashSet = new Set(hashes);
       // Also has no candidate_state row, so no poster/title from the usual
       // lookup — attach what was captured at grab time instead (see
-      // manual-grabs/schema.ts). mediaType/season/episode/normalizedTitle
-      // ride along too — the dashboard uses these for a manually-grabbed
-      // row's S/E pill and for building its Your Haul link, the same way it
-      // would for a candidate_state-backed row.
+      // manual-grabs/schema.ts). mediaType/season/episode ride along too —
+      // the dashboard uses these for a manually-grabbed row's meta chips,
+      // the same way it would for a candidate_state-backed row.
+      // normalizedTitle deliberately isn't attached here — Your Haul's
+      // manual-grab link is built from GET /api/manual-grabs/completed
+      // instead (see +page.svelte), which is where that's actually used.
       const torrents = result.torrents
         .filter((t) => hashSet.has(t.hash))
         .map((t) => {
@@ -3689,7 +3714,6 @@ export function createApiFetch(
               posterUrl: showGrabInfo.posterUrl,
               displayTitle: showGrabInfo.displayTitle,
               mediaType: 'tv' as const,
-              normalizedTitle: showGrabInfo.normalizedTitle,
               season: showGrabInfo.season,
               episode: showGrabInfo.episode,
             };
@@ -3706,6 +3730,42 @@ export function createApiFetch(
           return t;
         });
       return Response.json({ torrents });
+    }
+
+    if (path === '/api/manual-grabs/completed' && request.method === 'GET') {
+      // The manual-grab-sourced half of Your Haul (see +page.svelte) — does
+      // NOT depend on Transmission or the torrent still being present there,
+      // unlike /api/transmission/torrents above. Sourced entirely from
+      // done_at, written once by that endpoint the first time it observes a
+      // manual grab's torrent at 100% (see done_at's schema comment).
+      const showItems = database
+        ? Array.from(
+            new ManualGrabsStore(database).listCompleted(),
+            ([hash, info]) => ({
+              hash,
+              mediaType: 'tv' as const,
+              posterUrl: info.posterUrl,
+              displayTitle: info.displayTitle,
+              normalizedTitle: info.normalizedTitle,
+              season: info.season,
+              episode: info.episode,
+              doneAt: info.doneAt,
+            }),
+          )
+        : [];
+      const movieItems = database
+        ? Array.from(
+            new ManualMovieGrabsStore(database).listCompleted(),
+            ([hash, info]) => ({
+              hash,
+              mediaType: 'movie' as const,
+              posterUrl: info.posterUrl,
+              displayTitle: info.displayTitle,
+              doneAt: info.doneAt,
+            }),
+          )
+        : [];
+      return Response.json({ items: [...showItems, ...movieItems] });
     }
 
     if (path === '/api/transmission/session' && request.method === 'GET') {

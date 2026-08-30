@@ -228,6 +228,56 @@ export class ManualMovieGrabsStore {
     }));
   }
 
+  /** Movie-shaped sibling of ManualGrabsStore.markDone (see
+   * src/manual-grabs/store.ts) — records the first observed completion for
+   * a manually-grabbed movie torrent, idempotently. */
+  markDone(hash: string, doneAt: string): void {
+    this.database
+      .query(
+        `UPDATE manual_movie_grabs SET done_at = ?2
+         WHERE transmission_torrent_hash = ?1 AND done_at IS NULL`,
+      )
+      .run(hash, doneAt);
+  }
+
+  /** Movie-shaped sibling of ManualGrabsStore.listCompleted — the
+   * manual-grab-sourced half of Your Haul for movies, surviving the
+   * torrent's removal from Transmission. */
+  listCompleted(): Map<
+    string,
+    { posterUrl: string | null; displayTitle: string | null; doneAt: string }
+  > {
+    const rows = this.database
+      .query(
+        `SELECT transmission_torrent_hash AS hash,
+                movie_poster_url AS posterUrl,
+                movie_display_title AS displayTitle,
+                done_at AS doneAt
+         FROM manual_movie_grabs
+         WHERE done_at IS NOT NULL
+         ORDER BY queued_at ASC`,
+      )
+      .all() as {
+      hash: string;
+      posterUrl: string | null;
+      displayTitle: string | null;
+      doneAt: string;
+    }[];
+
+    const map = new Map<
+      string,
+      { posterUrl: string | null; displayTitle: string | null; doneAt: string }
+    >();
+    for (const row of rows) {
+      map.set(row.hash, {
+        posterUrl: row.posterUrl,
+        displayTitle: row.displayTitle,
+        doneAt: row.doneAt,
+      });
+    }
+    return map;
+  }
+
   /** All manual grabs recorded for a movie, most recent first. */
   listForMovie(tmdbId: number): ManualMovieGrabRecord[] {
     const rows = this.database

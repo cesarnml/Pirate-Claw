@@ -5,6 +5,7 @@ import type {
 	AppConfig,
 	CandidateStateRecord,
 	DaemonHealth,
+	ManualGrabArchiveEntry,
 	OnboardingStatus,
 	RunSummaryRecord,
 	ReviewOutcomeRecord,
@@ -23,7 +24,8 @@ export const load: PageServerLoad = async () => {
 		statusResult,
 		outcomesResult,
 		configResult,
-		sessionResult
+		sessionResult,
+		manualGrabArchiveResult
 	] = await Promise.allSettled([
 		apiFetch<DaemonHealth>('/api/health'),
 		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents'),
@@ -33,7 +35,9 @@ export const load: PageServerLoad = async () => {
 		apiFetch<AppConfig>('/api/config'),
 		// Powers the "why is this torrent queued" hint on Torrent Manager rows
 		// (session.activeTorrentCount / .downloadQueueSize) — see TorrentManagerCard.
-		apiFetch<SessionInfo>('/api/transmission/session')
+		apiFetch<SessionInfo>('/api/transmission/session'),
+		// The manual-grab-sourced half of Your Haul — see ArchiveStrip/+page.svelte.
+		apiFetch<{ items: ManualGrabArchiveEntry[] }>('/api/manual-grabs/completed')
 	]);
 
 	const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
@@ -44,6 +48,8 @@ export const load: PageServerLoad = async () => {
 	const runSummaries = statusResult.status === 'fulfilled' ? statusResult.value.runs : null;
 	const outcomes = outcomesResult.status === 'fulfilled' ? outcomesResult.value.outcomes : null;
 	const transmissionSession = sessionResult.status === 'fulfilled' ? sessionResult.value : null;
+	const manualGrabArchive =
+		manualGrabArchiveResult.status === 'fulfilled' ? manualGrabArchiveResult.value.items : null;
 	const onboarding: OnboardingStatus | null =
 		configResult.status === 'fulfilled'
 			? deriveOnboardingStatus(configResult.value, canWrite)
@@ -69,6 +75,12 @@ export const load: PageServerLoad = async () => {
 	if (configResult.status === 'rejected') {
 		console.error('[dashboard] failed to load /api/config', configResult.reason);
 	}
+	if (manualGrabArchiveResult.status === 'rejected') {
+		console.error(
+			'[dashboard] failed to load /api/manual-grabs/completed',
+			manualGrabArchiveResult.reason
+		);
+	}
 
 	return {
 		health,
@@ -78,6 +90,7 @@ export const load: PageServerLoad = async () => {
 		outcomes,
 		onboarding,
 		transmissionSession,
+		manualGrabArchive,
 		error
 	};
 };

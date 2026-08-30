@@ -38,6 +38,7 @@ import { PlexCache } from '../src/plex/cache';
 import { ensurePlexSchema } from '../src/plex/schema';
 import { TmdbCache } from '../src/tmdb/cache';
 import { ManualGrabsStore } from '../src/manual-grabs/store';
+import { ManualMovieGrabsStore } from '../src/manual-movie-grabs/store';
 import { CalendarCache } from '../src/tmdb/calendar';
 import type { TmdbDiscoverTvResult, TmdbHttpClient } from '../src/tmdb/client';
 import { movieMatchKey, tvMatchKey } from '../src/tmdb/keys';
@@ -4769,6 +4770,156 @@ describe('GET /api/transmission/torrents', () => {
       });
     } finally {
       fetchMock.mockRestore();
+      db.close();
+    }
+  });
+
+  it('records done_at on a manual grab the first time it observes 100%, once only', async () => {
+    const db = new Database(':memory:');
+    ensureSchema(db);
+    const store = new ManualGrabsStore(db);
+    store.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'manual grab',
+      transmissionTorrentHash: 'manual-hash-1',
+      transmissionTorrentId: 99,
+      showPosterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+      showDisplayTitle: 'Strange New Worlds',
+    });
+
+    const deps = createDeps({ listCandidateStates: () => [] });
+    deps.database = db;
+    deps.config = {
+      ...deps.config,
+      transmission: {
+        url: 'http://transmission.test/transmission/rpc',
+        username: 'u',
+        password: 'p',
+      },
+    };
+
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () =>
+        new Response(
+          JSON.stringify({
+            result: 'success',
+            arguments: {
+              torrents: [
+                {
+                  id: 99,
+                  name: 'manual grab',
+                  hashString: 'manual-hash-1',
+                  status: 6,
+                  percentDone: 1,
+                  rateDownload: 0,
+                  rateUpload: 0,
+                  eta: -1,
+                  doneDate: 1770000000,
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        )) as unknown as typeof fetch,
+    );
+
+    try {
+      const handler = createApiFetch(deps);
+      // Twice, to confirm the second call doesn't move the timestamp.
+      await handler(new Request('http://localhost/api/transmission/torrents'));
+      await handler(new Request('http://localhost/api/transmission/torrents'));
+
+      const completed = store.listCompleted();
+      expect(completed.get('manual-hash-1')).toMatchObject({
+        displayTitle: 'Strange New Worlds',
+        doneAt: new Date(1770000000 * 1000).toISOString(),
+      });
+    } finally {
+      fetchMock.mockRestore();
+      db.close();
+    }
+  });
+});
+
+describe('GET /api/manual-grabs/completed', () => {
+  it('returns completed show and movie grabs, omits ones with no recorded completion', async () => {
+    const db = new Database(':memory:');
+    ensureSchema(db);
+    const showStore = new ManualGrabsStore(db);
+    showStore.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'manual grab',
+      transmissionTorrentHash: 'show-hash',
+      transmissionTorrentId: 1,
+      showPosterUrl: 'https://example.test/show-poster.jpg',
+      showDisplayTitle: 'Strange New Worlds',
+    });
+    showStore.markDone('show-hash', '2026-02-01T00:00:00.000Z');
+    // No done_at recorded — must not appear in the response.
+    showStore.record({
+      normalizedTitle: 'still downloading',
+      season: 1,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'still going',
+      transmissionTorrentHash: 'in-progress-hash',
+      transmissionTorrentId: 2,
+    });
+
+    const movieStore = new ManualMovieGrabsStore(db);
+    movieStore.record({
+      tmdbId: 1,
+      imdbId: null,
+      source: 'yts',
+      rawTitle: 'movie grab',
+      transmissionTorrentHash: 'movie-hash',
+      transmissionTorrentId: 3,
+      moviePosterUrl: 'https://example.test/movie-poster.jpg',
+      movieDisplayTitle: 'A Movie',
+    });
+    movieStore.markDone('movie-hash', '2026-02-02T00:00:00.000Z');
+
+    const deps = createDeps({ listCandidateStates: () => [] });
+    deps.database = db;
+
+    try {
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/manual-grabs/completed'),
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        items: { hash: string; mediaType: string; doneAt: string }[];
+      };
+      expect(body.items.map((i) => i.hash).sort()).toEqual([
+        'movie-hash',
+        'show-hash',
+      ]);
+      expect(body.items).toContainEqual(
+        expect.objectContaining({
+          hash: 'show-hash',
+          mediaType: 'tv',
+          displayTitle: 'Strange New Worlds',
+          season: 4,
+          episode: 1,
+          doneAt: '2026-02-01T00:00:00.000Z',
+        }),
+      );
+      expect(body.items).toContainEqual(
+        expect.objectContaining({
+          hash: 'movie-hash',
+          mediaType: 'movie',
+          displayTitle: 'A Movie',
+          doneAt: '2026-02-02T00:00:00.000Z',
+        }),
+      );
+    } finally {
       db.close();
     }
   });

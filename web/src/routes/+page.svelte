@@ -98,38 +98,32 @@
 
 	// Manually-grabbed completions (see manual_grabs / manual_movie_grabs) —
 	// pirate-claw-controlled the same way an RSS match is, just not sourced
-	// from a feed. These have no candidate_state row, so completion info
-	// only exists for as long as Transmission still reports the torrent;
-	// once it's removed from Transmission the completion record is gone.
+	// from a feed. Sourced from the persisted done_at column (see
+	// GET /api/manual-grabs/completed), not the live torrents list, so a
+	// completion here survives the torrent later being removed from
+	// Transmission — unlike reading percentDone/doneDate straight off
+	// `torrents` would.
 	const manualGrabArchiveItems = $derived(
-		torrents
-			.filter(
-				(torrent) =>
-					torrent.percentDone === 1 &&
-					torrent.mediaType &&
-					!candidateHashes.has(torrent.hash) &&
-					// Without either date this item has nothing stable to sort by —
-					// falling back to "now" would make dateIso recompute (and the
-					// item re-sort to the top) on every dashboard refresh instead.
-					(torrent.doneDate || torrent.addedDate)
-			)
+		(data.manualGrabArchive ?? [])
+			.filter((entry) => !candidateHashes.has(entry.hash))
 			.map(
-				(torrent): ArchiveItem => ({
-					key: `torrent:${torrent.hash}`,
-					mediaType: torrent.mediaType!,
-					title: torrent.displayTitle ?? torrent.name,
+				(entry): ArchiveItem => ({
+					key: `manual-grab:${entry.hash}`,
+					mediaType: entry.mediaType,
+					// entry.normalizedTitle only exists for TV; displayTitle should
+					// always be set in practice (every current grab path supplies
+					// one), but a raw hash is a worse last-resort than "Unknown
+					// title" if it's ever somehow missing.
+					title: entry.displayTitle ?? entry.normalizedTitle ?? 'Unknown title',
 					posterUrl:
-						torrent.posterUrl ??
-						(torrent.mediaType === 'movie' ? MOVIE_BACKDROP_FALLBACK : TV_SHOW_BACKDROP_FALLBACK),
-					season: torrent.season ?? null,
-					episode: torrent.episode ?? null,
-					// doneDate is the real completion time; addedDate is a fallback
-					// for a torrent added already-complete (Transmission never sets
-					// doneDate in that case) — still stable, just less precise.
-					dateIso: (torrent.doneDate ?? torrent.addedDate)!,
+						entry.posterUrl ??
+						(entry.mediaType === 'movie' ? MOVIE_BACKDROP_FALLBACK : TV_SHOW_BACKDROP_FALLBACK),
+					season: entry.season ?? null,
+					episode: entry.episode ?? null,
+					dateIso: entry.doneAt,
 					href:
-						torrent.mediaType === 'tv' && torrent.normalizedTitle
-							? `/shows/${encodeURIComponent(torrent.normalizedTitle)}`
+						entry.mediaType === 'tv' && entry.normalizedTitle
+							? `/shows/${encodeURIComponent(entry.normalizedTitle)}`
 							: '/movies'
 				})
 			)

@@ -25,7 +25,9 @@ describe('dashboard page server load', () => {
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(emptyConfig);
+			.mockResolvedValueOnce(emptyConfig)
+			.mockResolvedValueOnce({ version: '4.0.0' })
+			.mockResolvedValueOnce({ items: [] });
 
 		const result = await load({} as never);
 		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
@@ -48,7 +50,9 @@ describe('dashboard page server load', () => {
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(feedOnlyConfig);
+			.mockResolvedValueOnce(feedOnlyConfig)
+			.mockResolvedValueOnce({ version: '4.0.0' })
+			.mockResolvedValueOnce({ items: [] });
 
 		const result = await load({} as never);
 		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
@@ -68,7 +72,9 @@ describe('dashboard page server load', () => {
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(emptyConfig);
+			.mockResolvedValueOnce(emptyConfig)
+			.mockResolvedValueOnce({ version: '4.0.0' })
+			.mockResolvedValueOnce({ items: [] });
 
 		const result = await load({} as never);
 		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
