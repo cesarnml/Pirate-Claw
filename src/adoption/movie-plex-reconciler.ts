@@ -320,8 +320,22 @@ export async function adoptMoviesFromPlex(
  * network, no ledger writes); with an empty/never-synced cache it's a
  * no-op, not a fallback to a live Plex call.
  *
+ * Deliberately checks EVERY candidate, including ones already grabbed via
+ * another source (thepiratebay/yts/rss/adopted-filesystem) — NOT just
+ * unadopted ones. A movie grabbed via YTS that Plex later confirms owning
+ * is exactly as "in the library" as one adopted straight from Plex, and the
+ * caller (applyCachedPlexStatus in api.ts) needs to know that on every view
+ * to keep showing accurate status — otherwise a movie stays labeled
+ * "Queued via YTS" forever, even once it's actually sitting in the
+ * library, because nothing ever rechecks it. Found via live QA 2026-08-30:
+ * a YTS-grabbed movie kept showing "Queued via YTS" despite being
+ * Plex-confirmed. The caller is responsible for treating an
+ * already-grabbed match differently from a fresh one — see
+ * applyCachedPlexStatus.
+ *
  * Deliberately read-only — see recordPlexMatches for the write half, which
- * the caller invokes separately (and only when write-authorized).
+ * the caller invokes separately (and only when write-authorized), and only
+ * for candidates NOT already grabbed by another source.
  */
 export function matchCachedPlexCatalog(
   candidates: MovieAdoptionCandidate[],
@@ -329,10 +343,7 @@ export function matchCachedPlexCatalog(
 ): Map<number, PlexSearchResult> {
   const index = catalogCache.peekIndex();
   if (!index) return new Map();
-  return matchAgainstCatalog(
-    candidates.filter((c) => !c.alreadyGrabbed),
-    index,
-  );
+  return matchAgainstCatalog(candidates, index);
 }
 
 function formatError(error: unknown): string {

@@ -375,7 +375,13 @@ describe('matchCachedPlexCatalog + recordPlexMatches (the per-view, network-free
     expect(recorded.source).toBe('adopted-plex');
   });
 
-  it('matchCachedPlexCatalog skips a candidate already marked alreadyGrabbed', async () => {
+  it('matchCachedPlexCatalog still matches a candidate already marked alreadyGrabbed', async () => {
+    // Unlike adoptMoviesFromPlex (which only cares about NEW adoptions and
+    // filters alreadyGrabbed internally), matchCachedPlexCatalog is the
+    // per-view display check — a movie grabbed via YTS/RSS that Plex later
+    // confirms owning should still show as in the library, so this must
+    // keep matching it rather than silently skipping it forever. See its
+    // own doc comment.
     const plexClient = startPlexServer(
       `<Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/></Video>`,
     );
@@ -386,7 +392,8 @@ describe('matchCachedPlexCatalog + recordPlexMatches (the per-view, network-free
       [candidate({ alreadyGrabbed: true })],
       catalogCache,
     );
-    expect(matches.size).toBe(0);
+    expect(matches.size).toBe(1);
+    expect(matches.has(942353)).toBe(true);
   });
 
   it('recordPlexMatches on an empty match set records nothing and never opens a transaction', () => {

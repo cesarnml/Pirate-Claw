@@ -918,18 +918,30 @@ export function createApiFetch(
    * cache (nothing manually synced yet, bootstrap hasn't landed) just
    * means this is a no-op, same as if it were never called.
    *
-   * `canWrite` gates ONLY the persistence (recordPlexMatches), not the
-   * match itself — an unauthenticated/no-write-token viewer still sees
-   * accurate live-matched status in their response (that's just
-   * information, not a mutation), but the actual manual_movie_grabs INSERT
-   * only happens for a write-authorized caller. Without this split, this
-   * function — reachable on every single page view of both routes, with no
-   * auth check anywhere on that path — would silently write to the ledger
-   * for anonymous requests, unlike every other mutating action in this
-   * file. Found in code review before this ever shipped. */
+   * Matches EVERY item, not just ones with no prior grab — a movie grabbed
+   * via YTS/RSS/filesystem that Plex now also has should show "in
+   * library", not keep a stale "Queued via X" label forever (found via
+   * live QA 2026-08-30). Its existing grab source is preserved via
+   * `getGrabSource` rather than overwritten to 'adopted-plex' — that label
+   * is reserved for movies that had NO grab record until Plex found them.
+   * Only those genuinely new matches ever get written to
+   * manual_movie_grabs; an already-grabbed movie Plex now confirms is
+   * purely a display update, no ledger write needed.
+   *
+   * `canWrite` gates ONLY the persistence (recordPlexMatches) of NEW
+   * adoptions, not the match itself — an unauthenticated/no-write-token
+   * viewer still sees accurate live-matched status in their response
+   * (that's just information, not a mutation), but the actual
+   * manual_movie_grabs INSERT only happens for a write-authorized caller.
+   * Without this split, this function — reachable on every single page
+   * view of both routes, with no auth check anywhere on that path — would
+   * silently write to the ledger for anonymous requests, unlike every
+   * other mutating action in this file. Found in code review before this
+   * ever shipped. */
   function applyCachedPlexStatus<T>(
     items: T[],
     toCandidate: (item: T) => MovieAdoptionCandidate | null,
+    getGrabSource: (item: T) => ManualMovieGrabSourceOrRss | null,
     withOwnership: (item: T, status: MovieOwnershipStatus) => T,
     canWrite: boolean,
   ): T[] {
@@ -938,29 +950,38 @@ export function createApiFetch(
       const candidates = items
         .map(toCandidate)
         .filter((c): c is MovieAdoptionCandidate => c !== null);
-      const matches = matchCachedPlexCatalog(candidates, plexMovieCatalogCache);
-      if (matches.size === 0) return items;
+      const allMatches = matchCachedPlexCatalog(
+        candidates,
+        plexMovieCatalogCache,
+      );
+      if (allMatches.size === 0) return items;
 
-      const adopted = canWrite
+      const newCandidates = candidates.filter(
+        (c) => !c.alreadyGrabbed && allMatches.has(c.tmdbId),
+      );
+      const newMatches = new Map(
+        newCandidates.map((c) => [c.tmdbId, allMatches.get(c.tmdbId)!]),
+      );
+      const newlyAdopted = canWrite
         ? recordPlexMatches(
-            candidates,
-            matches,
+            newCandidates,
+            newMatches,
             new ManualMovieGrabsStore(database),
             database,
             adoptionLog,
           )
-        : new Set(matches.keys());
+        : new Set(newMatches.keys());
 
-      if (adopted.size === 0) return items;
       return items.map((item) => {
         const candidate = toCandidate(item);
-        return candidate && adopted.has(candidate.tmdbId)
-          ? withOwnership(item, {
-              grabbed: true,
-              grabSource: 'adopted-plex',
-              plexStatus: 'in_library',
-            })
-          : item;
+        if (!candidate || !allMatches.has(candidate.tmdbId)) return item;
+        return withOwnership(item, {
+          grabbed: true,
+          grabSource: newlyAdopted.has(candidate.tmdbId)
+            ? 'adopted-plex'
+            : getGrabSource(item),
+          plexStatus: 'in_library',
+        });
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1877,6 +1898,7 @@ export function createApiFetch(
         const items = applyCachedPlexStatus(
           afterFilesystemSweep,
           toCalendarCandidate,
+          (item) => item.grabSource,
           withCalendarOwnership,
           checkWriteAuth(request, activeConfig) === null,
         );
@@ -1972,6 +1994,7 @@ export function createApiFetch(
         const withCachedPlexStatus = applyCachedPlexStatus(
           result.items,
           toTopMovieCandidate,
+          (item) => item.grabSource,
           withTopMovieOwnership,
           checkWriteAuth(request, activeConfig) === null,
         );

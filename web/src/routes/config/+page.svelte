@@ -618,7 +618,7 @@
 				toast(
 					'Plex sync complete',
 					'success',
-					`Checked ${checked} movie${checked === 1 ? '' : 's'}, found ${adopted} already in Plex.`
+					`Re-synced your whole Plex library, then checked it against ${checked} known movie${checked === 1 ? '' : 's'} — found ${adopted} already there.`
 				);
 			} else {
 				const errorMessage =
