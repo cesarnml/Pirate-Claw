@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it } from 'bun:test';
 
 import {
   adoptMoviesFromPlex,
+  ensurePlexMovieCatalogCacheSchema,
+  matchCachedPlexCatalog,
   PlexMovieCatalogCache,
+  recordPlexMatches,
 } from '../src/adoption/movie-plex-reconciler';
 import type { MovieAdoptionCandidate } from '../src/adoption/movie-reconciler';
 import { ManualMovieGrabsStore } from '../src/manual-movie-grabs/store';
@@ -43,10 +46,13 @@ function videoRowCount(videoRows: string): number {
   return (videoRows.match(/<Video/g) ?? []).length;
 }
 
-function freshStore(): ManualMovieGrabsStore {
+function freshStore(): {
+  database: Database;
+  manualMovieGrabs: ManualMovieGrabsStore;
+} {
   const database = new Database(':memory:');
   ensureSchema(database);
-  return new ManualMovieGrabsStore(database);
+  return { database, manualMovieGrabs: new ManualMovieGrabsStore(database) };
 }
 
 function candidate(
@@ -68,11 +74,12 @@ describe('adoptMoviesFromPlex', () => {
     const plexClient = startPlexServer(
       `<Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/><Guid id="imdb://tt00000000"/></Video>`,
     );
-    const manualMovieGrabs = freshStore();
+    const { database, manualMovieGrabs } = freshStore();
 
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      database,
       catalogCache: new PlexMovieCatalogCache(),
     });
 
@@ -87,11 +94,12 @@ describe('adoptMoviesFromPlex', () => {
     const plexClient = startPlexServer(
       `<Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="imdb://tt22084616"/></Video>`,
     );
-    const manualMovieGrabs = freshStore();
+    const { database, manualMovieGrabs } = freshStore();
 
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      database,
       catalogCache: new PlexMovieCatalogCache(),
     });
 
@@ -102,11 +110,12 @@ describe('adoptMoviesFromPlex', () => {
     const plexClient = startPlexServer(
       `<Video ratingKey="1" type="movie" title="The Odyssey" year="2026"/>`,
     );
-    const manualMovieGrabs = freshStore();
+    const { database, manualMovieGrabs } = freshStore();
 
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      database,
       catalogCache: new PlexMovieCatalogCache(),
     });
 
@@ -118,11 +127,12 @@ describe('adoptMoviesFromPlex', () => {
     const plexClient = startPlexServer(
       `<Video ratingKey="1" type="movie" title="Some Other Movie" year="2020"><Guid id="tmdb://1"/></Video>`,
     );
-    const manualMovieGrabs = freshStore();
+    const { database, manualMovieGrabs } = freshStore();
 
     const adopted = await adoptMoviesFromPlex([candidate()], {
       plexClient,
       manualMovieGrabs,
+      database,
       catalogCache: new PlexMovieCatalogCache(),
     });
 
@@ -143,13 +153,14 @@ describe('adoptMoviesFromPlex', () => {
     });
     servers.push(server);
     const plexClient = new PlexHttpClient(server.url.origin, 'token', () => {});
-    const manualMovieGrabs = freshStore();
+    const { database, manualMovieGrabs } = freshStore();
 
     const adopted = await adoptMoviesFromPlex(
       [candidate({ alreadyGrabbed: true })],
       {
         plexClient,
         manualMovieGrabs,
+        database,
         catalogCache: new PlexMovieCatalogCache(),
       },
     );
@@ -187,14 +198,18 @@ describe('PlexMovieCatalogCache', () => {
     const plexClient = new PlexHttpClient(server.url.origin, 'token', () => {});
     const catalogCache = new PlexMovieCatalogCache();
 
+    const first = freshStore();
     await adoptMoviesFromPlex([candidate({ tmdbId: 1 })], {
       plexClient,
-      manualMovieGrabs: freshStore(),
+      manualMovieGrabs: first.manualMovieGrabs,
+      database: first.database,
       catalogCache,
     });
+    const second = freshStore();
     await adoptMoviesFromPlex([candidate({ tmdbId: 2 })], {
       plexClient,
-      manualMovieGrabs: freshStore(),
+      manualMovieGrabs: second.manualMovieGrabs,
+      database: second.database,
       catalogCache,
     });
 
@@ -225,17 +240,165 @@ describe('PlexMovieCatalogCache', () => {
     servers.push(server);
     const plexClient = new PlexHttpClient(server.url.origin, 'token', () => {});
 
+    const first = freshStore();
     await adoptMoviesFromPlex([candidate()], {
       plexClient,
-      manualMovieGrabs: freshStore(),
+      manualMovieGrabs: first.manualMovieGrabs,
+      database: first.database,
       catalogCache: new PlexMovieCatalogCache(),
     });
+    const second = freshStore();
     await adoptMoviesFromPlex([candidate()], {
       plexClient,
-      manualMovieGrabs: freshStore(),
+      manualMovieGrabs: second.manualMovieGrabs,
+      database: second.database,
       catalogCache: new PlexMovieCatalogCache(),
     });
 
     expect(allRequests).toBe(2);
+  });
+
+  it('persists to SQLite — a fresh instance sharing the database peeks the catalog without fetching', async () => {
+    const database = new Database(':memory:');
+    ensurePlexMovieCatalogCacheSchema(database);
+    let allRequests = 0;
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      routes: {
+        '/library/sections': () =>
+          new Response(
+            `<MediaContainer size="1"><Directory key="1" type="movie" title="Movies"/></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          ),
+        '/library/sections/1/all': () => {
+          allRequests += 1;
+          return new Response(
+            `<MediaContainer size="1" totalSize="1" offset="0"><Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/></Video></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          );
+        },
+      },
+    });
+    servers.push(server);
+    const plexClient = new PlexHttpClient(server.url.origin, 'token', () => {});
+
+    const first = new PlexMovieCatalogCache(database);
+    await first.get(plexClient);
+    expect(allRequests).toBe(1);
+
+    // A brand-new instance never wrote to memory — peek() can only see the
+    // catalog if it truly persisted to SQLite, simulating a daemon restart.
+    const second = new PlexMovieCatalogCache(database);
+    expect(second.peek()).toHaveLength(1);
+    expect(allRequests).toBe(1); // peek() never fetches
+  });
+
+  it('invalidate() clears both the in-memory and SQLite copies', async () => {
+    const database = new Database(':memory:');
+    ensurePlexMovieCatalogCacheSchema(database);
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      routes: {
+        '/library/sections': () =>
+          new Response(
+            `<MediaContainer size="1"><Directory key="1" type="movie" title="Movies"/></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          ),
+        '/library/sections/1/all': () =>
+          new Response(
+            `<MediaContainer size="1" totalSize="1" offset="0"><Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/></Video></MediaContainer>`,
+            { headers: { 'Content-Type': 'application/xml' } },
+          ),
+      },
+    });
+    servers.push(server);
+    const plexClient = new PlexHttpClient(server.url.origin, 'token', () => {});
+
+    const cache = new PlexMovieCatalogCache(database);
+    await cache.get(plexClient);
+    expect(cache.peek()).toHaveLength(1);
+
+    cache.invalidate();
+    expect(cache.peek()).toBeUndefined();
+    expect(new PlexMovieCatalogCache(database).peek()).toBeUndefined();
+  });
+
+  it('peekIndex() builds the tmdbId/imdbId index once and reuses it across calls', async () => {
+    const plexClient = startPlexServer(
+      `<Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/><Guid id="imdb://tt22084616"/></Video>`,
+    );
+    const catalogCache = new PlexMovieCatalogCache();
+    await catalogCache.get(plexClient);
+
+    const first = catalogCache.peekIndex();
+    const second = catalogCache.peekIndex();
+    expect(first).toBe(second); // same object reference — not rebuilt
+    expect(first?.byTmdbId.get(942353)?.title).toBe('The Odyssey');
+    expect(first?.byImdbId.get('tt22084616')?.title).toBe('The Odyssey');
+  });
+
+  it('peekIndex() returns undefined when nothing is cached yet', () => {
+    expect(new PlexMovieCatalogCache().peekIndex()).toBeUndefined();
+  });
+});
+
+describe('matchCachedPlexCatalog + recordPlexMatches (the per-view, network-free path)', () => {
+  it('matchCachedPlexCatalog never contacts Plex — an empty/never-synced cache matches nothing', () => {
+    const catalogCache = new PlexMovieCatalogCache();
+    const matches = matchCachedPlexCatalog([candidate()], catalogCache);
+    expect(matches.size).toBe(0);
+    expect(catalogCache.peek()).toBeUndefined();
+  });
+
+  it('matches and records against an already-populated cache, with no further I/O', async () => {
+    const plexClient = startPlexServer(
+      `<Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/></Video>`,
+    );
+    const catalogCache = new PlexMovieCatalogCache();
+    await catalogCache.get(plexClient); // pre-populate, as a manual sync would
+
+    const matches = matchCachedPlexCatalog([candidate()], catalogCache);
+    expect([...matches.keys()]).toEqual([942353]);
+
+    const { database, manualMovieGrabs } = freshStore();
+    const adopted = recordPlexMatches(
+      [candidate()],
+      matches,
+      manualMovieGrabs,
+      database,
+      () => {},
+    );
+    expect(adopted).toEqual(new Set([942353]));
+    const [recorded] = manualMovieGrabs.listForMovie(942353);
+    expect(recorded.source).toBe('adopted-plex');
+  });
+
+  it('matchCachedPlexCatalog skips a candidate already marked alreadyGrabbed', async () => {
+    const plexClient = startPlexServer(
+      `<Video ratingKey="1" type="movie" title="The Odyssey" year="2026"><Guid id="tmdb://942353"/></Video>`,
+    );
+    const catalogCache = new PlexMovieCatalogCache();
+    await catalogCache.get(plexClient);
+
+    const matches = matchCachedPlexCatalog(
+      [candidate({ alreadyGrabbed: true })],
+      catalogCache,
+    );
+    expect(matches.size).toBe(0);
+  });
+
+  it('recordPlexMatches on an empty match set records nothing and never opens a transaction', () => {
+    const { database, manualMovieGrabs } = freshStore();
+    const adopted = recordPlexMatches(
+      [candidate()],
+      new Map(),
+      manualMovieGrabs,
+      database,
+      () => {},
+    );
+    expect(adopted.size).toBe(0);
+    expect(manualMovieGrabs.listGrabbedTmdbIds().size).toBe(0);
   });
 });

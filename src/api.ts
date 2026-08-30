@@ -65,7 +65,9 @@ import { adoptMoviesFromFilesystem } from './adoption/movie-reconciler';
 import type { MovieAdoptionCandidate } from './adoption/movie-reconciler';
 import {
   adoptMoviesFromPlex,
+  matchCachedPlexCatalog,
   PlexMovieCatalogCache,
+  recordPlexMatches,
 } from './adoption/movie-plex-reconciler';
 import { PlexMovieSyncStateStore } from './plex/movie-sync-state';
 import { extractCodec, extractResolution } from './normalize';
@@ -805,10 +807,21 @@ export function createApiFetch(
   // ~19s live and tripped Bun's idle-connection timeout when it ran
   // automatically per-view; moved to a deliberate, occasional Config
   // action instead, per user feedback 2026-08-29 ("pay the price once").
-  const lastFilesystemAdoptionSweepAtByYear = new Map<number, number>();
-  // Shared across every full Plex sync for the daemon's whole process
-  // lifetime — see PlexMovieCatalogCache's own doc comment.
-  const plexMovieCatalogCache = new PlexMovieCatalogCache();
+  // Keyed by an explicit throttle key, not bluntly by year: Top Movies of
+  // Year passes just the year (one request genuinely covers that whole
+  // year's ~100 movies, so year-keying is exactly right there), but
+  // Calendar is month-paginated and sends the SAME year on every month's
+  // page request within it — keying this by year alone meant only the
+  // FIRST month page viewed within any 10-minute window ever got swept;
+  // every other month's movies (a completely different ~20 items) were
+  // silently skipped even though they'd never been checked. Calendar
+  // passes `${year}:${offset}` instead, so each distinct page of movies
+  // gets its own throttle slot. Found via user feedback 2026-08-30.
+  const lastFilesystemAdoptionSweepAtByKey = new Map<string, number>();
+  // Persisted (when database is set) so the cached Plex catalog survives a
+  // daemon restart — see PlexMovieCatalogCache's own doc comment for why
+  // this cache has no TTL and is never auto-refreshed.
+  const plexMovieCatalogCache = new PlexMovieCatalogCache(database);
 
   // Was previously wired to nothing (adoptMoviesFromFilesystem/
   // adoptMoviesFromPlex both default `log` to a silent no-op when the
@@ -826,14 +839,14 @@ export function createApiFetch(
    * triggered it" rule. Movies have no single-item page to trigger
    * reconciliation from like TV shows do, so this runs inline against the
    * current response instead of being gated by a per-item staleness check
-   * — see lastFilesystemAdoptionSweepAtByYear above for the throttle that
+   * — see lastFilesystemAdoptionSweepAtByKey above for the throttle that
    * keeps this affordable.
    *
    * Takes explicit accessors rather than a fixed item shape because
    * CalendarMovieItem and TopMovieItem don't share one (TopMovieItem's
    * tmdbId can be null; CalendarMovieItem has no imdbId at all). */
   async function adoptMoviesForCurrentView<T>(
-    year: number,
+    throttleKey: string,
     items: T[],
     toCandidate: (item: T) => MovieAdoptionCandidate | null,
     withOwnership: (item: T, status: MovieOwnershipStatus) => T,
@@ -847,11 +860,11 @@ export function createApiFetch(
     // The Calendar tab's automatic per-view call never sets this, keeping
     // its existing throttled behavior.
     const filesystemThrottleElapsed =
-      Date.now() - (lastFilesystemAdoptionSweepAtByYear.get(year) ?? 0) >=
+      Date.now() - (lastFilesystemAdoptionSweepAtByKey.get(throttleKey) ?? 0) >=
       RECONCILE_STALE_AFTER_MS;
     if (!options.force && !filesystemThrottleElapsed) {
       adoptionLog(
-        `year=${year}: filesystem sweep skipped, within its ${RECONCILE_STALE_AFTER_MS / 60_000}m cooldown`,
+        `key=${throttleKey}: filesystem sweep skipped, within its ${RECONCILE_STALE_AFTER_MS / 60_000}m cooldown`,
       );
       return items;
     }
@@ -862,14 +875,14 @@ export function createApiFetch(
         .map(toCandidate)
         .filter((c): c is MovieAdoptionCandidate => c !== null);
 
-      lastFilesystemAdoptionSweepAtByYear.set(year, Date.now());
+      lastFilesystemAdoptionSweepAtByKey.set(throttleKey, Date.now());
       const fsAdopted = await adoptMoviesFromFilesystem(candidates, {
         mediaMoviesDirs: await resolveMediaMoviesDirs(),
         manualMovieGrabs,
         log: adoptionLog,
       });
       adoptionLog(
-        `year=${year} filesystem sweep: ${candidates.length} candidate(s), ${fsAdopted.size} adopted`,
+        `key=${throttleKey} filesystem sweep: ${candidates.length} candidate(s), ${fsAdopted.size} adopted`,
       );
       if (fsAdopted.size === 0) return items;
 
@@ -892,6 +905,66 @@ export function createApiFetch(
       // comment above.
       const message = error instanceof Error ? error.message : String(error);
       console.log(`[movie-adoption] filesystem sweep failed: ${message}`);
+      return items;
+    }
+  }
+
+  /** Checks whatever's currently being returned against the CACHED Plex
+   * catalog only (matchCachedPlexCatalog — never fetches from Plex itself;
+   * see PlexMovieCatalogCache's doc comment). Runs inline, synchronously,
+   * as part of the normal fast response on every view — no throttle, no
+   * separate follow-up call needed, because a cache hit is a plain
+   * in-memory Map lookup with no network I/O at all. An empty/never-synced
+   * cache (nothing manually synced yet, bootstrap hasn't landed) just
+   * means this is a no-op, same as if it were never called.
+   *
+   * `canWrite` gates ONLY the persistence (recordPlexMatches), not the
+   * match itself — an unauthenticated/no-write-token viewer still sees
+   * accurate live-matched status in their response (that's just
+   * information, not a mutation), but the actual manual_movie_grabs INSERT
+   * only happens for a write-authorized caller. Without this split, this
+   * function — reachable on every single page view of both routes, with no
+   * auth check anywhere on that path — would silently write to the ledger
+   * for anonymous requests, unlike every other mutating action in this
+   * file. Found in code review before this ever shipped. */
+  function applyCachedPlexStatus<T>(
+    items: T[],
+    toCandidate: (item: T) => MovieAdoptionCandidate | null,
+    withOwnership: (item: T, status: MovieOwnershipStatus) => T,
+    canWrite: boolean,
+  ): T[] {
+    if (!database) return items;
+    try {
+      const candidates = items
+        .map(toCandidate)
+        .filter((c): c is MovieAdoptionCandidate => c !== null);
+      const matches = matchCachedPlexCatalog(candidates, plexMovieCatalogCache);
+      if (matches.size === 0) return items;
+
+      const adopted = canWrite
+        ? recordPlexMatches(
+            candidates,
+            matches,
+            new ManualMovieGrabsStore(database),
+            database,
+            adoptionLog,
+          )
+        : new Set(matches.keys());
+
+      if (adopted.size === 0) return items;
+      return items.map((item) => {
+        const candidate = toCandidate(item);
+        return candidate && adopted.has(candidate.tmdbId)
+          ? withOwnership(item, {
+              grabbed: true,
+              grabSource: 'adopted-plex',
+              plexStatus: 'in_library',
+            })
+          : item;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[movie-adoption] cached plex check failed: ${message}`);
       return items;
     }
   }
@@ -966,6 +1039,7 @@ export function createApiFetch(
       const adopted = await adoptMoviesFromPlex(candidates, {
         plexClient: plexMovies.client,
         manualMovieGrabs,
+        database,
         catalogCache: plexMovieCatalogCache,
         log: adoptionLog,
       });
@@ -1768,23 +1842,43 @@ export function createApiFetch(
           offset,
           limit,
         });
-        const items = await adoptMoviesForCurrentView(
-          year,
+        const toCalendarCandidate = (item: (typeof page.items)[number]) => ({
+          tmdbId: item.tmdbId,
+          title: item.title,
+          releaseDate: item.releaseDate,
+          imdbId: null,
+          posterUrl: item.posterUrl,
+          alreadyGrabbed: item.alreadyGrabbed,
+        });
+        const withCalendarOwnership = (
+          item: (typeof page.items)[number],
+          status: MovieOwnershipStatus,
+        ) => ({
+          ...item,
+          alreadyGrabbed: status.grabbed,
+          grabSource: status.grabSource,
+          plexStatus: status.plexStatus,
+        });
+        const afterFilesystemSweep = await adoptMoviesForCurrentView(
+          // Calendar is month-paginated but sends the same `year` on every
+          // page within it — a bare year key would only ever sweep the
+          // first month page viewed each 10-minute window (see
+          // lastFilesystemAdoptionSweepAtByKey's own comment). page.offset
+          // (the actually-resolved offset, not the possibly-omitted
+          // request param) makes each distinct page of movies its own key.
+          `${year}:${page.offset}`,
           page.items,
-          (item) => ({
-            tmdbId: item.tmdbId,
-            title: item.title,
-            releaseDate: item.releaseDate,
-            imdbId: null,
-            posterUrl: item.posterUrl,
-            alreadyGrabbed: item.alreadyGrabbed,
-          }),
-          (item, status) => ({
-            ...item,
-            alreadyGrabbed: status.grabbed,
-            grabSource: status.grabSource,
-            plexStatus: status.plexStatus,
-          }),
+          toCalendarCandidate,
+          withCalendarOwnership,
+        );
+        // Cheap (cached-catalog-only, no network) — safe to run inline on
+        // every view. See applyCachedPlexStatus's own doc comment for why
+        // the write itself (not the match/display) is gated on write auth.
+        const items = applyCachedPlexStatus(
+          afterFilesystemSweep,
+          toCalendarCandidate,
+          withCalendarOwnership,
+          checkWriteAuth(request, activeConfig) === null,
         );
         return Response.json({
           year,
@@ -1838,6 +1932,27 @@ export function createApiFetch(
         const owned = await ownedMovieStatuses();
         const result = await getTopMovies(topMovies, year, owned, rescan);
 
+        const toTopMovieCandidate = (item: (typeof result.items)[number]) =>
+          item.tmdbId === null
+            ? null
+            : {
+                tmdbId: item.tmdbId,
+                title: item.title,
+                releaseDate: item.releaseDate,
+                imdbId: item.imdbId,
+                posterUrl: item.posterUrl,
+                alreadyGrabbed: item.alreadyGrabbed,
+              };
+        const withTopMovieOwnership = (
+          item: (typeof result.items)[number],
+          status: MovieOwnershipStatus,
+        ) => ({
+          ...item,
+          alreadyGrabbed: status.grabbed,
+          grabSource: status.grabSource,
+          plexStatus: status.plexStatus,
+        });
+
         // Only after a real result — Plex configured AND there's actually
         // at least one movie now cached to check. Triggering this
         // unconditionally on route entry (the original version of this
@@ -1848,6 +1963,18 @@ export function createApiFetch(
         if (plexMovies && result.items.length > 0) {
           triggerPlexSyncBootstrapIfNeeded();
         }
+
+        // Cheap (cached-catalog-only, no network) — safe to run inline on
+        // every view, cache hit or not. See applyCachedPlexStatus's own
+        // doc comment for why the write itself (not the match/display) is
+        // gated on write auth. Real Plex fetches only ever happen via the
+        // deliberate Config "Sync Now" action / the one-time bootstrap.
+        const withCachedPlexStatus = applyCachedPlexStatus(
+          result.items,
+          toTopMovieCandidate,
+          withTopMovieOwnership,
+          checkWriteAuth(request, activeConfig) === null,
+        );
 
         if (!sweep) {
           // The plain (non-sweep) response never runs the filesystem
@@ -1864,7 +1991,7 @@ export function createApiFetch(
           // never on a plain cache hit, and never racing itself, since it's
           // a single deliberate follow-up call, not an automatic per-view
           // one. See movie-calendar/+page.svelte's loadTopMovies.
-          return Response.json(result);
+          return Response.json({ ...result, items: withCachedPlexStatus });
         }
 
         // sweep=true: the client already has result.items from a prior
@@ -1872,27 +1999,14 @@ export function createApiFetch(
         // that prior call — cold cache or rescan — already populated it).
         // Runs the filesystem sweep unconditionally (force: true) — this
         // endpoint IS the explicit trigger, so there's nothing to throttle
-        // against. Plex is NOT checked here — see runFullMoviePlexSync.
+        // against. The full (network) Plex sweep is NOT run here — see
+        // runFullMoviePlexSync; only the cached-catalog check above, which
+        // already ran regardless of sweep=true.
         const items = await adoptMoviesForCurrentView(
-          year,
-          result.items,
-          (item) =>
-            item.tmdbId === null
-              ? null
-              : {
-                  tmdbId: item.tmdbId,
-                  title: item.title,
-                  releaseDate: item.releaseDate,
-                  imdbId: item.imdbId,
-                  posterUrl: item.posterUrl,
-                  alreadyGrabbed: item.alreadyGrabbed,
-                },
-          (item, status) => ({
-            ...item,
-            alreadyGrabbed: status.grabbed,
-            grabSource: status.grabSource,
-            plexStatus: status.plexStatus,
-          }),
+          String(year),
+          withCachedPlexStatus,
+          toTopMovieCandidate,
+          withTopMovieOwnership,
           { force: true },
         );
         return Response.json({ ...result, items });

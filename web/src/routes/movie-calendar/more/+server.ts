@@ -1,10 +1,17 @@
+import { env } from '$env/dynamic/private';
 import { json } from '@sveltejs/kit';
 import { apiRequest } from '$lib/server/api';
 import { _PAGE_SIZE } from '../+page.server';
 import type { RequestHandler } from './$types';
 
-// Mirrors tv-calendar/more/+server.ts exactly — see its comments for why
-// this proxy exists and why `offset` is forwarded as-is when omitted.
+// Mirrors tv-calendar/more/+server.ts, except: this route also always
+// forwards the write token. /api/movie-calendar opportunistically persists
+// cached-Plex-catalog matches (applyCachedPlexStatus in src/api.ts) — cheap,
+// no network, safe on every view — but only when the request is
+// write-authorized. The daemon isn't reachable from outside the
+// `pirate-claw` bridge network, so this token merely tells the daemon "this
+// came through the trusted web app," not "this is a mutating action" the
+// way it does for the rescan/sweep-gated /top proxy below.
 export const GET: RequestHandler = async ({ url }) => {
 	const year = Number(url.searchParams.get('year')) || new Date().getFullYear();
 	const limit = Math.min(
@@ -18,9 +25,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	const params = new URLSearchParams({ year: String(year), limit: String(limit) });
 	if (offset !== undefined) params.set('offset', String(offset));
 
+	const headers: Record<string, string> = {};
+	const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+	if (writeToken) headers.authorization = `Bearer ${writeToken}`;
+
 	let response: Response;
 	try {
-		response = await apiRequest(`/api/movie-calendar?${params}`);
+		response = await apiRequest(`/api/movie-calendar?${params}`, { headers });
 	} catch (error) {
 		console.error('[movie-calendar] /more failed to reach /api/movie-calendar:', error);
 		return json({ error: 'Could not reach the API.' }, { status: 503 });

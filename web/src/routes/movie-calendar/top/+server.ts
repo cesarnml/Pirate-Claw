@@ -3,26 +3,30 @@ import { json } from '@sveltejs/kit';
 import { apiRequest } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
-// Proxies GET /api/movie-calendar/top — a free read normally, but a
-// rescan=true or sweep=true request hits a third party (dvdsreleasedates/
-// TMDB, or a local filesystem walk, respectively) and writes to
-// manual_movie_grabs, so both require write auth just like the daemon
-// route itself does for those cases. (Plex is NOT checked by sweep=true —
-// that's a separate, deliberate action at /api/movie-calendar/plex-sync.)
+// Proxies GET /api/movie-calendar/top. A plain view is a free read, but the
+// daemon also opportunistically persists cached-Plex-catalog matches on
+// every view (applyCachedPlexStatus in src/api.ts) — cheap, no network,
+// gated on write auth purely to prove the request came through this
+// trusted web app rather than some other container on the `pirate-claw`
+// bridge network, so the token is forwarded unconditionally below. A
+// rescan=true or sweep=true request additionally hits a third party
+// (dvdsreleasedates/TMDB, or a local filesystem walk, respectively) and is
+// real mutating work, so those two are hard-rejected without a token
+// rather than silently falling back to a read. (Plex is NOT checked by
+// sweep=true — that's a separate, deliberate action at
+// /api/movie-calendar/plex-sync.)
 export const GET: RequestHandler = async ({ url }) => {
 	const year = url.searchParams.get('year') ?? String(new Date().getFullYear());
 	const rescan = url.searchParams.get('rescan') === 'true';
 	const sweep = url.searchParams.get('sweep') === 'true';
 
-	const headers: Record<string, string> = {};
-	if (rescan || sweep) {
-		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
-		if (!writeToken) {
-			const action = rescan ? 'Rescan' : 'Checking files';
-			return json({ error: `${action} is unavailable without API write access.` }, { status: 403 });
-		}
-		headers.authorization = `Bearer ${writeToken}`;
+	const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+	if ((rescan || sweep) && !writeToken) {
+		const action = rescan ? 'Rescan' : 'Checking files';
+		return json({ error: `${action} is unavailable without API write access.` }, { status: 403 });
 	}
+	const headers: Record<string, string> = {};
+	if (writeToken) headers.authorization = `Bearer ${writeToken}`;
 
 	let response: Response;
 	try {

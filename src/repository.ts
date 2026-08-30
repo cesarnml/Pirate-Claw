@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { installRootDataDir } from './install-bootstrap';
 import { ensureManualGrabsSchema } from './manual-grabs/schema';
 import { ensureManualMovieGrabsSchema } from './manual-movie-grabs/schema';
+import { ensurePlexMovieCatalogCacheSchema } from './adoption/movie-plex-reconciler';
 import { ensurePlexMovieSyncStateSchema } from './plex/movie-sync-state';
 import { ensurePlexSchema } from './plex/schema';
 import type { TmdbMoviePublic } from './movie-api-types';
@@ -334,6 +335,7 @@ export function ensureSchema(database: Database): void {
   ensureTmdbSchema(database);
   ensurePlexSchema(database);
   ensurePlexMovieSyncStateSchema(database);
+  ensurePlexMovieCatalogCacheSchema(database);
   ensureManualGrabsSchema(database);
   ensureManualMovieGrabsSchema(database);
   ensureTrackedShowsSchema(database);
