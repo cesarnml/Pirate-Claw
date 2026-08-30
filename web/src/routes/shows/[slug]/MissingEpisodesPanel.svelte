@@ -126,6 +126,24 @@
 					seenSlug = props.slug;
 					selectedSeason = null;
 				}
+				// The server's default season (the latest one — see the
+				// /episodes route's own comment) came back with no episode
+				// data at all, e.g. an announced-but-unaired season (found
+				// live 2026-08-30: Wednesday season 3, TMDB lists the season
+				// but has published zero episodes for it yet). Without this,
+				// selectedSeason stays null forever and the panel is stuck
+				// showing "Loading season…" with nothing ever in flight to
+				// end it. Fall back one season earlier — the previous season
+				// almost always has real data — or season 1 if there isn't
+				// one. If that fallback also turns out empty, loadSeason
+				// still resolves it to a proper "Could not load this
+				// season." error instead of an infinite spinner.
+				const numberOfSeasons = props.show?.tmdb?.numberOfSeasons;
+				if (numberOfSeasons && numberOfSeasons >= 1) {
+					const fallback = numberOfSeasons > 1 ? numberOfSeasons - 1 : 1;
+					selectedSeason = fallback;
+					void loadSeason(fallback);
+				}
 			});
 			return;
 		}

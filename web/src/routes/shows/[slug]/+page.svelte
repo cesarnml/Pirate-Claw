@@ -10,6 +10,7 @@
 	import { showHeroBackdropSrc } from '$lib/helpers';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
 	import StarIcon from '@lucide/svelte/icons/star';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -47,12 +48,27 @@
 		return date.toLocaleDateString();
 	}
 
-	const enhanceRefresh = () => {
-		return async ({ update }: { update: () => Promise<void> }) => {
-			await update();
-			await invalidateAll();
+	// One flag per button — each is only ever set by its own form's
+	// use:enhance, so clicking one never shows a spinner on the other two.
+	let refreshingTmdb = $state(false);
+	let refreshingPlex = $state(false);
+	let removingShow = $state(false);
+
+	function enhanceRefresh(flag: 'tmdb' | 'plex' | 'remove') {
+		const setFlag = (value: boolean) => {
+			if (flag === 'tmdb') refreshingTmdb = value;
+			else if (flag === 'plex') refreshingPlex = value;
+			else removingShow = value;
 		};
-	};
+		return () => {
+			setFlag(true);
+			return async ({ update }: { update: () => Promise<void> }) => {
+				await update();
+				await invalidateAll();
+				setFlag(false);
+			};
+		};
+	}
 </script>
 
 {#if data.error}
@@ -86,22 +102,52 @@
 
 			{#if data.canWrite}
 				<div class="flex flex-wrap gap-2">
-					<form method="POST" action="?/refreshTmdb" use:enhance={enhanceRefresh}>
-						<Button type="submit" variant="outline" class="rounded-full px-4">
-							<RefreshCcwIcon class="mr-2 h-4 w-4" />
-							Refresh TMDB
+					<form method="POST" action="?/refreshTmdb" use:enhance={enhanceRefresh('tmdb')}>
+						<Button
+							type="submit"
+							variant="outline"
+							class="rounded-full px-4"
+							disabled={refreshingTmdb}
+						>
+							{#if refreshingTmdb}
+								<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
+								Refreshing…
+							{:else}
+								<RefreshCcwIcon class="mr-2 h-4 w-4" />
+								Refresh TMDB
+							{/if}
 						</Button>
 					</form>
-					<form method="POST" action="?/refreshPlex" use:enhance={enhanceRefresh}>
-						<Button type="submit" variant="outline" class="rounded-full px-4">
-							<RefreshCcwIcon class="mr-2 h-4 w-4" />
-							Refresh Plex
+					<form method="POST" action="?/refreshPlex" use:enhance={enhanceRefresh('plex')}>
+						<Button
+							type="submit"
+							variant="outline"
+							class="rounded-full px-4"
+							disabled={refreshingPlex}
+						>
+							{#if refreshingPlex}
+								<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
+								Refreshing…
+							{:else}
+								<RefreshCcwIcon class="mr-2 h-4 w-4" />
+								Refresh Plex
+							{/if}
 						</Button>
 					</form>
-					<form method="POST" action="?/removeShow" use:enhance={enhanceRefresh}>
-						<Button type="submit" variant="outline" class="rounded-full px-4">
-							<Trash2Icon class="mr-2 h-4 w-4" />
-							Untrack show
+					<form method="POST" action="?/removeShow" use:enhance={enhanceRefresh('remove')}>
+						<Button
+							type="submit"
+							variant="outline"
+							class="rounded-full px-4"
+							disabled={removingShow}
+						>
+							{#if removingShow}
+								<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
+								Untracking…
+							{:else}
+								<Trash2Icon class="mr-2 h-4 w-4" />
+								Untrack show
+							{/if}
 						</Button>
 					</form>
 				</div>
