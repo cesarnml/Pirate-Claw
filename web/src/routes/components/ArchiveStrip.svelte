@@ -1,10 +1,23 @@
 <script lang="ts">
-	import { archiveHref, candidatePosterUrl, candidateTitle, formatShortDate } from '$lib/helpers';
+	import { formatShortDate } from '$lib/helpers';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import type { CandidateStateRecord } from '$lib/types';
 	import { Badge } from '$lib/components/ui/badge';
 
-	type ArchiveItem = CandidateStateRecord & { queuedAt: string };
+	/** A completed download, regardless of how pirate-claw came to control it
+	 * — an RSS-matched candidate_state row or a manually-grabbed torrent (see
+	 * manual_grabs/manual_movie_grabs) — normalized to one flat shape so this
+	 * component doesn't need to know which source produced it. Built by the
+	 * caller (+page.svelte). */
+	export type ArchiveItem = {
+		key: string;
+		mediaType: 'tv' | 'movie';
+		title: string;
+		posterUrl: string;
+		season: number | null;
+		episode: number | null;
+		dateIso: string;
+		href: string;
+	};
 
 	const { archiveItems }: { archiveItems: ArchiveItem[] } = $props();
 </script>
@@ -26,15 +39,14 @@
 			</div>
 		{:else}
 			<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6" data-testid="archive-grid">
-				{#each archiveItems as item}
-					{@const posterUrl = candidatePosterUrl(item)}
+				{#each archiveItems as item (item.key)}
 					<a
-						href={archiveHref(item)}
-						aria-label={`${candidateTitle(item)} COMPLETED ${formatShortDate(item.queuedAt)}`}
+						href={item.href}
+						aria-label={`${item.title} COMPLETED ${formatShortDate(item.dateIso)}`}
 						class="group border-border bg-background/45 relative overflow-hidden rounded-3xl border transition-transform hover:-translate-y-0.5"
 					>
 						<Badge class="absolute top-3 left-2 z-1 bg-emerald-600/80 text-[9px]">
-							{`${item.mediaType}`.toUpperCase()}
+							{item.mediaType.toUpperCase()}
 						</Badge>
 						{#if item.mediaType === 'tv' && item.season != null && item.episode != null}
 							<Badge
@@ -44,8 +56,8 @@
 							</Badge>
 						{/if}
 						<img
-							src={posterUrl}
-							alt={candidateTitle(item)}
+							src={item.posterUrl}
+							alt={item.title}
 							class="aspect-2/3 w-full object-cover"
 							loading="lazy"
 						/>
@@ -53,9 +65,9 @@
 							<Badge
 								variant="outline"
 								class="absolute bottom-12 left-1/2 -translate-x-1/2 bg-slate-800/30"
-								>{formatShortDate(item.transmissionDoneDate ?? item.queuedAt)}</Badge
+								>{formatShortDate(item.dateIso)}</Badge
 							>
-							<p class="truncate text-sm font-medium">{candidateTitle(item)}</p>
+							<p class="truncate text-sm font-medium">{item.title}</p>
 						</div>
 					</a>
 				{/each}

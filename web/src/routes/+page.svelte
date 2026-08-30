@@ -7,10 +7,18 @@
 	import { invalidateAll } from '$app/navigation';
 	import { readOnboardingDismissed, writeOnboardingDismissed } from '$lib/onboarding';
 	import type { CandidateStateRecord, RunSummaryRecord } from '$lib/types';
-	import { torrentDisplayState } from '$lib/helpers';
+	import {
+		archiveHref,
+		candidatePosterUrl,
+		candidateTitle,
+		MOVIE_BACKDROP_FALLBACK,
+		torrentDisplayState,
+		TV_SHOW_BACKDROP_FALLBACK
+	} from '$lib/helpers';
 	import type { PageData } from './$types';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import ArchiveStrip from './components/ArchiveStrip.svelte';
+	import type { ArchiveItem } from './components/ArchiveStrip.svelte';
 	import DashboardHeader from './components/DashboardHeader.svelte';
 	import TransmissionFailuresCard from './components/TransmissionFailuresCard.svelte';
 	import OnboardingBanner from './components/OnboardingBanner.svelte';
@@ -52,7 +60,8 @@
 			: candidates.filter((c) => torrentDisplayState(c, liveHashes) === 'missing')
 	);
 
-	const archiveItems = $derived(
+	// RSS-feed-matched completions — has a candidate_state row.
+	const candidateArchiveItems = $derived(
 		candidates
 			.filter(
 				(candidate): candidate is CandidateStateRecord & { queuedAt: string } =>
@@ -61,7 +70,74 @@
 						candidate.pirateClawDisposition === 'removed') &&
 					!!candidate.queuedAt
 			)
-			.sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))
+			.map(
+				(candidate): ArchiveItem => ({
+					key: `candidate:${candidate.identityKey}`,
+					mediaType: candidate.mediaType,
+					title: candidateTitle(candidate),
+					posterUrl: candidatePosterUrl(candidate),
+					season: candidate.mediaType === 'tv' ? (candidate.season ?? null) : null,
+					episode: candidate.mediaType === 'tv' ? (candidate.episode ?? null) : null,
+					dateIso: candidate.transmissionDoneDate ?? candidate.queuedAt,
+					href: archiveHref(candidate)
+				})
+			)
+	);
+
+	// Every hash any candidate_state row has ever claimed — a manual grab
+	// never writes to candidate_state (see manual-grabs/schema.ts), so this
+	// is purely a belt-and-suspenders guard against double-counting a torrent
+	// in both lists below, not an expected real overlap.
+	const candidateHashes = $derived(
+		new Set(
+			candidates
+				.map((candidate) => candidate.transmissionTorrentHash)
+				.filter((hash): hash is string => !!hash)
+		)
+	);
+
+	// Manually-grabbed completions (see manual_grabs / manual_movie_grabs) —
+	// pirate-claw-controlled the same way an RSS match is, just not sourced
+	// from a feed. These have no candidate_state row, so completion info
+	// only exists for as long as Transmission still reports the torrent;
+	// once it's removed from Transmission the completion record is gone.
+	const manualGrabArchiveItems = $derived(
+		torrents
+			.filter(
+				(torrent) =>
+					torrent.percentDone === 1 &&
+					torrent.mediaType &&
+					!candidateHashes.has(torrent.hash) &&
+					// Without either date this item has nothing stable to sort by —
+					// falling back to "now" would make dateIso recompute (and the
+					// item re-sort to the top) on every dashboard refresh instead.
+					(torrent.doneDate || torrent.addedDate)
+			)
+			.map(
+				(torrent): ArchiveItem => ({
+					key: `torrent:${torrent.hash}`,
+					mediaType: torrent.mediaType!,
+					title: torrent.displayTitle ?? torrent.name,
+					posterUrl:
+						torrent.posterUrl ??
+						(torrent.mediaType === 'movie' ? MOVIE_BACKDROP_FALLBACK : TV_SHOW_BACKDROP_FALLBACK),
+					season: torrent.season ?? null,
+					episode: torrent.episode ?? null,
+					// doneDate is the real completion time; addedDate is a fallback
+					// for a torrent added already-complete (Transmission never sets
+					// doneDate in that case) — still stable, just less precise.
+					dateIso: (torrent.doneDate ?? torrent.addedDate)!,
+					href:
+						torrent.mediaType === 'tv' && torrent.normalizedTitle
+							? `/shows/${encodeURIComponent(torrent.normalizedTitle)}`
+							: '/movies'
+				})
+			)
+	);
+
+	const archiveItems = $derived(
+		[...candidateArchiveItems, ...manualGrabArchiveItems]
+			.sort((a, b) => b.dateIso.localeCompare(a.dateIso))
 			.slice(0, 6)
 	);
 

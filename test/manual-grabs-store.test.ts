@@ -134,6 +134,9 @@ describe('ManualGrabsStore', () => {
     expect(info.get('hash-1')).toEqual({
       posterUrl: 'https://example.test/new-poster.jpg',
       displayTitle: 'Show A (renamed)',
+      normalizedTitle: 'show a',
+      season: 1,
+      episode: 1,
     });
   });
 });

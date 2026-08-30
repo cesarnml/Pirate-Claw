@@ -42,10 +42,17 @@ export type RecordManualGrabInput = {
 
 /** Poster/title info for one manually-grabbed, still-hash-identified
  * torrent — the dashboard-display equivalent of what candidatePosterUrl /
- * candidateTitle derive from a candidate_state row. */
+ * candidateTitle derive from a candidate_state row. season/episode/
+ * normalizedTitle ride along too: same rationale as posterUrl/displayTitle
+ * above, powering the S/E pill and the /shows/:slug link on the dashboard
+ * (Torrent Manager, Your Haul) for a torrent with no candidate_state row to
+ * source those from. */
 export type ManualGrabDisplayInfo = {
   posterUrl: string | null;
   displayTitle: string | null;
+  normalizedTitle: string;
+  season: number;
+  episode: number;
 };
 
 type ManualGrabRow = {
@@ -150,7 +157,10 @@ export class ManualGrabsStore {
       .query(
         `SELECT transmission_torrent_hash AS hash,
                 show_poster_url AS posterUrl,
-                show_display_title AS displayTitle
+                show_display_title AS displayTitle,
+                normalized_title AS normalizedTitle,
+                season,
+                episode
          FROM manual_grabs
          WHERE transmission_torrent_hash IS NOT NULL
          ORDER BY queued_at ASC`,
@@ -159,6 +169,9 @@ export class ManualGrabsStore {
       hash: string;
       posterUrl: string | null;
       displayTitle: string | null;
+      normalizedTitle: string;
+      season: number;
+      episode: number;
     }[];
 
     const map = new Map<string, ManualGrabDisplayInfo>();
@@ -168,6 +181,9 @@ export class ManualGrabsStore {
       map.set(row.hash, {
         posterUrl: row.posterUrl,
         displayTitle: row.displayTitle,
+        normalizedTitle: row.normalizedTitle,
+        season: row.season,
+        episode: row.episode,
       });
     }
     return map;

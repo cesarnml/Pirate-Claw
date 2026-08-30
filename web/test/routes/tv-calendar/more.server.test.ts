@@ -26,7 +26,9 @@ describe('GET /tv-calendar/more', () => {
 			jsonResponse(200, { year: 2020, items: [{ tmdbId: 1, name: 'Show' }], total: 30, offset: 16 })
 		);
 
-		const response = await GET(requestEvent('http://localhost/tv-calendar/more?year=2020&offset=16'));
+		const response = await GET(
+			requestEvent('http://localhost/tv-calendar/more?year=2020&offset=16')
+		);
 		const body = await response.json();
 
 		expect(apiRequestMock).toHaveBeenCalledWith('/api/calendar/tv?year=2020&limit=16&offset=16');

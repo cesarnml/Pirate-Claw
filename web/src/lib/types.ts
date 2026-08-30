@@ -329,11 +329,22 @@ export type TorrentStatSnapshot = {
 	rateDownload: number;
 	rateUpload: number;
 	eta: number;
-	/** Set only for a manually-grabbed torrent (see manual_grabs) — it has no
-	 * candidate_state row for the usual poster/title lookup to find, so the
-	 * API attaches these from the grab record directly. */
+	/** When Transmission added this torrent — powers the "how long has this
+	 * been sitting in the manager" relative-time hint on Torrent Manager rows. */
+	addedDate?: string;
+	/** When this torrent finished — undefined until it has. */
+	doneDate?: string;
+	/** Set only for a manually-grabbed torrent (see manual_grabs /
+	 * manual_movie_grabs) — it has no candidate_state row for the usual
+	 * poster/title/media lookup to find, so the API attaches these from the
+	 * grab record directly. */
 	posterUrl?: string | null;
 	displayTitle?: string | null;
+	mediaType?: 'tv' | 'movie';
+	/** TV manual grabs only — used for the S/E pill and the /shows/:slug link. */
+	normalizedTitle?: string;
+	season?: number;
+	episode?: number;
 };
 
 export type SessionInfo = {

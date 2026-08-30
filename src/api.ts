@@ -3675,20 +3675,35 @@ export function createApiFetch(
       const hashSet = new Set(hashes);
       // Also has no candidate_state row, so no poster/title from the usual
       // lookup — attach what was captured at grab time instead (see
-      // manual-grabs/schema.ts).
+      // manual-grabs/schema.ts). mediaType/season/episode/normalizedTitle
+      // ride along too — the dashboard uses these for a manually-grabbed
+      // row's S/E pill and for building its Your Haul link, the same way it
+      // would for a candidate_state-backed row.
       const torrents = result.torrents
         .filter((t) => hashSet.has(t.hash))
         .map((t) => {
-          const grabInfo =
-            manualGrabDisplayInfo.get(t.hash) ??
-            manualMovieGrabDisplayInfo.get(t.hash);
-          return grabInfo
-            ? {
-                ...t,
-                posterUrl: grabInfo.posterUrl,
-                displayTitle: grabInfo.displayTitle,
-              }
-            : t;
+          const showGrabInfo = manualGrabDisplayInfo.get(t.hash);
+          if (showGrabInfo) {
+            return {
+              ...t,
+              posterUrl: showGrabInfo.posterUrl,
+              displayTitle: showGrabInfo.displayTitle,
+              mediaType: 'tv' as const,
+              normalizedTitle: showGrabInfo.normalizedTitle,
+              season: showGrabInfo.season,
+              episode: showGrabInfo.episode,
+            };
+          }
+          const movieGrabInfo = manualMovieGrabDisplayInfo.get(t.hash);
+          if (movieGrabInfo) {
+            return {
+              ...t,
+              posterUrl: movieGrabInfo.posterUrl,
+              displayTitle: movieGrabInfo.displayTitle,
+              mediaType: 'movie' as const,
+            };
+          }
+          return t;
         });
       return Response.json({ torrents });
     }

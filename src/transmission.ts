@@ -75,6 +75,12 @@ export type TorrentStatSnapshot = {
   rateDownload: number;
   rateUpload: number;
   eta: number;
+  /** When Transmission added this torrent — powers the "how long has this
+   * been sitting in the manager" relative-time hint on stuck/slow rows. */
+  addedDate?: string;
+  /** When this torrent finished — Transmission reports 0 until then, mapped
+   * to undefined the same way doneDate is elsewhere in this file. */
+  doneDate?: string;
 };
 
 export type FetchTorrentStatsResult =
@@ -419,6 +425,8 @@ export async function fetchTorrentStats(
         'rateDownload',
         'rateUpload',
         'eta',
+        'addedDate',
+        'doneDate',
       ],
     },
   };
@@ -1258,6 +1266,8 @@ type TransmissionStatTorrent = {
   rateDownload?: number;
   rateUpload?: number;
   eta?: number;
+  addedDate?: number;
+  doneDate?: number;
 };
 
 type TransmissionTorrentStatResponse = {
@@ -1397,6 +1407,14 @@ function parseTorrentStatsResult(parsed: unknown): FetchTorrentStatsResult {
       rateUpload:
         typeof torrent.rateUpload === 'number' ? torrent.rateUpload : 0,
       eta: typeof torrent.eta === 'number' ? torrent.eta : -1,
+      addedDate:
+        typeof torrent.addedDate === 'number' && torrent.addedDate > 0
+          ? new Date(torrent.addedDate * 1000).toISOString()
+          : undefined,
+      doneDate:
+        typeof torrent.doneDate === 'number' && torrent.doneDate > 0
+          ? new Date(torrent.doneDate * 1000).toISOString()
+          : undefined,
     });
   }
 

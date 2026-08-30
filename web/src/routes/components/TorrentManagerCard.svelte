@@ -3,11 +3,13 @@
 		candidatePosterUrl,
 		candidateTitle,
 		formatEta,
+		formatRelativeTime,
 		formatSpeed,
 		getTorrentDisplayStatus,
 		initialBox
 	} from '$lib/helpers';
 	import StatusChip from '$lib/components/StatusChip.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
@@ -421,6 +423,9 @@
 					{@const posterUrl = candidate
 						? candidatePosterUrl(candidate)
 						: (torrent.posterUrl ?? null)}
+					{@const mediaType = candidate?.mediaType ?? torrent.mediaType ?? null}
+					{@const season = candidate?.season ?? torrent.season ?? null}
+					{@const episode = candidate?.episode ?? torrent.episode ?? null}
 					{@const rowState = rowDisplayState(torrent, candidate)}
 					{@const inFlightRow =
 						inflightAction === torrent.hash ||
@@ -445,21 +450,30 @@
 						ontouchcancel={cancelLongPress}
 						ontouchmove={onTouchMove}
 					>
-						{#if posterUrl}
-							<img
-								src={posterUrl}
-								alt={title}
-								draggable="false"
-								class="h-24 w-16 shrink-0 rounded-2xl object-cover [-webkit-user-drag:none]"
-								loading="lazy"
-							/>
-						{:else}
-							<div
-								class="bg-muted text-muted-foreground flex h-24 w-16 shrink-0 items-center justify-center rounded-2xl text-lg font-semibold"
-							>
-								{initialBox(title)}
-							</div>
-						{/if}
+						<div class="relative h-24 w-16 shrink-0">
+							{#if posterUrl}
+								<img
+									src={posterUrl}
+									alt={title}
+									draggable="false"
+									class="h-24 w-16 rounded-2xl object-cover [-webkit-user-drag:none]"
+									loading="lazy"
+								/>
+							{:else}
+								<div
+									class="bg-muted text-muted-foreground flex h-24 w-16 items-center justify-center rounded-2xl text-lg font-semibold"
+								>
+									{initialBox(title)}
+								</div>
+							{/if}
+							{#if mediaType === 'tv' && season != null && episode != null}
+								<Badge
+									class="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-red-900/70 text-[9px] font-bold text-amber-50"
+								>
+									S{String(season).padStart(2, '0')}E{String(episode).padStart(2, '0')}
+								</Badge>
+							{/if}
+						</div>
 
 						<div class="min-w-0 flex-1">
 							<div class="flex items-start justify-between gap-3">
@@ -482,19 +496,17 @@
 								</div>
 							</div>
 							<div class="text-muted-foreground mt-2 flex flex-wrap gap-2 text-xs">
-								{#if candidate?.mediaType}
-									<span class="rounded-full bg-white/6 px-2 py-1 uppercase"
-										>{candidate.mediaType}</span
+								{#if mediaType}
+									<span class="rounded-full bg-white/6 px-2 py-1 uppercase">{mediaType}</span>
+								{/if}
+								{#if mediaType === 'tv' && season != null}
+									<span class="rounded-full bg-white/6 px-2 py-1"
+										>S{String(season).padStart(2, '0')}</span
 									>
 								{/if}
-								{#if candidate?.mediaType === 'tv' && candidate?.season != null}
+								{#if mediaType === 'tv' && episode != null}
 									<span class="rounded-full bg-white/6 px-2 py-1"
-										>S{String(candidate.season).padStart(2, '0')}</span
-									>
-								{/if}
-								{#if candidate?.mediaType === 'tv' && candidate?.episode != null}
-									<span class="rounded-full bg-white/6 px-2 py-1"
-										>E{String(candidate.episode).padStart(2, '0')}</span
+										>E{String(episode).padStart(2, '0')}</span
 									>
 								{/if}
 								{#if candidate?.resolution}
@@ -611,7 +623,14 @@
 							</div>
 							{#if torrent.percentDone !== 1}
 								<div class="mt-1">
-									<div class="text-primary/80 mb-2 flex items-center justify-end text-xs">
+									<div class="text-primary/80 mb-2 flex items-center justify-between text-xs">
+										{#if formatRelativeTime(torrent.addedDate)}
+											<p class="text-muted-foreground font-medium">
+												Added {formatRelativeTime(torrent.addedDate)}
+											</p>
+										{:else}
+											<span></span>
+										{/if}
 										<p class="font-medium">{(torrent.percentDone * 100).toFixed(0)}%</p>
 									</div>
 									<div class="bg-primary/20 h-2 rounded-full">
