@@ -558,16 +558,22 @@
 										</div>
 									{/if}
 
-									<MovieGrabPanel
-										tmdbId={item.tmdbId}
-										title={item.title}
-										year={item.releaseDate ? Number(item.releaseDate.slice(0, 4)) : null}
-										imdbId={null}
-										alreadyGrabbed={item.alreadyGrabbed}
-										grabSource={item.grabSource}
-										plexStatus={item.plexStatus}
-										onGrabbed={(source) => markGrabbed(item.tmdbId, source)}
-									/>
+									{#if item.releaseDate && item.releaseDate > todayIso}
+										<p class="text-muted-foreground text-xs">
+											Not released yet — no torrents to find until {shortDate(item.releaseDate)}.
+										</p>
+									{:else}
+										<MovieGrabPanel
+											tmdbId={item.tmdbId}
+											title={item.title}
+											year={item.releaseDate ? Number(item.releaseDate.slice(0, 4)) : null}
+											imdbId={null}
+											alreadyGrabbed={item.alreadyGrabbed}
+											grabSource={item.grabSource}
+											plexStatus={item.plexStatus}
+											onGrabbed={(source) => markGrabbed(item.tmdbId, source)}
+										/>
+									{/if}
 								</li>
 							{/each}
 						</ul>
@@ -605,6 +611,7 @@
 			<Button variant="outline" class="rounded-full px-3" onclick={() => changeTopYear(-1)}>
 				← {topYear - 1}
 			</Button>
+			<span class="text-sm font-semibold tabular-nums">{topYear}</span>
 			<Button
 				variant="outline"
 				class="rounded-full px-3"
