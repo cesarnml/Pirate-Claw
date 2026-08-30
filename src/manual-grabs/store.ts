@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import type { PirateClawDisposition } from '../repository';
 
 export type ManualGrabSource =
   | 'eztv'
@@ -53,6 +54,14 @@ export type ManualGrabDisplayInfo = {
   normalizedTitle: string;
   season: number;
   episode: number;
+  /** Rides along so /api/transmission/torrents can tell the dashboard how
+   * this torrent got here (search grab vs. adopted-from-Transmission vs.
+   * adopted-from-filesystem) — see the origin icon on Torrent Manager
+   * cards. */
+  source: ManualGrabSource;
+  /** null until Torrent Manager (or the missing-torrent reconciler) records
+   * this row as removed/deleted — see setDisposition. */
+  disposition: PirateClawDisposition | null;
 };
 
 type ManualGrabRow = {
@@ -147,6 +156,23 @@ export class ManualGrabsStore {
     return row !== null;
   }
 
+  /** Whether this hash has a manual grab row that ISN'T already in a
+   * terminal disposition — used by resolveManagedTorrentAction (api.ts) to
+   * reject pause/resume/remove/dispose on a hash already marked removed/
+   * deleted, the manual-grab-shaped mirror of the candidate_state terminal-
+   * disposition check just above it. A hash grabbed more than once
+   * (multiple rows) counts as active if any row is still undisposed. */
+  hasActiveTorrentHash(hash: string): boolean {
+    const row = this.database
+      .query(
+        `SELECT 1 FROM manual_grabs
+         WHERE transmission_torrent_hash = ?1 AND disposition IS NULL
+         LIMIT 1`,
+      )
+      .get(hash);
+    return row !== null;
+  }
+
   /** Poster/title info for every manually-grabbed torrent that still has a
    * hash, keyed by hash — lets /api/transmission/torrents show real cover
    * art for these instead of falling back to a letter avatar (they have no
@@ -160,7 +186,9 @@ export class ManualGrabsStore {
                 show_display_title AS displayTitle,
                 normalized_title AS normalizedTitle,
                 season,
-                episode
+                episode,
+                source,
+                disposition
          FROM manual_grabs
          WHERE transmission_torrent_hash IS NOT NULL
          ORDER BY queued_at ASC`,
@@ -172,6 +200,8 @@ export class ManualGrabsStore {
       normalizedTitle: string;
       season: number;
       episode: number;
+      source: string;
+      disposition: string | null;
     }[];
 
     const map = new Map<string, ManualGrabDisplayInfo>();
@@ -184,9 +214,26 @@ export class ManualGrabsStore {
         normalizedTitle: row.normalizedTitle,
         season: row.season,
         episode: row.episode,
+        source: row.source as ManualGrabSource,
+        disposition: row.disposition as PirateClawDisposition | null,
       });
     }
     return map;
+  }
+
+  /** Marks a manually-grabbed torrent removed/deleted — the manual-grab
+   * sibling of Repository.setPirateClawDisposition. Called synchronously
+   * from the Torrent Manager remove/remove-and-delete/dispose handlers
+   * (api.ts), same as candidate_state's disposition. Only the first
+   * disposition sticks (WHERE disposition IS NULL): a hash already marked
+   * terminal shouldn't flip states again. */
+  setDisposition(hash: string, disposition: PirateClawDisposition): void {
+    this.database
+      .query(
+        `UPDATE manual_grabs SET disposition = ?2
+         WHERE transmission_torrent_hash = ?1 AND disposition IS NULL`,
+      )
+      .run(hash, disposition);
   }
 
   /** Records the first observed completion for a manually-grabbed torrent —
@@ -210,7 +257,13 @@ export class ManualGrabsStore {
    * removed from Transmission, unlike listAllTorrentDisplayInfo's live-join
    * fields. When a hash has more than one grab, the most recently queued
    * one's display info wins, same as listAllTorrentDisplayInfo. */
-  listCompleted(): Map<string, ManualGrabDisplayInfo & { doneAt: string }> {
+  listCompleted(): Map<
+    string,
+    Pick<
+      ManualGrabDisplayInfo,
+      'posterUrl' | 'displayTitle' | 'normalizedTitle' | 'season' | 'episode'
+    > & { doneAt: string }
+  > {
     const rows = this.database
       .query(
         `SELECT transmission_torrent_hash AS hash,
@@ -234,7 +287,13 @@ export class ManualGrabsStore {
       doneAt: string;
     }[];
 
-    const map = new Map<string, ManualGrabDisplayInfo & { doneAt: string }>();
+    const map = new Map<
+      string,
+      Pick<
+        ManualGrabDisplayInfo,
+        'posterUrl' | 'displayTitle' | 'normalizedTitle' | 'season' | 'episode'
+      > & { doneAt: string }
+    >();
     for (const row of rows) {
       map.set(row.hash, {
         posterUrl: row.posterUrl,

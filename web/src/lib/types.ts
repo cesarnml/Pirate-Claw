@@ -344,6 +344,40 @@ export type TorrentStatSnapshot = {
 	/** TV manual grabs only — used for the row's meta chips. */
 	season?: number;
 	episode?: number;
+	/** Set only for a manually-grabbed torrent — how it got there, powering
+	 * the origin icon on Torrent Manager rows. Absent for a candidate_state
+	 * (RSS) torrent; the dashboard infers "RSS" from having a matching
+	 * candidate instead. See ManualGrabSource / ManualMovieGrabSource. */
+	source?: TorrentOriginSource;
+};
+
+/** Where a manually-grabbed torrent came from — mirrors the union of
+ * ManualGrabSource (src/manual-grabs/store.ts) and ManualMovieGrabSource
+ * (src/manual-movie-grabs/store.ts) on the server. Kept as a plain string
+ * union here rather than importing those server types, same convention as
+ * the rest of this file. */
+export type TorrentOriginSource =
+	| 'eztv'
+	| 'thepiratebay'
+	| 'yts'
+	| 'adopted-transmission'
+	| 'adopted-filesystem'
+	| 'adopted-plex';
+
+/** One manual grab that still has a Transmission hash, regardless of
+ * whether Transmission currently has it (see GET /api/manual-grabs/tracked)
+ * — the manual-grab equivalent of CandidateStateRecord for "missing from
+ * Transmission" detection (see torrentDisplayState/missingCandidates). */
+export type ManualGrabTrackedEntry = {
+	hash: string;
+	mediaType: 'tv' | 'movie';
+	posterUrl: string | null;
+	displayTitle: string | null;
+	normalizedTitle?: string;
+	season?: number;
+	episode?: number;
+	source: TorrentOriginSource;
+	disposition: 'removed' | 'deleted' | null;
 };
 
 /** One completed manually-grabbed torrent (see GET /api/manual-grabs/completed)

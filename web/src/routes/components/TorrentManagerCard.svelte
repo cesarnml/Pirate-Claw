@@ -11,7 +11,13 @@
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import type { CandidateStateRecord, SessionInfo, TorrentStatSnapshot } from '$lib/types';
+	import type {
+		CandidateStateRecord,
+		ManualGrabTrackedEntry,
+		SessionInfo,
+		TorrentOriginSource,
+		TorrentStatSnapshot
+	} from '$lib/types';
 	import { deserialize, enhance } from '$app/forms';
 	import { base } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
@@ -22,6 +28,42 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import FastForwardIcon from '@lucide/svelte/icons/fast-forward';
 	import CircleXIcon from '@lucide/svelte/icons/circle-x';
+	import RssIcon from '@lucide/svelte/icons/rss';
+	import HandGrabIcon from '@lucide/svelte/icons/hand-grab';
+	import FolderIcon from '@lucide/svelte/icons/folder';
+
+	/** Where a torrent came from, for the origin icon next to the media-type
+	 * pills — RSS feed match, a manual search grab, or the library
+	 * reconciler adopting a torrent/file it found sitting outside
+	 * pirate-claw's own bookkeeping (e.g. added by hand through
+	 * Transmission's own web UI). See torrentOrigin. */
+	type TorrentOrigin = 'rss' | 'manual' | 'adopted';
+
+	const ADOPTED_SOURCES = new Set<TorrentOriginSource>([
+		'adopted-transmission',
+		'adopted-filesystem',
+		'adopted-plex'
+	]);
+
+	/** candidate truthy means a candidate_state row exists, which only ever
+	 * happens for an RSS-pipeline torrent (manual grabs deliberately never
+	 * write there — see manual-grabs/schema.ts) — no separate origin marker
+	 * is needed for that case. Otherwise origin comes from the `source`
+	 * attached by /api/transmission/torrents (see ManualGrabDisplayInfo). */
+	function torrentOrigin(
+		candidate: CandidateStateRecord | null,
+		source: TorrentOriginSource | undefined
+	): TorrentOrigin | null {
+		if (candidate) return 'rss';
+		if (!source) return null;
+		return ADOPTED_SOURCES.has(source) ? 'adopted' : 'manual';
+	}
+
+	const ORIGIN_LABEL: Record<TorrentOrigin, string> = {
+		rss: 'From an RSS feed match',
+		manual: 'Manually grabbed',
+		adopted: 'Adopted — found outside pirate-claw (e.g. added directly in Transmission)'
+	};
 
 	type ActiveDownload = {
 		torrent: TorrentStatSnapshot;
@@ -35,11 +77,14 @@
 	const {
 		activeDownloads,
 		missingCandidates,
+		missingManualGrabs,
 		transmissionLoaded,
 		session
 	}: {
 		activeDownloads: ActiveDownload[];
 		missingCandidates: CandidateStateRecord[];
+		/** The manual-grab sibling of missingCandidates — see +page.svelte. */
+		missingManualGrabs: ManualGrabTrackedEntry[];
 		transmissionLoaded: boolean;
 		/** Powers the "why is this queued?" hint on queued rows. Null when
 		 * Transmission's session-get couldn't be reached — the hint just omits
@@ -425,6 +470,7 @@
 					{@const mediaType = candidate?.mediaType ?? torrent.mediaType ?? null}
 					{@const season = candidate?.season ?? torrent.season ?? null}
 					{@const episode = candidate?.episode ?? torrent.episode ?? null}
+					{@const origin = torrentOrigin(candidate, torrent.source)}
 					{@const rowState = rowDisplayState(torrent, candidate)}
 					{@const inFlightRow =
 						inflightAction === torrent.hash ||
@@ -504,6 +550,21 @@
 								{/if}
 								{#if candidate?.codec}
 									<span class="rounded-full bg-white/6 px-2 py-1">{candidate.codec}</span>
+								{/if}
+								{#if origin}
+									<span class="bg-border h-4 w-px self-center" aria-hidden="true"></span>
+									<span
+										class="flex items-center rounded-full bg-white/6 px-2 py-1"
+										title={ORIGIN_LABEL[origin]}
+									>
+										{#if origin === 'rss'}
+											<RssIcon class="h-3 w-3" />
+										{:else if origin === 'manual'}
+											<HandGrabIcon class="h-3 w-3" />
+										{:else}
+											<FolderIcon class="h-3 w-3" />
+										{/if}
+									</span>
 								{/if}
 							</div>
 							<div class="mt-1.5 flex flex-wrap items-center gap-2">
@@ -692,6 +753,74 @@
 									use:enhance={enhanceDispose(hash, 'deleted')}
 								>
 									<input type="hidden" name="hash" value={hash} />
+									<input type="hidden" name="disposition" value="deleted" />
+									<button
+										type="submit"
+										disabled={inFlight}
+										class="text-destructive/80 hover:text-destructive rounded-lg bg-white/6 px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+									>
+										Delete
+									</button>
+								</form>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+		{#if missingManualGrabs.length > 0}
+			<div class="border-border border-t pt-4">
+				<p class="text-muted-foreground mb-3 text-[11px] font-semibold tracking-[0.24em] uppercase">
+					Missing from Transmission
+				</p>
+				<ul class="space-y-3">
+					{#each missingManualGrabs as grab (grab.hash)}
+						{@const title = grab.displayTitle ?? grab.normalizedTitle ?? grab.hash}
+						{@const inFlight = inflightDispose === grab.hash}
+						<li
+							class="border-border bg-background/45 flex items-center justify-between gap-3 rounded-[20px] border p-3"
+						>
+							<div class="mr-2 flex min-w-0 items-center gap-1.5 overflow-hidden">
+								<p class="shrink truncate text-sm font-medium">{title}</p>
+								<span
+									class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px] uppercase"
+									>{grab.mediaType}</span
+								>
+								{#if grab.mediaType === 'tv' && grab.season != null}
+									<span
+										class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px]"
+										>S{String(grab.season).padStart(2, '0')}</span
+									>
+								{/if}
+								{#if grab.mediaType === 'tv' && grab.episode != null}
+									<span
+										class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px]"
+										>E{String(grab.episode).padStart(2, '0')}</span
+									>
+								{/if}
+							</div>
+							<div class="flex shrink-0 gap-2">
+								<form
+									method="POST"
+									action={`${base}/?/dispose`}
+									use:enhance={enhanceDispose(grab.hash, 'removed')}
+								>
+									<input type="hidden" name="hash" value={grab.hash} />
+									<input type="hidden" name="disposition" value="removed" />
+									<button
+										type="submit"
+										disabled={inFlight}
+										class="text-muted-foreground hover:text-foreground rounded-lg bg-white/6 px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+									>
+										Remove
+									</button>
+								</form>
+								<form
+									method="POST"
+									action={`${base}/?/dispose`}
+									use:enhance={enhanceDispose(grab.hash, 'deleted')}
+								>
+									<input type="hidden" name="hash" value={grab.hash} />
 									<input type="hidden" name="disposition" value="deleted" />
 									<button
 										type="submit"

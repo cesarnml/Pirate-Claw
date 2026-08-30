@@ -60,6 +60,19 @@
 			: candidates.filter((c) => torrentDisplayState(c, liveHashes) === 'missing')
 	);
 
+	// The manual-grab sibling of missingCandidates — a manual grab still has
+	// a hash on record (manualGrabsTracked, sourced straight from the DB,
+	// unaffected by whether Transmission currently answers for it) but that
+	// hash is no longer among the live torrents /api/transmission/torrents
+	// just returned. disposition null excludes ones already resolved via
+	// Torrent Manager's remove/remove-and-delete.
+	const manualGrabsTracked = $derived(data.manualGrabsTracked ?? []);
+	const missingManualGrabs = $derived(
+		!transmissionLoaded
+			? []
+			: manualGrabsTracked.filter((m) => m.disposition === null && !liveHashes.has(m.hash))
+	);
+
 	// RSS-feed-matched completions — has a candidate_state row.
 	const candidateArchiveItems = $derived(
 		candidates
@@ -251,6 +264,7 @@
 			<TorrentManagerCard
 				{activeDownloads}
 				{missingCandidates}
+				{missingManualGrabs}
 				{transmissionLoaded}
 				session={data.transmissionSession}
 			/>

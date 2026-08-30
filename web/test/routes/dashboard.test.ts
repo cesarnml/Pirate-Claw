@@ -91,6 +91,7 @@ const baseData = {
 	runSummaries: [],
 	outcomes: [],
 	manualGrabArchive: [],
+	manualGrabsTracked: [],
 	onboarding: null as OnboardingStatus | null,
 	error: null
 };

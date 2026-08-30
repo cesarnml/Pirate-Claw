@@ -42,4 +42,10 @@ export function ensureManualMovieGrabsSchema(database: Database): void {
   // recording the first observed 100% here lets Your Haul keep this
   // completion after the torrent is removed from Transmission.
   ensureColumn(database, 'manual_movie_grabs', 'done_at', 'TEXT');
+
+  // Same rationale as manual_grabs.disposition (see
+  // src/manual-grabs/schema.ts) — lets Torrent Manager record a manual movie
+  // grab as 'removed'/'deleted' instead of leaving it a permanent zombie row
+  // once its torrent is gone.
+  ensureColumn(database, 'manual_movie_grabs', 'disposition', 'TEXT');
 }

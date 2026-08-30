@@ -397,14 +397,14 @@ async function parseJsonTorrentHash(
 
 /**
  * Resolves a Transmission hash to a manageable torrent context for
- * pause/resume/remove/remove-and-delete. Tries candidate_state first (the
- * RSS-pipeline case, which also carries an identityKey the caller can set a
- * pirateClawDisposition on); if that's not this hash's origin, falls back to
- * manual_grabs (see manual-grabs/schema.ts) — a hash that only exists there
- * is still a real, manageable Transmission torrent, it just has no
- * candidate_state disposition concept to update. `dispose` intentionally
- * does not use this fallback: it's specifically for RSS-tracked torrents the
- * reconcile loop lost track of, a concept manual grabs don't have.
+ * pause/resume/remove/remove-and-delete/dispose. Tries candidate_state first
+ * (the RSS-pipeline case, which also carries an identityKey the caller can
+ * set a pirateClawDisposition on); if that's not this hash's origin, falls
+ * back to manual_grabs/manual_movie_grabs (see manual-grabs/schema.ts) — a
+ * hash that only exists there is still a real, manageable Transmission
+ * torrent, it just has its own disposition column to update instead of
+ * candidate_state's (see ManualGrabsStore.setDisposition). Either origin
+ * rejects a hash already in a terminal disposition (removed/deleted).
  */
 async function resolveManagedTorrentAction(
   repository: Repository,
@@ -453,10 +453,22 @@ async function resolveManagedTorrentAction(
     return { ok: true, candidate, rowState: managedTorrentRowState(torrent) };
   }
 
-  if (
-    manualGrabs?.hasTorrentHash(hash) ||
-    manualMovieGrabs?.hasTorrentHash(hash)
-  ) {
+  const manualGrabKnown =
+    manualGrabs?.hasTorrentHash(hash) || manualMovieGrabs?.hasTorrentHash(hash);
+  if (manualGrabKnown) {
+    const manualGrabActive =
+      manualGrabs?.hasActiveTorrentHash(hash) ||
+      manualMovieGrabs?.hasActiveTorrentHash(hash);
+    if (!manualGrabActive) {
+      return {
+        ok: false,
+        response: Response.json(
+          { error: 'candidate is already in a terminal disposition' },
+          { status: 400 },
+        ),
+      };
+    }
+
     const statsResult = await fetchTorrentStats(transmissionConfig, [hash]);
     if (!statsResult.ok) {
       return {
@@ -3644,15 +3656,29 @@ export function createApiFetch(
       // in Transmission but never show up here — surfacing as "the Grab
       // button did nothing" even on a genuine success.
       const manualGrabsStore = database ? new ManualGrabsStore(database) : null;
-      const manualGrabDisplayInfo =
+      const manualGrabDisplayInfoAll =
         manualGrabsStore?.listAllTorrentDisplayInfo() ?? new Map();
       // Same rationale, movie-shaped: manual_movie_grabs never writes to
       // candidate_state either (see manual-movie-grabs/schema.ts).
       const manualMovieGrabsStore = database
         ? new ManualMovieGrabsStore(database)
         : null;
-      const manualMovieGrabDisplayInfo =
+      const manualMovieGrabDisplayInfoAll =
         manualMovieGrabsStore?.listAllTorrentDisplayInfo() ?? new Map();
+      // A disposed (removed/deleted) manual grab shouldn't stay in the
+      // live-lookup hash set — mirrors candidateHashes excluding disposed
+      // candidates above. Its torrent is already gone from Transmission
+      // either way; this just stops querying for it forever.
+      const manualGrabDisplayInfo = new Map(
+        Array.from(manualGrabDisplayInfoAll).filter(
+          ([, info]) => info.disposition === null,
+        ),
+      );
+      const manualMovieGrabDisplayInfo = new Map(
+        Array.from(manualMovieGrabDisplayInfoAll).filter(
+          ([, info]) => info.disposition === null,
+        ),
+      );
       const hashes = Array.from(
         new Set([
           ...candidateHashes,
@@ -3716,6 +3742,11 @@ export function createApiFetch(
               mediaType: 'tv' as const,
               season: showGrabInfo.season,
               episode: showGrabInfo.episode,
+              // How this torrent got here — see TorrentManagerCard's origin
+              // icon. Absent entirely for a candidate_state (RSS) torrent;
+              // the frontend infers "RSS" from having a matching candidate
+              // instead, so no separate marker is needed for that case.
+              source: showGrabInfo.source,
             };
           }
           const movieGrabInfo = manualMovieGrabDisplayInfo.get(t.hash);
@@ -3725,6 +3756,7 @@ export function createApiFetch(
               posterUrl: movieGrabInfo.posterUrl,
               displayTitle: movieGrabInfo.displayTitle,
               mediaType: 'movie' as const,
+              source: movieGrabInfo.source,
             };
           }
           return t;
@@ -3762,6 +3794,47 @@ export function createApiFetch(
               posterUrl: info.posterUrl,
               displayTitle: info.displayTitle,
               doneAt: info.doneAt,
+            }),
+          )
+        : [];
+      return Response.json({ items: [...showItems, ...movieItems] });
+    }
+
+    if (path === '/api/manual-grabs/tracked' && request.method === 'GET') {
+      // The manual-grab equivalent of GET /api/candidates: every manual grab
+      // that still has a hash, regardless of whether Transmission currently
+      // has it — unlike /api/transmission/torrents (which only returns
+      // torrents Transmission actually answered for), this is sourced
+      // straight from the DB. The dashboard diffs this against the live
+      // hash set from /api/transmission/torrents to detect a manual grab
+      // gone missing, the same way it already does for candidate_state rows
+      // (see torrentDisplayState/missingCandidates in +page.svelte).
+      const showItems = database
+        ? Array.from(
+            new ManualGrabsStore(database).listAllTorrentDisplayInfo(),
+            ([hash, info]) => ({
+              hash,
+              mediaType: 'tv' as const,
+              posterUrl: info.posterUrl,
+              displayTitle: info.displayTitle,
+              normalizedTitle: info.normalizedTitle,
+              season: info.season,
+              episode: info.episode,
+              source: info.source,
+              disposition: info.disposition,
+            }),
+          )
+        : [];
+      const movieItems = database
+        ? Array.from(
+            new ManualMovieGrabsStore(database).listAllTorrentDisplayInfo(),
+            ([hash, info]) => ({
+              hash,
+              mediaType: 'movie' as const,
+              posterUrl: info.posterUrl,
+              displayTitle: info.displayTitle,
+              source: info.source,
+              disposition: info.disposition,
             }),
           )
         : [];
@@ -3953,12 +4026,16 @@ export function createApiFetch(
       const body = await parseJsonTorrentHash(request);
       if (!body.ok) return body.response;
 
+      const manualGrabs = database ? new ManualGrabsStore(database) : undefined;
+      const manualMovieGrabs = database
+        ? new ManualMovieGrabsStore(database)
+        : undefined;
       const ctx = await resolveManagedTorrentAction(
         repository,
         activeConfig.transmission,
         body.hash,
-        database ? new ManualGrabsStore(database) : undefined,
-        database ? new ManualMovieGrabsStore(database) : undefined,
+        manualGrabs,
+        manualMovieGrabs,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState === 'missing') {
@@ -3979,8 +4056,6 @@ export function createApiFetch(
         return Response.json({ error: rpc.message }, { status: 502 });
       }
 
-      // No candidate_state row for a manual-grab-only torrent — nothing to
-      // set a disposition on (see resolveManagedTorrentAction).
       if (
         ctx.candidate &&
         (ctx.rowState === 'downloading' ||
@@ -3993,6 +4068,14 @@ export function createApiFetch(
           ctx.candidate.identityKey,
           'removed',
         );
+      } else if (!ctx.candidate) {
+        // No candidate_state row — this is a manual-grab-only torrent (see
+        // resolveManagedTorrentAction). It has its own disposition column
+        // now (manual_grabs/manual_movie_grabs.disposition) instead of being
+        // left an unresolvable zombie row once Transmission no longer has
+        // it.
+        manualGrabs?.setDisposition(body.hash, 'removed');
+        manualMovieGrabs?.setDisposition(body.hash, 'removed');
       }
 
       return Response.json({ ok: true });
@@ -4008,12 +4091,16 @@ export function createApiFetch(
       const body = await parseJsonTorrentHash(request);
       if (!body.ok) return body.response;
 
+      const manualGrabs = database ? new ManualGrabsStore(database) : undefined;
+      const manualMovieGrabs = database
+        ? new ManualMovieGrabsStore(database)
+        : undefined;
       const ctx = await resolveManagedTorrentAction(
         repository,
         activeConfig.transmission,
         body.hash,
-        database ? new ManualGrabsStore(database) : undefined,
-        database ? new ManualMovieGrabsStore(database) : undefined,
+        manualGrabs,
+        manualMovieGrabs,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState === 'missing') {
@@ -4039,6 +4126,11 @@ export function createApiFetch(
           ctx.candidate.identityKey,
           'deleted',
         );
+      } else {
+        // See the remove handler's comment above — manual grabs get the
+        // same disposition tracking now instead of a permanent zombie row.
+        manualGrabs?.setDisposition(body.hash, 'deleted');
+        manualMovieGrabs?.setDisposition(body.hash, 'deleted');
       }
 
       return Response.json({ ok: true });
@@ -4054,14 +4146,21 @@ export function createApiFetch(
       const body = await parseJsonDisposeBody(request);
       if (!body.ok) return body.response;
 
-      // No manualGrabs fallback here on purpose — dispose is specifically
-      // for an RSS-tracked torrent the reconcile loop lost track of, a
-      // concept manual grabs don't have (see resolveManagedTorrentAction).
+      // Manual grabs now have the same "missing from Transmission, needs a
+      // human to resolve it" concept candidate_state has (disposition
+      // column added alongside candidate_state.pirate_claw_disposition —
+      // see manual-grabs/schema.ts), so they get the same fallback pause/
+      // resume/remove already use.
+      const manualGrabs = database ? new ManualGrabsStore(database) : undefined;
+      const manualMovieGrabs = database
+        ? new ManualMovieGrabsStore(database)
+        : undefined;
       const ctx = await resolveManagedTorrentAction(
         repository,
         activeConfig.transmission,
         body.hash,
-        undefined,
+        manualGrabs,
+        manualMovieGrabs,
       );
       if (!ctx.ok) return ctx.response;
       if (ctx.rowState !== 'missing') {
@@ -4073,14 +4172,21 @@ export function createApiFetch(
           { status: 400 },
         );
       }
-      if (!ctx.candidate) {
+
+      if (ctx.candidate) {
+        repository.setPirateClawDisposition(
+          ctx.candidate.identityKey,
+          body.disposition,
+        );
+      } else if (
+        manualGrabs?.hasTorrentHash(body.hash) ||
+        manualMovieGrabs?.hasTorrentHash(body.hash)
+      ) {
+        manualGrabs?.setDisposition(body.hash, body.disposition);
+        manualMovieGrabs?.setDisposition(body.hash, body.disposition);
+      } else {
         return json500();
       }
-
-      repository.setPirateClawDisposition(
-        ctx.candidate.identityKey,
-        body.disposition,
-      );
       return Response.json({ ok: true });
     }
 

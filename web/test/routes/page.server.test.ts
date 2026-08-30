@@ -27,6 +27,7 @@ describe('dashboard page server load', () => {
 			.mockResolvedValueOnce({ outcomes: [] })
 			.mockResolvedValueOnce(emptyConfig)
 			.mockResolvedValueOnce({ version: '4.0.0' })
+			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
 		const result = await load({} as never);
@@ -52,6 +53,7 @@ describe('dashboard page server load', () => {
 			.mockResolvedValueOnce({ outcomes: [] })
 			.mockResolvedValueOnce(feedOnlyConfig)
 			.mockResolvedValueOnce({ version: '4.0.0' })
+			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
 		const result = await load({} as never);
@@ -74,6 +76,7 @@ describe('dashboard page server load', () => {
 			.mockResolvedValueOnce({ outcomes: [] })
 			.mockResolvedValueOnce(emptyConfig)
 			.mockResolvedValueOnce({ version: '4.0.0' })
+			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
 		const result = await load({} as never);

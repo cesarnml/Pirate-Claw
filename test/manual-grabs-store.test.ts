@@ -137,6 +137,8 @@ describe('ManualGrabsStore', () => {
       normalizedTitle: 'show a',
       season: 1,
       episode: 1,
+      source: 'eztv',
+      disposition: null,
     });
   });
 

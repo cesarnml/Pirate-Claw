@@ -6,6 +6,7 @@ import type {
 	CandidateStateRecord,
 	DaemonHealth,
 	ManualGrabArchiveEntry,
+	ManualGrabTrackedEntry,
 	OnboardingStatus,
 	RunSummaryRecord,
 	ReviewOutcomeRecord,
@@ -25,7 +26,8 @@ export const load: PageServerLoad = async () => {
 		outcomesResult,
 		configResult,
 		sessionResult,
-		manualGrabArchiveResult
+		manualGrabArchiveResult,
+		manualGrabsTrackedResult
 	] = await Promise.allSettled([
 		apiFetch<DaemonHealth>('/api/health'),
 		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents'),
@@ -37,7 +39,10 @@ export const load: PageServerLoad = async () => {
 		// (session.activeTorrentCount / .downloadQueueSize) — see TorrentManagerCard.
 		apiFetch<SessionInfo>('/api/transmission/session'),
 		// The manual-grab-sourced half of Your Haul — see ArchiveStrip/+page.svelte.
-		apiFetch<{ items: ManualGrabArchiveEntry[] }>('/api/manual-grabs/completed')
+		apiFetch<{ items: ManualGrabArchiveEntry[] }>('/api/manual-grabs/completed'),
+		// Every manual grab with a hash, independent of Transmission — powers
+		// missingManualGrabs (the manual-grab sibling of missingCandidates).
+		apiFetch<{ items: ManualGrabTrackedEntry[] }>('/api/manual-grabs/tracked')
 	]);
 
 	const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
@@ -50,6 +55,8 @@ export const load: PageServerLoad = async () => {
 	const transmissionSession = sessionResult.status === 'fulfilled' ? sessionResult.value : null;
 	const manualGrabArchive =
 		manualGrabArchiveResult.status === 'fulfilled' ? manualGrabArchiveResult.value.items : null;
+	const manualGrabsTracked =
+		manualGrabsTrackedResult.status === 'fulfilled' ? manualGrabsTrackedResult.value.items : null;
 	const onboarding: OnboardingStatus | null =
 		configResult.status === 'fulfilled'
 			? deriveOnboardingStatus(configResult.value, canWrite)
@@ -81,6 +88,12 @@ export const load: PageServerLoad = async () => {
 			manualGrabArchiveResult.reason
 		);
 	}
+	if (manualGrabsTrackedResult.status === 'rejected') {
+		console.error(
+			'[dashboard] failed to load /api/manual-grabs/tracked',
+			manualGrabsTrackedResult.reason
+		);
+	}
 
 	return {
 		health,
@@ -91,6 +104,7 @@ export const load: PageServerLoad = async () => {
 		onboarding,
 		transmissionSession,
 		manualGrabArchive,
+		manualGrabsTracked,
 		error
 	};
 };

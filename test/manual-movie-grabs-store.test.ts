@@ -130,6 +130,8 @@ describe('ManualMovieGrabsStore', () => {
     expect(store.listAllTorrentDisplayInfo().get('deadbeef')).toEqual({
       posterUrl: 'new-poster.jpg',
       displayTitle: 'New Title',
+      source: 'yts',
+      disposition: null,
     });
   });
 

@@ -47,6 +47,16 @@ export function ensureManualGrabsSchema(database: Database): void {
   // gone, the same way transmissionDoneDate survives on a candidate_state
   // row. Written once (see ManualGrabsStore.markDone), never overwritten.
   ensureManualGrabsColumn(database, 'done_at', 'TEXT');
+
+  // The manual-grab-shaped sibling of candidate_state.pirate_claw_disposition
+  // (see repository.ts) — a manual grab used to have nowhere to record
+  // "removed via Torrent Manager" or "gone missing from Transmission", so
+  // those rows sat as permanent zombies (still counted as an active hash,
+  // never resolvable as done or gone). Same two values, same meaning:
+  // 'removed' when the torrent was pulled from Transmission without
+  // deleting local data, 'deleted' when local data went too. See
+  // ManualGrabsStore.setDisposition.
+  ensureManualGrabsColumn(database, 'disposition', 'TEXT');
 }
 
 function ensureManualGrabsColumn(

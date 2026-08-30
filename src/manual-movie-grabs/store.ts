@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { MovieBreakdown } from '../movie-api-types';
+import type { PirateClawDisposition } from '../repository';
 
 export type ManualMovieGrabSource =
   | 'thepiratebay'
@@ -46,6 +47,15 @@ export type RecordManualMovieGrabInput = {
    * back off. Null when genuinely unknown (rare). */
   movieYear?: number | null;
   queuedAt?: string;
+};
+
+/** Poster/title/origin info for a manually-grabbed movie torrent, the movie
+ * shaped sibling of ManualGrabDisplayInfo (see src/manual-grabs/store.ts). */
+export type ManualMovieGrabDisplayInfo = {
+  posterUrl: string | null;
+  displayTitle: string | null;
+  source: ManualMovieGrabSource;
+  disposition: PirateClawDisposition | null;
 };
 
 type ManualMovieGrabRow = {
@@ -136,15 +146,27 @@ export class ManualMovieGrabsStore {
     return row !== null;
   }
 
-  listAllTorrentDisplayInfo(): Map<
-    string,
-    { posterUrl: string | null; displayTitle: string | null }
-  > {
+  /** Movie-shaped sibling of ManualGrabsStore.hasActiveTorrentHash (see
+   * src/manual-grabs/store.ts) — same terminal-disposition semantics. */
+  hasActiveTorrentHash(hash: string): boolean {
+    const row = this.database
+      .query(
+        `SELECT 1 FROM manual_movie_grabs
+         WHERE transmission_torrent_hash = ?1 AND disposition IS NULL
+         LIMIT 1`,
+      )
+      .get(hash);
+    return row !== null;
+  }
+
+  listAllTorrentDisplayInfo(): Map<string, ManualMovieGrabDisplayInfo> {
     const rows = this.database
       .query(
         `SELECT transmission_torrent_hash AS hash,
                 movie_poster_url AS posterUrl,
-                movie_display_title AS displayTitle
+                movie_display_title AS displayTitle,
+                source,
+                disposition
          FROM manual_movie_grabs
          WHERE transmission_torrent_hash IS NOT NULL
          ORDER BY queued_at ASC`,
@@ -153,19 +175,32 @@ export class ManualMovieGrabsStore {
       hash: string;
       posterUrl: string | null;
       displayTitle: string | null;
+      source: string;
+      disposition: string | null;
     }[];
 
-    const map = new Map<
-      string,
-      { posterUrl: string | null; displayTitle: string | null }
-    >();
+    const map = new Map<string, ManualMovieGrabDisplayInfo>();
     for (const row of rows) {
       map.set(row.hash, {
         posterUrl: row.posterUrl,
         displayTitle: row.displayTitle,
+        source: row.source as ManualMovieGrabSource,
+        disposition: row.disposition as PirateClawDisposition | null,
       });
     }
     return map;
+  }
+
+  /** Movie-shaped sibling of ManualGrabsStore.setDisposition (see
+   * src/manual-grabs/store.ts) — same semantics, same terminal-once
+   * guard. */
+  setDisposition(hash: string, disposition: PirateClawDisposition): void {
+    this.database
+      .query(
+        `UPDATE manual_movie_grabs SET disposition = ?2
+         WHERE transmission_torrent_hash = ?1 AND disposition IS NULL`,
+      )
+      .run(hash, disposition);
   }
 
   /** Every tmdb_id with at least one manual grab recorded — used to derive
