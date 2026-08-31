@@ -1233,17 +1233,26 @@ export function createApiFetch(
    * Best-effort: any failure here must never break whatever triggered it
    * (a page load, for the bootstrap case), so failures are logged and
    * swallowed, matching every other sweep in this file. */
-  async function runFullMoviePlexSync(): Promise<{
+  async function runFullMoviePlexSync(
+    onProgress?: (checked: number, total: number) => void,
+  ): Promise<{
     adoptedCount: number;
     checkedCount: number;
   } | null> {
     if (!database || !plexMovies || !topMovies) return null;
+    // A caller with its own onProgress (the streaming Config route) that
+    // lands on an already-in-flight run (e.g. the one-time auto-bootstrap
+    // sync) just gets that run's result with no progress events of its
+    // own — acceptable on a single-user NAS app where two full syncs
+    // overlapping is rare, and still strictly better than starting a
+    // second redundant sweep.
     if (fullSyncInFlight) return fullSyncInFlight;
 
     const promise = runFullMoviePlexSyncUncached(
       database,
       plexMovies,
       topMovies,
+      onProgress,
     ).finally(() => (fullSyncInFlight = null));
     fullSyncInFlight = promise;
     return promise;
@@ -1253,6 +1262,7 @@ export function createApiFetch(
     database: Database,
     plexMovies: PlexMovieEnrichDeps,
     topMovies: TopMoviesDeps,
+    onProgress?: (checked: number, total: number) => void,
   ): Promise<{ adoptedCount: number; checkedCount: number } | null> {
     try {
       const manualMovieGrabs = new ManualMovieGrabsStore(database);
@@ -1279,6 +1289,7 @@ export function createApiFetch(
         database,
         catalogCache: plexMovieCatalogCache,
         log: adoptionLog,
+        onProgress,
       });
 
       const syncedAt = new Date().toISOString();
@@ -1292,6 +1303,72 @@ export function createApiFetch(
       console.log(`[movie-adoption] full plex sync failed: ${message}`);
       return null;
     }
+  }
+
+  /** NDJSON-streaming sibling of the plain POST /api/movie-calendar/plex-sync
+   * response above — same runFullMoviePlexSync underneath, just reporting
+   * its coarse checked/total counter (see matchAgainstCatalog's
+   * onProgress) as it goes instead of one response at the very end. Backs
+   * the Config "Plex Movie Sync" card. */
+  function streamMoviePlexSyncProgress(database: Database): Response {
+    const encoder = new TextEncoder();
+    // Set by cancel() when the client disconnects mid-run. Guards every
+    // send/close below — runFullMoviePlexSync's own promise is NOT aborted
+    // on disconnect (it's dedup'd via fullSyncInFlight and, per
+    // TV_SYNC_RESPONSE_DEADLINE_MS's identical design elsewhere in this
+    // file, deliberately keeps running to completion server-side
+    // regardless of whether anyone's still listening — a concurrent or
+    // follow-up "Sync Now" click should land on that same in-flight run,
+    // not start a second redundant sweep). What this flag actually
+    // prevents is enqueueing/closing on a controller the client has
+    // already torn down, which would otherwise throw. Found in code
+    // review before this ever shipped.
+    let cancelled = false;
+    const send = (
+      controller: ReadableStreamDefaultController,
+      event: Record<string, unknown>,
+    ) => {
+      if (cancelled) return;
+      try {
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      } catch {
+        // Controller already closed/errored out from under us — ignore.
+      }
+    };
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const result = await runFullMoviePlexSync((checked, total) => {
+          send(controller, { type: 'progress', checked, total });
+        });
+        if (cancelled) return;
+
+        if (!result) {
+          send(controller, {
+            type: 'fatal',
+            message: 'Plex sync failed — see daemon logs.',
+          });
+          controller.close();
+          return;
+        }
+
+        const state = new PlexMovieSyncStateStore(database).get();
+        send(controller, {
+          type: 'done',
+          lastSyncedAt: state.lastSyncedAt,
+          adoptedCount: result.adoptedCount,
+          checkedCount: result.checkedCount,
+        });
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    return new Response(stream, {
+      headers: { 'content-type': 'application/x-ndjson; charset=utf-8' },
+    });
   }
 
   /** Claims the one-time auto-bootstrap slot (best-effort, never blocks the
@@ -2343,6 +2420,100 @@ export function createApiFetch(
       }
     }
 
+    // NDJSON-streaming sibling of the plain /api/movie-calendar/top rescan
+    // above — backs the movie-calendar page's Rescan button (both the "Top
+    // Movies of Year" tab and the "Yearly Movies" calendar tab, which share
+    // this one action). Reports live per-title progress as getTopMovies
+    // works through TMDB lookups (see its onProgress param) instead of one
+    // opaque spinner for however long ~100 TMDB calls takes. Deliberately
+    // does NOT return the final item list itself — once `done` arrives the
+    // client re-fetches /api/movie-calendar/top normally (now a cache hit,
+    // so fast), the same "stream is only for progress, reload for data"
+    // shape shows/refresh-missing established. Same write-auth gating as
+    // the plain rescan=true path.
+    if (path === '/api/movie-calendar/top-rescan') {
+      if (request.method !== 'POST') {
+        return jsonMethodNotAllowed('POST');
+      }
+      if (!topMovies) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      const params = new URL(request.url).searchParams;
+      const currentYear = new Date().getFullYear();
+      const year = clampNonNegativeInt(
+        params.get('year'),
+        currentYear,
+        1900,
+        currentYear,
+      );
+
+      const topMoviesDeps = topMovies;
+      const encoder = new TextEncoder();
+      // Set by cancel() when the client disconnects mid-run. There's no
+      // AbortSignal plumbed into TmdbHttpClient, so the one TMDB lookup
+      // already in flight when this fires can't itself be aborted — but
+      // throwing from the onProgress callback below (called once per
+      // completed lookup, between iterations) stops the loop from firing
+      // any FURTHER lookups, and — just as importantly — makes getTopMovies
+      // reject instead of "successfully" returning a partial year, so
+      // TopMoviesCache never caches (and corrupts) an incomplete result;
+      // see its fetchOnce, which only writes on a resolved promise. Found
+      // in code review before this ever shipped (previously this stream
+      // had no cancel() at all — nothing stopped ~100 outbound TMDB calls
+      // from continuing after a disconnect).
+      let cancelled = false;
+      const stream = new ReadableStream({
+        async start(controller) {
+          const send = (event: Record<string, unknown>) => {
+            if (cancelled) return;
+            try {
+              controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+            } catch {
+              // Controller already closed/errored out from under us — ignore.
+            }
+          };
+          try {
+            const owned = await ownedMovieStatuses();
+            const result = await getTopMovies(
+              topMoviesDeps,
+              year,
+              owned,
+              true,
+              (checked, total, title) => {
+                if (cancelled) throw new Error('rescan cancelled');
+                send({ type: 'progress', index: checked, total, title });
+              },
+            );
+            if (result.scrapeError) {
+              send({ type: 'fatal', message: result.scrapeError });
+            } else {
+              send({ type: 'done' });
+            }
+          } catch (error) {
+            if (!cancelled) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              send({ type: 'fatal', message });
+            }
+          }
+          if (!cancelled) controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+
+      return new Response(stream, {
+        headers: { 'content-type': 'application/x-ndjson; charset=utf-8' },
+      });
+    }
+
     // Backs the Config page's "Plex Movie Sync" card: GET reads the last
     // sync time for display (never touches Plex); POST actually runs it
     // (walks the whole catalog, write-auth gated like every other
@@ -2374,6 +2545,20 @@ export function createApiFetch(
         }
         const authError = checkWriteAuth(request, activeConfig);
         if (authError) return authError;
+
+        // Config's "Plex Movie Sync" card streams a live checked/total
+        // counter instead of sitting behind one opaque spinner for
+        // however long ~7000 movies takes. Unlike TV sync/shows refresh,
+        // this work has no per-item network call to make "gentle" —
+        // adoptMoviesFromPlex fetches Plex's whole catalog ONCE, then
+        // matches every candidate in-memory (see matchAgainstCatalog) — so
+        // this is a coarse, honest "how far along is it" counter, not the
+        // same sequential/paced pattern. See ?stream's opt-in: the plain
+        // POST below (no stream param) keeps the single-JSON-response
+        // shape for any other caller.
+        if (new URL(request.url).searchParams.get('stream') === 'true') {
+          return streamMoviePlexSyncProgress(database);
+        }
 
         const result = await runFullMoviePlexSync();
         if (!result) {
@@ -2420,6 +2605,22 @@ export function createApiFetch(
         }
         const authError = checkWriteAuth(request, activeConfig);
         if (authError) return authError;
+
+        // Config's "Plex TV Sync" card now drives the actual per-show
+        // checking itself, streamed via web/src/routes/config/plex-tv-sync
+        // (one /api/shows/:slug/plex/refresh call per tracked show — see
+        // that route's doc comment for why this is a legitimate
+        // replacement for the loop below, not just a UI wrapper around it).
+        // That route calls back here with recordOnly=true purely to stamp
+        // the same last-synced-at row this endpoint has always owned,
+        // without re-running the sweep a second time. The plain POST below
+        // (no recordOnly) is kept for any other caller that still wants the
+        // single-request, non-streamed sweep.
+        if (new URL(request.url).searchParams.get('recordOnly') === 'true') {
+          const syncedAt = new Date().toISOString();
+          new PlexTvSyncStateStore(database).recordSync(syncedAt);
+          return Response.json({ lastSyncedAt: syncedAt });
+        }
 
         // See TV_SYNC_RESPONSE_DEADLINE_MS's doc comment for why this
         // races against a timeout rather than a plain await: the sync

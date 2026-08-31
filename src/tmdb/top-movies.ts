@@ -168,6 +168,7 @@ export async function getTopMovies(
   year: number,
   ownership: Map<number, MovieOwnershipStatus>,
   forceRescan = false,
+  onProgress?: (checked: number, total: number, title: string) => void,
 ): Promise<TopMoviesResult> {
   if (forceRescan) deps.cache.invalidate(year);
 
@@ -191,35 +192,38 @@ export async function getTopMovies(
       };
     }
 
-    // Sequential-by-throttle, not parallel — TmdbHttpClient serializes its
-    // own requests (see MIN_REQUEST_INTERVAL_MS in tmdb/client.ts), and
-    // Promise.all here still lands one request every ~55ms rather than a
-    // burst of 100 concurrent ones, same as calendar.ts's 12-month fetch.
-    const enriched = await Promise.all(
-      scraped.map(async (movie) => {
-        const found = await deps.client.findMovieByImdbId(movie.imdbId);
-        return {
-          rank: movie.rank,
-          tmdbId: found?.id ?? null,
-          title: found?.title ?? movie.title,
-          imdbId: movie.imdbId,
-          posterUrl: found?.poster_path
-            ? `https://image.tmdb.org/t/p/w500${found.poster_path}`
-            : null,
-          releaseDate: found?.release_date ?? null,
-          // vote_average of exactly 0 means "no votes yet" in practice, not
-          // a genuine 0.0 rating — treat it the same as missing (see
-          // movie-calendar.ts's getMovieCalendar for the same rule).
-          rating: found?.vote_average
-            ? Math.round(found.vote_average * 10) / 10
-            : undefined,
-          alreadyGrabbed: false, // filled in by withOwnership below
-          grabSource: null,
-          plexStatus: 'unknown',
-          formats: movie.formats,
-        } satisfies TopMovieItem;
-      }),
-    );
+    // Sequential, not parallel — TmdbHttpClient serializes its own
+    // requests anyway (see MIN_REQUEST_INTERVAL_MS in tmdb/client.ts), so
+    // a plain for-loop lands the same one-request-every-~55ms pace a
+    // Promise.all over this client would, while also giving onProgress a
+    // real per-item boundary to report from (backs the Rescan button's
+    // streamed progress — see movie-calendar/top-rescan/+server.ts).
+    const enriched: TopMovieItem[] = [];
+    for (const movie of scraped) {
+      const found = await deps.client.findMovieByImdbId(movie.imdbId);
+      const item = {
+        rank: movie.rank,
+        tmdbId: found?.id ?? null,
+        title: found?.title ?? movie.title,
+        imdbId: movie.imdbId,
+        posterUrl: found?.poster_path
+          ? `https://image.tmdb.org/t/p/w500${found.poster_path}`
+          : null,
+        releaseDate: found?.release_date ?? null,
+        // vote_average of exactly 0 means "no votes yet" in practice, not
+        // a genuine 0.0 rating — treat it the same as missing (see
+        // movie-calendar.ts's getMovieCalendar for the same rule).
+        rating: found?.vote_average
+          ? Math.round(found.vote_average * 10) / 10
+          : undefined,
+        alreadyGrabbed: false, // filled in by withOwnership below
+        grabSource: null,
+        plexStatus: 'unknown',
+        formats: movie.formats,
+      } satisfies TopMovieItem;
+      enriched.push(item);
+      onProgress?.(enriched.length, scraped.length, item.title);
+    }
 
     return { fetchedAt: new Date().toISOString(), items: enriched };
   });

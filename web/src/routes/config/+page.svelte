@@ -96,26 +96,6 @@
 	let restartRequestId = $state<string | null>(null);
 	let restartRequestedAt = $state<string | null>(null);
 	let restartPollTimer = $state<number | null>(null);
-	let plexMovieSyncing = $state(false);
-	// undefined = "no optimistic override yet, trust data" — a bare $state
-	// seeded once from data.plexMovieSyncLastSyncedAt would go stale the
-	// moment any OTHER form's use:enhance re-invalidates and reruns load
-	// (e.g. the auto-bootstrap sync finishing in the background while this
-	// page happens to be open, or just saving an unrelated setting) — this
-	// stays reactive to `data` until this page's own sync actually
-	// completes, then reflects that immediately without waiting on load.
-	let plexMovieSyncOverride = $state<string | null | undefined>(undefined);
-	const plexMovieSyncLastSyncedAt = $derived(
-		plexMovieSyncOverride !== undefined ? plexMovieSyncOverride : data.plexMovieSyncLastSyncedAt
-	);
-	let plexTvSyncing = $state(false);
-	// Same "stay reactive to data until this page's own sync completes"
-	// rationale as plexMovieSyncOverride above.
-	let plexTvSyncOverride = $state<string | null | undefined>(undefined);
-	const plexTvSyncLastSyncedAt = $derived(
-		plexTvSyncOverride !== undefined ? plexTvSyncOverride : data.plexTvSyncLastSyncedAt
-	);
-
 	const restartInProgress = $derived(
 		restarting || restartPhase === 'requested' || restartPhase === 'restarting'
 	);
@@ -609,82 +589,6 @@
 			await update({ reset: false });
 		};
 	};
-
-	const enhancePlexMovieSync: SubmitFunction = () => {
-		plexMovieSyncing = true;
-		return async ({ result, update }) => {
-			plexMovieSyncing = false;
-			if (result.type === 'success') {
-				const resultData = result.data as {
-					plexMovieSyncLastSyncedAt?: string | null;
-					plexMovieSyncAdoptedCount?: number;
-					plexMovieSyncCheckedCount?: number;
-				} | null;
-				plexMovieSyncOverride = resultData?.plexMovieSyncLastSyncedAt ?? null;
-				const adopted = resultData?.plexMovieSyncAdoptedCount ?? 0;
-				const checked = resultData?.plexMovieSyncCheckedCount ?? 0;
-				toast(
-					'Plex sync complete',
-					'success',
-					`Re-synced your whole Plex library, then checked it against ${checked} known movie${checked === 1 ? '' : 's'} — found ${adopted} already there.`
-				);
-			} else {
-				const errorMessage =
-					result.type === 'failure'
-						? ((result.data as { plexMovieSyncError?: string } | null)?.plexMovieSyncError ??
-							'Plex sync failed — try again.')
-						: 'Plex sync failed — try again.';
-				toast('Plex sync failed', 'error', errorMessage);
-			}
-			await update({ reset: false });
-		};
-	};
-
-	const enhancePlexTvSync: SubmitFunction = () => {
-		plexTvSyncing = true;
-		return async ({ result, update }) => {
-			plexTvSyncing = false;
-			if (result.type === 'success') {
-				const resultData = result.data as {
-					plexTvSyncStillRunning?: boolean;
-					plexTvSyncLastSyncedAt?: string | null;
-					plexTvSyncCheckedCount?: number;
-					plexTvSyncSkippedCount?: number;
-				} | null;
-				// See src/api.ts's TV_SYNC_RESPONSE_DEADLINE_MS — a slow/unhealthy
-				// Plex means the daemon responded before the sync actually
-				// finished. It's still running server-side; don't claim a result
-				// (or update "last synced") that isn't real yet.
-				if (resultData?.plexTvSyncStillRunning) {
-					toast(
-						'Sync still running',
-						'success',
-						'Plex is slow to respond right now — the sync is continuing in the background. Reload this page in a bit to see the result.'
-					);
-					await update({ reset: false });
-					return;
-				}
-				plexTvSyncOverride = resultData?.plexTvSyncLastSyncedAt ?? null;
-				const checked = resultData?.plexTvSyncCheckedCount ?? 0;
-				const skipped = resultData?.plexTvSyncSkippedCount ?? 0;
-				toast(
-					'Plex sync complete',
-					'success',
-					skipped > 0
-						? `Re-checked ${checked} tracked show${checked === 1 ? '' : 's'} against your Plex library (${skipped} skipped — no answer from Plex).`
-						: `Re-checked ${checked} tracked show${checked === 1 ? '' : 's'} against your Plex library.`
-				);
-			} else {
-				const errorMessage =
-					result.type === 'failure'
-						? ((result.data as { plexTvSyncError?: string } | null)?.plexTvSyncError ??
-							'Plex sync failed — try again.')
-						: 'Plex sync failed — try again.';
-				toast('Plex sync failed', 'error', errorMessage);
-			}
-			await update({ reset: false });
-		};
-	};
 </script>
 
 <svelte:window onkeydown={handleDeleteModalKeydown} />
@@ -892,18 +796,14 @@
 
 			<PlexMovieSyncCard
 				{canWrite}
-				syncing={plexMovieSyncing}
-				lastSyncedAt={plexMovieSyncLastSyncedAt}
+				lastSyncedAt={data.plexMovieSyncLastSyncedAt}
 				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
-				{enhancePlexMovieSync}
 			/>
 
 			<PlexTvSyncCard
 				{canWrite}
-				syncing={plexTvSyncing}
-				lastSyncedAt={plexTvSyncLastSyncedAt}
+				lastSyncedAt={data.plexTvSyncLastSyncedAt}
 				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
-				{enhancePlexTvSync}
 			/>
 		</div>
 		<DeleteShowModal

@@ -7,6 +7,7 @@
 	import type { PageData } from './$types';
 	import type { CalendarMovieItem, MovieGrabSource, PlexStatus } from './+page.server';
 	import MovieGrabPanel from './MovieGrabPanel.svelte';
+	import { readNdjsonStream } from '$lib/ndjson';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
 	const { data }: { data: PageData } = $props();
@@ -270,6 +271,11 @@
 	let topMetaByYear = $state<Record<number, { fetchedAt: string; fromCache: boolean }>>({});
 	let topFetchState = $state<TopFetchState>({ status: 'idle' });
 	let rescanning = $state(false);
+	// Live per-title progress for a streamed rescan (see runStreamedRescan) —
+	// same shape as shows' bulk Plex refresh button.
+	let rescanCurrent = $state(0);
+	let rescanTotal = $state(0);
+	let rescanTitle = $state('');
 	// True while the filesystem adoption sweep is running for a given year
 	// (movies added by hand via Transmission's raw web UI) — separate from
 	// `rescanning` because a sweep also auto-fires after a plain first-ever
@@ -345,6 +351,64 @@
 			topFetchState = { status: 'error', message: 'Could not reach the API.' };
 		} finally {
 			rescanning = false;
+		}
+	}
+
+	type RescanProgressEvent =
+		| { type: 'progress'; index: number; total: number; title: string }
+		| { type: 'fatal'; message: string }
+		| { type: 'done' };
+
+	/** Streaming sibling of loadTopMovies's own rescan=true path — same
+	 * daemon-side rescan (getTopMovies with forceRescan), but reports live
+	 * per-title progress instead of one opaque "Rescanning…" spinner for
+	 * however long ~100 TMDB lookups takes. See
+	 * movie-calendar/top-rescan/+server.ts and shows' bulk Plex refresh
+	 * button, the reference implementation this mirrors. */
+	async function runStreamedRescan(year: number): Promise<void> {
+		if (rescanning) return;
+		rescanning = true;
+		rescanCurrent = 0;
+		rescanTotal = 0;
+		rescanTitle = '';
+		let fatalMessage: string | null = null;
+
+		try {
+			const res = await fetch(`/movie-calendar/top-rescan?year=${year}`, { method: 'POST' });
+			if (!res.ok || !res.body) {
+				topFetchState = { status: 'error', message: 'Rescan failed to start.' };
+				rescanning = false;
+				return;
+			}
+			await readNdjsonStream<RescanProgressEvent>(res, (event) => {
+				if (event.type === 'progress') {
+					rescanCurrent = event.index;
+					rescanTotal = event.total;
+					rescanTitle = event.title;
+				} else if (event.type === 'fatal') {
+					fatalMessage = event.message;
+				}
+			});
+		} catch (error) {
+			console.error('[movie-calendar] rescan interrupted:', error);
+			fatalMessage = 'Rescan was interrupted.';
+		}
+
+		// Force a fresh fetch of the now-rescanned year — loadTopMovies's own
+		// cache-hit early return would otherwise just re-show the pre-rescan
+		// in-memory list, since the actual rescan already ran above (not
+		// inside loadTopMovies this time). Also why the sweep trigger below
+		// can't reuse loadTopMovies's own fromCache check: that GET is
+		// necessarily a cache hit now, even though the data is freshly
+		// scraped — this IS the rescan, so sweep unconditionally on success.
+		const { [year]: _dropped, ...rest } = topByYear;
+		topByYear = rest;
+		await loadTopMovies(year, false);
+
+		if (fatalMessage) {
+			topFetchState = { status: 'error', message: fatalMessage };
+		} else if ((topByYear[year]?.length ?? 0) > 0) {
+			void sweepTopMovies(year);
 		}
 	}
 
@@ -624,11 +688,15 @@
 				variant="outline"
 				class="ml-auto rounded-full px-4"
 				disabled={rescanning || sweeping}
-				onclick={() => loadTopMovies(topYear, true)}
+				onclick={() => runStreamedRescan(topYear)}
 			>
 				{#if rescanning}
 					<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
-					Rescanning…
+					{#if rescanTotal > 0}
+						Rescanning {rescanCurrent}/{rescanTotal}…
+					{:else}
+						Rescanning…
+					{/if}
 				{:else if sweeping}
 					<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
 					Checking files…
@@ -637,6 +705,11 @@
 				{/if}
 			</Button>
 		</div>
+		{#if rescanning && rescanTitle}
+			<p class="text-muted-foreground -mt-1 max-w-64 truncate text-right text-[11px]">
+				{rescanTitle}
+			</p>
+		{/if}
 
 		{#if topFetchState.status === 'ready' && topFetchState.fetchedAt}
 			<p class="text-muted-foreground text-xs">

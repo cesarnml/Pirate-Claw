@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
+	import { readNdjsonStream } from '$lib/ndjson';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
+
+	type ProgressEvent =
+		| { type: 'start'; total: number }
+		| { type: 'progress'; index: number; total: number; title: string; ok: boolean }
+		| { type: 'fatal'; message: string }
+		| { type: 'done' };
 
 	const props = $props<{ targetCount: number }>();
 
@@ -35,31 +42,18 @@
 				return;
 			}
 
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() ?? '';
-				for (const line of lines) {
-					if (!line.trim()) continue;
-					const event = JSON.parse(line);
-					if (event.type === 'start') {
-						total = event.total;
-					} else if (event.type === 'progress') {
-						current = event.index;
-						total = event.total;
-						currentTitle = event.title;
-						if (!event.ok) failures += 1;
-					} else if (event.type === 'fatal') {
-						errorMessage = event.message;
-					}
+			await readNdjsonStream<ProgressEvent>(response, (event) => {
+				if (event.type === 'start') {
+					total = event.total;
+				} else if (event.type === 'progress') {
+					current = event.index;
+					total = event.total;
+					currentTitle = event.title;
+					if (!event.ok) failures += 1;
+				} else if (event.type === 'fatal') {
+					errorMessage = event.message;
 				}
-			}
+			});
 		} catch (error) {
 			console.error('[shows] bulk Plex refresh interrupted:', error);
 			errorMessage = 'Bulk Plex refresh was interrupted.';

@@ -182,16 +182,33 @@ export function ensurePlexMovieCatalogCacheSchema(database: Database): void {
  * callers already do; this function trusts that rather than re-checking
  * it, so there's exactly one place that decision is made). See
  * adoptMoviesFromPlex and matchCachedPlexCatalog for the two callers. */
+// Progress is reported every PROGRESS_REPORT_INTERVAL candidates, not every
+// one — this loop is in-memory and sub-millisecond per candidate, so a
+// per-candidate callback would just spam the streaming route with events
+// to throttle on write for no benefit (see AdoptMoviesFromPlexDeps.onProgress).
+const PROGRESS_REPORT_INTERVAL = 200;
+
 function matchAgainstCatalog(
   candidates: MovieAdoptionCandidate[],
   index: CatalogIndex,
+  onProgress?: (checked: number, total: number) => void,
 ): Map<number, PlexSearchResult> {
   const matches = new Map<number, PlexSearchResult>();
-  for (const candidate of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
     const match =
       index.byTmdbId.get(candidate.tmdbId) ??
       (candidate.imdbId ? index.byImdbId.get(candidate.imdbId) : undefined);
     if (match) matches.set(candidate.tmdbId, match);
+
+    const checked = i + 1;
+    if (
+      onProgress &&
+      (checked % PROGRESS_REPORT_INTERVAL === 0 ||
+        checked === candidates.length)
+    ) {
+      onProgress(checked, candidates.length);
+    }
   }
   return matches;
 }
@@ -256,6 +273,14 @@ export type AdoptMoviesFromPlexDeps = {
   database: Database;
   catalogCache: PlexMovieCatalogCache;
   log?: (message: string) => void;
+  /** Optional, coarse progress hook for the Config "Plex Movie Sync" card's
+   * streamed counter — called periodically (not per-candidate) during the
+   * in-memory matching pass below with (checked, total). This is a
+   * synchronous, network-free loop, so there's no natural per-item async
+   * boundary to stream the way shows' bulk Plex refresh has; this is
+   * cosmetic, honest "how far along is it" feedback, not the
+   * sequential/gentle pacing that per-item network calls need. */
+  onProgress?: (checked: number, total: number) => void;
 };
 
 /**
@@ -302,7 +327,7 @@ export async function adoptMoviesFromPlex(
   const index = deps.catalogCache.peekIndex();
   if (!index) return new Set();
 
-  const matches = matchAgainstCatalog(targets, index);
+  const matches = matchAgainstCatalog(targets, index, deps.onProgress);
   return recordPlexMatches(
     targets,
     matches,
