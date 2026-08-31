@@ -11,9 +11,11 @@ import type { RequestHandler } from './$types';
 // then a best-effort per-season completion walk). Firing that back-to-back
 // for every missing show with zero gap would be a real storm against a
 // self-hosted Plex server; the delay below is a deliberate cushion, not
-// incidental. Also reused as-is by Config's Plex TV sync — see
-// config/plex-tv-sync/+server.ts.
-export const REFRESH_DELAY_MS = 800;
+// incidental. Config's Plex TV sync (config/plex-tv-sync/+server.ts) uses
+// the same delay value, kept as its own local constant there rather than
+// imported from here — a +server.ts module may only export the route
+// handlers SvelteKit recognizes (GET/POST/etc), not arbitrary constants.
+const REFRESH_DELAY_MS = 800;
 
 export const POST: RequestHandler = async () => {
 	const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
