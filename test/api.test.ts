@@ -1596,6 +1596,97 @@ describe('POST /api/shows/:slug/plex/refresh', () => {
     }
   });
 
+  it('leaves a season completion cache row alone when that season times out, instead of writing a false 0-owned', async () => {
+    const db = new Database(':memory:');
+    try {
+      ensureSchema(db);
+      const cache = new PlexCache(db);
+      // Seed a previously-good completion count, exactly like an earlier
+      // successful refresh would have left behind.
+      cache.upsertSeasonCompletion({
+        normalizedTitle: 'test show',
+        season: 1,
+        airedCount: 1,
+        ownedCount: 1,
+        cachedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const deps = createDeps({
+        listCandidateStates: () =>
+          [
+            tvCandidate({
+              identityKey: 'k1',
+              normalizedTitle: 'test show',
+              season: 1,
+              episode: 1,
+              resolution: '1080p',
+              codec: 'x265',
+            }),
+          ] as never,
+      });
+      deps.config.runtime.apiWriteToken = 'write-token';
+      deps.database = db;
+      deps.plexShows = {
+        cache,
+        client: {
+          searchShows: async () => [
+            { ratingKey: '1', title: 'Test Show', type: 'show', viewCount: 3 },
+          ],
+          listAllTvShowsForMatching: async () => [],
+          getShowSeasons: async () => [
+            { ratingKey: 's1', seasonNumber: 1, episodeCount: 1 },
+          ],
+          // Simulates the per-season episode walk timing out — the show
+          // itself resolved fine, just this season's own call failed.
+          getSeasonEpisodes: async () => null,
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      };
+      deps.tmdbShows = {
+        cache: new TmdbCache(db),
+        client: {
+          searchTv: async () => ({ id: 42, name: 'Test Show' }),
+          getTv: async () => ({
+            id: 42,
+            name: 'Test Show',
+            number_of_seasons: 1,
+          }),
+          getTvSeason: async () => ({
+            season_number: 1,
+            episodes: [
+              { episode_number: 1, name: 'Pilot', air_date: '2026-01-01' },
+            ],
+          }),
+        } as never,
+        cacheTtlMs: 60_000,
+        negativeCacheTtlMs: 10_000,
+        log: () => {},
+      };
+
+      const handler = createApiFetch(deps);
+      const response = await handler(
+        new Request('http://localhost/api/shows/test%20show/plex/refresh', {
+          method: 'POST',
+          headers: { authorization: 'Bearer write-token' },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      // Still the seeded good row — a timed-out season must never overwrite
+      // it with a false ownedCount:0.
+      expect(cache.getSeasonCompletions('test show')).toEqual([
+        expect.objectContaining({
+          season: 1,
+          airedCount: 1,
+          ownedCount: 1,
+          cachedAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
   it('rejects refresh requests without write auth', async () => {
     const deps = createDeps();
     deps.config.runtime.apiWriteToken = 'write-token';

@@ -4933,6 +4933,19 @@ function requireInt(input: unknown, label: string): number {
  * "0 owned" while every episode reads 'unknown' would cache a false
  * "everything missing" signal that outlives the transient failure that
  * produced it.
+ *
+ * That same failure mode can also happen one season at a time: the show
+ * itself resolves fine (plexReachable: true) but this one season's own
+ * per-episode Plex walk timed out, leaving its episodes 'unknown' rather
+ * than a real 'in_library'/'missing' verdict. ownedCount below can't tell
+ * "confirmed missing" apart from "never confirmed" — both are just "not
+ * in_library" — so a season with any 'unknown' episode is skipped too,
+ * for the same reason as the whole-show guard above: better to leave
+ * whatever completion count is already cached than overwrite it with a
+ * false "0 owned" born from a transient timeout. Confirmed live 2026-08-31:
+ * a Plex request storm during a heavy background sweep timed out several
+ * shows' per-season episode calls, and this same function (missing this
+ * guard) wrote owned:0 for seasons that were actually fully owned.
  */
 function persistSeasonCompletions(
   cache: PlexCache,
@@ -4943,6 +4956,11 @@ function persistSeasonCompletions(
 
   const cachedAt = new Date().toISOString();
   for (const season of status.seasons) {
+    const hasUnknownEpisode = season.episodes.some(
+      (episode) => episode.plexStatus === 'unknown',
+    );
+    if (hasUnknownEpisode) continue;
+
     const ownedCount = season.episodes.filter(
       (episode) => episode.plexStatus === 'in_library',
     ).length;
