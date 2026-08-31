@@ -14,7 +14,6 @@
 	import type {
 		CandidateStateRecord,
 		ManualGrabTrackedEntry,
-		SessionInfo,
 		TorrentOriginSource,
 		TorrentStatSnapshot
 	} from '$lib/types';
@@ -31,6 +30,7 @@
 	import RssIcon from '@lucide/svelte/icons/rss';
 	import HandGrabIcon from '@lucide/svelte/icons/hand-grab';
 	import FolderIcon from '@lucide/svelte/icons/folder';
+	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 
 	/** Where a torrent came from, for the origin icon next to the media-type
 	 * pills — RSS feed match, a manual search grab, or the library
@@ -78,29 +78,14 @@
 		activeDownloads,
 		missingCandidates,
 		missingManualGrabs,
-		transmissionLoaded,
-		session
+		transmissionLoaded
 	}: {
 		activeDownloads: ActiveDownload[];
 		missingCandidates: CandidateStateRecord[];
 		/** The manual-grab sibling of missingCandidates — see +page.svelte. */
 		missingManualGrabs: ManualGrabTrackedEntry[];
 		transmissionLoaded: boolean;
-		/** Powers the "why is this queued?" hint on queued rows. Null when
-		 * Transmission's session-get couldn't be reached — the hint just omits
-		 * the cap in that case. */
-		session: SessionInfo | null;
 	} = $props();
-
-	// Both download and seed caps can hold a torrent back, so this can't say
-	// which one specifically without per-torrent queuePosition (not fetched
-	// today) — deliberately naming both caps rather than picking one (e.g.
-	// downloadQueueSize) and risking it being the wrong one for this row.
-	const queueHint = $derived(
-		session
-			? `Waiting for a slot — download cap ${session.downloadQueueSize}, seed cap ${session.seedQueueSize}`
-			: 'Waiting for a download/seed slot to free up'
-	);
 
 	let inflightDispose = $state<string | null>(null);
 
@@ -181,6 +166,139 @@
 				}
 			};
 		};
+	}
+
+	/** Merges missingCandidates (RSS-pipeline, keyed by identityKey) and
+	 * missingManualGrabs (keyed by hash) into one shape so the "Missing from
+	 * Transmission" section renders as a single list with one heading and
+	 * one set of bulk actions, instead of two near-identical blocks. */
+	type MissingItem = {
+		hash: string;
+		title: string;
+		mediaType: 'tv' | 'movie' | null;
+		season: number | null;
+		episode: number | null;
+	};
+
+	const missingItems = $derived<MissingItem[]>([
+		...missingCandidates.map((candidate) => ({
+			hash: candidate.transmissionTorrentHash!,
+			title: candidateTitle(candidate),
+			mediaType: candidate.mediaType,
+			season: candidate.mediaType === 'tv' ? (candidate.season ?? null) : null,
+			episode: candidate.mediaType === 'tv' ? (candidate.episode ?? null) : null
+		})),
+		...missingManualGrabs.map((grab) => ({
+			hash: grab.hash,
+			title: grab.displayTitle ?? grab.normalizedTitle ?? grab.hash,
+			mediaType: grab.mediaType,
+			season: grab.mediaType === 'tv' ? (grab.season ?? null) : null,
+			episode: grab.mediaType === 'tv' ? (grab.episode ?? null) : null
+		}))
+	]);
+
+	/** The dispose action's bare POST, no toast/invalidate side effects — the
+	 * bulk-dispose sibling of postAction, used by bulkDisposeMissing the same
+	 * way postAction is used by runBulkTorrentAction. */
+	async function postDispose(
+		hash: string,
+		disposition: 'removed' | 'deleted'
+	): Promise<boolean | 'redirect'> {
+		const formData = new FormData();
+		formData.append('hash', hash);
+		formData.append('disposition', disposition);
+		const res = await fetch(`${base}/?/dispose`, {
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'x-sveltekit-action': 'true'
+			},
+			body: formData,
+			cache: 'no-store'
+		});
+		const result = deserialize(await res.text());
+		if (result.type === 'redirect') return 'redirect';
+		return result.type === 'success';
+	}
+
+	async function bulkDisposeMissing(disposition: 'removed' | 'deleted') {
+		if (bulkAction) return;
+		const hashes = missingItems.map((item) => item.hash);
+		if (hashes.length === 0) return;
+
+		bulkAction = disposition === 'removed' ? 'removeAllMissing' : 'deleteAllMissing';
+		let failCount = 0;
+		let redirected = false;
+		try {
+			for (const hash of hashes) {
+				try {
+					const outcome = await postDispose(hash, disposition);
+					if (outcome === 'redirect') {
+						redirected = true;
+						break;
+					}
+					if (!outcome) failCount++;
+				} catch {
+					failCount++;
+				}
+			}
+			await invalidateAll();
+			if (redirected) return;
+
+			const succeeded = hashes.length - failCount;
+			const verb = disposition === 'removed' ? 'Removed' : 'Deleted';
+			if (failCount === 0) {
+				toast(`${verb} ${succeeded} torrent${succeeded === 1 ? '' : 's'}`, 'success');
+			} else if (succeeded === 0) {
+				toast('Bulk action failed', 'error');
+			} else {
+				toast(`${verb} ${succeeded}/${hashes.length} — ${failCount} failed`, 'error');
+			}
+		} finally {
+			bulkAction = null;
+		}
+	}
+
+	/** Best-effort auto-resolve — walks the pirate-claw media dirs server-side
+	 * (see /api/transmission/torrents/auto-reconcile) and marks 'removed'
+	 * anything whose media file it actually found on disk. Deliberately never
+	 * marks 'deleted': not finding the file doesn't prove it was deleted, so
+	 * that call is left to a human either way. */
+	async function autoReconcileMissing() {
+		if (bulkAction) return;
+		bulkAction = 'autoReconcile';
+		try {
+			const res = await fetch(`${base}/?/autoReconcile`, {
+				method: 'POST',
+				headers: {
+					accept: 'application/json',
+					'x-sveltekit-action': 'true'
+				},
+				body: new FormData(),
+				cache: 'no-store'
+			});
+			const result = deserialize(await res.text());
+			if (result.type === 'redirect') return;
+			if (result.type !== 'success') {
+				toast('Auto-resolve failed', 'error');
+				return;
+			}
+			const data = result.data as { resolved?: string[]; checked?: number } | undefined;
+			const resolvedCount = data?.resolved?.length ?? 0;
+			const checked = data?.checked ?? 0;
+			await invalidateAll();
+			if (checked === 0) {
+				toast('Nothing to check', 'success');
+			} else if (resolvedCount === 0) {
+				toast(`Checked ${checked} — none found on disk`, 'success');
+			} else {
+				toast(`Marked ${resolvedCount} of ${checked} as removed — found on disk`, 'success');
+			}
+		} catch {
+			toast('Auto-resolve failed', 'error');
+		} finally {
+			bulkAction = null;
+		}
 	}
 
 	function rowDisplayState(
@@ -277,13 +395,13 @@
 	}
 
 	async function executeAction(action: MenuAction, hash: string) {
-		// Also blocked while a bulk remove is running, not just another single
-		// action — bulkRemoveSeeding's sequential loop exists specifically to
-		// avoid a burst of simultaneous RPCs against Transmission (see its own
-		// comment); a concurrent single-row action from a non-seeding row
-		// (which bulkRemovingSeeding's per-row inFlightRow check doesn't cover)
-		// would defeat that.
-		if (inflightAction || bulkRemovingSeeding) return;
+		// Also blocked while a bulk torrent action is running, not just another
+		// single action — runBulkTorrentAction's sequential loop exists
+		// specifically to avoid a burst of simultaneous RPCs against
+		// Transmission (see its own comment); a concurrent single-row action
+		// from a row outside that bulk action's own hash list (which its
+		// per-row inFlightRow check doesn't cover) would defeat that.
+		if (inflightAction || bulkAction !== null) return;
 		menuState = null;
 		inflightAction = hash;
 		try {
@@ -316,7 +434,14 @@
 		}
 	}
 
-	let bulkRemovingSeeding = $state(false);
+	type BulkKind =
+		| 'removeSeeding'
+		| 'resumeAll'
+		| 'pauseAll'
+		| 'removeAllMissing'
+		| 'deleteAllMissing'
+		| 'autoReconcile';
+	let bulkAction = $state<BulkKind | null>(null);
 
 	const seedingHashes = $derived(
 		activeDownloads
@@ -324,29 +449,64 @@
 			.map(({ torrent }) => torrent.hash)
 	);
 
-	/** Sequential, not Promise.all — a burst of N simultaneous remove RPCs
-	 * against Transmission's single-threaded RPC server risks the daemon's
-	 * own request handling piling up under load in a way one-at-a-time never
-	 * does; this list is not expected to be large enough for sequential
-	 * latency to matter in practice. Same "remove" semantics as the per-row
-	 * menu item — stops seeding and drops the torrent from Transmission, does
-	 * not touch files on disk (that's the separate "Remove + Delete Data"
-	 * action, deliberately not offered in bulk here). */
-	async function bulkRemoveSeeding() {
-		if (bulkRemovingSeeding || inflightAction) return;
-		const hashes = seedingHashes;
+	// Resume All is a force-resume (skips the queue cap) on everything that
+	// isn't already doing work — paused or queued. Pause All is the mirror:
+	// everything currently doing (or about to do) work, including a queued
+	// torrent, since pausing it explicitly is meaningfully different from
+	// leaving it waiting on the cap.
+	const resumableHashes = $derived(
+		activeDownloads
+			.filter(({ torrent, candidate }) => {
+				const state = rowDisplayState(torrent, candidate);
+				return state === 'paused' || state === 'queued';
+			})
+			.map(({ torrent }) => torrent.hash)
+	);
+	const pausableHashes = $derived(
+		activeDownloads
+			.filter(({ torrent, candidate }) => {
+				const state = rowDisplayState(torrent, candidate);
+				return state === 'downloading' || state === 'seeding' || state === 'queued';
+			})
+			.map(({ torrent }) => torrent.hash)
+	);
+
+	/** Sequential, not Promise.all — a burst of N simultaneous RPCs against
+	 * Transmission's single-threaded RPC server risks the daemon's own
+	 * request handling piling up under load in a way one-at-a-time never
+	 * does; none of these lists are expected to be large enough for
+	 * sequential latency to matter in practice. Shared by the seeding bulk
+	 * remove, Resume All, and Pause All — same one-summary-toast,
+	 * one-refresh-at-the-end shape either way. */
+	// Deliberately its own wording, not actionToasts[action] — actionToasts'
+	// strings read fine as "<verb>" on their own (single-row toast) but not as
+	// a "<verb> N torrents" prefix (e.g. actionToasts.resumeNow is "Resumed
+	// now — skipped the queue", which would read as "Resumed now — skipped
+	// the queue 3 torrents").
+	const bulkVerbs: Record<'removeSeeding' | 'resumeAll' | 'pauseAll', string> = {
+		removeSeeding: 'Removed',
+		resumeAll: 'Resumed',
+		pauseAll: 'Paused'
+	};
+
+	async function runBulkTorrentAction(
+		kind: 'removeSeeding' | 'resumeAll' | 'pauseAll',
+		action: MenuAction,
+		hashes: string[]
+	) {
+		if (bulkAction || inflightAction) return;
 		if (hashes.length === 0) return;
 
-		bulkRemovingSeeding = true;
+		bulkAction = kind;
 		let failCount = 0;
 		let redirected = false;
 		try {
 			for (const hash of hashes) {
 				try {
-					const outcome = await postAction('remove', hash);
+					const outcome = await postAction(action, hash);
 					if (outcome === 'redirect') {
 						// Session expired mid-loop — stop attempting further
-						// removals, but whatever already succeeded before this
+						// actions, but whatever already succeeded before this
 						// point is real and must not be left stale in the UI (see
 						// the refresh below, unlike a single-item redirect where
 						// nothing could have succeeded yet).
@@ -363,17 +523,22 @@
 			if (redirected) return;
 
 			const succeeded = hashes.length - failCount;
+			const verb = bulkVerbs[kind];
 			if (failCount === 0) {
-				toast(`Removed ${succeeded} seeding torrent${succeeded === 1 ? '' : 's'}`, 'success');
+				toast(`${verb} ${succeeded} torrent${succeeded === 1 ? '' : 's'}`, 'success');
 			} else if (succeeded === 0) {
-				toast('Bulk remove failed', 'error');
+				toast('Bulk action failed', 'error');
 			} else {
-				toast(`Removed ${succeeded}/${hashes.length} — ${failCount} failed`, 'error');
+				toast(`${verb} ${succeeded}/${hashes.length} — ${failCount} failed`, 'error');
 			}
 		} finally {
-			bulkRemovingSeeding = false;
+			bulkAction = null;
 		}
 	}
+
+	const bulkRemoveSeeding = () => runBulkTorrentAction('removeSeeding', 'remove', seedingHashes);
+	const bulkResumeAll = () => runBulkTorrentAction('resumeAll', 'resumeNow', resumableHashes);
+	const bulkPauseAll = () => runBulkTorrentAction('pauseAll', 'pause', pausableHashes);
 
 	$effect(() => {
 		function onKeyDown(e: KeyboardEvent) {
@@ -431,24 +596,64 @@
 		</div>
 	</CardHeader>
 	<CardContent class="thin-scroll space-y-4 overflow-y-auto">
-		{#if seedingHashes.length > 0}
-			<div class="flex justify-end">
-				<Button
-					type="button"
-					variant="outline"
-					size="sm"
-					class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
-					disabled={bulkRemovingSeeding || inflightAction !== null}
-					onclick={bulkRemoveSeeding}
-				>
-					{#if bulkRemovingSeeding}
-						<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
-						Removing…
-					{:else}
-						<Trash2Icon class="mr-2 h-3.5 w-3.5" />
-						Remove {seedingHashes.length} seeding
+		{#if resumableHashes.length > 0 || pausableHashes.length > 0 || seedingHashes.length > 0}
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<div class="flex flex-wrap gap-2">
+					{#if resumableHashes.length > 0}
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="rounded-full"
+							disabled={bulkAction !== null || inflightAction !== null}
+							onclick={bulkResumeAll}
+						>
+							{#if bulkAction === 'resumeAll'}
+								<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+								Resuming…
+							{:else}
+								<FastForwardIcon class="mr-2 h-3.5 w-3.5" />
+								Resume All
+							{/if}
+						</Button>
 					{/if}
-				</Button>
+					{#if pausableHashes.length > 0}
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="rounded-full"
+							disabled={bulkAction !== null || inflightAction !== null}
+							onclick={bulkPauseAll}
+						>
+							{#if bulkAction === 'pauseAll'}
+								<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+								Pausing…
+							{:else}
+								<PauseIcon class="mr-2 h-3.5 w-3.5" />
+								Pause All
+							{/if}
+						</Button>
+					{/if}
+				</div>
+				{#if seedingHashes.length > 0}
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
+						disabled={bulkAction !== null || inflightAction !== null}
+						onclick={bulkRemoveSeeding}
+					>
+						{#if bulkAction === 'removeSeeding'}
+							<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+							Removing…
+						{:else}
+							<Trash2Icon class="mr-2 h-3.5 w-3.5" />
+							Remove {seedingHashes.length} seeding
+						{/if}
+					</Button>
+				{/if}
 			</div>
 		{/if}
 		{#if activeDownloads.length === 0}
@@ -474,12 +679,12 @@
 					{@const rowState = rowDisplayState(torrent, candidate)}
 					{@const inFlightRow =
 						inflightAction === torrent.hash ||
-						// executeAction blocks every row while a bulk remove is
-						// running (see its own guard), not just seeding ones — the
-						// disabled state here has to match that exactly, or a
-						// non-seeding row's buttons render enabled while clicking
-						// them is silently a no-op.
-						bulkRemovingSeeding}
+						// executeAction blocks every row while a bulk torrent action is
+						// running (see its own guard), not just the rows that bulk
+						// action targets — the disabled state here has to match that
+						// exactly, or a row outside the bulk action's hash list
+						// renders enabled while clicking it is silently a no-op.
+						bulkAction !== null}
 					{@const showUpload =
 						rowState === 'completed' ||
 						rowState === 'seeding' ||
@@ -569,11 +774,6 @@
 							</div>
 							<div class="mt-1.5 flex flex-wrap items-center gap-2">
 								<StatusChip status={getTorrentDisplayStatus(torrent)} />
-								{#if rowState === 'queued'}
-									<span class="text-muted-foreground text-[11px]" title={queueHint}>
-										{queueHint}
-									</span>
-								{/if}
 								{#if rowState !== 'removed' && rowState !== 'deleted'}
 									<!-- Long-press/right-click still opens the same actions as a
 									     context menu, but iPad's WebKit consistently preempts the
@@ -697,37 +897,85 @@
 				{/each}
 			</ul>
 		{/if}
-		{#if missingCandidates.length > 0}
+		{#if missingItems.length > 0}
 			<div class="border-border border-t pt-4">
-				<p class="text-muted-foreground mb-3 text-[11px] font-semibold tracking-[0.24em] uppercase">
-					Missing from Transmission
-				</p>
+				<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+					<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase">
+						Missing from Transmission
+					</p>
+					<div class="flex flex-wrap gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="rounded-full"
+							disabled={bulkAction !== null}
+							onclick={autoReconcileMissing}
+						>
+							{#if bulkAction === 'autoReconcile'}
+								<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+								Checking…
+							{:else}
+								<WandSparklesIcon class="mr-2 h-3.5 w-3.5" />
+								Auto
+							{/if}
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="rounded-full"
+							disabled={bulkAction !== null}
+							onclick={() => bulkDisposeMissing('removed')}
+						>
+							{#if bulkAction === 'removeAllMissing'}
+								<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+								Removing…
+							{:else}
+								Remove All
+							{/if}
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
+							disabled={bulkAction !== null}
+							onclick={() => bulkDisposeMissing('deleted')}
+						>
+							{#if bulkAction === 'deleteAllMissing'}
+								<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+								Deleting…
+							{:else}
+								Delete All
+							{/if}
+						</Button>
+					</div>
+				</div>
 				<ul class="space-y-3">
-					{#each missingCandidates as candidate (candidate.identityKey)}
-						{@const title = candidateTitle(candidate)}
-						{@const hash = candidate.transmissionTorrentHash!}
-						{@const inFlight = inflightDispose === hash}
+					{#each missingItems as item (item.hash)}
+						{@const inFlight = inflightDispose === item.hash || bulkAction !== null}
 						<li
 							class="border-border bg-background/45 flex items-center justify-between gap-3 rounded-[20px] border p-3"
 						>
 							<div class="mr-2 flex min-w-0 items-center gap-1.5 overflow-hidden">
-								<p class="shrink truncate text-sm font-medium">{title}</p>
-								{#if candidate.mediaType}
+								<p class="shrink truncate text-sm font-medium">{item.title}</p>
+								{#if item.mediaType}
 									<span
 										class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px] uppercase"
-										>{candidate.mediaType}</span
+										>{item.mediaType}</span
 									>
 								{/if}
-								{#if candidate.mediaType === 'tv' && candidate.season != null}
+								{#if item.mediaType === 'tv' && item.season != null}
 									<span
 										class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px]"
-										>S{String(candidate.season).padStart(2, '0')}</span
+										>S{String(item.season).padStart(2, '0')}</span
 									>
 								{/if}
-								{#if candidate.mediaType === 'tv' && candidate.episode != null}
+								{#if item.mediaType === 'tv' && item.episode != null}
 									<span
 										class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px]"
-										>E{String(candidate.episode).padStart(2, '0')}</span
+										>E{String(item.episode).padStart(2, '0')}</span
 									>
 								{/if}
 							</div>
@@ -735,9 +983,9 @@
 								<form
 									method="POST"
 									action={`${base}/?/dispose`}
-									use:enhance={enhanceDispose(hash, 'removed')}
+									use:enhance={enhanceDispose(item.hash, 'removed')}
 								>
-									<input type="hidden" name="hash" value={hash} />
+									<input type="hidden" name="hash" value={item.hash} />
 									<input type="hidden" name="disposition" value="removed" />
 									<button
 										type="submit"
@@ -750,77 +998,9 @@
 								<form
 									method="POST"
 									action={`${base}/?/dispose`}
-									use:enhance={enhanceDispose(hash, 'deleted')}
+									use:enhance={enhanceDispose(item.hash, 'deleted')}
 								>
-									<input type="hidden" name="hash" value={hash} />
-									<input type="hidden" name="disposition" value="deleted" />
-									<button
-										type="submit"
-										disabled={inFlight}
-										class="text-destructive/80 hover:text-destructive rounded-lg bg-white/6 px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-									>
-										Delete
-									</button>
-								</form>
-							</div>
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
-		{#if missingManualGrabs.length > 0}
-			<div class="border-border border-t pt-4">
-				<p class="text-muted-foreground mb-3 text-[11px] font-semibold tracking-[0.24em] uppercase">
-					Missing from Transmission
-				</p>
-				<ul class="space-y-3">
-					{#each missingManualGrabs as grab (grab.hash)}
-						{@const title = grab.displayTitle ?? grab.normalizedTitle ?? grab.hash}
-						{@const inFlight = inflightDispose === grab.hash}
-						<li
-							class="border-border bg-background/45 flex items-center justify-between gap-3 rounded-[20px] border p-3"
-						>
-							<div class="mr-2 flex min-w-0 items-center gap-1.5 overflow-hidden">
-								<p class="shrink truncate text-sm font-medium">{title}</p>
-								<span
-									class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px] uppercase"
-									>{grab.mediaType}</span
-								>
-								{#if grab.mediaType === 'tv' && grab.season != null}
-									<span
-										class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px]"
-										>S{String(grab.season).padStart(2, '0')}</span
-									>
-								{/if}
-								{#if grab.mediaType === 'tv' && grab.episode != null}
-									<span
-										class="text-muted-foreground shrink-0 rounded-full bg-white/6 px-1.5 py-0.5 text-[10px]"
-										>E{String(grab.episode).padStart(2, '0')}</span
-									>
-								{/if}
-							</div>
-							<div class="flex shrink-0 gap-2">
-								<form
-									method="POST"
-									action={`${base}/?/dispose`}
-									use:enhance={enhanceDispose(grab.hash, 'removed')}
-								>
-									<input type="hidden" name="hash" value={grab.hash} />
-									<input type="hidden" name="disposition" value="removed" />
-									<button
-										type="submit"
-										disabled={inFlight}
-										class="text-muted-foreground hover:text-foreground rounded-lg bg-white/6 px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-									>
-										Remove
-									</button>
-								</form>
-								<form
-									method="POST"
-									action={`${base}/?/dispose`}
-									use:enhance={enhanceDispose(grab.hash, 'deleted')}
-								>
-									<input type="hidden" name="hash" value={grab.hash} />
+									<input type="hidden" name="hash" value={item.hash} />
 									<input type="hidden" name="disposition" value="deleted" />
 									<button
 										type="submit"

@@ -203,6 +203,54 @@ export class ManualMovieGrabsStore {
       .run(hash, disposition);
   }
 
+  /** Movie-shaped sibling of ManualGrabsStore's title/season/episode lookup
+   * used by the "Missing from Transmission" Auto-reconcile sweep (see
+   * src/api.ts) — needs the title + release year ManualMovieGrabDisplayInfo
+   * deliberately omits (that shape only ever fed poster/title display, not
+   * filesystem matching). */
+  listAllForReconciliation(): Map<
+    string,
+    {
+      title: string;
+      movieYear: number | null;
+      disposition: PirateClawDisposition | null;
+    }
+  > {
+    const rows = this.database
+      .query(
+        `SELECT transmission_torrent_hash AS hash,
+                COALESCE(movie_display_title, raw_title) AS title,
+                movie_year AS movieYear,
+                disposition
+         FROM manual_movie_grabs
+         WHERE transmission_torrent_hash IS NOT NULL
+         ORDER BY queued_at ASC`,
+      )
+      .all() as {
+      hash: string;
+      title: string;
+      movieYear: number | null;
+      disposition: string | null;
+    }[];
+
+    const map = new Map<
+      string,
+      {
+        title: string;
+        movieYear: number | null;
+        disposition: PirateClawDisposition | null;
+      }
+    >();
+    for (const row of rows) {
+      map.set(row.hash, {
+        title: row.title,
+        movieYear: row.movieYear,
+        disposition: row.disposition as PirateClawDisposition | null,
+      });
+    }
+    return map;
+  }
+
   /** Every tmdb_id with at least one manual grab recorded — used to derive
    * CalendarMovieItem.alreadyGrabbed alongside the owned-in-Plex check. */
   listGrabbedTmdbIds(): Set<number> {

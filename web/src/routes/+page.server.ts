@@ -10,7 +10,6 @@ import type {
 	OnboardingStatus,
 	RunSummaryRecord,
 	ReviewOutcomeRecord,
-	SessionInfo,
 	TorrentStatSnapshot
 } from '$lib/types';
 import { fail } from '@sveltejs/kit';
@@ -25,7 +24,6 @@ export const load: PageServerLoad = async () => {
 		statusResult,
 		outcomesResult,
 		configResult,
-		sessionResult,
 		manualGrabArchiveResult,
 		manualGrabsTrackedResult
 	] = await Promise.allSettled([
@@ -35,9 +33,6 @@ export const load: PageServerLoad = async () => {
 		apiFetch<{ runs: RunSummaryRecord[] }>('/api/status'),
 		apiFetch<{ outcomes: ReviewOutcomeRecord[] }>('/api/outcomes?status=failed_enqueue'),
 		apiFetch<AppConfig>('/api/config'),
-		// Powers the "why is this torrent queued" hint on Torrent Manager rows
-		// (session.activeTorrentCount / .downloadQueueSize) — see TorrentManagerCard.
-		apiFetch<SessionInfo>('/api/transmission/session'),
 		// The manual-grab-sourced half of Your Haul — see ArchiveStrip/+page.svelte.
 		apiFetch<{ items: ManualGrabArchiveEntry[] }>('/api/manual-grabs/completed'),
 		// Every manual grab with a hash, independent of Transmission — powers
@@ -52,7 +47,6 @@ export const load: PageServerLoad = async () => {
 		candidatesResult.status === 'fulfilled' ? candidatesResult.value.candidates : null;
 	const runSummaries = statusResult.status === 'fulfilled' ? statusResult.value.runs : null;
 	const outcomes = outcomesResult.status === 'fulfilled' ? outcomesResult.value.outcomes : null;
-	const transmissionSession = sessionResult.status === 'fulfilled' ? sessionResult.value : null;
 	const manualGrabArchive =
 		manualGrabArchiveResult.status === 'fulfilled' ? manualGrabArchiveResult.value.items : null;
 	const manualGrabsTracked =
@@ -102,7 +96,6 @@ export const load: PageServerLoad = async () => {
 		runSummaries,
 		outcomes,
 		onboarding,
-		transmissionSession,
 		manualGrabArchive,
 		manualGrabsTracked,
 		error
@@ -182,6 +175,28 @@ export const actions: Actions = {
 		}
 
 		return { ok: true };
+	},
+
+	autoReconcile: async () => {
+		const tokenOrFail = requireWriteToken();
+		if (typeof tokenOrFail !== 'string') return tokenOrFail;
+
+		const res = await apiRequest('/api/transmission/torrents/auto-reconcile', {
+			method: 'POST',
+			headers: { authorization: `Bearer ${tokenOrFail}` }
+		});
+		if (!res.ok) {
+			let error = 'Request failed';
+			try {
+				const body = (await res.json()) as { error?: string };
+				if (body.error) error = body.error;
+			} catch {
+				// ignore parse error
+			}
+			return fail(res.status, { error });
+		}
+		const data = (await res.json()) as { resolved: string[]; checked: number };
+		return { ok: true, ...data };
 	},
 
 	pause: async ({ request }) => torrentAction('/api/transmission/torrent/pause', request),

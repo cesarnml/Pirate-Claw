@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
-import { dirname } from 'node:path';
+import { basename, dirname, extname } from 'node:path';
 import { getSetupState } from './bootstrap';
 import {
   acknowledgeNetworkPosture,
@@ -13,6 +13,7 @@ import { renameSync, writeFileSync } from 'node:fs';
 import { loggedFetch, logClientError } from './http-log';
 import { getInstallHealth } from './install-health';
 import {
+  fetchAllTorrentsForAdoption,
   fetchSessionInfo,
   fetchTorrentStats,
   pauseTorrent,
@@ -51,7 +52,8 @@ import {
   normalizeShowName,
   syncTrackedShowsFromConfig,
 } from './tracked-shows/sync';
-import { reconcileShowLibrary } from './adoption/reconciler';
+import { reconcileShowLibrary, walkVideoFiles } from './adoption/reconciler';
+import { titlesMatch } from './adoption/title-match';
 import {
   installRootMediaMoviesDir,
   installRootMediaShowsDir,
@@ -70,7 +72,11 @@ import {
   recordPlexMatches,
 } from './adoption/movie-plex-reconciler';
 import { PlexMovieSyncStateStore } from './plex/movie-sync-state';
-import { extractCodec, extractResolution } from './normalize';
+import {
+  extractCodec,
+  extractResolution,
+  normalizeFeedItem,
+} from './normalize';
 import {
   ConfigError,
   validateCompactTvDefaults,
@@ -801,6 +807,186 @@ export function createApiFetch(
       new Set([primary, ...discovered].filter((dir): dir is string => !!dir)),
     );
     return cachedMediaMoviesDirs;
+  }
+
+  /**
+   * "Missing from Transmission" Auto-resolve — see TorrentManagerCard's Auto
+   * button. Best-effort, conservative-by-design: a torrent whose media file
+   * IS found under the install root's media dirs really did land, so it's
+   * safe to mark 'removed' automatically (the torrent finished and was
+   * dropped from Transmission — nothing left to resolve). A torrent whose
+   * file is NOT found is left untouched — file-not-found never implies
+   * "deleted", since a file can be genuinely absent for reasons that don't
+   * mean that (the walk itself failing, a media dir not yet configured, a
+   * still-incomplete download that was force-removed before the file ever
+   * landed). Auto only ever writes 'removed', never 'deleted' — an operator
+   * still has to make that call by hand.
+   */
+  async function autoReconcileMissingTorrents(): Promise<Response> {
+    const manualGrabs = database ? new ManualGrabsStore(database) : undefined;
+    const manualMovieGrabs = database
+      ? new ManualMovieGrabsStore(database)
+      : undefined;
+
+    const liveResult = await fetchAllTorrentsForAdoption(
+      activeConfig.transmission,
+    );
+    if (!liveResult.ok) {
+      return Response.json({ error: liveResult.message }, { status: 502 });
+    }
+    const liveHashes = new Set(liveResult.torrents.map((t) => t.hash));
+
+    type ReconcileTarget = {
+      hash: string;
+      mediaType: 'tv' | 'movie';
+      normalizedTitle: string;
+      season?: number;
+      episode?: number;
+      year?: number;
+      /** Present only for a candidate_state-backed torrent — its
+       * disposition lives on candidate_state, keyed by identityKey rather
+       * than hash (see repository.setPirateClawDisposition). */
+      identityKey?: string;
+    };
+
+    const targets: ReconcileTarget[] = [];
+
+    for (const c of repository.listCandidateStates(API_CANDIDATE_LIST_LIMIT)) {
+      if (!c.transmissionTorrentHash) continue;
+      if (c.pirateClawDisposition) continue;
+      if (liveHashes.has(c.transmissionTorrentHash)) continue;
+      if (
+        c.mediaType === 'tv' &&
+        c.season !== undefined &&
+        c.episode !== undefined
+      ) {
+        targets.push({
+          hash: c.transmissionTorrentHash,
+          mediaType: 'tv',
+          normalizedTitle: c.normalizedTitle,
+          season: c.season,
+          episode: c.episode,
+          identityKey: c.identityKey,
+        });
+      } else if (c.mediaType === 'movie' && c.year !== undefined) {
+        targets.push({
+          hash: c.transmissionTorrentHash,
+          mediaType: 'movie',
+          normalizedTitle: c.normalizedTitle,
+          year: c.year,
+          identityKey: c.identityKey,
+        });
+      }
+    }
+
+    if (manualGrabs) {
+      for (const [hash, info] of manualGrabs.listAllTorrentDisplayInfo()) {
+        if (info.disposition) continue;
+        if (liveHashes.has(hash)) continue;
+        targets.push({
+          hash,
+          mediaType: 'tv',
+          normalizedTitle: info.normalizedTitle,
+          season: info.season,
+          episode: info.episode,
+        });
+      }
+    }
+
+    if (manualMovieGrabs) {
+      for (const [hash, info] of manualMovieGrabs.listAllForReconciliation()) {
+        if (info.disposition) continue;
+        if (liveHashes.has(hash)) continue;
+        if (info.movieYear == null) continue;
+        targets.push({
+          hash,
+          mediaType: 'movie',
+          normalizedTitle: info.title,
+          year: info.movieYear,
+        });
+      }
+    }
+
+    if (targets.length === 0) {
+      return Response.json({ resolved: [], checked: 0 });
+    }
+
+    const resolvedHashes = new Set<string>();
+
+    const tvTargets = targets.filter((t) => t.mediaType === 'tv');
+    if (tvTargets.length > 0) {
+      const mediaShowsDirs = await resolveMediaShowsDirs();
+      let filePaths: string[] = [];
+      try {
+        const walked = await Promise.all(
+          mediaShowsDirs.map((dir) => walkVideoFiles(dir)),
+        );
+        filePaths = walked.flat();
+      } catch {
+        // Best-effort — see the doc comment above.
+      }
+      for (const filePath of filePaths) {
+        if (resolvedHashes.size === tvTargets.length) break;
+        const rawTitle = basename(filePath, extname(filePath));
+        const parsed = normalizeFeedItem({ mediaType: 'tv', rawTitle });
+        if (parsed.season === undefined || parsed.episode === undefined)
+          continue;
+        const match = tvTargets.find(
+          (t) =>
+            !resolvedHashes.has(t.hash) &&
+            t.season === parsed.season &&
+            t.episode === parsed.episode &&
+            titlesMatch(parsed.normalizedTitle, t.normalizedTitle),
+        );
+        if (match) resolvedHashes.add(match.hash);
+      }
+    }
+
+    const movieTargets = targets.filter((t) => t.mediaType === 'movie');
+    if (movieTargets.length > 0) {
+      const mediaMoviesDirs = await resolveMediaMoviesDirs();
+      let filePaths: string[] = [];
+      try {
+        const walked = await Promise.all(
+          mediaMoviesDirs.map((dir) => walkVideoFiles(dir)),
+        );
+        filePaths = walked.flat();
+      } catch {
+        // Best-effort — see the doc comment above.
+      }
+      let movieMatchCount = 0;
+      for (const filePath of filePaths) {
+        if (movieMatchCount === movieTargets.length) break;
+        const rawTitle = basename(filePath, extname(filePath));
+        const parsed = normalizeFeedItem({ mediaType: 'movie', rawTitle });
+        if (parsed.year === undefined) continue;
+        const match = movieTargets.find(
+          (t) =>
+            !resolvedHashes.has(t.hash) &&
+            t.year === parsed.year &&
+            titlesMatch(parsed.normalizedTitle, t.normalizedTitle),
+        );
+        if (match) {
+          resolvedHashes.add(match.hash);
+          movieMatchCount += 1;
+        }
+      }
+    }
+
+    for (const hash of resolvedHashes) {
+      const target = targets.find((t) => t.hash === hash)!;
+      if (target.identityKey) {
+        repository.setPirateClawDisposition(target.identityKey, 'removed');
+      } else {
+        manualGrabs?.setDisposition(hash, 'removed');
+        manualMovieGrabs?.setDisposition(hash, 'removed');
+      }
+    }
+
+    return Response.json({
+      resolved: Array.from(resolvedHashes),
+      checked: targets.length,
+    });
   }
 
   // Unlike reconcileShowIfStale's per-show gate, movies have no single
@@ -4188,6 +4374,16 @@ export function createApiFetch(
         return json500();
       }
       return Response.json({ ok: true });
+    }
+
+    if (
+      path === '/api/transmission/torrents/auto-reconcile' &&
+      request.method === 'POST'
+    ) {
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      return autoReconcileMissingTorrents();
     }
 
     if (path === '/api/transmission/ping' && request.method === 'POST') {

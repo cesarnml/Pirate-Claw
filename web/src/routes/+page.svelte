@@ -266,7 +266,6 @@
 				{missingCandidates}
 				{missingManualGrabs}
 				{transmissionLoaded}
-				session={data.transmissionSession}
 			/>
 			<TransmissionFailuresCard {outcomes} />
 		</div>
