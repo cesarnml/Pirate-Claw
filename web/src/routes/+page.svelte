@@ -5,6 +5,7 @@
 	import LibraryBigIcon from '@lucide/svelte/icons/library-big';
 	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
+	import { navigating } from '$app/stores';
 	import { readOnboardingDismissed, writeOnboardingDismissed } from '$lib/onboarding';
 	import type { CandidateStateRecord, RunSummaryRecord } from '$lib/types';
 	import {
@@ -172,16 +173,58 @@
 
 	$effect(() => {
 		if (!browser) return;
-		let id: ReturnType<typeof setInterval> | null = null;
-		const start = () => {
-			if (id === null) id = setInterval(() => invalidateAll(), 5000);
-		};
-		const stop = () => {
-			if (id !== null) {
-				clearInterval(id);
-				id = null;
+		let active = false;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+
+		const clearTimer = () => {
+			if (timer !== null) {
+				clearTimeout(timer);
+				timer = null;
 			}
 		};
+
+		// Self-rescheduling setTimeout, not setInterval: each tick waits for
+		// its own invalidateAll() to finish before the next one is queued 5s
+		// later, and skips firing at all while a navigation away from this
+		// page is in flight ($navigating?.to). A blind setInterval fired a
+		// fresh invalidateAll() (~16 chained daemon calls: the root layout's
+		// load plus this page's own) every 5s regardless of whether the
+		// prior one had returned — under any slowdown elsewhere (a Plex
+		// search timing out, TMDB backoff) that piled concurrent daemon
+		// calls on top of each other with no bound, confirmed live via
+		// [api] inflight climbing past 30 in the web container's logs.
+		// Worse, since this component doesn't unmount until the
+		// destination page's own load() resolves, the old blind interval
+		// kept adding load throughout a pending navigation — starving the
+		// very navigation it was blocking (Movie Calendar most visibly,
+		// since it has no fail-fast retry — see api.ts's DEFAULT_TIMEOUT_MS
+		// comment). 2026-08-31 investigation.
+		const tick = async () => {
+			timer = null;
+			if (!active || $navigating?.to) return;
+			try {
+				await invalidateAll();
+			} finally {
+				if (active) scheduleNext();
+			}
+		};
+
+		const scheduleNext = () => {
+			clearTimer();
+			timer = setTimeout(() => void tick(), 5000);
+		};
+
+		const start = () => {
+			if (active) return;
+			active = true;
+			scheduleNext();
+		};
+
+		const stop = () => {
+			active = false;
+			clearTimer();
+		};
+
 		const onVisibility = () => (document.visibilityState === 'hidden' ? stop() : start());
 		start();
 		document.addEventListener('visibilitychange', onVisibility);
