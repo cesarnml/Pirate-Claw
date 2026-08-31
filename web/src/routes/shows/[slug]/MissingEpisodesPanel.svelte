@@ -494,7 +494,7 @@
 												<div
 													class="bg-background/50 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
 												>
-													<div class="min-w-0 space-y-1">
+													<div class="min-w-0 flex-1 space-y-1">
 														<p class="truncate text-sm font-medium">{torrent.title}</p>
 														<div class="flex flex-wrap gap-2 text-xs">
 															{#if torrent.resolution}
