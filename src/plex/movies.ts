@@ -38,24 +38,56 @@ export function enrichMovieBreakdownsFromPlexCache(
   });
 }
 
+export type RefreshLibraryCacheResult = {
+  /** Cache rows actually written this pass — a real Plex answer, positive
+   * or negative. */
+  checked: number;
+  /** Left untouched because Plex gave no usable answer this pass (see the
+   * `!catalogAvailable` skip below) — the prior cache row, if any, still
+   * stands. Callers that report "sync complete" to a user (the Config
+   * "Sync Now" buttons) need this to tell a real check apart from a no-op:
+   * see runFullTvPlexSyncUncached's own comment for why reporting success
+   * when everything was skipped would itself be a dishonest-state bug of
+   * the same shape this whole fix is about. */
+  skipped: number;
+};
+
 export async function refreshMovieLibraryCache(
   movies: MovieBreakdown[],
   deps: PlexMovieEnrichDeps,
-): Promise<void> {
+): Promise<RefreshLibraryCacheResult> {
   const uniqueMovies = dedupeMovies(movies);
   let movieCatalog: PlexSearchResult[] = [];
+  // Tracks whether the catalog fetch actually succeeded — distinct from
+  // "movieCatalog is empty", which is also what a legitimately-empty-but-
+  // successful fetch looks like. See the `!best` branch below for why this
+  // matters: a failed fetch must never be treated the same as a real,
+  // complete "not in the library" answer.
+  let catalogAvailable = true;
   try {
     movieCatalog = await deps.client.listAllMoviesForMatching();
   } catch (error) {
+    catalogAvailable = false;
     const message = error instanceof Error ? error.message : String(error);
     deps.log(`plex movie library catalog failed: ${message}`);
   }
+
+  let checked = 0;
+  let skipped = 0;
 
   for (const movie of uniqueMovies) {
     if (movie.year == null) {
       continue;
     }
 
+    // Deliberately NOT wrapped in a per-movie try/catch — a thrown error
+    // here (e.g. searchMovies itself throwing rather than returning null)
+    // propagates out of this whole function, same as before this fix.
+    // background-refresh.ts's own try/catch around this call is the
+    // isolation boundary: it's what keeps a broken movie sweep from taking
+    // the show sweep down with it (see its "continues the show sweep when
+    // the movie sweep fails" test) — that's the granularity this codebase
+    // has chosen, not per-item.
     const searchResults = await deps.client.searchMovies(movie.normalizedTitle);
     if (searchResults === null) {
       deps.log(
@@ -72,6 +104,30 @@ export async function refreshMovieLibraryCache(
     const cachedAt = new Date().toISOString();
 
     if (!best) {
+      // No match found — but that's only a real "not in Plex" answer when
+      // the whole-library catalog fetch actually succeeded. The catalog is
+      // the trustworthy, complete signal; a per-title search is documented
+      // (see listAllMoviesForMatching) as a fallback that can itself omit
+      // or reshape real hits, so it's never on its own enough to justify a
+      // negative conclusion — only to confirm a POSITIVE match faster than
+      // waiting on the catalog. If the catalog fetch failed, `merged`
+      // being empty just means nothing trustworthy was checked, not that
+      // Plex confirmed an empty result — writing inLibrary:false here
+      // would silently overwrite (and, downstream in ownedMovieStatuses,
+      // un-grab) a previously confirmed in_library row purely because
+      // Plex was unreachable this cycle. Leave the existing cache row
+      // untouched instead; the next cycle that actually reaches Plex will
+      // record the real answer. Found via a live incident 2026-08-31: a
+      // run of Plex timeouts during the background refresh reset several
+      // already-owned movies back to "missing" and brought back their
+      // grab buttons.
+      if (!catalogAvailable) {
+        deps.log(
+          `plex movie refresh: no full-catalog answer from Plex for ${movie.normalizedTitle} (${String(movie.year)}) — leaving cached status as-is`,
+        );
+        skipped += 1;
+        continue;
+      }
       deps.cache.upsertMovie({
         title: movie.normalizedTitle,
         year: movie.year,
@@ -81,6 +137,7 @@ export async function refreshMovieLibraryCache(
         lastWatchedAt: null,
         cachedAt,
       });
+      checked += 1;
       continue;
     }
 
@@ -96,7 +153,10 @@ export async function refreshMovieLibraryCache(
           : null,
       cachedAt,
     });
+    checked += 1;
   }
+
+  return { checked, skipped };
 }
 
 export function isPlexCacheExpired(

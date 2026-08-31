@@ -265,7 +265,24 @@ export class PlexHttpClient {
       const path = `/library/sections/${encodeURIComponent(sectionKey)}/all?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${pageSize}${guidsParam}`;
       const container = await this.getXml(path);
       if (!container?.MediaContainer) {
-        break;
+        // getXml returns null only on a genuine request failure (network,
+        // non-2xx, or unparseable body) — a legitimate empty/final page
+        // still comes back with a MediaContainer wrapper (size=0), handled
+        // by the rows.length===0 break below. Silently `break`-ing here
+        // used to make a mid-pagination timeout indistinguishable from
+        // "no more pages": callers (listAllMoviesForMatching/
+        // listAllTvShowsForMatching) got back a silently truncated catalog
+        // that LOOKED complete, which fed refreshMovieLibraryCache/
+        // refreshShowLibraryCache's "not found in the full catalog" branch
+        // and wrote a confirmed-false-negative Plex status for anything
+        // that happened to live on a page after the one that failed.
+        // Throwing instead lets those callers' own try/catch (they already
+        // have one, precisely to detect "couldn't get a catalog this
+        // cycle") tell a real failure apart from a real empty result.
+        // 2026-08-31 stale-completion-reset investigation.
+        throw new Error(
+          `plex section ${sectionKey} listing failed at offset ${start}: ${path}`,
+        );
       }
 
       const mc = container.MediaContainer as Record<string, unknown>;

@@ -16,14 +16,21 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async () => {
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 
-	const [configResult, sessionResult, statusResult, plexAuthResult, plexMovieSyncResult] =
-		await Promise.allSettled([
-			navApiRequest('/api/config'),
-			navApiRequest('/api/transmission/session'),
-			navApiRequest('/api/status'),
-			navApiRequest('/api/plex/auth/status'),
-			navApiRequest('/api/movie-calendar/plex-sync')
-		]);
+	const [
+		configResult,
+		sessionResult,
+		statusResult,
+		plexAuthResult,
+		plexMovieSyncResult,
+		plexTvSyncResult
+	] = await Promise.allSettled([
+		navApiRequest('/api/config'),
+		navApiRequest('/api/transmission/session'),
+		navApiRequest('/api/status'),
+		navApiRequest('/api/plex/auth/status'),
+		navApiRequest('/api/movie-calendar/plex-sync'),
+		navApiRequest('/api/shows/plex-sync')
+	]);
 
 	let config: AppConfig | null = null;
 	let etag: string | null = null;
@@ -33,6 +40,7 @@ export const load: PageServerLoad = async () => {
 	let onboarding: OnboardingStatus | null = null;
 	let plexAuth: PlexAuthStatusResponse | null = null;
 	let plexMovieSyncLastSyncedAt: string | null = null;
+	let plexTvSyncLastSyncedAt: string | null = null;
 
 	if (configResult.status === 'fulfilled' && configResult.value.ok) {
 		config = (await configResult.value.json()) as AppConfig;
@@ -63,6 +71,11 @@ export const load: PageServerLoad = async () => {
 		plexMovieSyncLastSyncedAt = body.lastSyncedAt ?? null;
 	}
 
+	if (plexTvSyncResult.status === 'fulfilled' && plexTvSyncResult.value.ok) {
+		const body = (await plexTvSyncResult.value.json()) as { lastSyncedAt?: string | null };
+		plexTvSyncLastSyncedAt = body.lastSyncedAt ?? null;
+	}
+
 	return {
 		config,
 		etag,
@@ -72,7 +85,8 @@ export const load: PageServerLoad = async () => {
 		runSummaries,
 		onboarding,
 		plexAuth,
-		plexMovieSyncLastSyncedAt
+		plexMovieSyncLastSyncedAt,
+		plexTvSyncLastSyncedAt
 	};
 };
 
@@ -730,6 +744,67 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[config] plexMovieSync failed:', error);
 			return fail(502, { plexMovieSyncError: 'Could not reach the API to sync.' });
+		}
+	},
+
+	// Force-refreshes every currently tracked show's cached Plex status right
+	// now instead of waiting for the next background-refresh cycle — see
+	// src/api.ts's runFullTvPlexSync doc comment. Also the one manual action
+	// that can immediately repair a show whose cached status got corrupted by
+	// a prior run of Plex timeouts, without waiting on a lucky future cycle.
+	plexTvSync: async () => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (writeToken === undefined || writeToken === null)
+			return fail(401, { plexTvSyncError: 'Write token not configured.' });
+		if (!writeToken) return fail(403, { plexTvSyncError: 'Config writes are disabled.' });
+
+		try {
+			const response = await apiRequest('/api/shows/plex-sync', {
+				method: 'POST',
+				headers: {
+					authorization: `Bearer ${writeToken}`
+				}
+			});
+
+			if (!response.ok) {
+				let plexTvSyncError = `Plex sync failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) plexTvSyncError = body.error;
+				} catch {
+					// keep fallback
+				}
+				return fail(response.status, { plexTvSyncError });
+			}
+
+			const body = (await response.json()) as {
+				lastSyncedAt?: string | null;
+				checkedCount?: number;
+				skippedCount?: number;
+				started?: boolean;
+				timedOut?: boolean;
+			};
+
+			// See src/api.ts's TV_SYNC_RESPONSE_DEADLINE_MS — a slow/unhealthy
+			// Plex means the daemon didn't wait for the sync to finish before
+			// responding. It's still running server-side; there's just no
+			// result to report yet.
+			if (body.started && body.timedOut) {
+				return {
+					plexTvSynced: true,
+					plexTvSyncStillRunning: true
+				};
+			}
+
+			return {
+				plexTvSynced: true,
+				plexTvSyncLastSyncedAt: body.lastSyncedAt ?? null,
+				plexTvSyncCheckedCount: body.checkedCount ?? 0,
+				plexTvSyncSkippedCount: body.skippedCount ?? 0
+			};
+		} catch (error) {
+			console.error('[config] plexTvSync failed:', error);
+			return fail(502, { plexTvSyncError: 'Could not reach the API to sync.' });
 		}
 	},
 

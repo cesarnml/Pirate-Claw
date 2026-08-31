@@ -48,10 +48,17 @@ export async function runPlexBackgroundRefresh(input: {
       const manualMovies = manualMovieGrabs
         ? manualMovieGrabsAsBreakdowns(manualMovieGrabs)
         : [];
-      await refreshMovieLibraryCache(
+      const { skipped } = await refreshMovieLibraryCache(
         [...candidateMovies, ...manualMovies],
         plexMovies,
       );
+      // Visible trail for the 2026-08-31 false-negative-on-timeout fix: a
+      // skipped count that's consistently a large fraction of the batch
+      // means Plex is unreachable often enough to be worth investigating on
+      // its own, even though no cache row gets corrupted by it anymore.
+      if (skipped > 0) {
+        log(`[plex] movie refresh: ${skipped} skipped (no Plex answer)`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`[plex] movie refresh failed: ${message}`);
@@ -63,7 +70,10 @@ export async function runPlexBackgroundRefresh(input: {
         ?.list()
         .map((show) => show.normalizedTitle);
       const shows = buildShowBreakdowns(candidates, trackedNormalizedTitles);
-      await refreshShowLibraryCache(shows, plexShows);
+      const { skipped } = await refreshShowLibraryCache(shows, plexShows);
+      if (skipped > 0) {
+        log(`[plex] show refresh: ${skipped} skipped (no Plex answer)`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`[plex] show refresh failed: ${message}`);

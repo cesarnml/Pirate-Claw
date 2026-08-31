@@ -5,6 +5,10 @@ import {
   dedupeSearchResults,
 } from './client';
 import type { PlexCache } from './cache';
+// Shared shape with refreshMovieLibraryCache — see RefreshLibraryCacheResult's
+// own doc comment in movies.ts for why callers need checked/skipped, not
+// just void.
+import type { RefreshLibraryCacheResult } from './movies';
 
 const PLEX_SHOW_MATCH_THRESHOLD = 0.72;
 
@@ -78,15 +82,23 @@ export async function refreshPlexShowBreakdown(
 export async function refreshShowLibraryCache(
   shows: ShowBreakdown[],
   deps: PlexShowEnrichDeps,
-): Promise<void> {
+): Promise<RefreshLibraryCacheResult> {
   const uniqueShows = dedupeShows(shows);
   let tvCatalog: PlexSearchResult[] = [];
+  // See refreshMovieLibraryCache's identical flag for the full rationale —
+  // an empty tvCatalog from a failed fetch must never be mistaken for a
+  // real, complete "not in the library" answer.
+  let catalogAvailable = true;
   try {
     tvCatalog = await deps.client.listAllTvShowsForMatching();
   } catch (error) {
+    catalogAvailable = false;
     const message = error instanceof Error ? error.message : String(error);
     deps.log(`plex TV library catalog failed: ${message}`);
   }
+
+  let checked = 0;
+  let skipped = 0;
 
   for (const show of uniqueShows) {
     try {
@@ -106,6 +118,22 @@ export async function refreshShowLibraryCache(
       const cachedAt = new Date().toISOString();
 
       if (!best) {
+        // No match — but only a real "not in Plex" answer when the
+        // whole-library catalog fetch actually succeeded. See
+        // refreshMovieLibraryCache's identical guard for the full
+        // rationale: a per-title search alone is documented as an
+        // unreliable fallback that can itself omit real hits, so it's
+        // never sufficient on its own to justify a negative conclusion —
+        // only the full catalog is. A Plex timeout on the catalog fetch
+        // must never overwrite a previously confirmed in_library row
+        // (2026-08-31 incident).
+        if (!catalogAvailable) {
+          deps.log(
+            `plex show refresh: no full-catalog answer from Plex for ${show.normalizedTitle} — leaving cached status as-is`,
+          );
+          skipped += 1;
+          continue;
+        }
         deps.cache.upsertTv({
           normalizedTitle: show.normalizedTitle,
           plexRatingKey: null,
@@ -114,6 +142,7 @@ export async function refreshShowLibraryCache(
           lastWatchedAt: null,
           cachedAt,
         });
+        checked += 1;
         continue;
       }
 
@@ -128,6 +157,7 @@ export async function refreshShowLibraryCache(
             : null,
         cachedAt,
       });
+      checked += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deps.log(
@@ -135,6 +165,8 @@ export async function refreshShowLibraryCache(
       );
     }
   }
+
+  return { checked, skipped };
 }
 
 export function isPlexShowCacheExpired(

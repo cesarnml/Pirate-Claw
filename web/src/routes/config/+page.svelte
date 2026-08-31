@@ -16,6 +16,7 @@
 	import FeedsCard from './components/FeedsCard.svelte';
 	import MoviePolicyCard from './components/MoviePolicyCard.svelte';
 	import PlexMovieSyncCard from './components/PlexMovieSyncCard.svelte';
+	import PlexTvSyncCard from './components/PlexTvSyncCard.svelte';
 	import RemoveMovieYearModal from './components/RemoveMovieYearModal.svelte';
 	import ShowWatchlistEditor from './components/ShowWatchlistEditor.svelte';
 	import TmdbPanel from './components/TmdbPanel.svelte';
@@ -106,6 +107,13 @@
 	let plexMovieSyncOverride = $state<string | null | undefined>(undefined);
 	const plexMovieSyncLastSyncedAt = $derived(
 		plexMovieSyncOverride !== undefined ? plexMovieSyncOverride : data.plexMovieSyncLastSyncedAt
+	);
+	let plexTvSyncing = $state(false);
+	// Same "stay reactive to data until this page's own sync completes"
+	// rationale as plexMovieSyncOverride above.
+	let plexTvSyncOverride = $state<string | null | undefined>(undefined);
+	const plexTvSyncLastSyncedAt = $derived(
+		plexTvSyncOverride !== undefined ? plexTvSyncOverride : data.plexTvSyncLastSyncedAt
 	);
 
 	const restartInProgress = $derived(
@@ -631,6 +639,52 @@
 			await update({ reset: false });
 		};
 	};
+
+	const enhancePlexTvSync: SubmitFunction = () => {
+		plexTvSyncing = true;
+		return async ({ result, update }) => {
+			plexTvSyncing = false;
+			if (result.type === 'success') {
+				const resultData = result.data as {
+					plexTvSyncStillRunning?: boolean;
+					plexTvSyncLastSyncedAt?: string | null;
+					plexTvSyncCheckedCount?: number;
+					plexTvSyncSkippedCount?: number;
+				} | null;
+				// See src/api.ts's TV_SYNC_RESPONSE_DEADLINE_MS — a slow/unhealthy
+				// Plex means the daemon responded before the sync actually
+				// finished. It's still running server-side; don't claim a result
+				// (or update "last synced") that isn't real yet.
+				if (resultData?.plexTvSyncStillRunning) {
+					toast(
+						'Sync still running',
+						'success',
+						'Plex is slow to respond right now — the sync is continuing in the background. Reload this page in a bit to see the result.'
+					);
+					await update({ reset: false });
+					return;
+				}
+				plexTvSyncOverride = resultData?.plexTvSyncLastSyncedAt ?? null;
+				const checked = resultData?.plexTvSyncCheckedCount ?? 0;
+				const skipped = resultData?.plexTvSyncSkippedCount ?? 0;
+				toast(
+					'Plex sync complete',
+					'success',
+					skipped > 0
+						? `Re-checked ${checked} tracked show${checked === 1 ? '' : 's'} against your Plex library (${skipped} skipped — no answer from Plex).`
+						: `Re-checked ${checked} tracked show${checked === 1 ? '' : 's'} against your Plex library.`
+				);
+			} else {
+				const errorMessage =
+					result.type === 'failure'
+						? ((result.data as { plexTvSyncError?: string } | null)?.plexTvSyncError ??
+							'Plex sync failed — try again.')
+						: 'Plex sync failed — try again.';
+				toast('Plex sync failed', 'error', errorMessage);
+			}
+			await update({ reset: false });
+		};
+	};
 </script>
 
 <svelte:window onkeydown={handleDeleteModalKeydown} />
@@ -842,6 +896,14 @@
 				lastSyncedAt={plexMovieSyncLastSyncedAt}
 				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
 				{enhancePlexMovieSync}
+			/>
+
+			<PlexTvSyncCard
+				{canWrite}
+				syncing={plexTvSyncing}
+				lastSyncedAt={plexTvSyncLastSyncedAt}
+				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+				{enhancePlexTvSync}
 			/>
 		</div>
 		<DeleteShowModal

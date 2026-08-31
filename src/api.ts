@@ -131,7 +131,9 @@ import type { PlexShowEnrichDeps } from './plex/shows';
 import {
   enrichShowBreakdownsFromPlexCache,
   refreshPlexShowBreakdown,
+  refreshShowLibraryCache,
 } from './plex/shows';
+import { PlexTvSyncStateStore } from './plex/tv-sync-state';
 import { PlexAuthStore } from './plex/auth';
 import {
   exchangePlexPinForAuthToken,
@@ -266,6 +268,22 @@ function jsonMethodNotAllowed(allow: string): Response {
 
 /** Repository default is 20; HTTP dashboards need a full slice for joins and torrent polling. */
 const API_CANDIDATE_LIST_LIMIT = 50_000;
+
+/** Caps how long the "Plex TV Sync" POST handler waits on runFullTvPlexSync
+ * before responding — unlike the movie sync (one catalog fetch, then pure
+ * in-memory matching), a TV sync does one live Plex round trip per tracked
+ * show (see refreshShowLibraryCache), so on a library with many tracked
+ * shows — or, worse, exactly the kind of Plex slowness this feature exists
+ * to help recover from — the total wall-clock time is unbounded. That's the
+ * same "~19s synchronous Plex walk trips Bun's idle-connection timeout"
+ * failure mode documented near runFullMoviePlexSyncUncached above, just
+ * reachable here via N sequential requests instead of one big one. Staying
+ * comfortably under that lets the common case (Plex healthy) still return
+ * real counts synchronously, while a slow/unhealthy Plex degrades to "still
+ * running" instead of hanging the connection — the sync keeps running
+ * either way (fullTvSyncInFlight holds the promise), it just isn't awaited
+ * past this deadline. */
+const TV_SYNC_RESPONSE_DEADLINE_MS = 15_000;
 
 /** How long a show's library-reconciliation result is trusted before the
  * next episode-grid view re-runs it (see reconcileShowIfStale). */
@@ -1293,6 +1311,95 @@ export function createApiFetch(
     }
   }
 
+  // Movie-shaped sibling of fullSyncInFlight — same "one caller wins,
+  // concurrent callers await the same run" rationale. Also what lets the
+  // POST handler below return early (see SYNC_RESPONSE_DEADLINE_MS) without
+  // losing track of an already-started run: a concurrent or follow-up
+  // click still awaits this same promise instead of kicking off a second
+  // one.
+  let fullTvSyncInFlight: Promise<{
+    checkedCount: number;
+    skippedCount: number;
+  } | null> | null = null;
+
+  /** The deliberate, operator-triggered full Plex TV sweep — refreshes
+   * every currently tracked show's cached Plex status right now, instead
+   * of waiting for the next background-refresh cycle (runPlexBackgroundRefresh,
+   * every plexRefreshIntervalMinutes). Backs the Config "Plex TV Sync"
+   * card — mirrors runFullMoviePlexSync's shape, but there's no separate
+   * "adopt a pre-existing Plex show" concept for TV the way there is for
+   * movies (see adoptMoviesFromPlex): tracked shows are already known via
+   * trackedShows regardless of Plex, so this is purely a forced refresh of
+   * refreshShowLibraryCache — the exact same write path the background
+   * refresh already uses, now with the false-negative-on-timeout guard
+   * fixed (see refreshShowLibraryCache's own comment), so this is also the
+   * one manual action that can immediately repair a show whose cached
+   * status got corrupted by a prior run of Plex timeouts, without waiting
+   * for a lucky background cycle.
+   *
+   * Best-effort: any failure here must never break whatever triggered it,
+   * matching every other sweep in this file. */
+  async function runFullTvPlexSync(): Promise<{
+    checkedCount: number;
+    skippedCount: number;
+  } | null> {
+    if (!database || !plexShows) return null;
+    if (fullTvSyncInFlight) return fullTvSyncInFlight;
+
+    const promise = runFullTvPlexSyncUncached(database, plexShows).finally(
+      () => (fullTvSyncInFlight = null),
+    );
+    fullTvSyncInFlight = promise;
+    return promise;
+  }
+
+  async function runFullTvPlexSyncUncached(
+    database: Database,
+    plexShows: PlexShowEnrichDeps,
+  ): Promise<{ checkedCount: number; skippedCount: number } | null> {
+    try {
+      // Same candidates -> buildShowBreakdowns(trackedNormalizedTitles)
+      // pipeline runPlexBackgroundRefresh already uses, so every tracked
+      // show is included even with zero candidate_state rows (a show
+      // tracked after its season already aired otherwise has nothing here
+      // to seed a stub from).
+      const candidates = repository.listCandidateStates(
+        API_CANDIDATE_LIST_LIMIT,
+      );
+      const shows = buildShowBreakdowns(candidates, trackedNormalizedTitles());
+      const { checked, skipped } = await refreshShowLibraryCache(
+        shows,
+        plexShows,
+      );
+
+      // Nothing was actually verified — Plex was unreachable for every
+      // single show this pass (the whole-catalog fetch failed AND every
+      // per-show search failed too). Recording a sync here and reporting
+      // "N shows checked" would be exactly the kind of dishonest-state bug
+      // this whole feature exists to catch, just moved from the cache row
+      // to the sync-status card: a user hitting "Sync Now" to recover from
+      // a run of Plex timeouts deserves to be told it didn't actually run,
+      // not a fresh "last synced: just now" that implies it did.
+      if (checked === 0 && shows.length > 0) {
+        console.log(
+          `[plex] full tv sync: Plex unreachable, 0/${shows.length} show(s) actually checked`,
+        );
+        return null;
+      }
+
+      const syncedAt = new Date().toISOString();
+      new PlexTvSyncStateStore(database).recordSync(syncedAt);
+      console.log(
+        `[plex] full tv sync: ${checked} show(s) checked, ${skipped} skipped (no Plex answer)`,
+      );
+      return { checkedCount: checked, skippedCount: skipped };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[plex] full tv sync failed: ${message}`);
+      return null;
+    }
+  }
+
   /** Refreshes at most once per RECONCILE_STALE_AFTER_MS per show, triggered
    * by viewing that show's episode grid — see grill-me: on-demand per show,
    * not a global background job, since this is a single-user NAS app and a
@@ -2280,6 +2387,70 @@ export function createApiFetch(
           lastSyncedAt: state.lastSyncedAt,
           adoptedCount: result.adoptedCount,
           checkedCount: result.checkedCount,
+        });
+      }
+
+      return jsonMethodNotAllowed('GET, POST');
+    }
+
+    // Backs the Config page's "Plex TV Sync" card — see runFullTvPlexSync's
+    // doc comment. Same GET-reads/POST-runs, write-auth-gated shape as
+    // /api/movie-calendar/plex-sync above.
+    if (path === '/api/shows/plex-sync') {
+      if (!database) {
+        return Response.json(
+          { error: 'database is not configured' },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      if (request.method === 'GET') {
+        const state = new PlexTvSyncStateStore(database).get();
+        return Response.json({ lastSyncedAt: state.lastSyncedAt });
+      }
+
+      if (request.method === 'POST') {
+        if (!plexShows) {
+          return Response.json(
+            { error: 'Plex is not configured' },
+            { status: 409 },
+          );
+        }
+        const authError = checkWriteAuth(request, activeConfig);
+        if (authError) return authError;
+
+        // See TV_SYNC_RESPONSE_DEADLINE_MS's doc comment for why this
+        // races against a timeout rather than a plain await: the sync
+        // itself keeps running in the background regardless (held by
+        // fullTvSyncInFlight) — this only bounds how long the HTTP
+        // response waits on it.
+        const syncPromise = runFullTvPlexSync();
+        const raceResult = await Promise.race([
+          syncPromise.then((result) => ({ timedOut: false as const, result })),
+          new Promise<{ timedOut: true }>((resolve) =>
+            setTimeout(
+              () => resolve({ timedOut: true }),
+              TV_SYNC_RESPONSE_DEADLINE_MS,
+            ),
+          ),
+        ]);
+
+        if (raceResult.timedOut) {
+          return Response.json({ started: true, timedOut: true });
+        }
+        if (!raceResult.result) {
+          return Response.json(
+            { error: 'Plex sync failed — see daemon logs.' },
+            { status: 502 },
+          );
+        }
+        const state = new PlexTvSyncStateStore(database).get();
+        return Response.json({
+          lastSyncedAt: state.lastSyncedAt,
+          checkedCount: raceResult.result.checkedCount,
+          skippedCount: raceResult.result.skippedCount,
         });
       }
 
