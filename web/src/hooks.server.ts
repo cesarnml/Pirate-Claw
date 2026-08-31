@@ -8,6 +8,7 @@ import {
 } from '$lib/server/session';
 import { apiRequest } from '$lib/server/api';
 import { logTimedRequest } from '$lib/server/route-timing';
+import { runWithRequestId } from '$lib/server/request-context';
 
 const PUBLIC_PATHS = new Set(['/setup', '/login', '/logout']);
 
@@ -16,13 +17,18 @@ const PUBLIC_PATHS = new Set(['/setup', '/login', '/logout']);
  * user hit refresh and it was fine the second time." The /api/shows-style
  * TMDB fan-out hangs this is meant to catch resolve in seconds-to-minutes,
  * not milliseconds — see api.ts's per-upstream-call logging (shares this
- * same slow-request bar) for which specific daemon call was the culprit. */
+ * same slow-request bar) for which specific daemon call was the culprit.
+ * Wrapped in runWithRequestId so every [api] line this resolve triggers,
+ * however deep in a load function, gets the same short id in its own log
+ * line — see request-context.ts. */
 function timedResolve(
 	event: Parameters<Handle>[0]['event'],
 	resolve: Parameters<Handle>[0]['resolve']
 ): Promise<Response> {
 	const { pathname } = event.url;
-	return logTimedRequest('[route]', event.request.method, pathname, async () => resolve(event));
+	return runWithRequestId(() =>
+		logTimedRequest('[route]', event.request.method, pathname, async () => resolve(event))
+	);
 }
 
 export function init() {

@@ -1,4 +1,4 @@
-import { apiRequest, apiFetch } from '$lib/server/api';
+import { navApiRequest, navApiFetch } from '$lib/server/api';
 import type {
 	AppConfig,
 	AuthStateResult,
@@ -40,7 +40,7 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 	const writeToken = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
 	const authStateFetch: Promise<AuthStateResult> =
 		authenticated && writeToken
-			? apiRequest('/api/auth/state', {
+			? navApiRequest('/api/auth/state', {
 					headers: { Authorization: `Bearer ${writeToken}` }
 				}).then(async (res) => {
 					if (!res.ok) throw new Error(`auth/state ${res.status}`);
@@ -58,20 +58,20 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 		plexAuthResult,
 		authStateResult
 	] = await Promise.allSettled([
-		authenticated ? apiFetch<DaemonHealth>('/api/health') : Promise.reject('unauthenticated'),
+		authenticated ? navApiFetch<DaemonHealth>('/api/health') : Promise.reject('unauthenticated'),
 		authenticated
-			? apiFetch<SessionInfo>('/api/transmission/session')
+			? navApiFetch<SessionInfo>('/api/transmission/session')
 			: Promise.reject('unauthenticated'),
-		authenticated ? apiFetch<AppConfig>('/api/config') : Promise.reject('unauthenticated'),
-		apiFetch<{ state: SetupState }>('/api/setup/state'),
+		authenticated ? navApiFetch<AppConfig>('/api/config') : Promise.reject('unauthenticated'),
+		navApiFetch<{ state: SetupState }>('/api/setup/state'),
 		authenticated
-			? apiFetch<ReadinessResponse>('/api/setup/readiness')
-			: Promise.reject('unauthenticated'),
-		authenticated
-			? apiFetch<InstallHealthResponse>('/api/setup/install-health')
+			? navApiFetch<ReadinessResponse>('/api/setup/readiness')
 			: Promise.reject('unauthenticated'),
 		authenticated
-			? apiFetch<PlexAuthStatusResponse>('/api/plex/auth/status')
+			? navApiFetch<InstallHealthResponse>('/api/setup/install-health')
+			: Promise.reject('unauthenticated'),
+		authenticated
+			? navApiFetch<PlexAuthStatusResponse>('/api/plex/auth/status')
 			: Promise.reject('unauthenticated'),
 		authStateFetch
 	]);

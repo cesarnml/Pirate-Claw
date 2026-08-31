@@ -5,7 +5,12 @@ import { formPostRequest } from '../../helpers/form-request';
 
 const apiRequestMock = vi.fn();
 vi.mock('$lib/server/api', () => ({
-	apiRequest: apiRequestMock
+	apiRequest: apiRequestMock,
+	// The load's 3 parallel reads now go through navApiRequest (short
+	// timeout + retry — see api.ts's NAV_TIMEOUT_MS); actions still use
+	// apiRequest. Alias both to the same mock so this suite's expectations
+	// still apply.
+	navApiRequest: apiRequestMock
 }));
 
 describe('onboarding page server', () => {

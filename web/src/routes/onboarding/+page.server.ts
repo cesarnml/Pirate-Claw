@@ -1,7 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { deriveOnboardingStatus } from '$lib/onboarding';
-import { apiRequest } from '$lib/server/api';
+import { apiRequest, navApiRequest } from '$lib/server/api';
 import type {
 	AppConfig,
 	FeedConfig,
@@ -18,9 +18,9 @@ export const load: PageServerLoad = async () => {
 
 	try {
 		const [configResponse, readinessResponse, plexAuthResponse] = await Promise.all([
-			apiRequest('/api/config'),
-			apiRequest('/api/setup/readiness'),
-			apiRequest('/api/plex/auth/status')
+			navApiRequest('/api/config'),
+			navApiRequest('/api/setup/readiness'),
+			navApiRequest('/api/plex/auth/status')
 		]);
 
 		if (!configResponse.ok) {

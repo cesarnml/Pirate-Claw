@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { deriveOnboardingStatus } from '$lib/onboarding';
-import { apiFetch, apiRequest } from '$lib/server/api';
+import { apiRequest, navApiFetch } from '$lib/server/api';
 import type {
 	AppConfig,
 	CandidateStateRecord,
@@ -27,17 +27,17 @@ export const load: PageServerLoad = async () => {
 		manualGrabArchiveResult,
 		manualGrabsTrackedResult
 	] = await Promise.allSettled([
-		apiFetch<DaemonHealth>('/api/health'),
-		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents'),
-		apiFetch<{ candidates: CandidateStateRecord[] }>('/api/candidates'),
-		apiFetch<{ runs: RunSummaryRecord[] }>('/api/status'),
-		apiFetch<{ outcomes: ReviewOutcomeRecord[] }>('/api/outcomes?status=failed_enqueue'),
-		apiFetch<AppConfig>('/api/config'),
+		navApiFetch<DaemonHealth>('/api/health'),
+		navApiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents'),
+		navApiFetch<{ candidates: CandidateStateRecord[] }>('/api/candidates'),
+		navApiFetch<{ runs: RunSummaryRecord[] }>('/api/status'),
+		navApiFetch<{ outcomes: ReviewOutcomeRecord[] }>('/api/outcomes?status=failed_enqueue'),
+		navApiFetch<AppConfig>('/api/config'),
 		// The manual-grab-sourced half of Your Haul — see ArchiveStrip/+page.svelte.
-		apiFetch<{ items: ManualGrabArchiveEntry[] }>('/api/manual-grabs/completed'),
+		navApiFetch<{ items: ManualGrabArchiveEntry[] }>('/api/manual-grabs/completed'),
 		// Every manual grab with a hash, independent of Transmission — powers
 		// missingManualGrabs (the manual-grab sibling of missingCandidates).
-		apiFetch<{ items: ManualGrabTrackedEntry[] }>('/api/manual-grabs/tracked')
+		navApiFetch<{ items: ManualGrabTrackedEntry[] }>('/api/manual-grabs/tracked')
 	]);
 
 	const health = healthResult.status === 'fulfilled' ? healthResult.value : null;

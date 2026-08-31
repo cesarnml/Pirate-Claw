@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
-import { apiFetch, apiRequest } from '$lib/server/api';
+import { apiFetch, apiRequest, navApiFetch } from '$lib/server/api';
 import type { ShowBreakdown, ShowEpisodeStatus } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -10,6 +10,10 @@ export const load: PageServerLoad = async ({ params }) => {
 
 	let shows: ShowBreakdown[];
 	try {
+		// Stays on the full 60s budget, not the nav-blocking one — /api/shows
+		// can legitimately chain TMDB calls (see api.ts's DEFAULT_TIMEOUT_MS
+		// comment). The episode-status fetch below is Plex-backed, not
+		// TMDB-chained, so it keeps the fail-fast+retry treatment.
 		shows = (await apiFetch<{ shows: ShowBreakdown[] }>('/api/shows')).shows;
 	} catch (error) {
 		console.error('[shows detail] failed to load /api/shows:', error);
@@ -34,7 +38,7 @@ export const load: PageServerLoad = async ({ params }) => {
 			// as its initial selection), so this stays the single source of
 			// truth for "which season opens by default" instead of duplicating
 			// that choice on both sides.
-			const response = await apiFetch<ShowEpisodeStatus>(
+			const response = await navApiFetch<ShowEpisodeStatus>(
 				`/api/shows/${encodeURIComponent(title)}/episodes`
 			);
 			episodeStatus = response;

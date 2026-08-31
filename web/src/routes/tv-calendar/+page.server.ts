@@ -29,6 +29,8 @@ export const load: PageServerLoad = async () => {
 	// current year, so the visitor lands on the relevant part of the
 	// calendar instead of always January 1st. See anchorOffsetForToday in
 	// src/tmdb/calendar.ts.
+	// Stays on the full 60s budget, not the nav-blocking one — this route can
+	// legitimately chain TMDB calls (see api.ts's DEFAULT_TIMEOUT_MS comment).
 	let response: Response;
 	try {
 		response = await apiRequest(`/api/calendar/tv?limit=${_PAGE_SIZE}`);

@@ -3,7 +3,12 @@ import { formPostRequest } from '../../helpers/form-request';
 
 const apiRequestMock = vi.fn();
 vi.mock('$lib/server/api', () => ({
-	apiRequest: apiRequestMock
+	apiRequest: apiRequestMock,
+	// The load's 5 parallel reads now go through navApiRequest (short
+	// timeout + retry — see api.ts's NAV_TIMEOUT_MS); actions still use
+	// apiRequest. Alias both to the same mock so this suite's expectations
+	// still apply.
+	navApiRequest: apiRequestMock
 }));
 
 describe('config page server actions', () => {
@@ -50,6 +55,9 @@ describe('config page server actions', () => {
 						}),
 						{ status: 200 }
 					)
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: 'not configured' }), { status: 404 })
 				);
 
 			const result = await load({} as never);
@@ -95,6 +103,9 @@ describe('config page server actions', () => {
 						}),
 						{ status: 200 }
 					)
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: 'not configured' }), { status: 404 })
 				);
 
 			const result = await load({} as never);
@@ -152,6 +163,9 @@ describe('config page server actions', () => {
 						}),
 						{ status: 200 }
 					)
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: 'not configured' }), { status: 404 })
 				);
 
 			const result = await load({} as never);

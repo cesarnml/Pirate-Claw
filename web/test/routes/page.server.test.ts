@@ -4,7 +4,11 @@ import feedOnlyConfig from '../../../fixtures/api/config-feed-only.json';
 
 const apiFetchMock = vi.fn();
 vi.mock('$lib/server/api', () => ({
-	apiFetch: apiFetchMock
+	apiFetch: apiFetchMock,
+	// The dashboard load now calls navApiFetch (short timeout + retry — see
+	// api.ts's NAV_TIMEOUT_MS) rather than apiFetch directly; alias it to
+	// the same mock so this suite's expectations still apply.
+	navApiFetch: apiFetchMock
 }));
 
 describe('dashboard page server load', () => {

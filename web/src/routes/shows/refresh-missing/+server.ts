@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { apiFetch, apiRequest } from '$lib/server/api';
+import { currentRequestId } from '$lib/server/request-context';
 import { computeShowCompletion, showDisplayTitle } from '$lib/helpers';
 import type { ShowBreakdown } from '$lib/types';
 import type { RequestHandler } from './$types';
@@ -42,11 +43,35 @@ export const POST: RequestHandler = async () => {
 				controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
 			};
 
+			// The [route] line for this request logs in single-digit ms — this
+			// handler returns its Response as soon as the stream is constructed,
+			// before any of the loop below runs, so route-timing's clock never
+			// sees the real duration of the work happening inside it. These log
+			// lines (started/completed/cancelled, with counts and total elapsed,
+			// tagged with the same request id every [api] line for this request
+			// gets — see request-context.ts) are this endpoint's only timing
+			// signal, added 2026-08-31 after that blind spot made a slow/stuck
+			// run hard to diagnose from logs alone.
+			const reqId = currentRequestId();
+			const logTag = reqId ? `[shows refresh-missing]:${reqId}` : '[shows refresh-missing]';
+			const startedAt = Date.now();
+			let succeeded = 0;
+			let failed = 0;
+			// Every early `return` below is a cancellation (the abort signal
+			// firing mid-loop) — routed through here so none of those exits are
+			// silent, unlike before 2026-08-31 when only the top-of-loop check
+			// logged anything.
+			const logCancelled = (notStarted: number) => {
+				console.log(
+					`${logTag} cancelled after ${Date.now() - startedAt}ms: ${succeeded} ok, ${failed} failed, ${notStarted} not started`
+				);
+			};
+
 			let shows: ShowBreakdown[];
 			try {
 				shows = (await apiFetch<{ shows: ShowBreakdown[] }>('/api/shows')).shows;
 			} catch (error) {
-				console.error('[shows refresh-missing] failed to load /api/shows:', error);
+				console.error(`${logTag} failed to load /api/shows:`, error);
 				send({ type: 'fatal', message: 'Could not reach the API.' });
 				controller.close();
 				return;
@@ -60,10 +85,14 @@ export const POST: RequestHandler = async () => {
 				return status === 'missing' || status === null;
 			});
 
+			console.log(`${logTag} started: ${targets.length} shows`);
 			send({ type: 'start', total: targets.length });
 
 			for (let index = 0; index < targets.length; index++) {
-				if (abortController.signal.aborted) return;
+				if (abortController.signal.aborted) {
+					logCancelled(targets.length - index);
+					return;
+				}
 
 				const show = targets[index];
 				let ok = false;
@@ -78,14 +107,19 @@ export const POST: RequestHandler = async () => {
 					);
 					ok = response.ok;
 				} catch (error) {
-					if (abortController.signal.aborted) return;
-					console.error(
-						`[shows refresh-missing] refresh failed for ${show.normalizedTitle}:`,
-						error
-					);
+					if (abortController.signal.aborted) {
+						logCancelled(targets.length - index);
+						return;
+					}
+					console.error(`${logTag} refresh failed for ${show.normalizedTitle}:`, error);
 				}
+				if (ok) succeeded += 1;
+				else failed += 1;
 
-				if (abortController.signal.aborted) return;
+				if (abortController.signal.aborted) {
+					logCancelled(targets.length - index - 1);
+					return;
+				}
 				send({
 					type: 'progress',
 					index: index + 1,
@@ -99,7 +133,13 @@ export const POST: RequestHandler = async () => {
 				}
 			}
 
-			if (abortController.signal.aborted) return;
+			if (abortController.signal.aborted) {
+				logCancelled(0);
+				return;
+			}
+			console.log(
+				`${logTag} completed after ${Date.now() - startedAt}ms: ${succeeded} ok, ${failed} failed`
+			);
 			send({ type: 'done' });
 			controller.close();
 		},

@@ -42,6 +42,8 @@ export const _PAGE_SIZE = MOVIE_CALENDAR_PAGE_SIZE;
 export const load: PageServerLoad = async () => {
 	// No offset param: same auto-anchor-to-today behavior as TV calendar —
 	// see anchorOffsetForToday in src/tmdb/movie-calendar.ts.
+	// Stays on the full 60s budget, not the nav-blocking one — this route can
+	// legitimately chain TMDB calls (see api.ts's DEFAULT_TIMEOUT_MS comment).
 	let response: Response;
 	try {
 		response = await apiRequest(`/api/movie-calendar?limit=${_PAGE_SIZE}`);

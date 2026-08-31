@@ -1,7 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { deriveOnboardingStatus } from '$lib/onboarding';
-import { apiRequest } from '$lib/server/api';
+import { apiRequest, navApiRequest } from '$lib/server/api';
 import type {
 	AppConfig,
 	OnboardingStatus,
@@ -18,11 +18,11 @@ export const load: PageServerLoad = async () => {
 
 	const [configResult, sessionResult, statusResult, plexAuthResult, plexMovieSyncResult] =
 		await Promise.allSettled([
-			apiRequest('/api/config'),
-			apiRequest('/api/transmission/session'),
-			apiRequest('/api/status'),
-			apiRequest('/api/plex/auth/status'),
-			apiRequest('/api/movie-calendar/plex-sync')
+			navApiRequest('/api/config'),
+			navApiRequest('/api/transmission/session'),
+			navApiRequest('/api/status'),
+			navApiRequest('/api/plex/auth/status'),
+			navApiRequest('/api/movie-calendar/plex-sync')
 		]);
 
 	let config: AppConfig | null = null;

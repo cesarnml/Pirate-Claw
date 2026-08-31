@@ -1,11 +1,15 @@
-import { apiFetch } from '$lib/server/api';
+import { apiFetch, navApiFetch } from '$lib/server/api';
 import type { ShowBreakdown, TorrentStatSnapshot } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
 	const [showsResult, torrentsResult] = await Promise.allSettled([
+		// Stays on the full 60s budget, not the nav-blocking one — /api/shows
+		// can legitimately chain TMDB calls that each eat ~15s of 429 backoff
+		// (see api.ts's DEFAULT_TIMEOUT_MS comment); torrents has no such
+		// excuse and gets the fail-fast+retry treatment.
 		apiFetch<{ shows: ShowBreakdown[] }>('/api/shows'),
-		apiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents')
+		navApiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents')
 	]);
 
 	if (showsResult.status === 'rejected') {

@@ -1,9 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiFetchMock = vi.fn();
+const authStateRejection = vi
+	.fn()
+	.mockRejectedValue(new Error('auth state not available in layout tests'));
 vi.mock('$lib/server/api', () => ({
 	apiFetch: apiFetchMock,
-	apiRequest: vi.fn().mockRejectedValue(new Error('auth state not available in layout tests'))
+	apiRequest: authStateRejection,
+	// +layout.server.ts's load now calls the nav-scoped variants (short
+	// timeout + retry — see api.ts's NAV_TIMEOUT_MS) rather than
+	// apiFetch/apiRequest directly; alias them to the same mocks so this
+	// suite's expectations still apply.
+	navApiFetch: apiFetchMock,
+	navApiRequest: authStateRejection
 }));
 
 const mockUser = { username: 'admin' };

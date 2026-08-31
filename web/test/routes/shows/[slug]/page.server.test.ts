@@ -5,7 +5,12 @@ const apiFetchMock = vi.fn();
 
 vi.mock('$lib/server/api', () => ({
 	apiRequest: apiRequestMock,
-	apiFetch: apiFetchMock
+	apiFetch: apiFetchMock,
+	// The load's two sequential reads now go through navApiFetch (short
+	// timeout + retry — see api.ts's NAV_TIMEOUT_MS); actions still use
+	// apiRequest. Alias to the same mock so this suite's expectations still
+	// apply.
+	navApiFetch: apiFetchMock
 }));
 
 describe('shows detail page server', () => {
