@@ -33,7 +33,10 @@ export default [
 			'svelte/valid-compile': ['error', { ignoreWarnings: true }],
 			// base rule misidentifies TS interface param names as unused variables; TS-aware rule handles this correctly
 			'no-unused-vars': 'off',
-			'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }]
+			'@typescript-eslint/no-unused-vars': [
+				'error',
+				{ argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+			]
 		}
 	},
 	{

@@ -159,7 +159,7 @@ describe('/shows', () => {
 		expect(archiveLink).toHaveAttribute('href', '/shows/archive%20unit');
 	});
 
-	it('supports rating, progress, and recently added sorts', async () => {
+	it('supports Title and Needs Content sorts, toggling direction on repeat clicks', async () => {
 		render(Page, {
 			data: {
 				...sharedLayoutData,
@@ -169,18 +169,29 @@ describe('/shows', () => {
 			}
 		});
 
+		// Title/asc is the load-time default — archiveShow sorts first alphabetically.
 		let headings = screen.getAllByRole('heading', { level: 2 });
 		expect(headings[0]).toHaveTextContent('Archive Unit');
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Rating' }));
+		// Needs Content sorts by missingCount, descending by default — exampleShow's
+		// 2 missing episodes (from its seasonCompletions above) outrank archiveShow's
+		// 0 (it has no seasonCompletions at all, so it falls back to 0).
+		await fireEvent.click(screen.getByRole('button', { name: /^Needs Content/ }));
 		headings = screen.getAllByRole('heading', { level: 2 });
 		expect(headings[0]).toHaveTextContent('The Example Show');
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+		// Clicking the already-active sort toggles its direction.
+		await fireEvent.click(screen.getByRole('button', { name: /^Needs Content/ }));
 		headings = screen.getAllByRole('heading', { level: 2 });
-		expect(headings[0]).toHaveTextContent('The Example Show');
+		expect(headings[0]).toHaveTextContent('Archive Unit');
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Recently Added' }));
+		// Switching back to Title resets it to ascending order.
+		await fireEvent.click(screen.getByRole('button', { name: /^Title/ }));
+		headings = screen.getAllByRole('heading', { level: 2 });
+		expect(headings[0]).toHaveTextContent('Archive Unit');
+
+		// Clicking Title again toggles it to descending order.
+		await fireEvent.click(screen.getByRole('button', { name: /^Title/ }));
 		headings = screen.getAllByRole('heading', { level: 2 });
 		expect(headings[0]).toHaveTextContent('The Example Show');
 	});
@@ -266,7 +277,11 @@ describe('/shows', () => {
 		expect(screen.queryByText(/Completion checked/)).not.toBeInTheDocument();
 	});
 
-	it('"Needs Content" filters down to tracked shows with zero known episodes', async () => {
+	it('"Unknown" status filter isolates tracked shows with no computed completion', async () => {
+		// No seasons and no seasonCompletions — computeShowCompletion returns
+		// { status: null }, which the page treats as 'unknown'. exampleShow has
+		// seasonCompletions putting it in 'missing' instead, so the filter should
+		// tell the two apart.
 		const emptyShow: ShowBreakdown = {
 			normalizedTitle: 'House of the Dragon',
 			plexStatus: 'unknown',
@@ -288,7 +303,7 @@ describe('/shows', () => {
 		expect(screen.getByText('The Example Show')).toBeInTheDocument();
 		expect(screen.getByText('House of the Dragon')).toBeInTheDocument();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Needs Content' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Unknown' }));
 
 		expect(screen.queryByText('The Example Show')).not.toBeInTheDocument();
 		expect(screen.getByText('House of the Dragon')).toBeInTheDocument();

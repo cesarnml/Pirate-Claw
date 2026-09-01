@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DaemonHealth, SessionInfo } from '$lib/types';
 import Layout from '../../src/routes/+layout.svelte';
 
-const { page } = vi.hoisted(() => ({
+const { page, navigating } = vi.hoisted(() => ({
 	page: (() => {
 		let current = { url: new URL('http://localhost/') };
 		const subscribers = new Set<(value: typeof current) => void>();
@@ -22,7 +22,16 @@ const { page } = vi.hoisted(() => ({
 				}
 			}
 		};
-	})()
+	})(),
+	// SidebarNav reads $navigating to highlight the link mid-transition; no
+	// test here exercises an in-flight navigation, so a store that's always
+	// null is enough.
+	navigating: {
+		subscribe(callback: (value: null) => void) {
+			callback(null);
+			return () => {};
+		}
+	}
 }));
 
 vi.mock('$lib/components/ui/sonner', () => ({
@@ -42,7 +51,8 @@ vi.mock('$lib/toast', () => ({
 }));
 
 vi.mock('$app/stores', () => ({
-	page
+	page,
+	navigating
 }));
 
 const mockHealth: DaemonHealth = {
@@ -143,7 +153,8 @@ describe('+layout.svelte', () => {
 		const sidebarQueries = within(sidebar as HTMLElement);
 
 		expect(sidebarQueries.getAllByText('Unavailable').length).toBeGreaterThanOrEqual(2);
-		expect(sidebarQueries.getByText('Transmission')).toBeInTheDocument();
+		// Footer renders in collapsed + expanded breakpoints, same as above.
+		expect(sidebarQueries.getAllByText('Transmission').length).toBeGreaterThanOrEqual(1);
 	});
 
 	it('renders starter-mode splash and hides children when setupState is starter', () => {

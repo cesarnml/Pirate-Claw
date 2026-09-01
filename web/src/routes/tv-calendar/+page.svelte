@@ -447,7 +447,7 @@
 				</div>
 			{/each}
 
-			{#snippet failed(error, reset)}
+			{#snippet failed(_error, reset)}
 				<div class="bg-card/75 rounded-3xl border border-white/10 p-6 text-center text-sm">
 					<p class="text-destructive mb-2">Something went wrong showing part of the calendar.</p>
 					<p class="text-muted-foreground mb-4 text-xs">
