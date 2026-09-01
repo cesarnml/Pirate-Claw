@@ -304,6 +304,36 @@ describe('daemon', () => {
     expect(skippedResults[0].durationMs).toBe(0);
   });
 
+  it('fires onCycleStart once per non-skipped result, never for a skip', async () => {
+    const starts: string[] = [];
+    const results: CycleResult[] = [];
+    const controller = new AbortController();
+
+    await runDaemonLoop({
+      runCycle: async () => {
+        await Bun.sleep(60);
+      },
+      reconcileCycle: async () => {},
+      options: { runIntervalMs: 20, reconcileIntervalMs: 20 },
+      signal: controller.signal,
+      log: (msg) => {
+        if (msg.includes('skipped: already_running')) {
+          controller.abort();
+        }
+      },
+      onCycleStart: (type) => starts.push(type),
+      onCycleResult: (result) => results.push(result),
+    });
+
+    const skipped = results.filter((r) => r.status === 'skipped');
+    const finished = results.filter((r) => r.status !== 'skipped');
+    expect(skipped.length).toBeGreaterThanOrEqual(1);
+    // Every finished (completed/failed) result had a matching start; skips
+    // never got one, so the two counts must land exactly on the number of
+    // finished cycles.
+    expect(starts.length).toBe(finished.length);
+  });
+
   it('derives daemon options from runtime config', () => {
     const options = daemonOptionsFromConfig({
       runIntervalMinutes: RUN_INTERVAL_MINUTES_DEFAULT,

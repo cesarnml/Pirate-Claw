@@ -149,18 +149,65 @@ export type CycleSnapshot = {
   durationMs: number;
 };
 
+/** The three independent busy locks `runDaemonLoop` actually enforces (see
+ * src/daemon.ts): 'run' and 'reconcile' share a single lock ('main'), while
+ * the TMDB and Plex background refreshes each get their own. */
+export type CycleBucket = 'main' | 'tmdb' | 'plex';
+
+export type CycleStress = {
+  /** True from the moment the cycle starts until it completes or fails —
+   * never true for a skip, since a skip means the lock was already held. */
+  running: boolean;
+  lastDurationMs: number | null;
+  /** Consecutive times this bucket's cycle was skipped (already_running)
+   * since it last completed or failed. Resets to 0 on completion/failure.
+   * A run climbing past 1 means new cycles are arriving faster than the
+   * bucket can drain them — the actual "overloaded" signal, as opposed to
+   * a single long-running cycle which is merely "busy". */
+  consecutiveSkips: number;
+};
+
 export type HealthState = {
   startedAt: string;
   lastRunCycle: CycleSnapshot | null;
   lastReconcileCycle: CycleSnapshot | null;
+  cycles: Record<CycleBucket, CycleStress>;
 };
 
 export function createHealthState(): HealthState {
+  const bucket = (): CycleStress => ({
+    running: false,
+    lastDurationMs: null,
+    consecutiveSkips: 0,
+  });
+
   return {
     startedAt: new Date().toISOString(),
     lastRunCycle: null,
     lastReconcileCycle: null,
+    cycles: { main: bucket(), tmdb: bucket(), plex: bucket() },
   };
+}
+
+function bucketForCycleType(type: string): CycleBucket | null {
+  switch (type) {
+    case 'run':
+    case 'reconcile':
+      return 'main';
+    case 'tmdb_refresh':
+      return 'tmdb';
+    case 'plex_refresh':
+      return 'plex';
+    default:
+      return null;
+  }
+}
+
+export function recordCycleStart(health: HealthState, type: string): void {
+  const bucket = bucketForCycleType(type);
+  if (!bucket) return;
+
+  health.cycles[bucket].running = true;
 }
 
 export function recordCycleInHealth(
@@ -179,6 +226,41 @@ export function recordCycleInHealth(
   } else if (result.type === 'reconcile') {
     health.lastReconcileCycle = snapshot;
   }
+
+  const bucket = bucketForCycleType(result.type);
+  if (!bucket) return;
+
+  const stress = health.cycles[bucket];
+  if (result.status === 'skipped') {
+    stress.consecutiveSkips += 1;
+    return;
+  }
+
+  stress.running = false;
+  stress.lastDurationMs = result.durationMs;
+  stress.consecutiveSkips = 0;
+}
+
+/** A bucket that has skipped 2+ times in a row (queued faster than it
+ * drains) counts as overloaded, taking priority over merely-running
+ * buckets. Threshold of 2 rather than 1 avoids flagging a single ordinary
+ * skip (e.g. reconcile firing while run is still mid-cycle) as overload. */
+const OVERLOAD_SKIP_THRESHOLD = 2;
+
+export type DaemonStress = 'idle' | 'busy' | 'overloaded';
+
+export function computeDaemonStress(health: HealthState): DaemonStress {
+  const buckets = Object.values(health.cycles);
+
+  if (buckets.some((b) => b.consecutiveSkips >= OVERLOAD_SKIP_THRESHOLD)) {
+    return 'overloaded';
+  }
+
+  if (buckets.some((b) => b.running)) {
+    return 'busy';
+  }
+
+  return 'idle';
 }
 
 export type ApiFetchDeps = {
@@ -1581,6 +1663,8 @@ export function createApiFetch(
         startedAt: health.startedAt,
         lastRunCycle: health.lastRunCycle,
         lastReconcileCycle: health.lastReconcileCycle,
+        cycles: health.cycles,
+        stress: computeDaemonStress(health),
       });
     }
 

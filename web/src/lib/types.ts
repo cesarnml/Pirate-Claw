@@ -429,11 +429,23 @@ export type CycleSnapshot = {
 	durationMs?: number;
 };
 
+export type DaemonCycleBucket = 'main' | 'tmdb' | 'plex';
+
+export type DaemonCycleStress = {
+	running: boolean;
+	lastDurationMs: number | null;
+	consecutiveSkips: number;
+};
+
+export type DaemonStress = 'idle' | 'busy' | 'overloaded';
+
 export type DaemonHealth = {
 	uptime: number;
 	startedAt: string;
 	lastRunCycle?: CycleSnapshot;
 	lastReconcileCycle?: CycleSnapshot;
+	cycles?: Record<DaemonCycleBucket, DaemonCycleStress>;
+	stress?: DaemonStress;
 };
 
 export type SetupState = 'starter' | 'partially_configured' | 'ready';

@@ -1,15 +1,51 @@
 <script lang="ts">
-	import type { PlexAuthState } from '$lib/types';
+	import type { DaemonStress, PlexAuthState } from '$lib/types';
 
 	type SidebarPlexAuthState = PlexAuthState | 'unavailable';
 
 	interface Props {
 		daemonUptime: string;
 		daemonHealthy: boolean;
+		/** Cycle load, meaningful only while daemonHealthy — unreachable
+		 * always wins and shows as unhealthy regardless of this value. */
+		daemonStress: DaemonStress;
 		transmissionConnected: boolean;
 		plexAuthState: SidebarPlexAuthState;
 	}
-	let { daemonUptime, daemonHealthy, transmissionConnected, plexAuthState }: Props = $props();
+	let { daemonUptime, daemonHealthy, daemonStress, transmissionConnected, plexAuthState }: Props =
+		$props();
+
+	// Daemon dot: rose always wins (unreachable). When reachable, idle is
+	// emerald same as every other "all good" dot; busy/overloaded get their
+	// own shades so a glance can tell "working normally" from "falling
+	// behind" without reusing rose (reserved for unreachable) or amber
+	// (already means "degraded" on the Transmission/Plex rows).
+	const daemonStatus = $derived.by(() => {
+		if (!daemonHealthy) {
+			return { label: 'Unavailable', dotClass: 'bg-rose-400', title: 'Daemon unavailable' };
+		}
+		switch (daemonStress) {
+			case 'overloaded':
+				return {
+					label: `Overloaded · up ${daemonUptime}`,
+					dotClass: 'bg-orange-500',
+					title: 'Daemon overloaded — cycles are queuing up faster than they finish'
+				};
+			case 'busy':
+				return {
+					label: `Busy · up ${daemonUptime}`,
+					dotClass: 'bg-amber-400',
+					title: 'Daemon busy — a cycle is running'
+				};
+			case 'idle':
+			default:
+				return {
+					label: daemonUptime,
+					dotClass: 'bg-emerald-400',
+					title: `Daemon · up ${daemonUptime}`
+				};
+		}
+	});
 
 	const plexStatus = $derived.by(() => {
 		switch (plexAuthState) {
@@ -62,14 +98,12 @@
 					Daemon
 				</p>
 				<p class="text-foreground mt-1 text-sm font-medium">
-					{daemonUptime}
+					{daemonStatus.label}
 				</p>
 			</div>
 			<div
-				class="h-2.5 w-2.5 shrink-0 rounded-full"
-				class:bg-emerald-400={daemonHealthy}
-				class:bg-rose-400={!daemonHealthy}
-				title={daemonHealthy ? `Daemon · up ${daemonUptime}` : 'Daemon unavailable'}
+				class={`h-2.5 w-2.5 shrink-0 rounded-full ${daemonStatus.dotClass}`}
+				title={daemonStatus.title}
 			></div>
 		</div>
 
@@ -110,11 +144,7 @@
 <div class="border-border bg-card/55 mt-auto hidden border-t p-3 md:block lg:hidden">
 	<div class="group relative rounded-2xl border border-white/8 bg-black/10 p-3 backdrop-blur-sm">
 		<div class="flex flex-col items-center gap-3">
-			<div
-				class="h-2.5 w-2.5 shrink-0 rounded-full"
-				class:bg-emerald-400={daemonHealthy}
-				class:bg-rose-400={!daemonHealthy}
-			></div>
+			<div class={`h-2.5 w-2.5 shrink-0 rounded-full ${daemonStatus.dotClass}`}></div>
 			<div
 				class="h-2.5 w-2.5 shrink-0 rounded-full"
 				class:bg-emerald-400={transmissionConnected}
@@ -132,13 +162,8 @@
 					>Daemon</span
 				>
 				<div class="flex items-center gap-1.5">
-					<span class="text-foreground text-xs">{daemonHealthy ? daemonUptime : 'Unavailable'}</span
-					>
-					<div
-						class="h-2 w-2 shrink-0 rounded-full"
-						class:bg-emerald-400={daemonHealthy}
-						class:bg-rose-400={!daemonHealthy}
-					></div>
+					<span class="text-foreground text-xs">{daemonStatus.label}</span>
+					<div class={`h-2 w-2 shrink-0 rounded-full ${daemonStatus.dotClass}`}></div>
 				</div>
 			</div>
 			<div class="mt-2 flex items-center justify-between gap-2">
@@ -178,14 +203,12 @@
 					Daemon
 				</p>
 				<p class="text-foreground mt-1 text-sm font-medium">
-					{daemonUptime}
+					{daemonStatus.label}
 				</p>
 			</div>
 			<div
-				class="h-2.5 w-2.5 shrink-0 rounded-full"
-				class:bg-emerald-400={daemonHealthy}
-				class:bg-rose-400={!daemonHealthy}
-				title={daemonHealthy ? `Daemon · up ${daemonUptime}` : 'Daemon unavailable'}
+				class={`h-2.5 w-2.5 shrink-0 rounded-full ${daemonStatus.dotClass}`}
+				title={daemonStatus.title}
 			></div>
 		</div>
 

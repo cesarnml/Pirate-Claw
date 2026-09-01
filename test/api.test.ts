@@ -16,9 +16,11 @@ import {
   buildMovieBreakdowns,
   buildShowBreakdowns,
   classifyTransmissionUrl,
+  computeDaemonStress,
   createApiFetch,
   createHealthState,
   recordCycleInHealth,
+  recordCycleStart,
   redactConfig,
 } from '../src/api';
 import type { AppConfig } from '../src/config';
@@ -722,6 +724,56 @@ describe('GET /api/health', () => {
     });
     expect(body.lastReconcileCycle).toBeNull();
   });
+
+  it('reports idle stress and empty cycle buckets by default', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+
+    const response = await handler(new Request('http://localhost/api/health'));
+    const body = await response.json();
+
+    expect(body.stress).toBe('idle');
+    expect(body.cycles).toEqual({
+      main: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+      tmdb: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+      plex: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+    });
+  });
+
+  it('reports busy stress while a cycle is running', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+
+    recordCycleStart(deps.health, 'reconcile');
+
+    const response = await handler(new Request('http://localhost/api/health'));
+    const body = await response.json();
+
+    expect(body.stress).toBe('busy');
+    expect(body.cycles.main.running).toBe(true);
+  });
+
+  it('reports overloaded stress once a bucket skips repeatedly', async () => {
+    const deps = createDeps();
+    const handler = createApiFetch(deps);
+
+    const skip: CycleResult = {
+      type: 'plex_refresh',
+      status: 'skipped',
+      startedAt: '2026-01-01T00:00:00Z',
+      completedAt: '2026-01-01T00:00:00Z',
+      durationMs: 0,
+      skipReason: 'already_running',
+    };
+    recordCycleInHealth(deps.health, skip);
+    recordCycleInHealth(deps.health, skip);
+
+    const response = await handler(new Request('http://localhost/api/health'));
+    const body = await response.json();
+
+    expect(body.stress).toBe('overloaded');
+    expect(body.cycles.plex.consecutiveSkips).toBe(2);
+  });
 });
 
 describe('GET /api/status', () => {
@@ -1024,6 +1076,109 @@ describe('recordCycleInHealth', () => {
 
     expect(health.lastRunCycle!.status).toBe('failed');
     expect(health.lastRunCycle!.startedAt).toBe('2026-01-01T00:01:00Z');
+  });
+
+  it("'run' and 'reconcile' share the 'main' bucket", () => {
+    const health = createHealthState();
+    recordCycleStart(health, 'run');
+
+    expect(health.cycles.main.running).toBe(true);
+
+    recordCycleInHealth(health, {
+      type: 'reconcile',
+      status: 'completed',
+      startedAt: '2026-01-01T00:00:00Z',
+      completedAt: '2026-01-01T00:00:01Z',
+      durationMs: 1000,
+    });
+
+    expect(health.cycles.main.running).toBe(false);
+    expect(health.cycles.main.lastDurationMs).toBe(1000);
+  });
+
+  it('resets consecutiveSkips on the next completion or failure', () => {
+    const health = createHealthState();
+    recordCycleInHealth(health, {
+      type: 'tmdb_refresh',
+      status: 'skipped',
+      startedAt: '2026-01-01T00:00:00Z',
+      completedAt: '2026-01-01T00:00:00Z',
+      durationMs: 0,
+      skipReason: 'already_running',
+    });
+    expect(health.cycles.tmdb.consecutiveSkips).toBe(1);
+
+    recordCycleInHealth(health, {
+      type: 'tmdb_refresh',
+      status: 'failed',
+      startedAt: '2026-01-01T00:01:00Z',
+      completedAt: '2026-01-01T00:01:01Z',
+      durationMs: 1000,
+      error: 'boom',
+    });
+    expect(health.cycles.tmdb.consecutiveSkips).toBe(0);
+    expect(health.cycles.tmdb.running).toBe(false);
+  });
+
+  it('ignores unrecognized cycle types for bucket tracking', () => {
+    const health = createHealthState();
+    recordCycleStart(health, 'some_future_cycle');
+    recordCycleInHealth(health, {
+      type: 'some_future_cycle',
+      status: 'completed',
+      startedAt: '2026-01-01T00:00:00Z',
+      completedAt: '2026-01-01T00:00:01Z',
+      durationMs: 1000,
+    });
+
+    expect(health.cycles).toEqual({
+      main: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+      tmdb: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+      plex: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+    });
+  });
+});
+
+describe('computeDaemonStress', () => {
+  it('is idle when nothing is running or skipping', () => {
+    expect(computeDaemonStress(createHealthState())).toBe('idle');
+  });
+
+  it('is busy when any bucket is running', () => {
+    const health = createHealthState();
+    recordCycleStart(health, 'plex_refresh');
+    expect(computeDaemonStress(health)).toBe('busy');
+  });
+
+  it('is overloaded once a bucket has skipped twice in a row, even over busy', () => {
+    const health = createHealthState();
+    recordCycleStart(health, 'run');
+    const skip: CycleResult = {
+      type: 'tmdb_refresh',
+      status: 'skipped',
+      startedAt: '2026-01-01T00:00:00Z',
+      completedAt: '2026-01-01T00:00:00Z',
+      durationMs: 0,
+      skipReason: 'already_running',
+    };
+    recordCycleInHealth(health, skip);
+    recordCycleInHealth(health, skip);
+
+    expect(computeDaemonStress(health)).toBe('overloaded');
+  });
+
+  it('does not flag overload on a single skip', () => {
+    const health = createHealthState();
+    recordCycleInHealth(health, {
+      type: 'plex_refresh',
+      status: 'skipped',
+      startedAt: '2026-01-01T00:00:00Z',
+      completedAt: '2026-01-01T00:00:00Z',
+      durationMs: 0,
+      skipReason: 'already_running',
+    });
+
+    expect(computeDaemonStress(health)).toBe('idle');
   });
 });
 

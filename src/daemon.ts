@@ -42,6 +42,11 @@ export async function runDaemonLoop(input: {
   signal: AbortSignal;
   log?: (message: string) => void;
   onCycleResult?: (result: CycleResult) => void;
+  /** Fired the instant a cycle actually begins running (after the
+   * already-running guard passes) — never fired for a skipped cycle. Lets
+   * callers track "is the daemon busy right now", which `onCycleResult`
+   * alone can't answer since it only reports after the fact. */
+  onCycleStart?: (type: string) => void;
   fetch?: (request: Request) => Response | Promise<Response>;
 }): Promise<void> {
   const { runCycle, reconcileCycle, options, signal } = input;
@@ -99,6 +104,22 @@ export async function runDaemonLoop(input: {
       log(`cycle result callback failed: ${message}`);
     }
   };
+
+  // Mirrors emitCycleResult's try/catch: called between setting the busy
+  // flag and entering the try/finally that clears it, so a throwing
+  // callback here must not propagate — it would leave that bucket's busy
+  // flag stuck true forever, wedging the cycle as permanently "already
+  // running".
+  const emitCycleStart = (type: string): void => {
+    if (!input.onCycleStart) return;
+
+    try {
+      input.onCycleStart(type);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`cycle start callback failed: ${message}`);
+    }
+  };
   let inFlight: Promise<void> | undefined;
   let tmdbInFlight: Promise<void> | undefined;
   let tmdbBusy = false;
@@ -124,6 +145,7 @@ export async function runDaemonLoop(input: {
     }
 
     busy = true;
+    emitCycleStart(type);
 
     try {
       const promise = executeCycle(type, cycle, log, emitCycleResult);
@@ -152,6 +174,7 @@ export async function runDaemonLoop(input: {
       return;
     }
     tmdbBusy = true;
+    emitCycleStart('tmdb_refresh');
     const promise = executeCycle(
       'tmdb_refresh',
       input.tmdbRefreshCycle,
@@ -184,6 +207,7 @@ export async function runDaemonLoop(input: {
       return;
     }
     plexBusy = true;
+    emitCycleStart('plex_refresh');
     const promise = executeCycle(
       'plex_refresh',
       input.plexRefreshCycle,

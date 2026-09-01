@@ -51,6 +51,19 @@
 	}
 
 	const daemonUptime = $derived(formatUptime(data.health?.uptime ?? null));
+	const daemonStress = $derived(data.health?.stress ?? 'idle');
+	// Badge on the collapsed-drawer hamburger: silent when everything's
+	// normal, since that's the common case and the icon already carries a
+	// navigation spinner — only surface a dot when there's something to see.
+	const daemonBadgeClass = $derived(
+		!data.health
+			? 'bg-rose-400'
+			: daemonStress === 'overloaded'
+				? 'bg-orange-500'
+				: daemonStress === 'busy'
+					? 'bg-amber-400'
+					: null
+	);
 	const transmissionConnected = $derived(data.transmissionSession !== null);
 	const plexAuthState = $derived(data.plexAuthState ?? 'unavailable');
 	const isOnboarding = $derived($page.url.pathname === '/onboarding');
@@ -181,6 +194,7 @@
 		<SidebarStatusFooter
 			{daemonUptime}
 			daemonHealthy={!!data.health}
+			{daemonStress}
 			{transmissionConnected}
 			{plexAuthState}
 		/>
@@ -230,10 +244,16 @@
 
 					<button
 						type="button"
-						class="border-border bg-card text-foreground hover:text-primary inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-2xl border"
+						class="border-border bg-card text-foreground hover:text-primary relative inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-2xl border"
 						aria-label="Open navigation menu"
 						onclick={() => mobileNavOpen.set(true)}
 					>
+						{#if daemonBadgeClass}
+							<span
+								class={`border-card absolute top-1.5 right-1.5 h-2 w-2 rounded-full border ${daemonBadgeClass}`}
+								aria-hidden="true"
+							></span>
+						{/if}
 						{#if $navigating?.to}
 							<!-- $navigating?.to, not a bare $navigating check: the
 							     Dashboard's own 5s invalidateAll() poll (live torrent

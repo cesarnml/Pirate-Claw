@@ -12,6 +12,7 @@
 	import type { ActionData, PageData } from './$types';
 	import NetworkPostureBanner from '$lib/components/NetworkPostureBanner.svelte';
 	import ConfigPageHeader from './components/ConfigPageHeader.svelte';
+	import DaemonStatusCard from './components/DaemonStatusCard.svelte';
 	import DeleteShowModal from './components/DeleteShowModal.svelte';
 	import FeedsCard from './components/FeedsCard.svelte';
 	import MoviePolicyCard from './components/MoviePolicyCard.svelte';
@@ -624,6 +625,8 @@
 		</section>
 
 		<div class="grid gap-5 xl:grid-cols-2">
+			<DaemonStatusCard health={data.health} />
+
 			<TransmissionCard
 				{canWrite}
 				{currentEtag}

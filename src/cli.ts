@@ -4,7 +4,12 @@ import { join } from 'node:path';
 
 import type { Database } from 'bun:sqlite';
 
-import { createApiFetch, createHealthState, recordCycleInHealth } from './api';
+import {
+  createApiFetch,
+  createHealthState,
+  recordCycleInHealth,
+  recordCycleStart,
+} from './api';
 import { ensureStarterConfig } from './bootstrap';
 import {
   type AppConfig,
@@ -640,6 +645,7 @@ export async function runCli(argv: string[]): Promise<number> {
           ),
           signal: controller.signal,
           log,
+          onCycleStart: (type) => recordCycleStart(health, type),
           onCycleResult: (result) => {
             recordCycleInHealth(health, result);
             writeCycleArtifact(artifactDir, result);
