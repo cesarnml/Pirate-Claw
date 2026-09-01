@@ -32,7 +32,13 @@ function freshDeps(client: Partial<TmdbHttpClient>): {
 }
 
 function show(title: string): ShowBreakdown {
-  return { normalizedTitle: title, seasons: [] };
+  return {
+    normalizedTitle: title,
+    seasons: [],
+    plexStatus: 'unknown',
+    watchCount: null,
+    lastWatchedAt: null,
+  };
 }
 
 describe('isDormantShow', () => {
