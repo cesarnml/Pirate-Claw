@@ -211,16 +211,12 @@ export async function getMovieCalendar(
   const items = await Promise.all(
     page.map(async (result) => {
       const releaseDate = result.release_date ?? null;
-      let digitalOrPhysicalReleaseDate: string | null = null;
       const cached = deps.releaseDateCache.get(result.id);
-      if (cached) {
-        digitalOrPhysicalReleaseDate = cached.date;
-      } else {
-        digitalOrPhysicalReleaseDate = await deps.releaseDateCache.fetchOnce(
-          result.id,
-          () => deps.client.getUsDigitalOrPhysicalReleaseDate(result.id),
-        );
-      }
+      const digitalOrPhysicalReleaseDate: string | null = cached
+        ? cached.date
+        : await deps.releaseDateCache.fetchOnce(result.id, () =>
+            deps.client.getUsDigitalOrPhysicalReleaseDate(result.id),
+          );
       const estimatedAvailabilityDate =
         !digitalOrPhysicalReleaseDate && releaseDate
           ? addDaysIso(releaseDate, ESTIMATED_AVAILABILITY_OFFSET_DAYS)
