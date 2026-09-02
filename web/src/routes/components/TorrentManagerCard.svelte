@@ -141,6 +141,22 @@
 
 	let menuState = $state<MenuState | null>(null);
 	let inflightAction = $state<string | null>(null);
+	let retryingTransmission = $state(false);
+
+	/** transmissionLoaded false means the daemon's own fetch to Transmission
+	 * failed for this page load — Transmission itself can be perfectly
+	 * healthy (confirmed live: its own web UI loading fine) while this one
+	 * request just timed out, e.g. queued behind other daemon load. Without
+	 * this, that state rendered identically to "confirmed zero torrents,"
+	 * with no way to recover short of a full page reload. */
+	async function retryTransmissionFetch(): Promise<void> {
+		retryingTransmission = true;
+		try {
+			await invalidateAll();
+		} finally {
+			retryingTransmission = false;
+		}
+	}
 
 	const disposeLabels: Record<string, string> = {
 		removed: 'Marked as removed',
@@ -656,7 +672,30 @@
 				{/if}
 			</div>
 		{/if}
-		{#if activeDownloads.length === 0}
+		{#if activeDownloads.length === 0 && !transmissionLoaded}
+			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
+				<p class="text-sm font-medium">Couldn't reach Transmission.</p>
+				<p class="text-muted-foreground mt-2 text-sm">
+					This is usually transient — Transmission itself may be perfectly healthy even though this
+					one fetch failed.
+				</p>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					class="mt-4 rounded-full"
+					disabled={retryingTransmission}
+					onclick={retryTransmissionFetch}
+				>
+					{#if retryingTransmission}
+						<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+						Retrying…
+					{:else}
+						Retry
+					{/if}
+				</Button>
+			</div>
+		{:else if activeDownloads.length === 0}
 			<div class="border-border bg-background/55 rounded-3xl border border-dashed px-5 py-8">
 				<p class="text-sm font-medium">No active downloads right now.</p>
 				<p class="text-muted-foreground mt-2 text-sm">
