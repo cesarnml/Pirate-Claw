@@ -75,10 +75,22 @@
 	// (cached counts, no live fetch) until the operator actually clicks into
 	// them, at which point their full grid is fetched once and cached here.
 	type SeasonFetchState =
-		| { status: 'loading' }
+		| { status: 'loading'; startedAt: number; token: number }
 		| { status: 'error'; message: string }
 		| { status: 'ready'; plexReachable: boolean; season: SeasonWithStatus };
 	let seasonCache = $state<Record<number, SeasonFetchState>>({});
+	// Monotonic counter, one increment per loadSeason call — lets a resolving
+	// fetch tell whether it's still the latest attempt for its season before
+	// writing seasonCache. Without this, a slow original request (see
+	// loadSeason's own doc comment on the "stuck loading" investigation)
+	// finishing after a forced manual retry started could clobber the
+	// retry's result with its own stale one.
+	let seasonLoadAttempts = 0;
+	// A season stuck in 'loading' past this long gets a visible Retry
+	// button — before that, the elapsed-seconds readout alone is enough;
+	// forcing a duplicate daemon round trip for an ordinary few-second wait
+	// would just add load without helping.
+	const SEASON_LOAD_RETRY_THRESHOLD_MS = 8000;
 	let selectedSeason = $state<number | null>(null);
 	let expandedKey = $state<string | null>(null);
 	type LookupState =
@@ -215,11 +227,27 @@
 		return '';
 	}
 
-	async function loadSeason(season: number): Promise<void> {
+	// The daemon round trip this kicks off (Plex show/season live-walk +
+	// TMDB season fetch, see episode-status.ts) can legitimately run long
+	// under contention — confirmed live 2026-09-02: a season stuck on
+	// "Loading season…" for a while wasn't actually hung, it eventually
+	// resolved on its own, but there was no visible sign it was still
+	// working and no way to force a retry (the original guard here bailed
+	// on *any* non-error state, including 'loading'). `force: true` (from
+	// the Retry button below, once SEASON_LOAD_RETRY_THRESHOLD_MS has
+	// passed) bypasses that guard; the `token` check right before each
+	// state write is what keeps a slow original request from clobbering a
+	// forced retry's result (or vice versa) if both happen to resolve.
+	async function loadSeason(season: number, options?: { force?: boolean }): Promise<void> {
 		const existing = seasonCache[season];
-		if (existing && existing.status !== 'error') return;
+		if (existing && existing.status !== 'error' && !options?.force) return;
 
-		seasonCache = { ...seasonCache, [season]: { status: 'loading' } };
+		const token = ++seasonLoadAttempts;
+		const isCurrentAttempt = () => {
+			const current = seasonCache[season];
+			return current?.status === 'loading' && current.token === token;
+		};
+		seasonCache = { ...seasonCache, [season]: { status: 'loading', startedAt: Date.now(), token } };
 		try {
 			const res = await fetch(`/shows/${encodeURIComponent(props.slug)}/episodes?season=${season}`);
 			const body = (await res.json()) as {
@@ -227,6 +255,7 @@
 				plexReachable?: boolean;
 				error?: string;
 			};
+			if (!isCurrentAttempt()) return;
 			if (!res.ok || !body.seasons || body.seasons.length === 0) {
 				seasonCache = {
 					...seasonCache,
@@ -243,6 +272,7 @@
 				}
 			};
 		} catch {
+			if (!isCurrentAttempt()) return;
 			seasonCache = {
 				...seasonCache,
 				[season]: { status: 'error', message: 'Could not reach the API.' }
@@ -443,7 +473,24 @@
 			<AlertDescription>{activeSeasonState.message}</AlertDescription>
 		</Alert>
 	{:else if activeSeasonState?.status === 'loading' || !activeSeasonState}
-		<p class="text-muted-foreground text-sm">Loading season…</p>
+		{@const loadingState = activeSeasonState?.status === 'loading' ? activeSeasonState : null}
+		{@const elapsedMs = loadingState ? now - loadingState.startedAt : 0}
+		<div class="flex flex-wrap items-center gap-3">
+			<p class="text-muted-foreground text-sm">
+				Loading season…{loadingState ? ` (${Math.floor(elapsedMs / 1000)}s)` : ''}
+			</p>
+			{#if loadingState && elapsedMs > SEASON_LOAD_RETRY_THRESHOLD_MS}
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					class="rounded-full"
+					onclick={() => selectedSeason !== null && loadSeason(selectedSeason, { force: true })}
+				>
+					Retry
+				</Button>
+			{/if}
+		</div>
 	{:else}
 		{#if !activeSeasonState.plexReachable}
 			<Alert>

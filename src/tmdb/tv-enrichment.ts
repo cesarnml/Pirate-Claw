@@ -28,6 +28,36 @@ export type TvEnrichDeps = {
 // hits the manual "Refresh TMDB" escape hatch on the show detail page.
 const DORMANT_CACHE_TTL_MULTIPLIER = 6;
 
+// A season whose every known episode aired at least this long ago gets the
+// same extended TTL as a dormant show's own row (see
+// DORMANT_CACHE_TTL_MULTIPLIER), independent of whether the *show* itself
+// is dormant — a back-catalog season of an otherwise still-airing show
+// (season 1 of a show now shooting season 2) was previously stuck on the
+// plain 7-day TTL forever, since isSeasonFinished below is evaluated per
+// season from the episode list TMDB just returned, not from the show-level
+// status/in_production flags loadSeasonEpisodes's callers may or may not
+// have passed through `options.dormant`. The buffer (not "aired == today")
+// gives TMDB room to fix a late title/overview edit shortly after a finale
+// airs before this season is treated as settled.
+const SEASON_FINISHED_BUFFER_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** True once every episode TMDB currently lists for this season has a known
+ * air date and the latest one is comfortably in the past (see
+ * SEASON_FINISHED_BUFFER_MS) — a currently-airing season (any episode with
+ * no air date yet, or a future one) is never "finished," so it keeps
+ * refreshing on the normal short TTL until it actually wraps up. */
+export function isSeasonFinished(episodes: { air_date?: string }[]): boolean {
+  if (episodes.length === 0) return false;
+  let latestAirDate: string | undefined;
+  for (const episode of episodes) {
+    if (!episode.air_date) return false;
+    if (!latestAirDate || episode.air_date > latestAirDate) {
+      latestAirDate = episode.air_date;
+    }
+  }
+  return Date.now() - Date.parse(latestAirDate!) > SEASON_FINISHED_BUFFER_MS;
+}
+
 /** True once TMDB itself says a show is done and not currently in
  * production — both checked together because a 'Returning Series' between
  * seasons can report in_production: false during an ordinary hiatus, so
@@ -206,8 +236,12 @@ export async function loadSeasonEpisodes(
   seasonNumber: number,
   deps: TvEnrichDeps,
   /** `dormant`: the parent show is TMDB-confirmed done (see isDormantShow)
-   * — a past season's episode list won't change once that's true, so this
-   * season's cache row gets the same extended TTL as the show row itself. */
+   * — extends this season's TTL the same way isSeasonFinished below does,
+   * for the case a finished show's final season has some episode with no
+   * air_date on record (isSeasonFinished alone would never call that
+   * "finished"). Most seasons don't need this passed at all: isSeasonFinished
+   * already extends a completed season's TTL from its own episode list,
+   * independent of whether the *show* is dormant — see its doc comment. */
   options?: { forceRefresh?: boolean; dormant?: boolean },
 ): Promise<
   | {
@@ -254,7 +288,7 @@ export async function loadSeasonEpisodes(
       showMatchKey,
       seasonNumber,
       expiresAt: expiresAtIso(
-        options?.dormant
+        options?.dormant || isSeasonFinished(detail.episodes)
           ? deps.cacheTtlMs * DORMANT_CACHE_TTL_MULTIPLIER
           : deps.cacheTtlMs,
       ),

@@ -525,4 +525,144 @@ describe('MissingEpisodesPanel', () => {
 		expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
+
+	// Investigated live 2026-09-02: a season could sit on "Loading season…"
+	// long enough to look hung, with no visible sign it was still working
+	// and no way to force a retry. These pin the fix: an elapsed-seconds
+	// readout, a Retry button once that crosses the threshold, and — the
+	// non-obvious part — that a slow original request finishing *after* a
+	// forced retry started must not clobber the retry's result.
+	describe('a season stuck loading past the retry threshold', () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it('shows an elapsed-seconds readout, then a Retry button once the threshold passes', async () => {
+			let resolveFirstFetch!: (response: Response) => void;
+			fetchMock.mockReturnValueOnce(
+				new Promise<Response>((resolve) => {
+					resolveFirstFetch = resolve;
+				})
+			);
+
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: statusWithMixedEpisodes,
+				episodeStatusError: null,
+				canWrite: true
+			});
+
+			// The "(Ns)" suffix is one interpolated expression alongside
+			// "Loading season…" in the same text node, not a separate
+			// element — a function matcher normalizes whitespace rather than
+			// relying on an exact getByText string.
+			const loadingText = (seconds: number) => (_content: string, element: Element | null) =>
+				element?.tagName === 'P' &&
+				element.textContent?.replace(/\s+/g, ' ').trim() ===
+					`Loading season… (${String(seconds)}s)`;
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Season 1' }));
+			expect(screen.getByText(loadingText(0))).toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+
+			await vi.advanceTimersByTimeAsync(5000);
+			expect(screen.getByText(loadingText(5))).toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+
+			await vi.advanceTimersByTimeAsync(4000);
+			expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+
+			// Clean up the still-pending first fetch so it doesn't leak into
+			// the next test.
+			resolveFirstFetch(new Response(JSON.stringify({ plexReachable: true, seasons: [] })));
+		});
+
+		it('forces a fresh fetch on Retry, and ignores the original slow request if it resolves afterward', async () => {
+			let resolveFirstFetch!: (response: Response) => void;
+			fetchMock.mockReturnValueOnce(
+				new Promise<Response>((resolve) => {
+					resolveFirstFetch = resolve;
+				})
+			);
+
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: statusWithMixedEpisodes,
+				episodeStatusError: null,
+				canWrite: true
+			});
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Season 1' }));
+			await vi.advanceTimersByTimeAsync(9000);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+
+			fetchMock.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						plexReachable: true,
+						seasons: [
+							{
+								season: 1,
+								episodeCountMismatch: false,
+								airedEpisodeCount: 1,
+								episodes: [
+									{
+										episode: 1,
+										name: 'Retried Pilot',
+										airDate: '2026-01-01',
+										plexStatus: 'in_library',
+										manualGrabs: []
+									}
+								]
+							}
+						]
+					}),
+					{ status: 200 }
+				)
+			);
+			await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+
+			await vi.waitFor(() => {
+				expect(screen.getByText('Retried Pilot')).toBeInTheDocument();
+			});
+
+			// The original request finally resolves, well after the retry
+			// already rendered — it must not overwrite the retry's result.
+			resolveFirstFetch(
+				new Response(
+					JSON.stringify({
+						plexReachable: true,
+						seasons: [
+							{
+								season: 1,
+								episodeCountMismatch: false,
+								airedEpisodeCount: 1,
+								episodes: [
+									{
+										episode: 1,
+										name: 'Stale Original Pilot',
+										airDate: '2026-01-01',
+										plexStatus: 'missing',
+										manualGrabs: []
+									}
+								]
+							}
+						]
+					}),
+					{ status: 200 }
+				)
+			);
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(screen.getByText('Retried Pilot')).toBeInTheDocument();
+			expect(screen.queryByText('Stale Original Pilot')).not.toBeInTheDocument();
+		});
+	});
 });

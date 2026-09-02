@@ -7,6 +7,8 @@ import type { TmdbHttpClient } from '../src/tmdb/client';
 import {
   enrichShowBreakdowns,
   isDormantShow,
+  isSeasonFinished,
+  loadSeasonEpisodes,
   type TvEnrichDeps,
 } from '../src/tmdb/tv-enrichment';
 import { tvMatchKey } from '../src/tmdb/keys';
@@ -126,6 +128,80 @@ describe('enrichShowBreakdowns cache TTL', () => {
 
     // A show TMDB never told us a status for must not be silently treated
     // as dormant — that would go stale forever on a misread.
+    const ttl = Date.parse(row!.expiresAt) - before;
+    expect(ttl).toBeLessThanOrEqual(deps.cacheTtlMs + 1000);
+  });
+});
+
+describe('isSeasonFinished', () => {
+  it('is false for an empty episode list', () => {
+    expect(isSeasonFinished([])).toBe(false);
+  });
+
+  it('is false when any episode has no air date yet', () => {
+    expect(
+      isSeasonFinished([{ air_date: '2020-01-01' }, { air_date: undefined }]),
+    ).toBe(false);
+  });
+
+  it('is false when the latest air date is recent (within the settle buffer)', () => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    expect(isSeasonFinished([{ air_date: yesterday }])).toBe(false);
+  });
+
+  it('is true once every episode has aired and the latest is well past the settle buffer', () => {
+    expect(
+      isSeasonFinished([
+        { air_date: '2020-01-01' },
+        { air_date: '2020-02-01' },
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe('loadSeasonEpisodes cache TTL', () => {
+  it('caches a finished season (every episode aired long ago) far longer than a normal one, even for a non-dormant show', async () => {
+    const { deps, cache } = freshDeps({
+      getTvSeason: async () => ({
+        season_number: 1,
+        episodes: [
+          { episode_number: 1, air_date: '2020-01-01' },
+          { episode_number: 2, air_date: '2020-01-08' },
+        ],
+      }),
+    });
+
+    const before = Date.now();
+    await loadSeasonEpisodes('a-show', 1, 1, deps);
+    const row = cache.getTvSeason('a-show', 1);
+
+    const ttl = Date.parse(row!.expiresAt) - before;
+    // No `dormant` passed at all — this must extend purely from the
+    // season's own episode list, since the missing-episodes feature
+    // (episode-status.ts) never threads the show's dormant flag through.
+    expect(ttl).toBeGreaterThan(deps.cacheTtlMs * 2);
+  });
+
+  it('caches a currently-airing season at the normal TTL', async () => {
+    const farFuture = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const { deps, cache } = freshDeps({
+      getTvSeason: async () => ({
+        season_number: 1,
+        episodes: [
+          { episode_number: 1, air_date: '2020-01-01' },
+          { episode_number: 2, air_date: farFuture },
+        ],
+      }),
+    });
+
+    const before = Date.now();
+    await loadSeasonEpisodes('a-show', 1, 1, deps);
+    const row = cache.getTvSeason('a-show', 1);
+
     const ttl = Date.parse(row!.expiresAt) - before;
     expect(ttl).toBeLessThanOrEqual(deps.cacheTtlMs + 1000);
   });
