@@ -3,7 +3,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { formatUptime } from '$lib/helpers';
-	import { RESTART_RETURN_TIMEOUT_SECONDS } from '$lib/restart-roundtrip';
 	import type { DaemonCycleStress, DaemonHealth, DaemonStress, RuntimeConfig } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ServerIcon from '@lucide/svelte/icons/server';
@@ -17,12 +16,8 @@
 		writeDisabledTooltip: string;
 		runtime: RuntimeConfig;
 		showRows: string[];
-		restarting: boolean;
-		restartPhase: 'idle' | 'requested' | 'restarting' | 'back_online' | 'failed_to_return';
-		runtimeChangesPending: boolean;
 		runtimeMessage?: string;
 		enhanceSaveRuntime: SubmitFunction;
-		enhanceRestartDaemon: SubmitFunction;
 	}
 
 	const {
@@ -32,19 +27,11 @@
 		writeDisabledTooltip,
 		runtime,
 		showRows,
-		restarting,
-		restartPhase,
-		runtimeChangesPending,
 		runtimeMessage,
-		enhanceSaveRuntime,
-		enhanceRestartDaemon
+		enhanceSaveRuntime
 	}: Props = $props();
 
 	const stress = $derived<DaemonStress>(health?.stress ?? 'idle');
-	// Restart Daemon should visually pop once it's actually the thing to do
-	// — an always-muted outline button reads the same whether there's
-	// nothing to restart for or a saved config waiting on you.
-	const restartActionable = $derived(canWrite && !restarting && runtimeChangesPending);
 
 	const statusCopy: Record<DaemonStress, { label: string; dotClass: string }> = {
 		idle: { label: 'Idle', dotClass: 'bg-emerald-400' },
@@ -272,43 +259,6 @@
 					Revision <code>{currentEtag ?? 'missing'}</code>
 				</p>
 			</div>
-		</form>
-
-		<form
-			method="POST"
-			action="?/restartDaemon"
-			class="flex flex-wrap items-center gap-3 border-t border-white/8 pt-4"
-			use:enhance={enhanceRestartDaemon}
-		>
-			<Button
-				type="submit"
-				variant={restartActionable ? 'default' : 'outline'}
-				class="rounded-full px-5"
-				disabled={!canWrite || restarting || !runtimeChangesPending}
-				title={!canWrite ? writeDisabledTooltip : undefined}
-			>
-				{#if restarting}
-					Restarting…
-				{:else}
-					Restart Daemon
-				{/if}
-			</Button>
-			<p class="text-muted-foreground text-xs">
-				{#if restartPhase === 'requested'}
-					Restart requested. Waiting for the daemon to go away.
-				{:else if restartPhase === 'restarting'}
-					Daemon restarting. This page will confirm when it comes back.
-				{:else if restartPhase === 'back_online'}
-					Daemon back online. Return proof is recorded and runtime changes are live.
-				{:else if restartPhase === 'failed_to_return'}
-					Daemon failed to return within {RESTART_RETURN_TIMEOUT_SECONDS} seconds. Check the host, then
-					retry or restart manually.
-				{:else if runtimeChangesPending}
-					Runtime changes are saved and waiting for restart.
-				{:else}
-					Restart stays disabled until runtime settings change.
-				{/if}
-			</p>
 		</form>
 	</CardContent>
 </Card>

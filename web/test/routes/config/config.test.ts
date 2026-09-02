@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { RESTART_RETURN_TIMEOUT_SECONDS } from '../../../src/lib/restart-roundtrip';
 import Page from '../../../src/routes/config/+page.svelte';
-import DaemonStatusCard from '../../../src/routes/config/components/DaemonStatusCard.svelte';
+import RuntimeRestartBar from '../../../src/routes/config/components/RuntimeRestartBar.svelte';
 import type { AppConfig } from '$lib/types';
 
 vi.mock('svelte-sonner', () => ({
@@ -107,7 +107,10 @@ describe('/config', () => {
 		expect(screen.queryByRole('button', { name: 'Save movies policy' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save TMDB' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
+		// RuntimeRestartBar only renders once a save actually needs a restart —
+		// nothing pending here, so the control isn't in the document at all
+		// rather than present-but-disabled.
+		expect(screen.queryByRole('button', { name: 'Restart Daemon' })).not.toBeInTheDocument();
 		expect(screen.queryByText('Storage Pool')).not.toBeInTheDocument();
 		expect(screen.queryByText('Transfer Rate')).not.toBeInTheDocument();
 		expect(document.body).toHaveTextContent('DL 5.01 TB');
@@ -293,7 +296,7 @@ describe('/config', () => {
 		expect(removeButton).toHaveClass('opacity-0');
 	});
 
-	it('renders restart button disabled by default', () => {
+	it('renders no restart control by default (nothing pending a restart)', () => {
 		renderPage({
 			config: mockConfig,
 			error: null,
@@ -301,7 +304,7 @@ describe('/config', () => {
 			canWrite: true,
 			onboarding: null
 		});
-		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
+		expect(screen.queryByRole('button', { name: 'Restart Daemon' })).not.toBeInTheDocument();
 	});
 
 	it('renders resume onboarding banner for partial setup', () => {
@@ -380,7 +383,7 @@ describe('/config', () => {
 		expect(screen.queryByRole('button', { name: 'Save shows' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Save TMDB' })).toBeDisabled();
-		expect(screen.getByRole('button', { name: 'Restart Daemon' })).toBeDisabled();
+		expect(screen.queryByRole('button', { name: 'Restart Daemon' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Add show' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Add year' })).toBeDisabled();
 		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toBeDisabled();
@@ -389,17 +392,12 @@ describe('/config', () => {
 	});
 
 	it('renders failed_to_return guidance when restart proof times out', () => {
-		render(DaemonStatusCard, {
-			health: null,
+		render(RuntimeRestartBar, {
 			canWrite: true,
-			currentEtag: '"rev-1"',
 			writeDisabledTooltip: '',
-			runtime: mockConfig.runtime,
-			showRows: ['The Show'],
 			restarting: false,
 			restartPhase: 'failed_to_return',
-			runtimeChangesPending: false,
-			enhanceSaveRuntime: vi.fn(),
+			runtimeChangesPending: true,
 			enhanceRestartDaemon: vi.fn()
 		});
 
@@ -410,21 +408,16 @@ describe('/config', () => {
 		).toBeInTheDocument();
 	});
 
-	it('renders requested, restarting, and back online guidance with human-readable copy', async () => {
+	it('renders requested and restarting guidance with human-readable copy, then disappears once resolved', async () => {
 		const baseProps = {
-			health: null,
 			canWrite: true,
-			currentEtag: '"rev-1"',
 			writeDisabledTooltip: '',
-			runtime: mockConfig.runtime,
-			showRows: ['The Show'],
 			restarting: false,
-			runtimeChangesPending: false,
-			enhanceSaveRuntime: vi.fn(),
+			runtimeChangesPending: true,
 			enhanceRestartDaemon: vi.fn()
 		};
 
-		const rendered = render(DaemonStatusCard, {
+		const rendered = render(RuntimeRestartBar, {
 			...baseProps,
 			restartPhase: 'requested'
 		});
@@ -440,12 +433,15 @@ describe('/config', () => {
 			screen.getByText('Daemon restarting. This page will confirm when it comes back.')
 		).toBeInTheDocument();
 
+		// back_online resolves runtimeChangesPending to false (see +page.svelte's
+		// pollRestartStatus clearRuntimeChangesPending call) — the bar's whole
+		// job is done at that point, so it renders nothing rather than a
+		// lingering "back online" message (the toast already covers that).
 		await rendered.rerender({
 			...baseProps,
-			restartPhase: 'back_online'
+			restartPhase: 'back_online',
+			runtimeChangesPending: false
 		});
-		expect(
-			screen.getByText('Daemon back online. Return proof is recorded and runtime changes are live.')
-		).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Restart Daemon' })).not.toBeInTheDocument();
 	});
 });

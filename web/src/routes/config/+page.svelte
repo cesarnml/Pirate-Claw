@@ -20,6 +20,7 @@
 	import PlexTvSyncCard from './components/PlexTvSyncCard.svelte';
 	import RemoveMovieYearModal from './components/RemoveMovieYearModal.svelte';
 	import RestartingAlert from './components/RestartingAlert.svelte';
+	import RuntimeRestartBar from './components/RuntimeRestartBar.svelte';
 	import ShowWatchlistEditor from './components/ShowWatchlistEditor.svelte';
 	import TmdbPanel from './components/TmdbPanel.svelte';
 	import TransmissionCard from './components/TransmissionCard.svelte';
@@ -805,6 +806,15 @@
 <section class="space-y-6">
 	<ConfigPageHeader {canWrite} onboarding={data.onboarding} />
 
+	<RuntimeRestartBar
+		{canWrite}
+		writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+		restarting={restartInProgress}
+		{restartPhase}
+		{runtimeChangesPending}
+		{enhanceRestartDaemon}
+	/>
+
 	{#if data.networkPosture === 'unacknowledged'}
 		<NetworkPostureBanner />
 	{/if}
@@ -844,12 +854,8 @@
 				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
 				runtime={data.config.runtime}
 				{showRows}
-				restarting={restartInProgress}
-				{restartPhase}
-				{runtimeChangesPending}
 				runtimeMessage={form?.runtimeMessage}
 				{enhanceSaveRuntime}
-				{enhanceRestartDaemon}
 			/>
 
 			<TransmissionCard
