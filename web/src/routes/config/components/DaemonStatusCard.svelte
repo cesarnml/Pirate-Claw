@@ -41,6 +41,10 @@
 	}: Props = $props();
 
 	const stress = $derived<DaemonStress>(health?.stress ?? 'idle');
+	// Restart Daemon should visually pop once it's actually the thing to do
+	// — an always-muted outline button reads the same whether there's
+	// nothing to restart for or a saved config waiting on you.
+	const restartActionable = $derived(canWrite && !restarting && runtimeChangesPending);
 
 	const statusCopy: Record<DaemonStress, { label: string; dotClass: string }> = {
 		idle: { label: 'Idle', dotClass: 'bg-emerald-400' },
@@ -278,7 +282,7 @@
 		>
 			<Button
 				type="submit"
-				variant="outline"
+				variant={restartActionable ? 'default' : 'outline'}
 				class="rounded-full px-5"
 				disabled={!canWrite || restarting || !runtimeChangesPending}
 				title={!canWrite ? writeDisabledTooltip : undefined}

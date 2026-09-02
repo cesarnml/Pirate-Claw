@@ -30,5 +30,5 @@
 	{#if mode === 'immediate'}
 		<span class="size-1.5 rounded-full bg-emerald-400"></span>
 	{/if}
-	{mode === 'restart' ? 'Restart to apply' : 'Applies immediately'}
+	{mode === 'restart' ? 'Changes require restart' : 'Applies immediately'}
 </span>

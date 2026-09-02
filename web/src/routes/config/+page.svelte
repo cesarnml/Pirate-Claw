@@ -95,7 +95,37 @@
 	let showAddDraftActive = $state(false);
 	let showAddDraftName = $state('');
 	let showAddDraftInputEl = $state<HTMLInputElement | null>(null);
-	let runtimeChangesPending = $state(false);
+	// Persisted (see markRuntimeChangesPending/RUNTIME_PENDING_STORAGE_KEY
+	// below) rather than a plain boolean flag: a bare $state(false) here
+	// meant a reload after saving Runtime Controls — including the reload
+	// the old form-reset bug used to force — silently lost "there's a saved
+	// config the daemon hasn't picked up yet," re-enabling nothing telling
+	// the user the page no longer reflects what's actually running.
+	let runtimeChangesSavedAt = $state<string | null>(null);
+	// True only while we know of a save that the CURRENT daemon process
+	// hasn't had a chance to load yet — comparing against health.startedAt
+	// (not just "did we see a back_online proof") means this also
+	// self-corrects for a restart the daemon underwent for any other
+	// reason (manual docker restart, crash-restart, etc.), not only the
+	// in-app Restart Daemon round trip.
+	const runtimeChangesPending = $derived.by(() => {
+		if (!runtimeChangesSavedAt) return false;
+		const startedAt = data.health?.startedAt;
+		// Can't disprove "still pending" without knowing when the daemon
+		// currently serving requests actually started — assume worst case
+		// (still pending) rather than silently clearing the warning.
+		if (!startedAt) return true;
+		return new Date(runtimeChangesSavedAt).getTime() > new Date(startedAt).getTime();
+	});
+	// Tidy up the persisted marker once it's resolved (daemon restarted
+	// after our save, by any means) rather than leaving a stale entry that
+	// would wrongly read as "still pending" if health becomes briefly
+	// unreachable again later for an unrelated reason.
+	$effect(() => {
+		if (runtimeChangesSavedAt && !runtimeChangesPending) {
+			clearRuntimeChangesPending();
+		}
+	});
 	let restarting = $state(false);
 	let restartPhase = $state<
 		'idle' | 'requested' | 'restarting' | 'back_online' | 'failed_to_return'
@@ -166,7 +196,45 @@
 		}
 	}
 
+	// Backs runtimeChangesSavedAt/runtimeChangesPending above — same
+	// survive-a-reload rationale as the restart round-trip storage, but for
+	// "there's a saved config the running daemon hasn't loaded yet" rather
+	// than "a restart is in progress."
+	const RUNTIME_PENDING_STORAGE_KEY = 'pirate-claw:runtime-changes-saved-at';
+
+	function readRuntimeChangesSavedAt(): string | null {
+		try {
+			const raw = window.localStorage.getItem(RUNTIME_PENDING_STORAGE_KEY);
+			return typeof raw === 'string' && raw.length > 0 ? raw : null;
+		} catch {
+			return null;
+		}
+	}
+
+	function markRuntimeChangesPending() {
+		const savedAt = new Date().toISOString();
+		runtimeChangesSavedAt = savedAt;
+		try {
+			window.localStorage.setItem(RUNTIME_PENDING_STORAGE_KEY, savedAt);
+		} catch {
+			// Best-effort — worst case a reload loses track of the pending
+			// save, same as before this existed.
+		}
+	}
+
+	function clearRuntimeChangesPending() {
+		runtimeChangesSavedAt = null;
+		try {
+			window.localStorage.removeItem(RUNTIME_PENDING_STORAGE_KEY);
+		} catch {
+			// Nothing to do if storage is unavailable.
+		}
+	}
+
 	onMount(() => {
+		runtimeChangesSavedAt = readRuntimeChangesSavedAt();
+
+
 		// A pending entry only means something if this load itself couldn't
 		// reach the API — if data.config/data.error say we're fine, the
 		// daemon is already back (we just missed the notification, e.g. the
@@ -446,7 +514,7 @@
 			clearRestartPolling();
 			restartRequestId = null;
 			restartRequestedAt = null;
-			runtimeChangesPending = false;
+			clearRuntimeChangesPending();
 			clearPendingRestart(requestId);
 			toast('Daemon back online — restart proof confirmed.', 'success');
 			await invalidateAll();
@@ -525,7 +593,7 @@
 	const enhanceSaveRuntime: SubmitFunction = () => {
 		return async ({ result, update }) => {
 			if (result.type === 'success') {
-				runtimeChangesPending = true;
+				markRuntimeChangesPending();
 				toast('Saved — restart daemon to apply runtime changes.', 'success');
 			} else if (result.type === 'failure') {
 				if (result.status === 409) {
@@ -534,7 +602,14 @@
 					toast('Save failed — see errors above', 'error');
 				}
 			}
-			await update();
+			// Every other save handler in this file passes { reset: false } —
+			// this one didn't, so use:enhance's default behavior (calling the
+			// underlying <form>'s native .reset()) wiped every Runtime
+			// Controls input back to blank/placeholder right after a
+			// successful save, even though the save itself worked (a reload
+			// showed the real values). Found 2026-09-02 QA-testing this same
+			// card's other bugs.
+			await update({ reset: false });
 		};
 	};
 
@@ -548,7 +623,11 @@
 				const message = (result.data as { queueCapsMessage?: string })?.queueCapsMessage;
 				toast(message ?? 'Save failed — see errors above', 'error');
 			}
-			await update();
+			// downloadQueueSize/seedQueueSize are plain uncontrolled
+			// value={...} inputs (TransmissionCard.svelte) — same shape as
+			// the Runtime Controls fields fixed alongside this one, and
+			// would blank the same way without { reset: false }.
+			await update({ reset: false });
 		};
 	};
 
@@ -669,7 +748,11 @@
 				const restartStatus =
 					(result.data as { restartStatus?: RestartStatus | null } | null)?.restartStatus ?? null;
 				if (restartStatus?.state === 'requested') {
-					runtimeChangesPending = false;
+					// Deliberately NOT clearing runtimeChangesPending here — the
+					// daemon hasn't actually restarted yet, so the saved config
+					// genuinely is still pending; the Restart Daemon button
+					// stays disabled through restartInProgress (restartPhase
+					// moving to 'requested' below), not by faking this false.
 					restartRequestId = restartStatus.requestId;
 					restartRequestedAt = restartStatus.requestedAt;
 					restartPhase = 'requested';
