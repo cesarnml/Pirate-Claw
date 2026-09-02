@@ -18,6 +18,7 @@
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import LinkIcon from '@lucide/svelte/icons/link';
 
 	const props = $props<{
 		slug: string;
@@ -547,12 +548,20 @@
 											</p>
 										{:else}
 											{#each lookup.torrents as torrent (torrent.id)}
+												{@const isAlreadyQueued =
+													episode.manualGrab && episode.manualGrab.rawTitle === torrent.title}
 												<div
 													class="bg-background/50 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
 												>
 													<div class="min-w-0 flex-1 space-y-1">
 														<p class="truncate text-sm font-medium">{torrent.title}</p>
 														<div class="flex flex-wrap gap-2 text-xs">
+															{#if isAlreadyQueued}
+																<Badge class="border-amber-500/30 bg-amber-500/10 text-amber-400">
+																	<LinkIcon class="mr-1 h-3 w-3" />
+																	This is the queued torrent
+																</Badge>
+															{/if}
 															{#if torrent.resolution}
 																<Badge variant="outline">{torrent.resolution}</Badge>
 															{/if}
