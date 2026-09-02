@@ -207,7 +207,7 @@
 		<div class="border-border/60 space-y-3 border-t pt-4">
 			<button
 				type="button"
-				class="text-muted-foreground hover:text-foreground text-sm underline-offset-4 hover:underline"
+				class="text-primary hover:text-primary/80 cursor-pointer text-sm underline underline-offset-4"
 				onclick={() => (manualTokenOpen = !manualTokenOpen)}
 			>
 				{manualTokenOpen ? 'Hide' : 'Have a token already?'} Paste a Plex token manually

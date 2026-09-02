@@ -66,6 +66,16 @@ export type RuntimeConfig = {
    * Lazy API reads still work when background refresh is disabled.
    */
   tmdbRefreshIntervalMinutes?: number;
+  /**
+   * How often the Plex background sweep runs (see `runPlexBackgroundRefresh`),
+   * and — see `isPlexCacheExpired`/`isPlexShowCacheExpired` — the on-demand
+   * cache-freshness window too: a cached Plex status older than 2x this value
+   * reads as stale even outside the sweep. One knob serving both purposes is
+   * a known rough edge (docs/overview/roadmap.md), not something this field
+   * fixes; it only relocated here from the old `plex.refreshIntervalMinutes`.
+   * Zero disables the background sweep; omitted uses the default.
+   */
+  plexRefreshIntervalMinutes?: number;
 };
 
 /** Optional TMDB enrichment (Phase 11). API key may be supplied via env instead. */
@@ -81,8 +91,6 @@ export type TmdbConfig = {
 export type PlexConfig = {
   url: string;
   token: string;
-  /** Zero disables the background pass for local development. */
-  refreshIntervalMinutes: number;
 };
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
@@ -91,6 +99,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   artifactDir: '.pirate-claw/runtime',
   artifactRetentionDays: 7,
   tmdbRefreshIntervalMinutes: 360,
+  plexRefreshIntervalMinutes: 360,
 };
 
 export type AppConfig = {
@@ -114,7 +123,6 @@ const API_PORT_ENV = 'PIRATE_CLAW_API_PORT';
 const API_WRITE_TOKEN_ENV = 'PIRATE_CLAW_API_WRITE_TOKEN';
 const INSTALL_ROOT_ENV = 'PIRATE_CLAW_INSTALL_ROOT';
 const PLEX_TOKEN_ENV = 'PIRATE_CLAW_PLEX_TOKEN';
-const DEFAULT_PLEX_REFRESH_INTERVAL_MINUTES = 30;
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -762,11 +770,6 @@ function validateOptionalPlex(
       env[PLEX_TOKEN_ENV],
       `${path} plex token`,
     ),
-    refreshIntervalMinutes:
-      validateOptionalTmdbRefreshInterval(
-        plex.refreshIntervalMinutes,
-        `${path} plex refreshIntervalMinutes`,
-      ) ?? DEFAULT_PLEX_REFRESH_INTERVAL_MINUTES,
   };
 }
 
@@ -864,6 +867,11 @@ function validateRuntime(
         runtime.tmdbRefreshIntervalMinutes,
         `${path} runtime tmdbRefreshIntervalMinutes`,
       ) ?? DEFAULT_RUNTIME_CONFIG.tmdbRefreshIntervalMinutes,
+    plexRefreshIntervalMinutes:
+      validateOptionalTmdbRefreshInterval(
+        runtime.plexRefreshIntervalMinutes,
+        `${path} runtime plexRefreshIntervalMinutes`,
+      ) ?? DEFAULT_RUNTIME_CONFIG.plexRefreshIntervalMinutes,
   };
 }
 

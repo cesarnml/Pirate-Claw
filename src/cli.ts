@@ -72,6 +72,8 @@ import type { TvEnrichDeps } from './tmdb/tv-enrichment';
 import { resolveTmdbSettings } from './tmdb/settings';
 import { createTransmissionDownloader } from './transmission';
 import { ManualMovieGrabsStore } from './manual-movie-grabs/store';
+import { PlexMovieSyncStateStore } from './plex/movie-sync-state';
+import { PlexTvSyncStateStore } from './plex/tv-sync-state';
 import { TrackedShowsStore } from './tracked-shows/store';
 import { syncTrackedShowsFromConfig } from './tracked-shows/sync';
 
@@ -98,7 +100,7 @@ function plexMovieEnrichDeps(
             manager: credentialManager,
             log: (m: string) => log(`[plex] ${m}`),
           }),
-    refreshIntervalMinutes: config.plex.refreshIntervalMinutes,
+    refreshIntervalMinutes: config.runtime.plexRefreshIntervalMinutes!,
     log: (m: string) => log(`[plex] ${m}`),
   };
 }
@@ -126,7 +128,7 @@ function plexShowEnrichDeps(
             manager: credentialManager,
             log: (m: string) => log(`[plex] ${m}`),
           }),
-    refreshIntervalMinutes: config.plex.refreshIntervalMinutes,
+    refreshIntervalMinutes: config.runtime.plexRefreshIntervalMinutes!,
     log: (m: string) => log(`[plex] ${m}`),
   };
 }
@@ -572,8 +574,9 @@ export async function runCli(argv: string[]): Promise<number> {
         const scheduleTmdbRefresh =
           (tmdbMovies || tmdbShows) && tmdbRefreshIntervalMinutes > 0;
         const plexRefreshIntervalMinutes =
-          config.plex?.refreshIntervalMinutes ?? 0;
-        const schedulePlexRefresh = plexRefreshIntervalMinutes > 0;
+          config.runtime.plexRefreshIntervalMinutes ?? 0;
+        const schedulePlexRefresh =
+          !!config.plex && plexRefreshIntervalMinutes > 0;
 
         if (plexCredentialManager) {
           await plexCredentialManager.startupRenew();
@@ -635,14 +638,13 @@ export async function runCli(argv: string[]): Promise<number> {
                   plexShows,
                   trackedShows,
                   manualMovieGrabs: new ManualMovieGrabsStore(database),
+                  movieSyncState: new PlexMovieSyncStateStore(database),
+                  tvSyncState: new PlexTvSyncStateStore(database),
                   log,
                 });
               }
             : undefined,
-          options: daemonOptionsFromConfig(
-            config.runtime,
-            config.plex?.refreshIntervalMinutes,
-          ),
+          options: daemonOptionsFromConfig(config.runtime),
           signal: controller.signal,
           log,
           onCycleStart: (type) => recordCycleStart(health, type),

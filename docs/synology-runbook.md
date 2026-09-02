@@ -216,8 +216,10 @@ Recommended for this deployment:
 {
   "plex": {
     "url": "http://127.0.0.1:32400",
-    "token": "YOUR_PLEX_TOKEN",
-    "refreshIntervalMinutes": 30
+    "token": "YOUR_PLEX_TOKEN"
+  },
+  "runtime": {
+    "plexRefreshIntervalMinutes": 360
   }
 }
 ```
@@ -225,8 +227,9 @@ Recommended for this deployment:
 `http://localhost:32400` is equivalent to `127.0.0.1` here.
 
 - `token`: your Plex authentication token (see below for how to find it)
-- `refreshIntervalMinutes`: how often the background refresh fires; defaults to
-  `30`; set `0` to disable background refresh
+- `runtime.plexRefreshIntervalMinutes`: how often the background refresh
+  fires; defaults to `360` (6 hours) — it used to live under
+  `plex.refreshIntervalMinutes`; set `0` to disable background refresh
 
 The token is redacted in `GET /api/config` responses. If you prefer to keep it
 out of the JSON file entirely, set `PIRATE_CLAW_PLEX_TOKEN` in
@@ -335,31 +338,37 @@ Web UI Config page explicitly say "restart required" for the `tmdb` and
 `plex` sections the way it already should for anything else that is
 boot-frozen.
 
-### `plex.refreshIntervalMinutes: 0` does not mean "disabled" for reads
+### `runtime.plexRefreshIntervalMinutes: 0` does not mean "disabled" for reads
 
-The `refreshIntervalMinutes: 0` guidance elsewhere in this doc ("set `0` to
-disable background refresh") is only true for the **scheduled sweep**
+This field used to live at `plex.refreshIntervalMinutes`; it moved to
+`runtime.plexRefreshIntervalMinutes` (2026-09-02) to sit alongside the daemon's
+other schedule knobs (`tmdbRefreshIntervalMinutes` etc.) instead of being the
+one interval buried under the `plex` connection block. The coupling described
+below is unchanged by the move — only the key name is.
+
+The `plexRefreshIntervalMinutes: 0` guidance elsewhere in this doc ("set `0`
+to disable background refresh") is only true for the **scheduled sweep**
 (`plex-refresh` running on a timer inside the daemon loop). It does **not**
 disable the **on-demand freshness check** that `/api/movies` and `/api/shows`
 run against the SQLite cache on every request:
 `isPlexCacheExpired(cachedAt, refreshIntervalMinutes)` computes
 `cachedAt + refreshIntervalMinutes * 2 * 60_000 <= now()`. With
-`refreshIntervalMinutes: 0` that expression is true the instant any time has
-passed, so **every** read treats a perfectly good, freshly-written cache row
-as stale and falls back to `plexStatus: "unknown"` — even immediately after a
-successful `plex-refresh` that wrote `in_library: 1` rows.
+`plexRefreshIntervalMinutes: 0` that expression is true the instant any time
+has passed, so **every** read treats a perfectly good, freshly-written cache
+row as stale and falls back to `plexStatus: "unknown"` — even immediately
+after a successful `plex-refresh` that wrote `in_library: 1` rows.
 
 Validated 2026-08-26: `plex_movie_cache` and `plex_tv_cache` both showed
 `in_library = 1` for every title right after a clean `plex-refresh` run, but
-`/api/movies` and `/api/shows` kept reporting `"unknown"` until
-`plex.refreshIntervalMinutes` was changed from `0` to a positive value (`30`,
-the documented default) **and** the daemon was restarted (see previous
-section — this value is also captured once at boot).
+`/api/movies` and `/api/shows` kept reporting `"unknown"` until the interval
+was changed from `0` to a positive value (`30` at the time; the default is now
+`360`) **and** the daemon was restarted (see previous section — this value is
+also captured once at boot).
 
-**Operator rule of thumb:** never set `plex.refreshIntervalMinutes: 0` if you
-want `/api/movies` / `/api/shows` Plex status to ever show anything other than
-`"unknown"`. Use a positive value; `0` should only be used if you intend to
-disable Plex status entirely. A future phase should give the on-demand
+**Operator rule of thumb:** never set `runtime.plexRefreshIntervalMinutes: 0`
+if you want `/api/movies` / `/api/shows` Plex status to ever show anything
+other than `"unknown"`. Use a positive value; `0` should only be used if you
+intend to disable Plex status entirely. A future phase should give the on-demand
 freshness check and the scheduled-sweep toggle distinct config keys instead of
 overloading one number for two different behaviors, and should make `0` mean
 "no cache read at all" or "never expire" — whichever is intended — rather than

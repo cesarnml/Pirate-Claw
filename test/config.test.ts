@@ -334,6 +334,7 @@ describe('validateConfig', () => {
     expect(config.runtime.artifactDir).toBe('.pirate-claw/runtime');
     expect(config.runtime.artifactRetentionDays).toBe(7);
     expect(config.runtime.tmdbRefreshIntervalMinutes).toBe(360);
+    expect(config.runtime.plexRefreshIntervalMinutes).toBe(360);
   });
 
   it('applies all runtime overrides when fully specified', () => {
@@ -357,6 +358,7 @@ describe('validateConfig', () => {
       artifactDir: '/custom/path',
       artifactRetentionDays: 14,
       tmdbRefreshIntervalMinutes: 360,
+      plexRefreshIntervalMinutes: 360,
     });
   });
 
@@ -445,6 +447,23 @@ describe('validateConfig', () => {
         runtime: { tmdbRefreshIntervalMinutes: -1 },
       }),
     ).toThrow(/tmdbRefreshIntervalMinutes/);
+  });
+
+  it('accepts runtime.plexRefreshIntervalMinutes zero to disable the background sweep', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      runtime: { plexRefreshIntervalMinutes: 0 },
+    });
+    expect(config.runtime.plexRefreshIntervalMinutes).toBe(0);
+  });
+
+  it('fails when runtime.plexRefreshIntervalMinutes is negative', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        runtime: { plexRefreshIntervalMinutes: -1 },
+      }),
+    ).toThrow(/plexRefreshIntervalMinutes/);
   });
 
   it('leaves runtime.apiPort undefined when omitted', () => {
@@ -996,7 +1015,7 @@ describe('validateConfig', () => {
     ).toThrow(ConfigError);
   });
 
-  it('accepts optional plex block and defaults the refresh interval', () => {
+  it('accepts optional plex block', () => {
     const config = validateConfig({
       ...createMinimalConfig(),
       plex: {
@@ -1008,7 +1027,6 @@ describe('validateConfig', () => {
     expect(config.plex).toEqual({
       url: 'http://plex.local:32400',
       token: 'plex-token',
-      refreshIntervalMinutes: 30,
     });
   });
 
@@ -1029,7 +1047,6 @@ describe('validateConfig', () => {
     expect(config.plex).toEqual({
       url: 'http://plex.local:32400',
       token: 'env-plex-token',
-      refreshIntervalMinutes: 30,
     });
   });
 

@@ -135,19 +135,20 @@ export class PlexCredentialManager {
         ? (baseOnDisk.plex as Record<string, unknown>)
         : {};
     const currentConfig = this.input.configHolder.current;
+    // refreshIntervalMinutes lived here historically; it now belongs to
+    // runtime.plexRefreshIntervalMinutes, so drop any legacy key on disk
+    // instead of carrying it forward via the diskPlex spread.
+    const { refreshIntervalMinutes: _legacyPlexRefresh, ...diskPlexRest } =
+      diskPlex;
     const merged = {
       ...baseOnDisk,
       plex: {
-        ...diskPlex,
+        ...diskPlexRest,
         url:
           optionalStringValue(diskPlex.url) ??
           currentConfig.plex?.url ??
           'http://localhost:32400',
         token,
-        refreshIntervalMinutes:
-          optionalNonNegativeNumber(diskPlex.refreshIntervalMinutes) ??
-          currentConfig.plex?.refreshIntervalMinutes ??
-          30,
       },
     };
 
@@ -295,11 +296,4 @@ function writeConfigAtomically(
 
 function optionalStringValue(input: unknown): string | null {
   return typeof input === 'string' ? input : null;
-}
-
-function optionalNonNegativeNumber(input: unknown): number | null {
-  if (typeof input !== 'number' || Number.isNaN(input) || input < 0) {
-    return null;
-  }
-  return input;
 }

@@ -27,6 +27,7 @@
 	const ALL_RESOLUTIONS = ['2160p', '1080p', '720p', '480p'];
 	const ALL_CODECS = ['x264', 'x265'];
 	const WRITE_DISABLED_TOOLTIP = 'Configure PIRATE_CLAW_API_WRITE_TOKEN to enable editing';
+	const PLEX_UNHEALTHY_TOOLTIP = 'Connect Plex above to enable this';
 
 	type ShowIntent =
 		| { type: 'add'; name: string }
@@ -46,6 +47,10 @@
 			null
 	);
 	const canWrite = $derived(data.canWrite);
+	// Movie/TV Plex sync only ever do anything by talking to Plex directly —
+	// fade + disable them below rather than let "Sync Now" silently fail
+	// against a disconnected PMS (see the 2026-09-02 config-page design pass).
+	const plexHealthy = $derived(data.plexAuth?.state === 'connected');
 	const plexMessageTone = $derived.by<'neutral' | 'success' | 'error'>(() => {
 		if (form?.plexMessageTone === 'success' || form?.plexMessageTone === 'error') {
 			return form.plexMessageTone;
@@ -625,11 +630,23 @@
 		</section>
 
 		<div class="grid gap-5 xl:grid-cols-2">
-			<DaemonStatusCard health={data.health} />
+			<DaemonStatusCard
+				health={data.health}
+				{canWrite}
+				{currentEtag}
+				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+				runtime={data.config.runtime}
+				{showRows}
+				restarting={restartInProgress}
+				{restartPhase}
+				{runtimeChangesPending}
+				runtimeMessage={form?.runtimeMessage}
+				{enhanceSaveRuntime}
+				{enhanceRestartDaemon}
+			/>
 
 			<TransmissionCard
 				{canWrite}
-				{currentEtag}
 				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
 				connected={!!data.transmissionSession}
 				host={transmissionEndpoint.host}
@@ -642,18 +659,10 @@
 				authToken={maskConfiguredValue(transmissionAuthConfigured())}
 				url={data.config.transmission.url}
 				downloadTargets={storagePoolTargets()}
-				runtime={data.config.runtime}
-				{showRows}
 				{testingConnection}
-				restarting={restartInProgress}
-				{restartPhase}
-				{runtimeChangesPending}
-				runtimeMessage={form?.runtimeMessage}
 				compatibility={transmissionCompatibility}
 				{transmissionAdvisory}
 				{enhanceTestConnection}
-				{enhanceSaveRuntime}
-				{enhanceRestartDaemon}
 				activeTorrentCount={data.transmissionSession?.activeTorrentCount ?? null}
 				downloadQueueEnabled={data.transmissionSession?.downloadQueueEnabled ?? true}
 				downloadQueueSize={data.transmissionSession?.downloadQueueSize ?? 5}
@@ -662,6 +671,15 @@
 				queueCapsMessage={form?.queueCapsMessage}
 				{queueCapsSubmitting}
 				{enhanceSaveQueueCaps}
+			/>
+
+			<TmdbPanel
+				tmdb={data.config.tmdb}
+				{canWrite}
+				{currentEtag}
+				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+				tmdbMessage={form?.tmdbMessage}
+				{enhanceSaveTmdb}
 			/>
 
 			<FeedsCard
@@ -680,15 +698,6 @@
 				onNewFeedNameChange={(value) => (newFeedName = value)}
 				onNewFeedUrlChange={(value) => (newFeedUrl = value)}
 				onNewFeedMediaTypeChange={(value) => (newFeedMediaType = value)}
-			/>
-
-			<TmdbPanel
-				tmdb={data.config.tmdb}
-				{canWrite}
-				{currentEtag}
-				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
-				tmdbMessage={form?.tmdbMessage}
-				{enhanceSaveTmdb}
 			/>
 
 			<div class="space-y-5">
@@ -798,15 +807,19 @@
 			/>
 
 			<PlexMovieSyncCard
-				{canWrite}
+				canWrite={canWrite && plexHealthy}
+				{plexHealthy}
 				lastSyncedAt={data.plexMovieSyncLastSyncedAt}
-				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+				lastAutoRefreshedAt={data.plexMovieSyncLastAutoRefreshedAt}
+				writeDisabledTooltip={plexHealthy ? WRITE_DISABLED_TOOLTIP : PLEX_UNHEALTHY_TOOLTIP}
 			/>
 
 			<PlexTvSyncCard
-				{canWrite}
+				canWrite={canWrite && plexHealthy}
+				{plexHealthy}
 				lastSyncedAt={data.plexTvSyncLastSyncedAt}
-				writeDisabledTooltip={WRITE_DISABLED_TOOLTIP}
+				lastAutoRefreshedAt={data.plexTvSyncLastAutoRefreshedAt}
+				writeDisabledTooltip={plexHealthy ? WRITE_DISABLED_TOOLTIP : PLEX_UNHEALTHY_TOOLTIP}
 			/>
 		</div>
 		<DeleteShowModal

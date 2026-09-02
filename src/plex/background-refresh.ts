@@ -4,10 +4,12 @@ import { manualMovieGrabsAsBreakdowns } from '../manual-movie-grabs/store';
 import type { ManualMovieGrabsStore } from '../manual-movie-grabs/store';
 import type { Repository } from '../repository';
 import type { TrackedShowsStore } from '../tracked-shows/store';
+import type { PlexMovieSyncStateStore } from './movie-sync-state';
 import type { PlexMovieEnrichDeps } from './movies';
 import { refreshMovieLibraryCache } from './movies';
 import type { PlexShowEnrichDeps } from './shows';
 import { refreshShowLibraryCache } from './shows';
+import type { PlexTvSyncStateStore } from './tv-sync-state';
 
 /**
  * Warm or refresh Plex cache for tracked media without blocking RSS intake.
@@ -27,6 +29,13 @@ export async function runPlexBackgroundRefresh(input: {
    * falls back to trusting the ledger forever, exactly the bug this whole
    * mechanism exists to fix. */
   manualMovieGrabs?: ManualMovieGrabsStore;
+  /** When set, stamps "last automatic refresh" (distinct from the manual
+   * Sync Now button's "last synced") once the movie section below finishes
+   * without throwing — even if some individual movies were skipped. */
+  movieSyncState?: PlexMovieSyncStateStore;
+  /** TV-shaped sibling of movieSyncState, stamped once the show section
+   * below finishes without throwing. */
+  tvSyncState?: PlexTvSyncStateStore;
   log: (message: string) => void;
 }): Promise<void> {
   const {
@@ -35,6 +44,8 @@ export async function runPlexBackgroundRefresh(input: {
     plexShows,
     trackedShows,
     manualMovieGrabs,
+    movieSyncState,
+    tvSyncState,
     log,
   } = input;
   if (!plexMovies && !plexShows) {
@@ -59,6 +70,7 @@ export async function runPlexBackgroundRefresh(input: {
       if (skipped > 0) {
         log(`[plex] movie refresh: ${skipped} skipped (no Plex answer)`);
       }
+      movieSyncState?.recordAutoRefresh(new Date().toISOString());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`[plex] movie refresh failed: ${message}`);
@@ -74,6 +86,7 @@ export async function runPlexBackgroundRefresh(input: {
       if (skipped > 0) {
         log(`[plex] show refresh: ${skipped} skipped (no Plex answer)`);
       }
+      tvSyncState?.recordAutoRefresh(new Date().toISOString());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`[plex] show refresh failed: ${message}`);

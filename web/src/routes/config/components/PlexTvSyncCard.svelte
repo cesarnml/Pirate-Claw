@@ -20,11 +20,25 @@
 	// "Syncing…" spinner for however long the whole tracked-show list takes.
 	interface Props {
 		canWrite: boolean;
+		/** False when Plex isn't connected — this card can't do anything
+		 * without it, so it fades and its button disables regardless of
+		 * canWrite (see the config page's plexHealthy derivation). */
+		plexHealthy: boolean;
 		lastSyncedAt: string | null;
+		/** Last time the automatic background sweep touched every tracked
+		 * show — distinct from lastSyncedAt (manual "Sync Now" only). Null if
+		 * it's never run. */
+		lastAutoRefreshedAt: string | null;
 		writeDisabledTooltip: string;
 	}
 
-	const { canWrite, lastSyncedAt: initialLastSyncedAt, writeDisabledTooltip }: Props = $props();
+	const {
+		canWrite,
+		plexHealthy,
+		lastSyncedAt: initialLastSyncedAt,
+		lastAutoRefreshedAt,
+		writeDisabledTooltip
+	}: Props = $props();
 
 	type ProgressEvent =
 		| { type: 'start'; total: number }
@@ -121,7 +135,9 @@
 	}
 </script>
 
-<Card class="border-border/70 bg-card/80 rounded-3xl border shadow-sm">
+<Card
+	class={`border-border/70 bg-card/80 rounded-3xl border shadow-sm transition-opacity ${!plexHealthy ? 'opacity-50' : ''}`}
+>
 	<CardHeader>
 		<h2 class="text-lg font-semibold">Plex TV Sync</h2>
 		<p class="text-muted-foreground text-sm">
@@ -129,15 +145,27 @@
 			for the next background refresh — useful right after a run of Plex errors to re-verify shows
 			whose cached status might be stale.
 		</p>
+		{#if !plexHealthy}
+			<p class="text-xs font-medium text-amber-400">Connect Plex to use this.</p>
+		{/if}
 	</CardHeader>
 	<CardContent>
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 			<div class="text-muted-foreground text-sm">
-				{#if lastSyncedAt}
-					Last synced {formatRelativeTime(lastSyncedAt)}
-				{:else}
-					Never synced.
-				{/if}
+				<p>
+					{#if lastSyncedAt}
+						Last manual sync {formatRelativeTime(lastSyncedAt)}
+					{:else}
+						Never manually synced.
+					{/if}
+				</p>
+				<p>
+					{#if lastAutoRefreshedAt}
+						Last automatic refresh {formatRelativeTime(lastAutoRefreshedAt)}
+					{:else}
+						Never automatically refreshed.
+					{/if}
+				</p>
 				{#if running && currentTitle}
 					<p class="text-foreground/80 mt-1 truncate text-[11px]">{currentTitle}</p>
 				{/if}

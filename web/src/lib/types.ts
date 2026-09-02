@@ -277,12 +277,12 @@ export type RuntimeConfig = {
 	apiWriteToken?: string;
 	installRoot?: string;
 	tmdbRefreshIntervalMinutes?: number;
+	plexRefreshIntervalMinutes?: number;
 };
 
 export type PlexConfig = {
 	url: string;
 	token: string;
-	refreshIntervalMinutes: number;
 };
 
 export type TmdbConfig = {
@@ -444,7 +444,9 @@ export type DaemonCycleBucket = 'main' | 'tmdb' | 'plex';
 
 export type DaemonCycleStress = {
 	running: boolean;
+	runningSince: string | null;
 	lastDurationMs: number | null;
+	avgDurationMs: number | null;
 	consecutiveSkips: number;
 };
 

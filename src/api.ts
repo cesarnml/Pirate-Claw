@@ -159,7 +159,13 @@ export type CycleStress = {
   /** True from the moment the cycle starts until it completes or fails —
    * never true for a skip, since a skip means the lock was already held. */
   running: boolean;
+  /** Set when `running` goes true, cleared when it goes false — lets the UI
+   * show "running for Xs so far" instead of just a static "Running now". */
+  runningSince: string | null;
   lastDurationMs: number | null;
+  /** Rolling average over the last CYCLE_HISTORY_LIMIT completed/failed
+   * durations for this bucket — null until at least one has landed. */
+  avgDurationMs: number | null;
   /** Consecutive times this bucket's cycle was skipped (already_running)
    * since it last completed or failed. Resets to 0 on completion/failure.
    * A run climbing past 1 means new cycles are arriving faster than the
@@ -168,17 +174,27 @@ export type CycleStress = {
   consecutiveSkips: number;
 };
 
+/** How many recent durations feed each bucket's rolling average — enough to
+ * smooth out one-off blips without dragging in ancient history. */
+const CYCLE_HISTORY_LIMIT = 10;
+
 export type HealthState = {
   startedAt: string;
   lastRunCycle: CycleSnapshot | null;
   lastReconcileCycle: CycleSnapshot | null;
   cycles: Record<CycleBucket, CycleStress>;
+  /** Backs each bucket's avgDurationMs — kept off `cycles` itself since
+   * `cycles` is serialized whole by GET /api/health and this history isn't
+   * meant to be part of that payload. */
+  durationHistory: Record<CycleBucket, number[]>;
 };
 
 export function createHealthState(): HealthState {
   const bucket = (): CycleStress => ({
     running: false,
+    runningSince: null,
     lastDurationMs: null,
+    avgDurationMs: null,
     consecutiveSkips: 0,
   });
 
@@ -187,6 +203,7 @@ export function createHealthState(): HealthState {
     lastRunCycle: null,
     lastReconcileCycle: null,
     cycles: { main: bucket(), tmdb: bucket(), plex: bucket() },
+    durationHistory: { main: [], tmdb: [], plex: [] },
   };
 }
 
@@ -209,6 +226,7 @@ export function recordCycleStart(health: HealthState, type: string): void {
   if (!bucket) return;
 
   health.cycles[bucket].running = true;
+  health.cycles[bucket].runningSince = new Date().toISOString();
 }
 
 export function recordCycleInHealth(
@@ -238,8 +256,18 @@ export function recordCycleInHealth(
   }
 
   stress.running = false;
+  stress.runningSince = null;
   stress.lastDurationMs = result.durationMs;
   stress.consecutiveSkips = 0;
+
+  const history = health.durationHistory[bucket];
+  history.push(result.durationMs);
+  if (history.length > CYCLE_HISTORY_LIMIT) {
+    history.shift();
+  }
+  stress.avgDurationMs = Math.round(
+    history.reduce((sum, ms) => sum + ms, 0) / history.length,
+  );
 }
 
 /** A bucket that has skipped 2+ times in a row (queued faster than it
@@ -2658,7 +2686,10 @@ export function createApiFetch(
 
       if (request.method === 'GET') {
         const state = new PlexMovieSyncStateStore(database).get();
-        return Response.json({ lastSyncedAt: state.lastSyncedAt });
+        return Response.json({
+          lastSyncedAt: state.lastSyncedAt,
+          lastAutoRefreshedAt: state.lastAutoRefreshedAt,
+        });
       }
 
       if (request.method === 'POST') {
@@ -2718,7 +2749,10 @@ export function createApiFetch(
 
       if (request.method === 'GET') {
         const state = new PlexTvSyncStateStore(database).get();
-        return Response.json({ lastSyncedAt: state.lastSyncedAt });
+        return Response.json({
+          lastSyncedAt: state.lastSyncedAt,
+          lastAutoRefreshedAt: state.lastAutoRefreshedAt,
+        });
       }
 
       if (request.method === 'POST') {
@@ -5397,7 +5431,6 @@ async function writePlexConfigToDisk(input: {
   patch: {
     url?: string;
     token?: string;
-    refreshIntervalMinutes?: number;
   };
 }): Promise<AppConfig> {
   const baseOnDisk = await readConfigFileRecord(input.configPath);
@@ -5406,10 +5439,15 @@ async function writePlexConfigToDisk(input: {
     input.patch,
     'token',
   );
+  // refreshIntervalMinutes lived here historically; it now belongs to
+  // runtime.plexRefreshIntervalMinutes, so drop any legacy key on disk
+  // instead of carrying it forward via the diskPlex spread.
+  const { refreshIntervalMinutes: _legacyPlexRefresh, ...diskPlexRest } =
+    diskPlex as Record<string, unknown>;
   const merged = {
     ...baseOnDisk,
     plex: {
-      ...diskPlex,
+      ...diskPlexRest,
       url:
         input.patch.url ??
         optionalStringValue(diskPlex.url) ??
@@ -5420,11 +5458,6 @@ async function writePlexConfigToDisk(input: {
         : (optionalStringValue(diskPlex.token) ??
           input.currentConfig.plex?.token ??
           ''),
-      refreshIntervalMinutes:
-        input.patch.refreshIntervalMinutes ??
-        optionalNonNegativeNumber(diskPlex.refreshIntervalMinutes) ??
-        input.currentConfig.plex?.refreshIntervalMinutes ??
-        30,
     },
   };
 
@@ -5563,13 +5596,6 @@ function optionalStringValue(input: unknown): string | undefined {
   }
   const trimmed = input.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function optionalNonNegativeNumber(input: unknown): number | undefined {
-  if (typeof input !== 'number' || !Number.isFinite(input) || input < 0) {
-    return undefined;
-  }
-  return input;
 }
 
 /** Parses a query-param integer, clamping to [min, max] and falling back to

@@ -40,7 +40,9 @@ export const load: PageServerLoad = async () => {
 	let onboarding: OnboardingStatus | null = null;
 	let plexAuth: PlexAuthStatusResponse | null = null;
 	let plexMovieSyncLastSyncedAt: string | null = null;
+	let plexMovieSyncLastAutoRefreshedAt: string | null = null;
 	let plexTvSyncLastSyncedAt: string | null = null;
+	let plexTvSyncLastAutoRefreshedAt: string | null = null;
 
 	if (configResult.status === 'fulfilled' && configResult.value.ok) {
 		config = (await configResult.value.json()) as AppConfig;
@@ -67,13 +69,21 @@ export const load: PageServerLoad = async () => {
 	}
 
 	if (plexMovieSyncResult.status === 'fulfilled' && plexMovieSyncResult.value.ok) {
-		const body = (await plexMovieSyncResult.value.json()) as { lastSyncedAt?: string | null };
+		const body = (await plexMovieSyncResult.value.json()) as {
+			lastSyncedAt?: string | null;
+			lastAutoRefreshedAt?: string | null;
+		};
 		plexMovieSyncLastSyncedAt = body.lastSyncedAt ?? null;
+		plexMovieSyncLastAutoRefreshedAt = body.lastAutoRefreshedAt ?? null;
 	}
 
 	if (plexTvSyncResult.status === 'fulfilled' && plexTvSyncResult.value.ok) {
-		const body = (await plexTvSyncResult.value.json()) as { lastSyncedAt?: string | null };
+		const body = (await plexTvSyncResult.value.json()) as {
+			lastSyncedAt?: string | null;
+			lastAutoRefreshedAt?: string | null;
+		};
 		plexTvSyncLastSyncedAt = body.lastSyncedAt ?? null;
+		plexTvSyncLastAutoRefreshedAt = body.lastAutoRefreshedAt ?? null;
 	}
 
 	return {
@@ -86,7 +96,9 @@ export const load: PageServerLoad = async () => {
 		onboarding,
 		plexAuth,
 		plexMovieSyncLastSyncedAt,
-		plexTvSyncLastSyncedAt
+		plexMovieSyncLastAutoRefreshedAt,
+		plexTvSyncLastSyncedAt,
+		plexTvSyncLastAutoRefreshedAt
 	};
 };
 
@@ -112,7 +124,7 @@ function validateRuntimeBounds(
 		return value > 0 ? { ok: true } : { ok: false, message: `Field "${field}" has invalid value.` };
 	}
 
-	if (field === 'tmdbRefreshIntervalMinutes') {
+	if (field === 'tmdbRefreshIntervalMinutes' || field === 'plexRefreshIntervalMinutes') {
 		return value >= 0
 			? { ok: true }
 			: { ok: false, message: `Field "${field}" has invalid value.` };
@@ -417,12 +429,14 @@ export const actions: Actions = {
 		const runIntervalMinutes = parseOptionalInt(formData.get('runIntervalMinutes'));
 		const reconcileIntervalSeconds = parseOptionalInt(formData.get('reconcileIntervalSeconds'));
 		const tmdbRefreshIntervalMinutes = parseOptionalInt(formData.get('tmdbRefreshIntervalMinutes'));
+		const plexRefreshIntervalMinutes = parseOptionalInt(formData.get('plexRefreshIntervalMinutes'));
 		const apiPort = parseOptionalInt(formData.get('apiPort'));
 
 		const invalidRuntimeField = [
 			runIntervalMinutes,
 			reconcileIntervalSeconds,
 			tmdbRefreshIntervalMinutes,
+			plexRefreshIntervalMinutes,
 			apiPort
 		].some((value) => Number.isNaN(value));
 		if (invalidRuntimeField) {
@@ -433,6 +447,7 @@ export const actions: Actions = {
 			['runIntervalMinutes', runIntervalMinutes],
 			['reconcileIntervalSeconds', reconcileIntervalSeconds],
 			['tmdbRefreshIntervalMinutes', tmdbRefreshIntervalMinutes],
+			['plexRefreshIntervalMinutes', plexRefreshIntervalMinutes],
 			['apiPort', apiPort]
 		] as const) {
 			const result = validateRuntimeBounds(field, value);
@@ -446,6 +461,7 @@ export const actions: Actions = {
 				runIntervalMinutes,
 				reconcileIntervalSeconds,
 				tmdbRefreshIntervalMinutes: tmdbRefreshIntervalMinutes ?? 0,
+				plexRefreshIntervalMinutes: plexRefreshIntervalMinutes ?? 0,
 				...(apiPort === undefined ? {} : { apiPort })
 			},
 			tv: { shows: currentShows }

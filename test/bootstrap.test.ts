@@ -69,6 +69,7 @@ describe('ensureStarterConfig', () => {
     const written = await Bun.file(path).json();
 
     expect(written.runtime).toEqual({
+      plexRefreshIntervalMinutes: 0,
       installRoot: '/volume1/pirate-claw',
       apiHost: '0.0.0.0',
       apiPort: 5555,

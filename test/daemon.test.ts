@@ -361,15 +361,13 @@ describe('daemon', () => {
   });
 
   it('passes plex refresh interval through daemonOptionsFromConfig', () => {
-    const options = daemonOptionsFromConfig(
-      {
-        runIntervalMinutes: RUN_INTERVAL_MINUTES_DEFAULT,
-        reconcileIntervalSeconds: 2,
-        artifactDir: '.pirate-claw/runtime',
-        artifactRetentionDays: 7,
-      },
-      30,
-    );
+    const options = daemonOptionsFromConfig({
+      runIntervalMinutes: RUN_INTERVAL_MINUTES_DEFAULT,
+      reconcileIntervalSeconds: 2,
+      artifactDir: '.pirate-claw/runtime',
+      artifactRetentionDays: 7,
+      plexRefreshIntervalMinutes: 30,
+    });
 
     expect(options.plexRefreshIntervalMs).toBe(30 * 60 * 1000);
   });

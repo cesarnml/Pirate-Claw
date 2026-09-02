@@ -22,11 +22,25 @@
 	// same sequential/gentle pattern; see that route's doc comment.
 	interface Props {
 		canWrite: boolean;
+		/** False when Plex isn't connected — this card can't do anything
+		 * without it, so it fades and its button disables regardless of
+		 * canWrite (see the config page's plexHealthy derivation). */
+		plexHealthy: boolean;
 		lastSyncedAt: string | null;
+		/** Last time the automatic background sweep touched every movie —
+		 * distinct from lastSyncedAt (manual "Sync Now" / one-time bootstrap
+		 * only). Null if it's never run. */
+		lastAutoRefreshedAt: string | null;
 		writeDisabledTooltip: string;
 	}
 
-	const { canWrite, lastSyncedAt: initialLastSyncedAt, writeDisabledTooltip }: Props = $props();
+	const {
+		canWrite,
+		plexHealthy,
+		lastSyncedAt: initialLastSyncedAt,
+		lastAutoRefreshedAt,
+		writeDisabledTooltip
+	}: Props = $props();
 
 	type ProgressEvent =
 		| { type: 'progress'; checked: number; total: number }
@@ -96,7 +110,9 @@
 	}
 </script>
 
-<Card class="border-border/70 bg-card/80 rounded-3xl border shadow-sm">
+<Card
+	class={`border-border/70 bg-card/80 rounded-3xl border shadow-sm transition-opacity ${!plexHealthy ? 'opacity-50' : ''}`}
+>
 	<CardHeader>
 		<h2 class="text-lg font-semibold">Plex Movie Sync</h2>
 		<p class="text-muted-foreground text-sm">
@@ -105,16 +121,28 @@
 			without re-checking Plex on every page view. Runs once automatically the first time you ever
 			open the Movie Calendar; after that, it's manual.
 		</p>
+		{#if !plexHealthy}
+			<p class="text-xs font-medium text-amber-400">Connect Plex to use this.</p>
+		{/if}
 	</CardHeader>
 	<CardContent>
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-			<p class="text-muted-foreground text-sm">
-				{#if lastSyncedAt}
-					Last synced {formatRelativeTime(lastSyncedAt)}
-				{:else}
-					Never synced.
-				{/if}
-			</p>
+			<div class="text-muted-foreground text-sm">
+				<p>
+					{#if lastSyncedAt}
+						Last manual sync {formatRelativeTime(lastSyncedAt)}
+					{:else}
+						Never manually synced.
+					{/if}
+				</p>
+				<p>
+					{#if lastAutoRefreshedAt}
+						Last automatic refresh {formatRelativeTime(lastAutoRefreshedAt)}
+					{:else}
+						Never automatically refreshed.
+					{/if}
+				</p>
+			</div>
 			<Button
 				type="button"
 				variant="outline"

@@ -734,9 +734,27 @@ describe('GET /api/health', () => {
 
     expect(body.stress).toBe('idle');
     expect(body.cycles).toEqual({
-      main: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
-      tmdb: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
-      plex: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+      main: {
+        running: false,
+        runningSince: null,
+        lastDurationMs: null,
+        avgDurationMs: null,
+        consecutiveSkips: 0,
+      },
+      tmdb: {
+        running: false,
+        runningSince: null,
+        lastDurationMs: null,
+        avgDurationMs: null,
+        consecutiveSkips: 0,
+      },
+      plex: {
+        running: false,
+        runningSince: null,
+        lastDurationMs: null,
+        avgDurationMs: null,
+        consecutiveSkips: 0,
+      },
     });
   });
 
@@ -1132,9 +1150,27 @@ describe('recordCycleInHealth', () => {
     });
 
     expect(health.cycles).toEqual({
-      main: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
-      tmdb: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
-      plex: { running: false, lastDurationMs: null, consecutiveSkips: 0 },
+      main: {
+        running: false,
+        runningSince: null,
+        lastDurationMs: null,
+        avgDurationMs: null,
+        consecutiveSkips: 0,
+      },
+      tmdb: {
+        running: false,
+        runningSince: null,
+        lastDurationMs: null,
+        avgDurationMs: null,
+        consecutiveSkips: 0,
+      },
+      plex: {
+        running: false,
+        runningSince: null,
+        lastDurationMs: null,
+        avgDurationMs: null,
+        consecutiveSkips: 0,
+      },
     });
   });
 });
@@ -2794,13 +2830,11 @@ describe('Plex browser auth flow', () => {
         plex?: {
           url?: string;
           token?: string;
-          refreshIntervalMinutes?: number;
         };
       };
       expect(disk.plex).toEqual({
         url: 'http://localhost:32400',
         token: 'plex-legacy-token',
-        refreshIntervalMinutes: 30,
       });
       deps.database?.close();
     } finally {
@@ -2888,13 +2922,11 @@ describe('Plex browser auth flow', () => {
       plex?: {
         url?: string;
         token?: string;
-        refreshIntervalMinutes?: number;
       };
     };
     expect(disk.plex).toEqual({
       url: 'http://plex.internal:32400',
       token: '',
-      refreshIntervalMinutes: 30,
     });
     deps.database?.close();
   });
@@ -5998,7 +6030,6 @@ describe('redactConfig', () => {
       plex: {
         url: 'http://plex.local:32400',
         token: 'secret-plex',
-        refreshIntervalMinutes: 30,
       },
     };
     const redacted = redactConfig(config);

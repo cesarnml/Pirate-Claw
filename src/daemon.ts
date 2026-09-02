@@ -12,11 +12,9 @@ export type DaemonOptions = {
   plexRefreshIntervalMs?: number;
 };
 
-export function daemonOptionsFromConfig(
-  runtime: RuntimeConfig,
-  plexRefreshIntervalMinutes?: number,
-): DaemonOptions {
+export function daemonOptionsFromConfig(runtime: RuntimeConfig): DaemonOptions {
   const tmdbMin = runtime.tmdbRefreshIntervalMinutes;
+  const plexMin = runtime.plexRefreshIntervalMinutes;
   return {
     runIntervalMs: runtime.runIntervalMinutes * 60 * 1000,
     reconcileIntervalMs: runtime.reconcileIntervalSeconds * 1000,
@@ -25,9 +23,7 @@ export function daemonOptionsFromConfig(
     tmdbRefreshIntervalMs:
       tmdbMin != null && tmdbMin > 0 ? tmdbMin * 60 * 1000 : undefined,
     plexRefreshIntervalMs:
-      plexRefreshIntervalMinutes != null && plexRefreshIntervalMinutes > 0
-        ? plexRefreshIntervalMinutes * 60 * 1000
-        : undefined,
+      plexMin != null && plexMin > 0 ? plexMin * 60 * 1000 : undefined,
   };
 }
 

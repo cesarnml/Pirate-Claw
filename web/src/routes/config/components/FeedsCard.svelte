@@ -5,6 +5,7 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { FeedConfig } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import ApplyModeBadge from './ApplyModeBadge.svelte';
 
 	interface Props {
 		feedsList: FeedConfig[];
@@ -45,10 +46,15 @@
 
 <Card class="bg-card/75 rounded-[30px] border-white/10">
 	<CardHeader class="space-y-4">
-		<p class="text-primary font-mono text-xs font-semibold tracking-[0.2em] uppercase">
-			02 · RSS Ingestion Hubs
-		</p>
-		<h2 class="text-2xl font-semibold tracking-[-0.03em]">RSS Feeds</h2>
+		<div class="flex flex-wrap items-start justify-between gap-3">
+			<div class="space-y-1">
+				<p class="text-primary font-mono text-xs font-semibold tracking-[0.2em] uppercase">
+					02 · RSS Ingestion Hubs
+				</p>
+				<h2 class="text-2xl font-semibold tracking-[-0.03em]">RSS Feeds</h2>
+			</div>
+			<ApplyModeBadge mode="immediate" />
+		</div>
 	</CardHeader>
 	<CardContent>
 		<form method="POST" action="?/saveFeeds" class="space-y-5" use:enhance={enhanceSaveFeeds}>

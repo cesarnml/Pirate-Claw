@@ -7,8 +7,10 @@
   },
   "plex": {
     "url": "http://localhost:32400",
-    "token": "",
-    "refreshIntervalMinutes": 0
+    "token": ""
+  },
+  "runtime": {
+    "plexRefreshIntervalMinutes": 0
   },
   "movies": {
     "years": [2024, 2025],

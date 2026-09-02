@@ -41,8 +41,7 @@ describe('layout server load', () => {
 			.mockResolvedValueOnce({
 				plex: {
 					url: 'http://localhost:32400',
-					token: '[redacted]',
-					refreshIntervalMinutes: 30
+					token: '[redacted]'
 				}
 			})
 			.mockResolvedValueOnce({ state: 'ready' })
@@ -122,7 +121,7 @@ describe('layout server load', () => {
 				activeTorrentCount: 0
 			})
 			.mockResolvedValueOnce({
-				plex: { url: 'http://localhost:32400', token: '', refreshIntervalMinutes: 30 }
+				plex: { url: 'http://localhost:32400', token: '' }
 			})
 			.mockResolvedValueOnce({ state: 'partially_configured' })
 			.mockResolvedValueOnce({
@@ -159,7 +158,7 @@ describe('layout server load', () => {
 				activeTorrentCount: 0
 			})
 			.mockResolvedValueOnce({
-				plex: { url: 'http://localhost:32400', token: '', refreshIntervalMinutes: 30 }
+				plex: { url: 'http://localhost:32400', token: '' }
 			})
 			.mockResolvedValueOnce({ state: 'ready' })
 			.mockResolvedValueOnce({

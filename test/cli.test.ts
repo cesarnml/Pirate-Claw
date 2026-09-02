@@ -633,6 +633,7 @@ describe('pirate-claw config show', () => {
         artifactDir: '.pirate-claw/runtime',
         artifactRetentionDays: 7,
         tmdbRefreshIntervalMinutes: 360,
+        plexRefreshIntervalMinutes: 360,
       },
     });
   });

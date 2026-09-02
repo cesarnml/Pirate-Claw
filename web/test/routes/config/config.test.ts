@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { RESTART_RETURN_TIMEOUT_SECONDS } from '../../../src/lib/restart-roundtrip';
 import Page from '../../../src/routes/config/+page.svelte';
-import TransmissionCard from '../../../src/routes/config/components/TransmissionCard.svelte';
+import DaemonStatusCard from '../../../src/routes/config/components/DaemonStatusCard.svelte';
 import type { AppConfig } from '$lib/types';
 
 vi.mock('svelte-sonner', () => ({
@@ -389,37 +389,18 @@ describe('/config', () => {
 	});
 
 	it('renders failed_to_return guidance when restart proof times out', () => {
-		render(TransmissionCard, {
+		render(DaemonStatusCard, {
+			health: null,
 			canWrite: true,
 			currentEtag: '"rev-1"',
 			writeDisabledTooltip: '',
-			connected: true,
-			host: 'localhost',
-			port: '9091',
-			version: '3.00',
-			totalDownloadedBytes: 0,
-			totalUploadedBytes: 0,
-			sessionDownloadedBytes: 0,
-			sessionUploadedBytes: 0,
-			authToken: '[redacted]',
-			url: 'http://localhost:9091',
-			downloadTargets: [{ label: 'Download', value: '/tmp' }],
 			runtime: mockConfig.runtime,
 			showRows: ['The Show'],
-			testingConnection: false,
 			restarting: false,
 			restartPhase: 'failed_to_return',
 			runtimeChangesPending: false,
-			enhanceTestConnection: vi.fn(),
 			enhanceSaveRuntime: vi.fn(),
-			enhanceRestartDaemon: vi.fn(),
-			activeTorrentCount: 0,
-			downloadQueueEnabled: true,
-			downloadQueueSize: 5,
-			seedQueueEnabled: true,
-			seedQueueSize: 5,
-			queueCapsSubmitting: false,
-			enhanceSaveQueueCaps: vi.fn()
+			enhanceRestartDaemon: vi.fn()
 		});
 
 		expect(
@@ -431,38 +412,19 @@ describe('/config', () => {
 
 	it('renders requested, restarting, and back online guidance with human-readable copy', async () => {
 		const baseProps = {
+			health: null,
 			canWrite: true,
 			currentEtag: '"rev-1"',
 			writeDisabledTooltip: '',
-			connected: true,
-			host: 'localhost',
-			port: '9091',
-			version: '3.00',
-			totalDownloadedBytes: 0,
-			totalUploadedBytes: 0,
-			sessionDownloadedBytes: 0,
-			sessionUploadedBytes: 0,
-			authToken: '[redacted]',
-			url: 'http://localhost:9091',
-			downloadTargets: [{ label: 'Download', value: '/tmp' }],
 			runtime: mockConfig.runtime,
 			showRows: ['The Show'],
-			testingConnection: false,
 			restarting: false,
 			runtimeChangesPending: false,
-			enhanceTestConnection: vi.fn(),
 			enhanceSaveRuntime: vi.fn(),
-			enhanceRestartDaemon: vi.fn(),
-			activeTorrentCount: 0,
-			downloadQueueEnabled: true,
-			downloadQueueSize: 5,
-			seedQueueEnabled: true,
-			seedQueueSize: 5,
-			queueCapsSubmitting: false,
-			enhanceSaveQueueCaps: vi.fn()
+			enhanceRestartDaemon: vi.fn()
 		};
 
-		const rendered = render(TransmissionCard, {
+		const rendered = render(DaemonStatusCard, {
 			...baseProps,
 			restartPhase: 'requested'
 		});

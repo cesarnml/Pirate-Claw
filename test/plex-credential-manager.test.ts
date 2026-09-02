@@ -245,7 +245,6 @@ async function createRenewalHarness(): Promise<{
         plex: {
           url: 'http://localhost:32400',
           token: 'old-plex-token',
-          refreshIntervalMinutes: 30,
         },
       },
       null,

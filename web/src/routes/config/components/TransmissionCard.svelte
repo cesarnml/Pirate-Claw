@@ -3,17 +3,15 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { formatTransferSize } from '$lib/helpers';
-	import { RESTART_RETURN_TIMEOUT_SECONDS } from '$lib/restart-roundtrip';
 	import TransmissionCompatibilityBadge from '$lib/components/TransmissionCompatibilityBadge.svelte';
-	import type { RuntimeConfig, TransmissionCompatibility } from '$lib/types';
+	import type { TransmissionCompatibility } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import CableIcon from '@lucide/svelte/icons/cable';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
+	import ApplyModeBadge from './ApplyModeBadge.svelte';
 
 	interface Props {
 		canWrite: boolean;
-		currentEtag: string | null;
 		writeDisabledTooltip: string;
 		connected: boolean;
 		host: string;
@@ -26,18 +24,10 @@
 		authToken: string;
 		url: string;
 		downloadTargets: Array<{ label: string; value: string }>;
-		runtime: RuntimeConfig;
-		showRows: string[];
 		testingConnection: boolean;
-		restarting: boolean;
-		restartPhase: 'idle' | 'requested' | 'restarting' | 'back_online' | 'failed_to_return';
-		runtimeChangesPending: boolean;
-		runtimeMessage?: string;
 		compatibility?: TransmissionCompatibility | null;
 		transmissionAdvisory?: string | null;
 		enhanceTestConnection: SubmitFunction;
-		enhanceSaveRuntime: SubmitFunction;
-		enhanceRestartDaemon: SubmitFunction;
 		/** Transmission's own active-torrent queue caps (session-get) — a
 		 * torrent past these limits sits queued in Transmission itself, not
 		 * paused by pirate-claw. Null when the session couldn't be reached. */
@@ -53,7 +43,6 @@
 
 	const {
 		canWrite,
-		currentEtag,
 		writeDisabledTooltip,
 		connected,
 		host,
@@ -66,18 +55,10 @@
 		authToken,
 		url,
 		downloadTargets,
-		runtime,
-		showRows,
 		testingConnection,
-		restarting,
-		restartPhase,
-		runtimeChangesPending,
-		runtimeMessage,
 		compatibility = null,
 		transmissionAdvisory = null,
 		enhanceTestConnection,
-		enhanceSaveRuntime,
-		enhanceRestartDaemon,
 		activeTorrentCount,
 		downloadQueueEnabled,
 		downloadQueueSize,
@@ -190,122 +171,25 @@
 
 		<form
 			method="POST"
-			action="?/saveRuntime"
-			class="space-y-4 border-t border-white/8 pt-5"
-			use:enhance={enhanceSaveRuntime}
-		>
-			<input type="hidden" name="runtimeIfMatch" value={currentEtag ?? ''} />
-			{#each showRows as name}
-				<input type="hidden" name="currentShow" value={name} />
-			{/each}
-
-			<div class="space-y-2">
-				<p
-					class="text-muted-foreground font-mono text-xs font-semibold tracking-[0.18em] uppercase"
-				>
-					Runtime Controls
-				</p>
-				<p class="text-muted-foreground text-sm">Runtime changes apply after daemon restart.</p>
-			</div>
-
-			<div class="grid gap-3 sm:grid-cols-2">
-				<label class="grid gap-1 text-sm">
-					<span class="text-muted-foreground">Run interval (minutes)</span>
-					<input
-						name="runIntervalMinutes"
-						type="number"
-						min="1"
-						step="1"
-						value={runtime.runIntervalMinutes}
-						disabled={!canWrite}
-						title={!canWrite ? writeDisabledTooltip : undefined}
-						class="border-input bg-background ring-offset-background focus-visible:ring-ring h-10 rounded-2xl border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
-					/>
-				</label>
-				<label class="grid gap-1 text-sm">
-					<span class="text-muted-foreground">Reconcile interval (seconds)</span>
-					<input
-						name="reconcileIntervalSeconds"
-						type="number"
-						min="1"
-						step="1"
-						value={runtime.reconcileIntervalSeconds}
-						disabled={!canWrite}
-						title={!canWrite ? writeDisabledTooltip : undefined}
-						class="border-input bg-background ring-offset-background focus-visible:ring-ring h-10 rounded-2xl border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
-					/>
-				</label>
-				<label class="grid gap-1 text-sm">
-					<span class="text-muted-foreground">TMDB refresh interval</span>
-					<input
-						name="tmdbRefreshIntervalMinutes"
-						type="number"
-						min="0"
-						step="1"
-						value={runtime.tmdbRefreshIntervalMinutes ?? 0}
-						disabled={!canWrite}
-						title={!canWrite ? writeDisabledTooltip : undefined}
-						class="border-input bg-background ring-offset-background focus-visible:ring-ring h-10 rounded-2xl border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
-					/>
-				</label>
-				<label class="grid gap-1 text-sm">
-					<span class="text-muted-foreground">API port</span>
-					<input
-						name="apiPort"
-						type="number"
-						min="1"
-						max="65535"
-						step="1"
-						value={runtime.apiPort ?? ''}
-						placeholder="unset"
-						disabled={!canWrite}
-						title={!canWrite ? writeDisabledTooltip : undefined}
-						class="border-input bg-background ring-offset-background focus-visible:ring-ring h-10 rounded-2xl border px-3 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
-					/>
-				</label>
-			</div>
-
-			{#if runtimeMessage}
-				<p class="text-destructive text-xs">{runtimeMessage}</p>
-			{/if}
-
-			<div class="flex flex-wrap items-center gap-3">
-				<Button
-					type="submit"
-					class="rounded-full px-5"
-					disabled={!canWrite || !currentEtag}
-					title={!canWrite ? writeDisabledTooltip : undefined}
-				>
-					<ActivityIcon class="size-4" />
-					Save runtime
-				</Button>
-				<p class="text-muted-foreground text-xs">
-					Revision <code>{currentEtag ?? 'missing'}</code>
-				</p>
-			</div>
-		</form>
-
-		<form
-			method="POST"
 			action="?/saveQueueCaps"
 			class="space-y-4 border-t border-white/8 pt-5"
 			use:enhance={enhanceSaveQueueCaps}
 		>
-			<div class="space-y-2">
+			<div class="flex flex-wrap items-center justify-between gap-2">
 				<p
 					class="text-muted-foreground font-mono text-xs font-semibold tracking-[0.18em] uppercase"
 				>
 					Queue Caps
 				</p>
-				<p class="text-muted-foreground text-sm">
-					Transmission's own active-torrent limits — a torrent past these caps sits queued in
-					Transmission itself (not paused by pirate-claw) until a slot frees up. Applies
-					immediately; no restart needed.
-					{#if activeTorrentCount !== null}
-						Currently {activeTorrentCount} active.
-					{/if}
-				</p>
+				<ApplyModeBadge mode="immediate" />
 			</div>
+			<p class="text-muted-foreground text-sm">
+				Transmission's own active-torrent limits — a torrent past these caps sits queued in
+				Transmission itself (not paused by pirate-claw) until a slot frees up.
+				{#if activeTorrentCount !== null}
+					Currently {activeTorrentCount} active.
+				{/if}
+			</p>
 
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="border-border bg-background/50 space-y-2 rounded-2xl border p-4">
@@ -370,43 +254,6 @@
 				<GaugeIcon class="size-4" />
 				{queueCapsSubmitting ? 'Saving…' : 'Save queue caps'}
 			</Button>
-		</form>
-
-		<form
-			method="POST"
-			action="?/restartDaemon"
-			class="flex flex-wrap items-center gap-3 border-t border-white/8 pt-4"
-			use:enhance={enhanceRestartDaemon}
-		>
-			<Button
-				type="submit"
-				variant="outline"
-				class="rounded-full px-5"
-				disabled={!canWrite || restarting || !runtimeChangesPending}
-				title={!canWrite ? writeDisabledTooltip : undefined}
-			>
-				{#if restarting}
-					Restarting…
-				{:else}
-					Restart Daemon
-				{/if}
-			</Button>
-			<p class="text-muted-foreground text-xs">
-				{#if restartPhase === 'requested'}
-					Restart requested. Waiting for the daemon to go away.
-				{:else if restartPhase === 'restarting'}
-					Daemon restarting. This page will confirm when it comes back.
-				{:else if restartPhase === 'back_online'}
-					Daemon back online. Return proof is recorded and runtime changes are live.
-				{:else if restartPhase === 'failed_to_return'}
-					Daemon failed to return within {RESTART_RETURN_TIMEOUT_SECONDS} seconds. Check the host, then
-					retry or restart manually.
-				{:else if runtimeChangesPending}
-					Runtime changes are saved and waiting for restart.
-				{:else}
-					Restart stays disabled until runtime settings change.
-				{/if}
-			</p>
 		</form>
 	</CardContent>
 </Card>

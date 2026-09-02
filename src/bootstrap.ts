@@ -76,7 +76,14 @@ export async function ensureStarterConfig(
     return;
   }
 
-  const runtime = starterRuntimeConfig(options);
+  // Local-dev starter config disables the Plex background sweep by default
+  // (see RuntimeConfig.plexRefreshIntervalMinutes's doc comment) — this key
+  // used to live under `plex.refreshIntervalMinutes`, so it's always present
+  // here regardless of what other runtime options were passed in.
+  const runtime = {
+    plexRefreshIntervalMinutes: 0,
+    ...starterRuntimeConfig(options),
+  };
   const starter = {
     _starter: true,
     transmission: {
@@ -87,14 +94,13 @@ export async function ensureStarterConfig(
     plex: {
       url: 'http://localhost:32400',
       token: '',
-      refreshIntervalMinutes: 0,
     },
     tv: {
       defaults: { resolutions: ['1080p'], codecs: ['x264'] },
       shows: [],
     },
     feeds: [],
-    ...(runtime ? { runtime } : {}),
+    runtime,
   };
 
   await Bun.write(path, JSON.stringify(starter, null, 2) + '\n');

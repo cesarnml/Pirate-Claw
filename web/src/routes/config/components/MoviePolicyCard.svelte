@@ -5,6 +5,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import SelectablePillGroup from './SelectablePillGroup.svelte';
 	import SegmentedChoice from './SegmentedChoice.svelte';
+	import ApplyModeBadge from './ApplyModeBadge.svelte';
 
 	interface Props {
 		movieYears: number[];
@@ -64,10 +65,15 @@
 
 <Card id="movie-policy" class="bg-card/75 rounded-[30px] border-white/10">
 	<CardHeader class="space-y-4">
-		<p class="text-primary font-mono text-xs font-semibold tracking-[0.2em] uppercase">
-			04 · Movie Acquisition Policies
-		</p>
-		<h2 class="text-2xl font-semibold tracking-[-0.03em]">Movie Policy</h2>
+		<div class="flex flex-wrap items-start justify-between gap-3">
+			<div class="space-y-1">
+				<p class="text-primary font-mono text-xs font-semibold tracking-[0.2em] uppercase">
+					04 · Movie Acquisition Policies
+				</p>
+				<h2 class="text-2xl font-semibold tracking-[-0.03em]">Movie Policy</h2>
+			</div>
+			<ApplyModeBadge mode="immediate" />
+		</div>
 	</CardHeader>
 	<CardContent>
 		<form

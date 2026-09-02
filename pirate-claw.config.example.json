@@ -44,7 +44,8 @@
     "artifactDir": ".pirate-claw/runtime",
     "artifactRetentionDays": 7,
     "apiPort": 5555,
-    "tmdbRefreshIntervalMinutes": 360
+    "tmdbRefreshIntervalMinutes": 360,
+    "plexRefreshIntervalMinutes": 360
   },
   "tmdb": {
     "apiKey": "your-tmdb-api-key",
@@ -53,7 +54,6 @@
   },
   "plex": {
     "url": "http://localhost:32400",
-    "token": "YOUR_PLEX_TOKEN",
-    "refreshIntervalMinutes": 30
+    "token": "YOUR_PLEX_TOKEN"
   }
 }
