@@ -73,8 +73,12 @@
 			$page.url.pathname === '/logout'
 	);
 	const showSidebar = $derived(!isOnboarding && !isAuthPage);
-	const setupState = $derived(data.setupState ?? 'partially_configured');
-	const readinessState = $derived(data.readinessState ?? 'not_ready');
+	// null means "couldn't confirm" (the API was unreachable), not "confirmed
+	// incomplete" — the isStarter/isPartiallyConfigured/isReadyPendingRestart
+	// checks below already read false for null via plain equality, so a
+	// down API correctly shows no onboarding banner instead of a false one.
+	const setupState = $derived(data.setupState);
+	const readinessState = $derived(data.readinessState);
 	const isStarter = $derived(setupState === 'starter' && !isOnboarding && !isAuthPage);
 	const isPartiallyConfigured = $derived(setupState === 'partially_configured' && !isAuthPage);
 	const isReadyPendingRestart = $derived(

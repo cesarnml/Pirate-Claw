@@ -68,8 +68,10 @@ describe('layout server load', () => {
 
 		expect(result).toEqual({
 			user: mockUser,
-			// auth/state not fetched in test env (no write token) — origin flagged as untrusted
-			untrustedOrigin: 'http://localhost:5173',
+			// auth/state rejects in this test env (no write token) — an
+			// unconfirmed trust check must not flag the origin as untrusted,
+			// only a confirmed-absent one may (see +layout.server.ts).
+			untrustedOrigin: null,
 			networkPosture: null,
 			health: { uptime: 1, startedAt: '2024-01-01T00:00:00Z' },
 			transmissionSession: {
@@ -103,8 +105,9 @@ describe('layout server load', () => {
 			readinessState: string;
 		};
 		expect(result.setupState).toBe('starter');
-		// Readiness not fetched for unauthenticated — always not_ready
-		expect(result.readinessState).toBe('not_ready');
+		// Readiness isn't fetched for an unauthenticated request — null
+		// ("not confirmed"), not a defaulted 'not_ready' claim.
+		expect(result.readinessState).toBe(null);
 	});
 
 	it('normalizes unknown configState values to partially_configured', async () => {
@@ -183,7 +186,7 @@ describe('layout server load', () => {
 		expect(result.readinessState).toBe('not_ready');
 	});
 
-	it('tolerates unavailable shared endpoints and returns nulls', async () => {
+	it('tolerates unavailable shared endpoints and returns null (not a defaulted state) for setupState/readinessState — an unreachable API must not read as "confirmed incomplete"', async () => {
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		try {
 			const { load } = await import('../../src/routes/+layout.server');
@@ -203,8 +206,8 @@ describe('layout server load', () => {
 				health: null,
 				transmissionSession: null,
 				plexAuthState: 'unavailable',
-				setupState: 'partially_configured',
-				readinessState: 'not_ready',
+				setupState: null,
+				readinessState: null,
 				installHealthState: null
 			});
 		} finally {

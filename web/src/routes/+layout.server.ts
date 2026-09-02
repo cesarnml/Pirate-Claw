@@ -105,7 +105,16 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 	}
 
 	const readiness = readinessResult.status === 'fulfilled' ? readinessResult.value : null;
-	const setupState = setupStateResult.status === 'fulfilled' ? setupStateResult.value.state : null;
+	// null (not a coerced default) whenever the fetch itself failed — the
+	// daemon being unreachable is not evidence that setup is incomplete, and
+	// defaulting to a definite state here used to make the onboarding banner
+	// fire off a plain API outage. See +layout.svelte for how null is
+	// treated (no banner, since nothing was actually confirmed).
+	const setupState =
+		setupStateResult.status === 'fulfilled'
+			? normalizeSetupState(setupStateResult.value.state)
+			: null;
+	const readinessState = readiness ? normalizeReadinessState(readiness.state) : null;
 	const configHasPlex =
 		configResult.status === 'fulfilled' && configResult.value.plex !== undefined;
 	const plexAuthState =
@@ -113,8 +122,15 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 	const authState = authStateResult.status === 'fulfilled' ? authStateResult.value : null;
 	const trustedOrigins = authState?.trusted_origins ?? [];
 	const requestOrigin = url.origin;
+	// A failed /api/auth/state means "we couldn't ask the daemon what's
+	// trusted," not "the daemon confirmed this origin isn't" — showing the
+	// trust-origin banner off an empty trustedOrigins fallback would flag
+	// every origin as untrusted the moment the API is merely unreachable.
+	// Only a *successful* fetch that genuinely omits this origin counts.
 	const untrustedOrigin: string | null =
-		locals.user && !trustedOrigins.includes(requestOrigin) ? requestOrigin : null;
+		locals.user && authStateResult.status === 'fulfilled' && !trustedOrigins.includes(requestOrigin)
+			? requestOrigin
+			: null;
 	const networkPosture: NetworkPostureState | null = authState?.network_posture ?? null;
 
 	if (untrustedOrigin) {
@@ -135,8 +151,8 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 		health: healthResult.status === 'fulfilled' ? healthResult.value : null,
 		transmissionSession: sessionResult.status === 'fulfilled' ? sessionResult.value : null,
 		plexAuthState: normalizePlexAuthState(configHasPlex, plexAuthState),
-		setupState: normalizeSetupState(setupState),
-		readinessState: normalizeReadinessState(readiness?.state),
+		setupState,
+		readinessState,
 		installHealthState:
 			installHealthResult.status === 'fulfilled' ? installHealthResult.value : null,
 		untrustedOrigin,
