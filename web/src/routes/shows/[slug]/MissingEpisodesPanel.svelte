@@ -302,6 +302,27 @@
 		return `${(bytes / 1_048_576).toFixed(0)} MB`;
 	}
 
+	/** Collapses an episode's active grabs into one "Queued via X" pill per
+	 * distinct source, with a count when more than one grab shares that
+	 * source (e.g. a replacement grabbed from the same tracker as the
+	 * stalled one it's meant to replace) — reads as "Queued via thepiratebay
+	 * (2)" instead of two identical pills side by side. Order follows first
+	 * appearance in `grabs` (already most-recent-first), not alphabetical.
+	 * Purely a display grouping — the per-grab stalled/remove state below
+	 * stays keyed to each individual grab regardless of this collapsing. */
+	function groupBySource(grabs: { source: string }[]): { source: string; count: number }[] {
+		const counts: { source: string; count: number }[] = [];
+		for (const grab of grabs) {
+			const existing = counts.find((c) => c.source === grab.source);
+			if (existing) {
+				existing.count++;
+			} else {
+				counts.push({ source: grab.source, count: 1 });
+			}
+		}
+		return counts;
+	}
+
 	let pendingGrabId = $state<number | null>(null);
 	let pendingRemoveHash = $state<string | null>(null);
 
@@ -470,10 +491,12 @@
 							</div>
 							<div class="flex flex-wrap items-center justify-end gap-2">
 								{#if episode.plexStatus !== 'in_library'}
-									{#each episode.manualGrabs as grab (grab.transmissionTorrentHash ?? grab.queuedAt)}
+									{#each groupBySource(episode.manualGrabs) as { source, count } (source)}
 										<Badge class="border-primary/20 bg-primary/12 text-primary">
-											Queued via {grab.source}
+											Queued via {source}{count > 1 ? ` (${count})` : ''}
 										</Badge>
+									{/each}
+									{#each episode.manualGrabs as grab (grab.transmissionTorrentHash ?? grab.queuedAt)}
 										{#if grab.stalled && grab.transmissionTorrentHash && props.canWrite}
 											{@const hash = grab.transmissionTorrentHash}
 											<form
