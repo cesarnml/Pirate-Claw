@@ -469,35 +469,37 @@
 								{/if}
 							</div>
 							<div class="flex flex-wrap items-center justify-end gap-2">
-								{#if episode.manualGrab && episode.plexStatus !== 'in_library'}
-									<Badge class="border-primary/20 bg-primary/12 text-primary">
-										Queued via {episode.manualGrab.source}
-									</Badge>
-									{#if episode.manualGrab.stalled && episode.manualGrab.transmissionTorrentHash && props.canWrite}
-										{@const hash = episode.manualGrab.transmissionTorrentHash}
-										<form
-											method="POST"
-											action="?/removeStalledGrab"
-											use:enhance={() => enhanceRemoveStalled(hash)}
-										>
-											<input type="hidden" name="hash" value={hash} />
-											<Button
-												type="submit"
-												variant="outline"
-												size="sm"
-												class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
-												disabled={pendingRemoveHash !== null}
+								{#if episode.plexStatus !== 'in_library'}
+									{#each episode.manualGrabs as grab (grab.transmissionTorrentHash ?? grab.queuedAt)}
+										<Badge class="border-primary/20 bg-primary/12 text-primary">
+											Queued via {grab.source}
+										</Badge>
+										{#if grab.stalled && grab.transmissionTorrentHash && props.canWrite}
+											{@const hash = grab.transmissionTorrentHash}
+											<form
+												method="POST"
+												action="?/removeStalledGrab"
+												use:enhance={() => enhanceRemoveStalled(hash)}
 											>
-												{#if pendingRemoveHash === hash}
-													<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
-													Removing…
-												{:else}
-													<Trash2Icon class="mr-2 h-3.5 w-3.5" />
-													Stalled — remove
-												{/if}
-											</Button>
-										</form>
-									{/if}
+												<input type="hidden" name="hash" value={hash} />
+												<Button
+													type="submit"
+													variant="outline"
+													size="sm"
+													class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
+													disabled={pendingRemoveHash !== null}
+												>
+													{#if pendingRemoveHash === hash}
+														<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+														Removing…
+													{:else}
+														<Trash2Icon class="mr-2 h-3.5 w-3.5" />
+														Stalled — remove
+													{/if}
+												</Button>
+											</form>
+										{/if}
+									{/each}
 								{/if}
 								<StatusChip status={displayStatus} />
 							</div>
@@ -548,8 +550,9 @@
 											</p>
 										{:else}
 											{#each lookup.torrents as torrent (torrent.id)}
-												{@const isAlreadyQueued =
-													episode.manualGrab && episode.manualGrab.rawTitle === torrent.title}
+												{@const isAlreadyQueued = episode.manualGrabs.some(
+													(grab) => grab.rawTitle === torrent.title
+												)}
 												<div
 													class="bg-background/50 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
 												>

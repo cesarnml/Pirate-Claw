@@ -390,10 +390,9 @@ describe('buildShowEpisodeStatus', () => {
       manualGrabs,
     });
 
-    expect(result?.seasons[0].episodes[0].manualGrab).toMatchObject({
-      source: 'eztv',
-      rawTitle: 'grabbed release',
-    });
+    expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
+      { source: 'eztv', rawTitle: 'grabbed release' },
+    ]);
   });
 
   it('drops a manual grab already marked removed/deleted — the "Queued" badge must revert to plain plexStatus, not stick forever (grill-me: torrent queue/grab UX fixes, 2026-09-01)', async () => {
@@ -416,10 +415,10 @@ describe('buildShowEpisodeStatus', () => {
       manualGrabs,
     });
 
-    expect(result?.seasons[0].episodes[0].manualGrab).toBeNull();
+    expect(result?.seasons[0].episodes[0].manualGrabs).toEqual([]);
   });
 
-  it('keeps the latest grab when an older one for the same episode was removed/deleted', async () => {
+  it('keeps only the still-active grab when an older one for the same episode was removed/deleted', async () => {
     const db = freshDb();
     const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
     const manualGrabs = new ManualGrabsStore(db);
@@ -450,9 +449,50 @@ describe('buildShowEpisodeStatus', () => {
       manualGrabs,
     });
 
-    expect(result?.seasons[0].episodes[0].manualGrab).toMatchObject({
-      source: 'thepiratebay',
-      rawTitle: 'second attempt, active',
+    expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
+      { source: 'thepiratebay', rawTitle: 'second attempt, active' },
+    ]);
+  });
+
+  it('keeps BOTH grabs visible when a replacement is queued before the stalled one is removed — the actual bug this follow-up fixes (2026-09-02)', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
+    const manualGrabs = new ManualGrabsStore(db);
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'first attempt, stalled but not yet removed',
+      transmissionTorrentHash: 'first-hash',
+      transmissionTorrentId: 1,
+      queuedAt: '2026-08-01T00:00:00.000Z',
     });
+    // No setDisposition call — this grab is still active, same as a
+    // stalled-but-not-yet-cleared torrent in Transmission.
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'thepiratebay',
+      rawTitle: 'second attempt, just grabbed',
+      transmissionTorrentHash: 'second-hash',
+      transmissionTorrentId: 2,
+      queuedAt: '2026-08-02T00:00:00.000Z',
+    });
+
+    const result = await buildShowEpisodeStatus(showFixture(4), {
+      tmdb,
+      manualGrabs,
+    });
+
+    // Most-recent-first, matching listForShow's own ordering.
+    expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
+      { source: 'thepiratebay', rawTitle: 'second attempt, just grabbed' },
+      {
+        source: 'eztv',
+        rawTitle: 'first attempt, stalled but not yet removed',
+      },
+    ]);
   });
 });

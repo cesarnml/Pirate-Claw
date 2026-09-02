@@ -34,27 +34,29 @@ const statusWithMixedEpisodes: ShowEpisodeStatus = {
 					name: 'Valles Marineris',
 					airDate: '2026-07-23',
 					plexStatus: 'missing',
-					manualGrab: null
+					manualGrabs: []
 				},
 				{
 					episode: 2,
 					name: 'The Griffin Incident',
 					airDate: '2026-07-30',
 					plexStatus: 'in_library',
-					manualGrab: null
+					manualGrabs: []
 				},
 				{
 					episode: 3,
 					name: 'Human Best Friend',
 					airDate: '2026-08-06',
 					plexStatus: 'missing',
-					manualGrab: {
-						queuedAt: '2026-08-27T00:00:00.000Z',
-						source: 'eztv',
-						rawTitle: 'grabbed release',
-						transmissionTorrentHash: 'abc123',
-						stalled: false
-					}
+					manualGrabs: [
+						{
+							queuedAt: '2026-08-27T00:00:00.000Z',
+							source: 'eztv',
+							rawTitle: 'grabbed release',
+							transmissionTorrentHash: 'abc123',
+							stalled: false
+						}
+					]
 				}
 			]
 		}
@@ -123,7 +125,7 @@ describe('MissingEpisodesPanel', () => {
 					{
 						season: 1,
 						episodeCountMismatch: undefined,
-						episodes: [{ episode: 1, name: 'Pilot', plexStatus: 'unknown', manualGrab: null }]
+						episodes: [{ episode: 1, name: 'Pilot', plexStatus: 'unknown', manualGrabs: [] }]
 					}
 				]
 			},
@@ -153,14 +155,14 @@ describe('MissingEpisodesPanel', () => {
 								name: 'Confirmed future episode',
 								airDate: farFuture,
 								plexStatus: 'missing',
-								manualGrab: null
+								manualGrabs: []
 							},
 							{
 								episode: 2,
 								name: 'No air date on record',
 								airDate: undefined,
 								plexStatus: 'missing',
-								manualGrab: null
+								manualGrabs: []
 							}
 						]
 					}
@@ -257,7 +259,7 @@ describe('MissingEpisodesPanel', () => {
 								name: 'Pilot',
 								airDate: farFuture,
 								plexStatus: 'missing',
-								manualGrab: null
+								manualGrabs: []
 							}
 						]
 					}
@@ -286,7 +288,7 @@ describe('MissingEpisodesPanel', () => {
 								name: 'Pilot',
 								airDate: '2026-01-01',
 								plexStatus: 'in_library',
-								manualGrab: null
+								manualGrabs: []
 							}
 						]
 					}
@@ -388,7 +390,7 @@ describe('MissingEpisodesPanel', () => {
 								name: 'Show A Ep1',
 								airDate: '2026-01-01',
 								plexStatus: 'in_library',
-								manualGrab: null
+								manualGrabs: []
 							}
 						]
 					}
@@ -417,7 +419,7 @@ describe('MissingEpisodesPanel', () => {
 								name: 'Show B Ep1',
 								airDate: '2026-01-01',
 								plexStatus: 'missing',
-								manualGrab: null
+								manualGrabs: []
 							}
 						]
 					}
@@ -480,7 +482,7 @@ describe('MissingEpisodesPanel', () => {
 									name: 'Season One Pilot',
 									airDate: '2026-01-01',
 									plexStatus: 'in_library',
-									manualGrab: null
+									manualGrabs: []
 								}
 							]
 						}

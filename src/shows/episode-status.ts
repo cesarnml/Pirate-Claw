@@ -31,7 +31,15 @@ export type EpisodeWithStatus = {
   overview?: string;
   airDate?: string;
   plexStatus: EpisodePlexStatus;
-  manualGrab: EpisodeManualGrabInfo | null;
+  /** Every still-active (non-disposed) manual grab for this episode, most
+   * recent first — plural because grabbing a replacement for a stalled
+   * torrent is meant to leave the old one in place (and manageable) until
+   * you've confirmed the new one is actually working, not silently hide it.
+   * Empty, not null, when there's no active grab — a single collapsed
+   * "latest wins" value used to make a second concurrent grab invisible in
+   * the UI even though it was still a real, running Transmission torrent
+   * (see grill-me: torrent queue/grab UX fixes, 2026-09-02 follow-up). */
+  manualGrabs: EpisodeManualGrabInfo[];
 };
 
 export type SeasonWithStatus = {
@@ -150,7 +158,7 @@ export async function buildShowEpisodeStatus(
         .slice()
         .sort((a, b) => a.episode_number - b.episode_number)
         .map((ep) => {
-          const grab = manualGrabsByKey.get(
+          const grabs = manualGrabsByKey.get(
             episodeKey(seasonNumber, ep.episode_number),
           );
           return {
@@ -163,7 +171,7 @@ export async function buildShowEpisodeStatus(
               plexSeason,
               ep.episode_number,
             ),
-            manualGrab: grab ?? null,
+            manualGrabs: grabs ?? [],
           };
         });
 
@@ -338,14 +346,15 @@ function resolveEpisodeStatus(
  * render must never hard-fail because Transmission is briefly unreachable.
  */
 async function annotateStalledGrabs(
-  manualGrabsByKey: Map<string, EpisodeManualGrabInfo>,
+  manualGrabsByKey: Map<string, EpisodeManualGrabInfo[]>,
   transmissionConfig: TransmissionConfig | undefined,
 ): Promise<void> {
   if (!transmissionConfig) return;
 
+  const allGrabs = Array.from(manualGrabsByKey.values()).flat();
   const hashes = Array.from(
     new Set(
-      Array.from(manualGrabsByKey.values())
+      allGrabs
         .map((grab) => grab.transmissionTorrentHash)
         .filter((hash): hash is string => hash !== null),
     ),
@@ -356,7 +365,7 @@ async function annotateStalledGrabs(
   if (!result.ok) return;
 
   const byHash = new Map(result.torrents.map((t) => [t.hash, t]));
-  for (const grab of manualGrabsByKey.values()) {
+  for (const grab of allGrabs) {
     if (!grab.transmissionTorrentHash) continue;
     grab.stalled = isStalledSnapshot(byHash.get(grab.transmissionTorrentHash));
   }
@@ -368,10 +377,14 @@ function episodeKey(season: number, episode: number): string {
 
 function groupManualGrabsByEpisode(
   rows: ReturnType<ManualGrabsStore['listForShow']>,
-): Map<string, EpisodeManualGrabInfo> {
-  const map = new Map<string, EpisodeManualGrabInfo>();
-  // rows is already most-recent-first; keep only the first (latest) per
-  // episode.
+): Map<string, EpisodeManualGrabInfo[]> {
+  const map = new Map<string, EpisodeManualGrabInfo[]>();
+  // rows is already most-recent-first. Every still-active row for an
+  // episode is kept, not just the latest — grabbing a replacement for a
+  // stalled torrent is meant to leave the stalled one visible (and its own
+  // remove button reachable) until it's actually cleared, not make it
+  // vanish the moment a second grab exists for the same episode. See
+  // grill-me: torrent queue/grab UX fixes, 2026-09-02 follow-up.
   for (const row of rows) {
     // A grab already marked removed/deleted (via Torrent Manager, or this
     // feature's own stalled-torrent remove button) must not keep showing
@@ -385,14 +398,18 @@ function groupManualGrabsByEpisode(
       continue;
     }
     const key = episodeKey(row.season, row.episode);
-    if (!map.has(key)) {
-      map.set(key, {
-        queuedAt: row.queuedAt,
-        source: row.source,
-        rawTitle: row.rawTitle,
-        transmissionTorrentHash: row.transmissionTorrentHash,
-        stalled: false,
-      });
+    const grab: EpisodeManualGrabInfo = {
+      queuedAt: row.queuedAt,
+      source: row.source,
+      rawTitle: row.rawTitle,
+      transmissionTorrentHash: row.transmissionTorrentHash,
+      stalled: false,
+    };
+    const existing = map.get(key);
+    if (existing) {
+      existing.push(grab);
+    } else {
+      map.set(key, [grab]);
     }
   }
   return map;

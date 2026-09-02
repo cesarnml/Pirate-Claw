@@ -132,7 +132,10 @@ export type EpisodeWithStatus = {
 	overview?: string;
 	airDate?: string;
 	plexStatus: PlexStatus;
-	manualGrab: EpisodeManualGrabInfo | null;
+	/** Every still-active manual grab for this episode, most recent first —
+	 * plural since a replacement grab is meant to leave a stalled one
+	 * visible/removable alongside it, not hide it. Empty when there's none. */
+	manualGrabs: EpisodeManualGrabInfo[];
 };
 
 export type SeasonWithStatus = {
