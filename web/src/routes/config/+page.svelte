@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import PlexAuthCard from '$lib/components/PlexAuthCard.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { maskConfiguredValue, parseHostPortFromUrl } from '$lib/helpers';
-	import { loadRestartRoundTripPhase } from '$lib/restart-roundtrip';
+	import { hasRestartTimedOut, loadRestartRoundTripPhase } from '$lib/restart-roundtrip';
 	import { toast } from '$lib/toast';
 	import type { FeedConfig, RestartStatus } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
@@ -19,6 +19,7 @@
 	import PlexMovieSyncCard from './components/PlexMovieSyncCard.svelte';
 	import PlexTvSyncCard from './components/PlexTvSyncCard.svelte';
 	import RemoveMovieYearModal from './components/RemoveMovieYearModal.svelte';
+	import RestartingAlert from './components/RestartingAlert.svelte';
 	import ShowWatchlistEditor from './components/ShowWatchlistEditor.svelte';
 	import TmdbPanel from './components/TmdbPanel.svelte';
 	import TransmissionCard from './components/TransmissionCard.svelte';
@@ -102,9 +103,102 @@
 	let restartRequestId = $state<string | null>(null);
 	let restartRequestedAt = $state<string | null>(null);
 	let restartPollTimer = $state<number | null>(null);
+	// Also drives the template's data.error branch: when a restart is
+	// genuinely in flight (including one resumed from localStorage on
+	// mount, see below), a failed page load reads as "expected, hang on"
+	// instead of the generic ApiUnavailableAlert — and correctly stops
+	// doing so the moment restartPhase moves to 'back_online' or
+	// 'failed_to_return', since restarting/'requested'/'restarting' no
+	// longer hold.
 	const restartInProgress = $derived(
 		restarting || restartPhase === 'requested' || restartPhase === 'restarting'
 	);
+
+	// The restart round-trip poll otherwise lives entirely in this
+	// component's in-memory state, seeded only by clicking "Restart Daemon"
+	// in the same page session. A reload/refocus mid-restart — exactly when
+	// the daemon is briefly down — reruns +page.server.ts's load, which has
+	// no way to know a restart is expected, sets data.error, and (without
+	// this) wipes the in-memory restart state along with it: the page falls
+	// back to a generic "API unavailable" alert with no path back to "back
+	// online" once the daemon returns. Persisting the pending request here
+	// lets a fresh mount resume polling instead.
+	const RESTART_STORAGE_KEY = 'pirate-claw:pending-daemon-restart';
+
+	function readPendingRestart(): { requestId: string; requestedAt: string } | null {
+		try {
+			const raw = window.localStorage.getItem(RESTART_STORAGE_KEY);
+			if (!raw) return null;
+			const parsed = JSON.parse(raw);
+			if (typeof parsed?.requestId === 'string' && typeof parsed?.requestedAt === 'string') {
+				return parsed;
+			}
+		} catch {
+			// Corrupt entry or storage unavailable (private browsing, etc.) —
+			// treat as "nothing pending" rather than throw.
+		}
+		return null;
+	}
+
+	function writePendingRestart(requestId: string, requestedAt: string) {
+		try {
+			window.localStorage.setItem(RESTART_STORAGE_KEY, JSON.stringify({ requestId, requestedAt }));
+		} catch {
+			// Best-effort only — worst case a reload mid-restart falls back to
+			// the generic error state, same as before this existed.
+		}
+	}
+
+	// Only removes the stored entry if it still matches requestId — the
+	// daemon only ever tracks one restart at a time server-side (see
+	// src/restart-proof.ts), so a second tab (or a stale reload) starting
+	// its own restart legitimately overwrites this key. Without the match
+	// check, that second tab's request finishing (or failing) later would
+	// blind-clear whatever the *first* tab is still tracking, even though
+	// it belongs to someone else's still-in-flight restart.
+	function clearPendingRestart(requestId: string) {
+		try {
+			const current = readPendingRestart();
+			if (current && current.requestId !== requestId) return;
+			window.localStorage.removeItem(RESTART_STORAGE_KEY);
+		} catch {
+			// Nothing to do if storage is unavailable.
+		}
+	}
+
+	onMount(() => {
+		// A pending entry only means something if this load itself couldn't
+		// reach the API — if data.config/data.error say we're fine, the
+		// daemon is already back (we just missed the notification, e.g. the
+		// tab was closed before the poll reached a terminal state). Resuming
+		// polling anyway would flip restartPhase to 'requested' on an
+		// otherwise-healthy page and risk a stray "failed to return" error
+		// toast once the now-stale requestId stops resolving.
+		if (!data.error) {
+			const stale = readPendingRestart();
+			if (stale) clearPendingRestart(stale.requestId);
+			return;
+		}
+
+		const pending = readPendingRestart();
+		if (!pending) return;
+
+		restartRequestId = pending.requestId;
+		restartRequestedAt = pending.requestedAt;
+
+		if (hasRestartTimedOut(pending.requestedAt)) {
+			restartPhase = 'failed_to_return';
+			restartRequestId = null;
+			restartRequestedAt = null;
+			clearPendingRestart(pending.requestId);
+			return;
+		}
+
+		restartPhase = 'requested';
+		// Check right away rather than waiting the usual 1s poll delay —
+		// we don't know how long ago the page was last open.
+		void pollRestartStatus(pending.requestId);
+	});
 
 	onDestroy(() => {
 		if (restartPollTimer !== null) {
@@ -353,6 +447,7 @@
 			restartRequestId = null;
 			restartRequestedAt = null;
 			runtimeChangesPending = false;
+			clearPendingRestart(requestId);
 			toast('Daemon back online — restart proof confirmed.', 'success');
 			await invalidateAll();
 			return;
@@ -362,6 +457,7 @@
 			clearRestartPolling();
 			restartRequestId = null;
 			restartRequestedAt = null;
+			clearPendingRestart(requestId);
 			toast(
 				'Daemon failed to return within 45 seconds — check the host, then retry or restart manually.',
 				'error'
@@ -577,6 +673,7 @@
 					restartRequestId = restartStatus.requestId;
 					restartRequestedAt = restartStatus.requestedAt;
 					restartPhase = 'requested';
+					writePendingRestart(restartStatus.requestId, restartStatus.requestedAt);
 					toast('Restart requested — waiting for the daemon to restart.', 'success');
 					queueRestartStatusPoll(restartStatus.requestId);
 				} else {
@@ -587,6 +684,11 @@
 				}
 			} else {
 				clearRestartPolling();
+				// This attempt never got a requestId (the request to start a
+				// restart itself failed), so there's nothing "ours" in storage
+				// to clear — and blind-clearing here could wipe a different,
+				// still-in-flight restart tracked by another tab (see
+				// clearPendingRestart's ownership-check doc comment).
 				restartRequestId = null;
 				restartRequestedAt = null;
 				restartPhase = 'idle';
@@ -607,7 +709,11 @@
 	{/if}
 
 	{#if data.error}
-		<ApiUnavailableAlert message={data.error} />
+		{#if restartInProgress}
+			<RestartingAlert />
+		{:else}
+			<ApiUnavailableAlert message={data.error} />
+		{/if}
 	{:else if data.config}
 		<section class="border-border/70 bg-card/80 rounded-3xl border p-6 shadow-sm">
 			<PlexAuthCard
