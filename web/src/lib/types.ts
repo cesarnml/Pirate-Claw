@@ -143,6 +143,10 @@ export type SeasonWithStatus = {
 	episodes: EpisodeWithStatus[];
 	/** Undefined when Plex data for this season isn't available to compare. */
 	episodeCountMismatch: boolean | undefined;
+	/** How many of this season's episodes have aired as of today, per TMDB's
+	 * air dates — see src/shows/episode-status.ts on the server. Reuse this
+	 * instead of re-deriving the same date comparison client-side. */
+	airedEpisodeCount: number;
 };
 
 export type ShowEpisodeStatus = {

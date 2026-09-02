@@ -79,6 +79,131 @@ describe('shows detail page server', () => {
 			expect((result as { episodeStatus: unknown }).episodeStatus).toBeNull();
 			expect((result as { episodeStatusError: string | null }).episodeStatusError).toBeTruthy();
 		});
+
+		// See mergeFreshSeasonCompletions's doc comment in +page.server.ts —
+		// /api/shows's seasonCompletions snapshot is captured before this same
+		// request's own /episodes call runs (and, server-side, persists an
+		// updated row for whichever season it walked), so the top card must
+		// prefer the just-fetched episode grid over that stale snapshot.
+		it('overrides the stale seasonCompletions entry with the freshly-fetched episode grid', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { load } = await import('../../../../src/routes/shows/[slug]/+page.server');
+
+			apiFetchMock
+				.mockResolvedValueOnce({
+					shows: [
+						{
+							normalizedTitle: 'The Show',
+							plexStatus: 'unknown',
+							watchCount: null,
+							lastWatchedAt: null,
+							seasons: [],
+							seasonCompletions: [
+								{ season: 1, airedCount: 8, ownedCount: 7, cachedAt: '2026-09-01T00:00:00.000Z' }
+							]
+						}
+					]
+				})
+				.mockResolvedValueOnce({
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: false,
+							airedEpisodeCount: 8,
+							episodes: Array.from({ length: 8 }, (_, i) => ({
+								episode: i + 1,
+								plexStatus: 'in_library',
+								airDate: '2026-08-05',
+								manualGrabs: []
+							}))
+						}
+					]
+				});
+
+			const result = await load({ params: { slug: 'the show' } } as never);
+
+			// The stale ownedCount:7 from /api/shows must not survive — the
+			// fresh per-episode walk (all 8 in_library) is what the top card
+			// should read.
+			expect(
+				(result as { show: { seasonCompletions?: unknown[] } | null }).show?.seasonCompletions
+			).toEqual([{ season: 1, airedCount: 8, ownedCount: 8, cachedAt: expect.any(String) }]);
+		});
+
+		it('leaves seasonCompletions untouched when Plex was not reachable for the fresh walk', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { load } = await import('../../../../src/routes/shows/[slug]/+page.server');
+
+			const staleCompletions = [
+				{ season: 1, airedCount: 8, ownedCount: 7, cachedAt: '2026-09-01T00:00:00.000Z' }
+			];
+			apiFetchMock
+				.mockResolvedValueOnce({
+					shows: [
+						{
+							normalizedTitle: 'The Show',
+							plexStatus: 'unknown',
+							watchCount: null,
+							lastWatchedAt: null,
+							seasons: [],
+							seasonCompletions: staleCompletions
+						}
+					]
+				})
+				.mockResolvedValueOnce({ plexReachable: false, seasons: [] });
+
+			const result = await load({ params: { slug: 'the show' } } as never);
+
+			expect(
+				(result as { show: { seasonCompletions?: unknown[] } | null }).show?.seasonCompletions
+			).toEqual(staleCompletions);
+		});
+
+		it('skips a season with any unknown episode rather than caching a false completion count', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { load } = await import('../../../../src/routes/shows/[slug]/+page.server');
+
+			const staleCompletions = [
+				{ season: 1, airedCount: 8, ownedCount: 7, cachedAt: '2026-09-01T00:00:00.000Z' }
+			];
+			apiFetchMock
+				.mockResolvedValueOnce({
+					shows: [
+						{
+							normalizedTitle: 'The Show',
+							plexStatus: 'unknown',
+							watchCount: null,
+							lastWatchedAt: null,
+							seasons: [],
+							seasonCompletions: staleCompletions
+						}
+					]
+				})
+				.mockResolvedValueOnce({
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: false,
+							airedEpisodeCount: 1,
+							episodes: [{ episode: 1, plexStatus: 'unknown', manualGrabs: [] }]
+						}
+					]
+				});
+
+			const result = await load({ params: { slug: 'the show' } } as never);
+
+			expect(
+				(result as { show: { seasonCompletions?: unknown[] } | null }).show?.seasonCompletions
+			).toEqual(staleCompletions);
+		});
 	});
 
 	describe('refreshTmdb', () => {

@@ -1,8 +1,56 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { apiFetch, apiRequest, navApiFetch } from '$lib/server/api';
-import type { ShowBreakdown, ShowEpisodeStatus } from '$lib/types';
+import type { ShowBreakdown, ShowEpisodeStatus, ShowSeasonCompletion } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
+
+/**
+ * Overrides `show.seasonCompletions` for whichever season(s) `episodeStatus`
+ * just live-walked with fresh aired/owned counts, instead of leaving the
+ * page's top "Plex Status" card reading whatever `/api/shows` happened to
+ * have cached at the moment it was called (a snapshot from *before* this
+ * same request's own `/episodes` call ran and persisted an updated row for
+ * that season server-side — see persistSeasonCompletions in src/api.ts).
+ * Investigated live 2026-09-02: the per-episode grid below the top card can
+ * show every episode as in_library while the card above still says
+ * "MISSING (1)", both from the very same page load, purely because the two
+ * numbers came from two sequential API calls straddling the moment the
+ * daemon updated its own cache.
+ *
+ * Same eligibility guard as persistSeasonCompletions: skip a season with any
+ * 'unknown' episode (an unconfirmed Plex read, not a real owned/missing
+ * verdict) rather than overwrite a real cached count with a false one.
+ */
+function mergeFreshSeasonCompletions(
+	show: ShowBreakdown,
+	episodeStatus: ShowEpisodeStatus | null
+): ShowBreakdown {
+	if (!episodeStatus || !episodeStatus.plexReachable) return show;
+
+	const cachedAt = new Date().toISOString();
+	const fresh: ShowSeasonCompletion[] = [];
+	for (const season of episodeStatus.seasons) {
+		const hasUnknownEpisode = season.episodes.some((e) => e.plexStatus === 'unknown');
+		if (hasUnknownEpisode) continue;
+
+		const ownedCount = season.episodes.filter((e) => e.plexStatus === 'in_library').length;
+		fresh.push({
+			season: season.season,
+			airedCount: season.airedEpisodeCount,
+			ownedCount,
+			cachedAt
+		});
+	}
+	if (fresh.length === 0) return show;
+
+	const merged = [...(show.seasonCompletions ?? [])];
+	for (const completion of fresh) {
+		const idx = merged.findIndex((c) => c.season === completion.season);
+		if (idx === -1) merged.push(completion);
+		else merged[idx] = completion;
+	}
+	return { ...show, seasonCompletions: merged };
+}
 
 export const load: PageServerLoad = async ({ params }) => {
 	const title = params.slug;
@@ -26,7 +74,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		};
 	}
 
-	const show =
+	let show =
 		shows.find((entry) => entry.normalizedTitle.toLowerCase() === title.toLowerCase()) ?? null;
 
 	let episodeStatus: ShowEpisodeStatus | null = null;
@@ -42,6 +90,10 @@ export const load: PageServerLoad = async ({ params }) => {
 				`/api/shows/${encodeURIComponent(title)}/episodes`
 			);
 			episodeStatus = response;
+			// See mergeFreshSeasonCompletions's doc comment — keeps the top
+			// card in step with the per-episode grid this same page load just
+			// fetched, instead of trailing it by one request.
+			show = mergeFreshSeasonCompletions(show, episodeStatus);
 		} catch (error) {
 			// Non-fatal — the rest of the page (TMDB overview, missing-episodes
 			// panel above) still renders fine without this.

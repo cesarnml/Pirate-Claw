@@ -2,6 +2,7 @@
 	import ArrowDownToLineIcon from '@lucide/svelte/icons/arrow-down-to-line';
 	import FilterIcon from '@lucide/svelte/icons/filter';
 	import FlameIcon from '@lucide/svelte/icons/flame';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import LibraryBigIcon from '@lucide/svelte/icons/library-big';
 	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
@@ -18,6 +19,7 @@
 	} from '$lib/helpers';
 	import type { PageData } from './$types';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
 	import ArchiveStrip from './components/ArchiveStrip.svelte';
 	import type { ArchiveItem } from './components/ArchiveStrip.svelte';
 	import DashboardHeader from './components/DashboardHeader.svelte';
@@ -28,6 +30,16 @@
 
 	const { data }: { data: PageData } = $props();
 	let onboardingDismissed = $state(false);
+	let retryingDashboard = $state(false);
+
+	async function retryDashboardFetch(): Promise<void> {
+		retryingDashboard = true;
+		try {
+			await invalidateAll();
+		} finally {
+			retryingDashboard = false;
+		}
+	}
 
 	function sumRunCounts(
 		runs: RunSummaryRecord[] | null,
@@ -298,7 +310,24 @@
 	{#if data.error}
 		<Alert variant="destructive" role="alert">
 			<AlertTitle>API unavailable</AlertTitle>
-			<AlertDescription>{data.error}</AlertDescription>
+			<AlertDescription class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+				<span>{data.error} This is usually transient — retrying automatically.</span>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					class="rounded-full"
+					disabled={retryingDashboard}
+					onclick={retryDashboardFetch}
+				>
+					{#if retryingDashboard}
+						<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+						Retrying…
+					{:else}
+						Retry
+					{/if}
+				</Button>
+			</AlertDescription>
 		</Alert>
 	{:else}
 		<StatusCardGrid {statusCards} />

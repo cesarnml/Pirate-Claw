@@ -28,6 +28,7 @@ const statusWithMixedEpisodes: ShowEpisodeStatus = {
 		{
 			season: 4,
 			episodeCountMismatch: true,
+			airedEpisodeCount: 3,
 			episodes: [
 				{
 					episode: 1,
@@ -125,6 +126,7 @@ describe('MissingEpisodesPanel', () => {
 					{
 						season: 1,
 						episodeCountMismatch: undefined,
+						airedEpisodeCount: 1,
 						episodes: [{ episode: 1, name: 'Pilot', plexStatus: 'unknown', manualGrabs: [] }]
 					}
 				]
@@ -149,6 +151,7 @@ describe('MissingEpisodesPanel', () => {
 					{
 						season: 1,
 						episodeCountMismatch: undefined,
+						airedEpisodeCount: 0,
 						episodes: [
 							{
 								episode: 1,
@@ -253,6 +256,7 @@ describe('MissingEpisodesPanel', () => {
 					{
 						season: 1,
 						episodeCountMismatch: undefined,
+						airedEpisodeCount: 0,
 						episodes: [
 							{
 								episode: 1,
@@ -282,6 +286,7 @@ describe('MissingEpisodesPanel', () => {
 					{
 						season: 1,
 						episodeCountMismatch: undefined,
+						airedEpisodeCount: 1,
 						episodes: [
 							{
 								episode: 1,
@@ -384,6 +389,7 @@ describe('MissingEpisodesPanel', () => {
 					{
 						season: 1,
 						episodeCountMismatch: undefined,
+						airedEpisodeCount: 1,
 						episodes: [
 							{
 								episode: 1,
@@ -413,6 +419,7 @@ describe('MissingEpisodesPanel', () => {
 					{
 						season: 1,
 						episodeCountMismatch: undefined,
+						airedEpisodeCount: 1,
 						episodes: [
 							{
 								episode: 1,
@@ -476,6 +483,7 @@ describe('MissingEpisodesPanel', () => {
 						{
 							season: 1,
 							episodeCountMismatch: undefined,
+							airedEpisodeCount: 1,
 							episodes: [
 								{
 									episode: 1,
