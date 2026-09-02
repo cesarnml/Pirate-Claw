@@ -292,6 +292,19 @@
 		feedsList = [...config.feeds];
 	});
 
+	// PlexAuthCard's Save-PMS-URL/manual-token forms are plain (no
+	// use:enhance — see that component), so a successful save is a real
+	// page navigation, not an enhance callback this file can hook directly.
+	// form.plexRequiresRestart (set only by savePlex/manualPlexToken, not
+	// disconnect/cancel) is how that reaches the same shared
+	// markRuntimeChangesPending signal Runtime Controls and TMDB use — see
+	// those actions' comments in +page.server.ts for why they need it.
+	$effect(() => {
+		if (form?.plexRequiresRestart) {
+			markRuntimeChangesPending();
+		}
+	});
+
 	function startAddShowDraft() {
 		if (!canWrite || showsSubmitting) return;
 		showAddDraftActive = true;
@@ -726,6 +739,11 @@
 	const enhanceSaveTmdb: SubmitFunction = () => {
 		return async ({ result, update }) => {
 			if (result.type === 'success') {
+				// tmdbMovieEnrichDeps/tmdbShowsEnrichDeps (src/cli.ts) bake the
+				// API key and cache TTLs into a client built once at daemon
+				// boot — same restart-needed story as Runtime Controls, so
+				// feed the same shared signal (see markRuntimeChangesPending).
+				markRuntimeChangesPending();
 				toast('Saved', 'success');
 			} else if (result.type === 'failure') {
 				if (result.status === 409) {

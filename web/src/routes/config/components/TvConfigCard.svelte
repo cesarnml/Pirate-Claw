@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import ApplyModeBadge from './ApplyModeBadge.svelte';
+	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 	import SelectablePillGroup from './SelectablePillGroup.svelte';
 
 	interface Props {

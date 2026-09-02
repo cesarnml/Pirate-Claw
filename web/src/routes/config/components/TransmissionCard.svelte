@@ -8,7 +8,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import CableIcon from '@lucide/svelte/icons/cable';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
-	import ApplyModeBadge from './ApplyModeBadge.svelte';
+	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	interface Props {
 		canWrite: boolean;

@@ -6,6 +6,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	interface Props {
 		tmdb?: TmdbConfig;
@@ -31,12 +32,15 @@
 				</p>
 				<h2 class="text-2xl font-semibold tracking-[-0.03em]">TMDB Metadata</h2>
 			</div>
-			<div class="text-muted-foreground inline-flex items-center gap-2 text-xs uppercase">
-				<span
-					class={`inline-block size-2 rounded-full ${apiKeyConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`}
-					aria-label={apiKeyConfigured ? 'configured' : 'not configured'}
-				></span>
-				{apiKeyConfigured ? 'Configured' : 'No API Key'}
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				<div class="text-muted-foreground inline-flex items-center gap-2 text-xs uppercase">
+					<span
+						class={`inline-block size-2 rounded-full ${apiKeyConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`}
+						aria-label={apiKeyConfigured ? 'configured' : 'not configured'}
+					></span>
+					{apiKeyConfigured ? 'Configured' : 'No API Key'}
+				</div>
+				<ApplyModeBadge mode="restart" />
 			</div>
 		</div>
 	</CardHeader>

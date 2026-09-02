@@ -5,7 +5,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import SelectablePillGroup from './SelectablePillGroup.svelte';
 	import SegmentedChoice from './SegmentedChoice.svelte';
-	import ApplyModeBadge from './ApplyModeBadge.svelte';
+	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	interface Props {
 		movieYears: number[];

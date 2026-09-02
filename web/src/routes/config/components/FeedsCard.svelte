@@ -5,7 +5,7 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import type { FeedConfig } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import ApplyModeBadge from './ApplyModeBadge.svelte';
+	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	interface Props {
 		feedsList: FeedConfig[];

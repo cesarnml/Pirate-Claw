@@ -204,7 +204,13 @@ export const actions: Actions = {
 			return {
 				plexMessage: 'Plex URL saved.',
 				plexMessageTone: 'success',
-				plexEtag: response.headers.get('etag')
+				plexEtag: response.headers.get('etag'),
+				// plexMovieEnrichDeps/plexShowEnrichDeps (src/cli.ts) build their
+				// Plex HTTP client's baseUrl once at daemon boot and never rebuild
+				// it — a saved URL change updates the config file/activeConfig
+				// immediately but the daemon keeps talking to the old URL until
+				// restarted. See +page.svelte's markRuntimeChangesPending.
+				plexRequiresRestart: true
 			};
 		} catch (error) {
 			console.error('[config] savePlex failed:', error);
@@ -311,7 +317,12 @@ export const actions: Actions = {
 			return {
 				plexMessage: 'Plex token verified and saved.',
 				plexMessageTone: 'success',
-				plexEtag: response.headers.get('etag')
+				plexEtag: response.headers.get('etag'),
+				// Manual-token mode builds a plain PlexHttpClient(url, token, ...)
+				// once at boot too (no RenewingPlexHttpClient/credential manager
+				// in play), so this needs a restart the same way the URL save
+				// above does — see that action's comment.
+				plexRequiresRestart: true
 			};
 		} catch (error) {
 			console.error('[config] manualPlexToken failed:', error);

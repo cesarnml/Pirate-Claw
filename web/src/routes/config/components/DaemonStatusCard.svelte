@@ -8,7 +8,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import ApplyModeBadge from './ApplyModeBadge.svelte';
+	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	interface Props {
 		health: DaemonHealth | null;
