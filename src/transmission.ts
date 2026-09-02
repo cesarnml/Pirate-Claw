@@ -81,6 +81,12 @@ export type TorrentStatSnapshot = {
   /** When this torrent finished — Transmission reports 0 until then, mapped
    * to undefined the same way doneDate is elsewhere in this file. */
   doneDate?: string;
+  /** Transmission's own human-readable error text (e.g. "No data found" or
+   * a tracker failure) — empty string when there's no error. Mapped to
+   * undefined for a clean "is there an error at all" check, same pattern as
+   * addedDate/doneDate. Powers stalled-torrent detection (see
+   * shows/episode-status.ts's isStalledSnapshot). */
+  errorString?: string;
 };
 
 export type FetchTorrentStatsResult =
@@ -427,6 +433,7 @@ export async function fetchTorrentStats(
         'eta',
         'addedDate',
         'doneDate',
+        'errorString',
       ],
     },
   };
@@ -1268,6 +1275,7 @@ type TransmissionStatTorrent = {
   eta?: number;
   addedDate?: number;
   doneDate?: number;
+  errorString?: string;
 };
 
 type TransmissionTorrentStatResponse = {
@@ -1414,6 +1422,10 @@ function parseTorrentStatsResult(parsed: unknown): FetchTorrentStatsResult {
       doneDate:
         typeof torrent.doneDate === 'number' && torrent.doneDate > 0
           ? new Date(torrent.doneDate * 1000).toISOString()
+          : undefined,
+      errorString:
+        typeof torrent.errorString === 'string' && torrent.errorString !== ''
+          ? torrent.errorString
           : undefined,
     });
   }

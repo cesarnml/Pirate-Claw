@@ -77,6 +77,7 @@ import {
   extractResolution,
   normalizeFeedItem,
 } from './normalize';
+import { scoreManualSearchResult } from './match-policy';
 import {
   ConfigError,
   validateCompactTvDefaults,
@@ -502,6 +503,36 @@ async function parseJsonTorrentHash(
 }
 
 /**
+ * Sorts manual-search results (EZTV/ThePirateBay/YTS) best-first using
+ * scoreManualSearchResult — replaces the earlier plain seeds-desc sort (see
+ * grill-me: torrent queue/grab UX fixes, 2026-09-01, slice 4) now that a
+ * result also carries resolution/codec to rank against the operator's own
+ * configured preference. Mutates and returns the same array, matching the
+ * plain `.sort()` call sites this replaces.
+ */
+function sortByManualSearchScore<
+  T extends { resolution?: string; codec?: string; seeds: number },
+>(torrents: T[], resolutions: string[], codecs: string[]): T[] {
+  return torrents.sort(
+    (a, b) =>
+      scoreManualSearchResult(
+        b.resolution,
+        b.codec,
+        b.seeds,
+        resolutions,
+        codecs,
+      ) -
+      scoreManualSearchResult(
+        a.resolution,
+        a.codec,
+        a.seeds,
+        resolutions,
+        codecs,
+      ),
+  );
+}
+
+/**
  * Resolves a Transmission hash to a manageable torrent context for
  * pause/resume/remove/remove-and-delete/dispose. Tries candidate_state first
  * (the RSS-pipeline case, which also carries an identityKey the caller can
@@ -759,6 +790,16 @@ export function createApiFetch(
     const grabSourceByTmdbId = new Map<number, ManualMovieGrabSourceOrRss>(
       manualMovieGrabs?.listLatestSourceByTmdbId() ?? [],
     );
+    // A tmdbId whose only manual/adopted grab(s) stalled and were removed
+    // before ever completing shouldn't still read "grabbed"/"Queued via X"
+    // once Plex has nothing else to go on — see
+    // ManualMovieGrabsStore.listReclaimedTmdbIds. Deleting here (before
+    // `owned` is derived from these same keys, and before the RSS/Plex
+    // merge below) is the movie-shaped sibling of episode-status.ts's
+    // disposition filtering for manual_grabs.
+    for (const tmdbId of manualMovieGrabs?.listReclaimedTmdbIds() ?? []) {
+      grabSourceByTmdbId.delete(tmdbId);
+    }
     // Seeded from grabSourceByTmdbId's own keys rather than a second
     // listGrabbedTmdbIds() query — that method's result was already a
     // strict subset of this one's keys, so it was just a redundant scan.
@@ -2773,12 +2814,16 @@ export function createApiFetch(
           );
         }
         const { torrents } = outcome;
-        torrents.sort((a, b) => b.seeds - a.seeds);
         const withQuality = torrents.map((t) => ({
           ...t,
           resolution: extractResolution(t.title)?.value,
           codec: extractCodec(t.title)?.value,
         }));
+        sortByManualSearchScore(
+          withQuality,
+          activeConfig.movies?.resolutions ?? [],
+          activeConfig.movies?.codecs ?? [],
+        );
         return Response.json({ torrents: withQuality });
       } catch {
         return json500();
@@ -2824,7 +2869,11 @@ export function createApiFetch(
             { status: 502 },
           );
         }
-        torrents.sort((a, b) => b.seeds - a.seeds);
+        sortByManualSearchScore(
+          torrents,
+          activeConfig.movies?.resolutions ?? [],
+          activeConfig.movies?.codecs ?? [],
+        );
         return Response.json({ torrents });
       } catch {
         return json500();
@@ -2855,6 +2904,11 @@ export function createApiFetch(
       let rawTitle: string;
       let source: ManualMovieGrabSource;
       let imdbId: string | null;
+      let resolution: string | null;
+      let codec: string | null;
+      let sizeBytes: number | null;
+      let seeds: number | null;
+      let peers: number | null;
       try {
         const body: unknown = await request.json();
         const parsed = expectRecord(body, 'request body');
@@ -2874,6 +2928,15 @@ export function createApiFetch(
           parsed.imdbId === undefined || parsed.imdbId === null
             ? null
             : requireNonEmptyString(parsed.imdbId, 'request body imdbId');
+        // Best-effort logging only — same rationale as the TV manual-grab
+        // handler just above.
+        resolution =
+          typeof parsed.resolution === 'string' ? parsed.resolution : null;
+        codec = typeof parsed.codec === 'string' ? parsed.codec : null;
+        sizeBytes =
+          typeof parsed.sizeBytes === 'number' ? parsed.sizeBytes : null;
+        seeds = typeof parsed.seeds === 'number' ? parsed.seeds : null;
+        peers = typeof parsed.peers === 'number' ? parsed.peers : null;
       } catch (error) {
         return Response.json(
           {
@@ -2926,6 +2989,11 @@ export function createApiFetch(
           moviePosterUrl,
           movieDisplayTitle,
           movieYear,
+          resolution,
+          codec,
+          sizeBytes,
+          seeds,
+          peers,
         });
 
         return Response.json({ ok: true, grab: recorded });
@@ -3143,6 +3211,7 @@ export function createApiFetch(
               ? { client: plexShows.client, cache: plexShows.cache }
               : undefined,
             manualGrabs: new ManualGrabsStore(database),
+            transmissionConfig: activeConfig.transmission,
           },
           { season },
         );
@@ -3234,14 +3303,20 @@ export function createApiFetch(
           );
         }
 
-        // Practical downloadability signal, not resolution — a 0-seed 1080p
-        // release is worse than a 5-seed 720p one (see grill-me Q5).
-        torrents.sort((a, b) => b.seeds - a.seeds);
+        // Resolution/codec preference dominates, peers breaks ties within a
+        // tier — see match-policy.ts's scoreManualSearchResult (grill-me:
+        // torrent queue/grab UX fixes, 2026-09-01, slice 4). Replaces the
+        // earlier plain seeds-desc sort.
         const withQuality = torrents.map((t) => ({
           ...t,
           resolution: extractResolution(t.title)?.value,
           codec: extractCodec(t.title)?.value,
         }));
+        sortByManualSearchScore(
+          withQuality,
+          activeConfig.tvDefaults?.resolutions ?? [],
+          activeConfig.tvDefaults?.codecs ?? [],
+        );
         return Response.json({ torrents: withQuality });
       } catch {
         return json500();
@@ -3298,13 +3373,17 @@ export function createApiFetch(
         }
         const { torrents } = outcome;
 
-        // Same practical-downloadability ranking as the EZTV route.
-        torrents.sort((a, b) => b.seeds - a.seeds);
+        // Same ranking as the EZTV route above.
         const withQuality = torrents.map((t) => ({
           ...t,
           resolution: extractResolution(t.title)?.value,
           codec: extractCodec(t.title)?.value,
         }));
+        sortByManualSearchScore(
+          withQuality,
+          activeConfig.tvDefaults?.resolutions ?? [],
+          activeConfig.tvDefaults?.codecs ?? [],
+        );
         return Response.json({ torrents: withQuality });
       } catch {
         return json500();
@@ -3336,6 +3415,11 @@ export function createApiFetch(
       let magnetUrl: string;
       let rawTitle: string;
       let source: ManualGrabSource;
+      let resolution: string | null;
+      let codec: string | null;
+      let sizeBytes: number | null;
+      let seeds: number | null;
+      let peers: number | null;
       try {
         const body: unknown = await request.json();
         const parsed = expectRecord(body, 'request body');
@@ -3358,6 +3442,16 @@ export function createApiFetch(
           parsed.source === undefined
             ? 'eztv'
             : requireManualGrabSource(parsed.source, 'request body source');
+        // Best-effort logging only (see manual-grabs/store.ts's doc comment)
+        // — malformed/omitted values are recorded as null rather than
+        // failing the whole grab, unlike the required fields above.
+        resolution =
+          typeof parsed.resolution === 'string' ? parsed.resolution : null;
+        codec = typeof parsed.codec === 'string' ? parsed.codec : null;
+        sizeBytes =
+          typeof parsed.sizeBytes === 'number' ? parsed.sizeBytes : null;
+        seeds = typeof parsed.seeds === 'number' ? parsed.seeds : null;
+        peers = typeof parsed.peers === 'number' ? parsed.peers : null;
       } catch (error) {
         return Response.json(
           {
@@ -3400,6 +3494,11 @@ export function createApiFetch(
           transmissionTorrentId: result.torrentId ?? null,
           showPosterUrl: show.tmdb?.posterUrl ?? null,
           showDisplayTitle: show.tmdb?.name ?? show.normalizedTitle,
+          resolution,
+          codec,
+          sizeBytes,
+          seeds,
+          peers,
         });
 
         return Response.json({ ok: true, grab: recorded });

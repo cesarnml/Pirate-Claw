@@ -395,4 +395,64 @@ describe('buildShowEpisodeStatus', () => {
       rawTitle: 'grabbed release',
     });
   });
+
+  it('drops a manual grab already marked removed/deleted — the "Queued" badge must revert to plain plexStatus, not stick forever (grill-me: torrent queue/grab UX fixes, 2026-09-01)', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
+    const manualGrabs = new ManualGrabsStore(db);
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'stalled release',
+      transmissionTorrentHash: 'stalled-hash',
+      transmissionTorrentId: 1,
+    });
+    manualGrabs.setDisposition('stalled-hash', 'deleted');
+
+    const result = await buildShowEpisodeStatus(showFixture(4), {
+      tmdb,
+      manualGrabs,
+    });
+
+    expect(result?.seasons[0].episodes[0].manualGrab).toBeNull();
+  });
+
+  it('keeps the latest grab when an older one for the same episode was removed/deleted', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
+    const manualGrabs = new ManualGrabsStore(db);
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'first attempt, stalled',
+      transmissionTorrentHash: 'first-hash',
+      transmissionTorrentId: 1,
+      queuedAt: '2026-08-01T00:00:00.000Z',
+    });
+    manualGrabs.setDisposition('first-hash', 'deleted');
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'thepiratebay',
+      rawTitle: 'second attempt, active',
+      transmissionTorrentHash: 'second-hash',
+      transmissionTorrentId: 2,
+      queuedAt: '2026-08-02T00:00:00.000Z',
+    });
+
+    const result = await buildShowEpisodeStatus(showFixture(4), {
+      tmdb,
+      manualGrabs,
+    });
+
+    expect(result?.seasons[0].episodes[0].manualGrab).toMatchObject({
+      source: 'thepiratebay',
+      rawTitle: 'second attempt, active',
+    });
+  });
 });

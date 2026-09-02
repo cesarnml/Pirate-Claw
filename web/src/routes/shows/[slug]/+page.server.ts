@@ -185,6 +185,17 @@ export const actions: Actions = {
 		// handler) — kept optional here too so this action stays backward
 		// compatible if a future form doesn't set it.
 		const source = String(formData.get('source') ?? '').trim();
+		// Best-effort quality/swarm-health snapshot at grab time — logged for
+		// a future auto-grab heuristic, never required (see
+		// src/manual-grabs/store.ts's doc comment).
+		const resolution = String(formData.get('resolution') ?? '').trim();
+		const codec = String(formData.get('codec') ?? '').trim();
+		const sizeBytesRaw = formData.get('sizeBytes');
+		const seedsRaw = formData.get('seeds');
+		const peersRaw = formData.get('peers');
+		const sizeBytes = sizeBytesRaw !== null ? Number(sizeBytesRaw) : NaN;
+		const seeds = seedsRaw !== null ? Number(seedsRaw) : NaN;
+		const peers = peersRaw !== null ? Number(peersRaw) : NaN;
 
 		if (!Number.isInteger(season) || !Number.isInteger(episode) || !magnetUrl || !rawTitle) {
 			return fail(400, { grabMessage: 'Missing or invalid grab details.' });
@@ -204,7 +215,12 @@ export const actions: Actions = {
 						episode,
 						magnetUrl,
 						rawTitle,
-						...(source ? { source } : {})
+						...(source ? { source } : {}),
+						...(resolution ? { resolution } : {}),
+						...(codec ? { codec } : {}),
+						...(Number.isFinite(sizeBytes) ? { sizeBytes } : {}),
+						...(Number.isFinite(seeds) ? { seeds } : {}),
+						...(Number.isFinite(peers) ? { peers } : {})
 					})
 				}
 			);
@@ -227,6 +243,51 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[shows detail] manualGrab failed:', error);
 			return fail(500, { grabMessage: 'Could not reach the API to queue this episode.' });
+		}
+	},
+
+	// Reuses the daemon's existing Torrent Manager remove-and-delete route
+	// (resolveManagedTorrentAction in api.ts already knows how to manage a
+	// manual_grabs-only torrent, not just a candidate_state one) rather than
+	// a new endpoint — see MissingEpisodesPanel.svelte's doc comment on the
+	// stalled-torrent remove button for why this exists.
+	removeStalledGrab: async ({ request }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { removeMessage: 'Removing is unavailable without API write access.' });
+		}
+
+		const formData = await request.formData();
+		const hash = String(formData.get('hash') ?? '').trim();
+		if (!hash) {
+			return fail(400, { removeMessage: 'Missing torrent hash.' });
+		}
+
+		try {
+			const response = await apiRequest('/api/transmission/torrent/remove-and-delete', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`
+				},
+				body: JSON.stringify({ hash })
+			});
+
+			if (!response.ok) {
+				let removeMessage = `Remove failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) removeMessage = body.error;
+				} catch {
+					// Keep fallback message.
+				}
+				return fail(response.status, { removeMessage });
+			}
+
+			return { removeGrabSuccess: true };
+		} catch (error) {
+			console.error('[shows detail] removeStalledGrab failed:', error);
+			return fail(500, { removeMessage: 'Could not reach the API to remove this torrent.' });
 		}
 	}
 };

@@ -17,6 +17,7 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
 	const props = $props<{
 		slug: string;
@@ -301,6 +302,36 @@
 	}
 
 	let pendingGrabId = $state<number | null>(null);
+	let pendingRemoveHash = $state<string | null>(null);
+
+	// Reuses Torrent Manager's own remove-and-delete action (see
+	// resolveManagedTorrentAction/api.ts) via a dedicated form action on this
+	// page — the use case grill-me settled on: a queued episode stalled (no
+	// peers), and the fastest recovery is clearing it right here so a
+	// different release can be grabbed for the same episode, without a trip
+	// to Torrent Manager. See grill-me: torrent queue/grab UX fixes,
+	// 2026-09-01, slice 3.
+	function enhanceRemoveStalled(hash: string) {
+		pendingRemoveHash = hash;
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; data?: Record<string, unknown> };
+			update: () => Promise<void>;
+		}) => {
+			await update();
+			await invalidateAll();
+			pendingRemoveHash = null;
+			if (result.type === 'success') {
+				toast('Removed', 'success', 'Stalled torrent removed — pick another release below.');
+			} else if (result.type === 'failure') {
+				toast('Remove failed', 'error', (result.data?.removeMessage as string) ?? undefined);
+			} else if (result.type === 'error') {
+				toast('Remove failed', 'error', 'Could not reach the API.');
+			}
+		};
+	}
 
 	function enhanceGrab(torrentId: number, season: number, episode: number) {
 		pendingGrabId = torrentId;
@@ -436,11 +467,36 @@
 									<p class="text-muted-foreground mt-1 text-xs">{episode.airDate}</p>
 								{/if}
 							</div>
-							<div class="flex items-center gap-2">
+							<div class="flex flex-wrap items-center justify-end gap-2">
 								{#if episode.manualGrab && episode.plexStatus !== 'in_library'}
 									<Badge class="border-primary/20 bg-primary/12 text-primary">
 										Queued via {episode.manualGrab.source}
 									</Badge>
+									{#if episode.manualGrab.stalled && episode.manualGrab.transmissionTorrentHash && props.canWrite}
+										{@const hash = episode.manualGrab.transmissionTorrentHash}
+										<form
+											method="POST"
+											action="?/removeStalledGrab"
+											use:enhance={() => enhanceRemoveStalled(hash)}
+										>
+											<input type="hidden" name="hash" value={hash} />
+											<Button
+												type="submit"
+												variant="outline"
+												size="sm"
+												class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
+												disabled={pendingRemoveHash !== null}
+											>
+												{#if pendingRemoveHash === hash}
+													<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+													Removing…
+												{:else}
+													<Trash2Icon class="mr-2 h-3.5 w-3.5" />
+													Stalled — remove
+												{/if}
+											</Button>
+										</form>
+									{/if}
 								{/if}
 								<StatusChip status={displayStatus} />
 							</div>
@@ -520,6 +576,15 @@
 														<input type="hidden" name="magnetUrl" value={torrent.magnetUrl} />
 														<input type="hidden" name="rawTitle" value={torrent.title} />
 														<input type="hidden" name="source" value={source} />
+														{#if torrent.resolution}
+															<input type="hidden" name="resolution" value={torrent.resolution} />
+														{/if}
+														{#if torrent.codec}
+															<input type="hidden" name="codec" value={torrent.codec} />
+														{/if}
+														<input type="hidden" name="sizeBytes" value={torrent.sizeBytes} />
+														<input type="hidden" name="seeds" value={torrent.seeds} />
+														<input type="hidden" name="peers" value={torrent.peers} />
 														<Button
 															type="submit"
 															size="sm"

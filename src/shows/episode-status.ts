@@ -5,6 +5,8 @@ import { loadSeasonEpisodes, type TvEnrichDeps } from '../tmdb/tv-enrichment';
 import { tvMatchKey } from '../tmdb/keys';
 import type { ManualGrabsStore } from '../manual-grabs/store';
 import type { ShowBreakdown } from '../tv-api-types';
+import type { TransmissionConfig } from '../config';
+import { fetchTorrentStats, type TorrentStatSnapshot } from '../transmission';
 
 export type EpisodePlexStatus = 'in_library' | 'missing' | 'unknown';
 
@@ -12,6 +14,15 @@ export type EpisodeManualGrabInfo = {
   queuedAt: string;
   source: string;
   rawTitle: string;
+  transmissionTorrentHash: string | null;
+  /** True when this grab's torrent looks stuck and probably won't ever
+   * complete — see isStalledSnapshot for the exact definition. Always false
+   * when transmission config isn't available to this build, or when the
+   * live lookup itself failed (fails open: never claim "stalled" on a
+   * signal we couldn't actually confirm). Powers the inline remove button
+   * on the missing-episodes panel — see grill-me: torrent queue/grab UX
+   * fixes, 2026-09-01. */
+  stalled: boolean;
 };
 
 export type EpisodeWithStatus = {
@@ -53,7 +64,30 @@ export type EpisodeStatusDeps = {
     cache: PlexCache;
   };
   manualGrabs: ManualGrabsStore;
+  /** Optional: without it, every manualGrab reads stalled:false rather than
+   * failing the whole panel — the missing-episodes panel worked fine before
+   * stalled-detection existed, and a Transmission-lookup failure shouldn't
+   * take the rest of the page down with it. */
+  transmissionConfig?: TransmissionConfig;
 };
+
+/** A torrent counts as stalled when it's sat in Transmission's downloading
+ * state for more than a day (still resolving pieces, no matter the current
+ * instantaneous rate — see grill-me Q: "skip the download rate
+ * requirement", 2026-09-01), or when Transmission itself is reporting an
+ * error (e.g. no peers found) regardless of age. Deliberately NOT
+ * 'queued' (Transmission's own queue-cap hold — not this torrent's fault)
+ * or 'stopped'/'seeding'/'completed' (paused or already done isn't
+ * "stalled"). */
+const STALL_AGE_MS = 24 * 60 * 60 * 1000;
+
+function isStalledSnapshot(torrent: TorrentStatSnapshot | undefined): boolean {
+  if (!torrent) return false;
+  if (torrent.errorString) return true;
+  if (torrent.status !== 'downloading') return false;
+  if (!torrent.addedDate) return false;
+  return Date.now() - Date.parse(torrent.addedDate) > STALL_AGE_MS;
+}
 
 /**
  * Assembles the season/episode grid for the missing-episodes feature: TMDB's
@@ -90,6 +124,7 @@ export async function buildShowEpisodeStatus(
   const manualGrabsByKey = groupManualGrabsByEpisode(
     deps.manualGrabs.listForShow(show.normalizedTitle),
   );
+  await annotateStalledGrabs(manualGrabsByKey, deps.transmissionConfig);
 
   // Each season's TMDB lookup is independent (own cache row, own possible
   // HTTP call) — run them concurrently rather than one at a time, the same
@@ -291,6 +326,42 @@ function resolveEpisodeStatus(
   return season.episodeNumbers.has(episodeNumber) ? 'in_library' : 'missing';
 }
 
+/**
+ * One batched Transmission torrent-get for every still-active grab's hash
+ * on this page, mutating each entry's `stalled` in place. Batched rather
+ * than one lookup per episode — a season with several manual grabs must
+ * cost one RPC round trip, not N (see grill-me Q1, 2026-09-01: live lookup
+ * at render time was chosen over a background poller specifically on the
+ * condition it stays batched). Best-effort: any failure (no config, RPC
+ * error) just leaves every `stalled` at its already-set false, same as
+ * every other best-effort Transmission read in this codebase — a page
+ * render must never hard-fail because Transmission is briefly unreachable.
+ */
+async function annotateStalledGrabs(
+  manualGrabsByKey: Map<string, EpisodeManualGrabInfo>,
+  transmissionConfig: TransmissionConfig | undefined,
+): Promise<void> {
+  if (!transmissionConfig) return;
+
+  const hashes = Array.from(
+    new Set(
+      Array.from(manualGrabsByKey.values())
+        .map((grab) => grab.transmissionTorrentHash)
+        .filter((hash): hash is string => hash !== null),
+    ),
+  );
+  if (hashes.length === 0) return;
+
+  const result = await fetchTorrentStats(transmissionConfig, hashes);
+  if (!result.ok) return;
+
+  const byHash = new Map(result.torrents.map((t) => [t.hash, t]));
+  for (const grab of manualGrabsByKey.values()) {
+    if (!grab.transmissionTorrentHash) continue;
+    grab.stalled = isStalledSnapshot(byHash.get(grab.transmissionTorrentHash));
+  }
+}
+
 function episodeKey(season: number, episode: number): string {
   return `${season}:${episode}`;
 }
@@ -302,12 +373,25 @@ function groupManualGrabsByEpisode(
   // rows is already most-recent-first; keep only the first (latest) per
   // episode.
   for (const row of rows) {
+    // A grab already marked removed/deleted (via Torrent Manager, or this
+    // feature's own stalled-torrent remove button) must not keep showing
+    // "Queued via X" forever — treat it exactly as if this episode had no
+    // manual grab at all, so plexStatus alone (which will read 'missing'
+    // here, since Plex never got the file) drives the badge instead. This
+    // was the actual bug behind grill-me's "queued torrent made clear to
+    // the user" ask: the badge used to be pure DB-row-existence, blind to
+    // disposition.
+    if (row.disposition !== null) {
+      continue;
+    }
     const key = episodeKey(row.season, row.episode);
     if (!map.has(key)) {
       map.set(key, {
         queuedAt: row.queuedAt,
         source: row.source,
         rawTitle: row.rawTitle,
+        transmissionTorrentHash: row.transmissionTorrentHash,
+        stalled: false,
       });
     }
   }

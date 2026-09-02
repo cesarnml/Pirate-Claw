@@ -51,7 +51,9 @@ const statusWithMixedEpisodes: ShowEpisodeStatus = {
 					manualGrab: {
 						queuedAt: '2026-08-27T00:00:00.000Z',
 						source: 'eztv',
-						rawTitle: 'grabbed release'
+						rawTitle: 'grabbed release',
+						transmissionTorrentHash: 'abc123',
+						stalled: false
 					}
 				}
 			]

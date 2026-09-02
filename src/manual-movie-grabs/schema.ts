@@ -48,4 +48,13 @@ export function ensureManualMovieGrabsSchema(database: Database): void {
   // grab as 'removed'/'deleted' instead of leaving it a permanent zombie row
   // once its torrent is gone.
   ensureColumn(database, 'manual_movie_grabs', 'disposition', 'TEXT');
+
+  // Movie-shaped sibling of manual_grabs' resolution/codec/size_bytes/seeds/
+  // peers columns (see src/manual-grabs/schema.ts) — same rationale, same
+  // nullable-and-best-effort posture.
+  ensureColumn(database, 'manual_movie_grabs', 'resolution', 'TEXT');
+  ensureColumn(database, 'manual_movie_grabs', 'codec', 'TEXT');
+  ensureColumn(database, 'manual_movie_grabs', 'size_bytes', 'INTEGER');
+  ensureColumn(database, 'manual_movie_grabs', 'seeds', 'INTEGER');
+  ensureColumn(database, 'manual_movie_grabs', 'peers', 'INTEGER');
 }

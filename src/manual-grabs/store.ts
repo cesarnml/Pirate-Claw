@@ -23,6 +23,12 @@ export type ManualGrabRecord = {
   transmissionTorrentHash: string | null;
   transmissionTorrentId: number | null;
   queuedAt: string;
+  /** null until Torrent Manager (or this feature's own stalled-torrent
+   * remove button) records this row as removed/deleted — see
+   * setDisposition. Surfaced here (unlike most other read paths on this
+   * store) because episode-status.ts needs it to stop showing "Queued" for
+   * a grab that was pulled before it ever completed. */
+  disposition: PirateClawDisposition | null;
 };
 
 export type RecordManualGrabInput = {
@@ -39,6 +45,16 @@ export type RecordManualGrabInput = {
   showPosterUrl?: string | null;
   showDisplayTitle?: string | null;
   queuedAt?: string;
+  /** Declared/parsed quality and swarm-health signal captured at grab time —
+   * purely for future analysis (deriving an auto-grab heuristic from real
+   * outcomes), never read back by any code path yet. All optional/nullable:
+   * a source that doesn't reliably report one is still worth recording
+   * partially rather than dropping the whole grab's metadata. */
+  resolution?: string | null;
+  codec?: string | null;
+  sizeBytes?: number | null;
+  seeds?: number | null;
+  peers?: number | null;
 };
 
 /** Poster/title info for one manually-grabbed, still-hash-identified
@@ -74,6 +90,7 @@ type ManualGrabRow = {
   transmission_torrent_hash: string | null;
   transmission_torrent_id: number | null;
   queued_at: string;
+  disposition: string | null;
 };
 
 function rowToRecord(row: ManualGrabRow): ManualGrabRecord {
@@ -87,6 +104,7 @@ function rowToRecord(row: ManualGrabRow): ManualGrabRecord {
     transmissionTorrentHash: row.transmission_torrent_hash,
     transmissionTorrentId: row.transmission_torrent_id,
     queuedAt: row.queued_at,
+    disposition: row.disposition as PirateClawDisposition | null,
   };
 }
 
@@ -107,8 +125,13 @@ export class ManualGrabsStore {
           transmission_torrent_id,
           queued_at,
           show_poster_url,
-          show_display_title
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+          show_display_title,
+          resolution,
+          codec,
+          size_bytes,
+          seeds,
+          peers
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
       )
       .run(
         input.normalizedTitle,
@@ -121,6 +144,11 @@ export class ManualGrabsStore {
         queuedAt,
         input.showPosterUrl ?? null,
         input.showDisplayTitle ?? null,
+        input.resolution ?? null,
+        input.codec ?? null,
+        input.sizeBytes ?? null,
+        input.seeds ?? null,
+        input.peers ?? null,
       );
 
     return {
@@ -133,6 +161,7 @@ export class ManualGrabsStore {
       transmissionTorrentHash: input.transmissionTorrentHash,
       transmissionTorrentId: input.transmissionTorrentId,
       queuedAt,
+      disposition: null,
     };
   }
 
@@ -313,7 +342,8 @@ export class ManualGrabsStore {
     const rows = this.database
       .query(
         `SELECT id, normalized_title, season, episode, source, raw_title,
-                transmission_torrent_hash, transmission_torrent_id, queued_at
+                transmission_torrent_hash, transmission_torrent_id, queued_at,
+                disposition
          FROM manual_grabs
          WHERE normalized_title = ?1
          ORDER BY queued_at DESC`,

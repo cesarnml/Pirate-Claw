@@ -47,6 +47,14 @@ export type RecordManualMovieGrabInput = {
    * back off. Null when genuinely unknown (rare). */
   movieYear?: number | null;
   queuedAt?: string;
+  /** Movie-shaped sibling of RecordManualGrabInput's resolution/codec/
+   * sizeBytes/seeds/peers (see src/manual-grabs/store.ts) — same
+   * best-effort, future-heuristic-only rationale. */
+  resolution?: string | null;
+  codec?: string | null;
+  sizeBytes?: number | null;
+  seeds?: number | null;
+  peers?: number | null;
 };
 
 /** Poster/title/origin info for a manually-grabbed movie torrent, the movie
@@ -101,8 +109,13 @@ export class ManualMovieGrabsStore {
           queued_at,
           movie_poster_url,
           movie_display_title,
-          movie_year
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+          movie_year,
+          resolution,
+          codec,
+          size_bytes,
+          seeds,
+          peers
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
       )
       .run(
         input.tmdbId,
@@ -115,6 +128,11 @@ export class ManualMovieGrabsStore {
         input.moviePosterUrl ?? null,
         input.movieDisplayTitle ?? null,
         input.movieYear ?? null,
+        input.resolution ?? null,
+        input.codec ?? null,
+        input.sizeBytes ?? null,
+        input.seeds ?? null,
+        input.peers ?? null,
       );
 
     return {
@@ -256,6 +274,31 @@ export class ManualMovieGrabsStore {
   listGrabbedTmdbIds(): Set<number> {
     const rows = this.database
       .query(`SELECT DISTINCT tmdb_id FROM manual_movie_grabs`)
+      .all() as { tmdb_id: number }[];
+    return new Set(rows.map((r) => r.tmdb_id));
+  }
+
+  /** tmdb_ids whose every manual/adopted grab was pulled from Transmission
+   * (removed/deleted) before ever completing — the movie-shaped sibling of
+   * episode-status.ts's disposition filtering. ownedMovieStatuses (api.ts)
+   * subtracts these from the ledger-derived owned set so a stalled-then-
+   * removed grab stops reading "grabbed"/"Queued via X" once Plex has
+   * nothing else to go on, the same fix as manual_grabs got.
+   *
+   * A tmdbId only qualifies here when EVERY recorded grab for it is both
+   * disposed (disposition IS NOT NULL) AND never completed (done_at IS
+   * NULL) — a tmdbId with even one active or completed grab (including one
+   * later cleaned up from Transmission's seed list after finishing) still
+   * counts as legitimately grabbed and must not appear here. */
+  listReclaimedTmdbIds(): Set<number> {
+    const rows = this.database
+      .query(
+        `SELECT DISTINCT tmdb_id FROM manual_movie_grabs
+         WHERE tmdb_id NOT IN (
+           SELECT tmdb_id FROM manual_movie_grabs
+           WHERE disposition IS NULL OR done_at IS NOT NULL
+         )`,
+      )
       .all() as { tmdb_id: number }[];
     return new Set(rows.map((r) => r.tmdb_id));
   }

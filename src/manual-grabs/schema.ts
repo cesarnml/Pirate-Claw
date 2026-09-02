@@ -57,6 +57,17 @@ export function ensureManualGrabsSchema(database: Database): void {
   // deleting local data, 'deleted' when local data went too. See
   // ManualGrabsStore.setDisposition.
   ensureManualGrabsColumn(database, 'disposition', 'TEXT');
+
+  // Declared/parsed quality and swarm-health signal at grab time — logged
+  // purely so a future auto-grab heuristic has real manual-grab outcomes to
+  // derive weights from (see grill-me: torrent queue/grab UX fixes,
+  // 2026-09-01). Nullable: not every source reports every field, and
+  // existing rows predate this entirely.
+  ensureManualGrabsColumn(database, 'resolution', 'TEXT');
+  ensureManualGrabsColumn(database, 'codec', 'TEXT');
+  ensureManualGrabsColumn(database, 'size_bytes', 'INTEGER');
+  ensureManualGrabsColumn(database, 'seeds', 'INTEGER');
+  ensureManualGrabsColumn(database, 'peers', 'INTEGER');
 }
 
 function ensureManualGrabsColumn(

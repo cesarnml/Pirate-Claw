@@ -120,6 +120,10 @@ export type EpisodeManualGrabInfo = {
 	queuedAt: string;
 	source: string;
 	rawTitle: string;
+	transmissionTorrentHash: string | null;
+	/** True when this grab's torrent looks stuck (see episode-status.ts's
+	 * isStalledSnapshot) — powers the inline remove button. */
+	stalled: boolean;
 };
 
 export type EpisodeWithStatus = {
