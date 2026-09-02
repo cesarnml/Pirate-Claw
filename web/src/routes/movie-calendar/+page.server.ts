@@ -128,6 +128,17 @@ export const actions: Actions = {
 		const magnetUrl = String(formData.get('magnetUrl') ?? '').trim();
 		const rawTitle = String(formData.get('rawTitle') ?? '').trim();
 		const source = String(formData.get('source') ?? '').trim();
+		// Best-effort quality/swarm-health snapshot at grab time — see
+		// shows/[slug]/+page.server.ts's manualGrab action for the TV-shaped
+		// sibling of this same pass-through.
+		const resolution = String(formData.get('resolution') ?? '').trim();
+		const codec = String(formData.get('codec') ?? '').trim();
+		const sizeBytesRaw = formData.get('sizeBytes');
+		const seedsRaw = formData.get('seeds');
+		const peersRaw = formData.get('peers');
+		const sizeBytes = sizeBytesRaw !== null ? Number(sizeBytesRaw) : NaN;
+		const seeds = seedsRaw !== null ? Number(seedsRaw) : NaN;
+		const peers = peersRaw !== null ? Number(peersRaw) : NaN;
 
 		if (!Number.isInteger(tmdbId) || !magnetUrl || !rawTitle || !source) {
 			return fail(400, { grabMessage: 'Missing or invalid grab details.' });
@@ -144,7 +155,12 @@ export const actions: Actions = {
 					magnetUrl,
 					rawTitle,
 					source,
-					...(imdbId ? { imdbId } : {})
+					...(imdbId ? { imdbId } : {}),
+					...(resolution ? { resolution } : {}),
+					...(codec ? { codec } : {}),
+					...(Number.isFinite(sizeBytes) ? { sizeBytes } : {}),
+					...(Number.isFinite(seeds) ? { seeds } : {}),
+					...(Number.isFinite(peers) ? { peers } : {})
 				})
 			});
 

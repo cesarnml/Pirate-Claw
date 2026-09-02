@@ -223,6 +223,15 @@
 								<input type="hidden" name="magnetUrl" value={torrent.magnetUrl} />
 								<input type="hidden" name="rawTitle" value={torrent.title} />
 								<input type="hidden" name="source" value={source} />
+								{#if torrent.resolution}
+									<input type="hidden" name="resolution" value={torrent.resolution} />
+								{/if}
+								{#if torrent.codec}
+									<input type="hidden" name="codec" value={torrent.codec} />
+								{/if}
+								<input type="hidden" name="sizeBytes" value={torrent.sizeBytes} />
+								<input type="hidden" name="seeds" value={torrent.seeds} />
+								<input type="hidden" name="peers" value={torrent.peers} />
 								<Button
 									type="submit"
 									size="sm"
