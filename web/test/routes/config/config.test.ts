@@ -286,6 +286,50 @@ describe('/config', () => {
 		);
 	});
 
+	// 2026-09-03 regression: toggleShowStrict used to flip the `showStrict`
+	// component state, then call showsFormEl.requestSubmit() in the SAME
+	// synchronous tick. requestSubmit() serializes whatever's actually in
+	// the DOM right now — and Svelte hadn't yet patched the hidden
+	// `showStrict` input's `value` attribute to match the new state, since
+	// that patch only happens on Svelte's next reactive flush. The click
+	// therefore always submitted the *pre-click* strict value: the save
+	// request was well-formed and 200'd (hence a real "TV show edited"
+	// toast), it just wasn't the request the click asked for. Fixed by
+	// `await tick()` before submitting, matching every other DOM-dependent
+	// submit in this file (removeShow, submitAddShowDraft). This test
+	// spies on requestSubmit and reads the form's real FormData at the
+	// moment it's called — the same thing the browser actually sends —
+	// rather than trusting component state, which is exactly what let the
+	// original bug pass unnoticed.
+	it('submits the just-clicked Strict state, not a stale pre-click DOM snapshot', async () => {
+		let capturedShowStrict: FormDataEntryValue | null = null;
+		const requestSubmitSpy = vi
+			.spyOn(HTMLFormElement.prototype, 'requestSubmit')
+			.mockImplementation(function (this: HTMLFormElement) {
+				capturedShowStrict = new FormData(this).get('showStrict');
+			});
+
+		renderPage({
+			config: {
+				...mockConfig,
+				tv: [{ name: 'Andor', resolutions: ['1080p'], codecs: ['x265'] }]
+			},
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
+		});
+
+		// Starts loose (no matchPattern on the fixture above) — one click
+		// turns it on.
+		await fireEvent.click(screen.getByRole('button', { name: 'Strict' }));
+
+		expect(requestSubmitSpy).toHaveBeenCalledTimes(1);
+		expect(capturedShowStrict).toBe('true');
+
+		requestSubmitSpy.mockRestore();
+	});
+
 	it('confirms before removing a movie year', async () => {
 		renderPage({
 			config: mockConfig,

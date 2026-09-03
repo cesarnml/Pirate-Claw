@@ -429,10 +429,26 @@
 	// name at save time — see +page.server.ts's saveShows action — so
 	// toggling it submits immediately, same as the Enter-to-save name flow,
 	// rather than waiting for some other blur/submit trigger.
-	function toggleShowStrict(index: number) {
+	//
+	// 2026-09-03 bug: this used to call submitShows() synchronously right
+	// after flipping showStrict. submitShows -> showsFormEl.requestSubmit()
+	// serializes the form's *actual DOM* hidden `showStrict` inputs
+	// (ShowWatchlistEditor.svelte), which Svelte only patches to match the
+	// new state during its next reactive flush — not synchronously inline
+	// with the state assignment above. requestSubmit() ran before that
+	// flush, so it always submitted the *previous* strict value for the row
+	// just clicked: the save legitimately succeeded (hence the "TV show
+	// edited" toast), but for the unchanged payload, so the toggle looked
+	// like a no-op once the page re-synced from the response. removeShow/
+	// confirmDeleteShow and submitAddShowDraft elsewhere in this file
+	// already `await tick()` before submitting for this exact reason — this
+	// was the one save path missing it.
+	async function toggleShowStrict(index: number) {
 		showStrict = showStrict.map((value, i) => (i === index ? !value : value));
 		const name = showRows[index]?.trim() ?? '';
 		if (!name) return;
+		console.debug('[config] toggleShowStrict', { index, name, nextStrict: showStrict[index] });
+		await tick();
 		void submitShows({ type: 'edit', name });
 	}
 
@@ -716,8 +732,25 @@
 		};
 	};
 
-	const enhanceSaveShows: SubmitFunction = () => {
+	const enhanceSaveShows: SubmitFunction = ({ formData }) => {
 		showsSubmitting = true;
+		// Logs the *actual serialized DOM form data* about to be sent — the
+		// one source of truth for what a save really requests, independent
+		// of what showRows/showStrict (component state) believe. The
+		// toggleShowStrict tick() bug above (2026-09-03) is exactly the kind
+		// of divergence this exists to catch: state said "strict", but the
+		// unflushed DOM still serialized "not strict" into this same
+		// formData. Compare against the daemon's own "[config] PUT
+		// /api/config received" log line to see whether a mismatch
+		// originated here (client bug) or after the request left the
+		// browser (network/server bug).
+		console.debug(
+			'[config] saveShows submitting',
+			formData.getAll('showName').map((name, i) => ({
+				name,
+				strict: formData.getAll('showStrict')[i]
+			}))
+		);
 		return async ({ result, update }) => {
 			showsSubmitting = false;
 			if (result.type === 'success') {

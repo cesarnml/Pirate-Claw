@@ -400,6 +400,20 @@ export const actions: Actions = {
 			return fail(400, { showsMessage: 'At least one TV show name is required.' });
 		}
 
+		// This action's own translation from formData -> the actual API
+		// payload — logged unconditionally (not just on error) because the
+		// 2026-09-03 strict-toggle bug's whole failure mode was a "success"
+		// response for a request whose shape silently wasn't what the click
+		// intended. Only the object-shaped (strict) rows are worth calling
+		// out by name; a plain array of every show name on every save would
+		// just be noise.
+		const strictShowNames = shows
+			.filter((entry): entry is { name: string; matchPattern: string } => typeof entry !== 'string')
+			.map((entry) => entry.name);
+		console.log(
+			`[config] saveShows PUT /api/config: ${shows.length} shows, strict=[${strictShowNames.join(', ')}]`
+		);
+
 		try {
 			const response = await apiRequest('/api/config', {
 				method: 'PUT',

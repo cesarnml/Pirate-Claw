@@ -3747,10 +3747,41 @@ export function createApiFetch(
           );
         }
 
+        // Logged unconditionally, not just on error: the 2026-09-03
+        // strict-toggle bug's whole failure mode was a request that 200'd
+        // while silently not carrying the matchPattern the client intended
+        // (a client-side tick() timing bug — the request itself was well-
+        // formed, it just wasn't the one the user meant to send). Only
+        // object-shaped rows are logged by name; a full 70+ show list on
+        // every save would just be noise. Compare against the web
+        // container's "[config] saveShows PUT /api/config" line to see
+        // whether a mismatch originated client-side or in this merge.
+        const requestedStrictNames = showsRequest
+          .filter((entry) => entry.hasMatchPatternField)
+          .map((entry) => entry.name);
+        if (requestedStrictNames.length > 0) {
+          console.log(
+            `[config] PUT /api/config received ${showsRequest.length} shows, ` +
+              `matchPattern set for=[${requestedStrictNames.join(', ')}]`,
+          );
+        }
+
         const mergedShows = mergeTvShowsPreservingDiskEntries(
           showsRequest,
           oldShows,
         );
+
+        if (requestedStrictNames.length > 0) {
+          const persistedStrictNames = mergedShows
+            .filter(
+              (entry): entry is { name: string; matchPattern?: string } =>
+                isRecord(entry) && typeof entry.matchPattern === 'string',
+            )
+            .map((entry) => entry.name);
+          console.log(
+            `[config] PUT /api/config merged: matchPattern present on disk for=[${persistedStrictNames.join(', ')}]`,
+          );
+        }
 
         const merged = {
           ...baseOnDisk,
