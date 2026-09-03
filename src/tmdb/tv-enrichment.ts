@@ -75,6 +75,50 @@ export function isDormantShow(meta: {
   );
 }
 
+/**
+ * Total episodes across a show's real seasons, summed from the per-season
+ * `episode_count` TMDB already returns on the show-details call (cached
+ * verbatim as seasons_json since that call was first added).
+ *
+ * Season 0 is excluded: TMDB files specials there, and counting them makes a
+ * show's episode total disagree with both its season count and every
+ * per-season grid in this app. Verified live 2026-09-03 against the cached
+ * rows — Star Trek lists 4 season entries for 3 seasons, and dropping season
+ * 0 gives the 79 episodes TMDB itself reports.
+ *
+ * Returns undefined rather than 0 for a row with no seasons_json (13 of 101
+ * cached rows, all written before that column existed): "we don't know" must
+ * not render as a confident zero. That confusion is exactly what hid the bug
+ * this replaces — the show page was summing local candidate_state queue
+ * history, i.e. "episodes pirate-claw itself downloaded via RSS", under an
+ * "N episodes" label, which is 0 for any show acquired any other way and 0
+ * forever for one that hasn't aired.
+ */
+function episodeCountFromSeasonsJson(
+  seasonsJson: string | null | undefined,
+): number | undefined {
+  if (!seasonsJson) return undefined;
+  try {
+    const seasons = JSON.parse(seasonsJson) as unknown;
+    if (!Array.isArray(seasons)) return undefined;
+    let total = 0;
+    for (const season of seasons) {
+      const entry = season as {
+        season_number?: number;
+        episode_count?: number;
+      };
+      if (typeof entry.season_number !== 'number' || entry.season_number <= 0) {
+        continue;
+      }
+      if (typeof entry.episode_count === 'number') total += entry.episode_count;
+    }
+    return total;
+  } catch {
+    // A row holding unparseable JSON is a "don't know", not a zero.
+    return undefined;
+  }
+}
+
 function tvRowToShowMeta(row: {
   tmdbId: number | null;
   name: string | null;
@@ -85,6 +129,7 @@ function tvRowToShowMeta(row: {
   voteAverage: number | null;
   voteCount: number | null;
   numberOfSeasons: number | null;
+  seasonsJson?: string | null;
   firstAirDate?: string | null;
   status?: string | null;
   inProduction?: boolean | null;
@@ -99,6 +144,7 @@ function tvRowToShowMeta(row: {
     voteAverage: row.voteAverage ?? undefined,
     voteCount: row.voteCount ?? undefined,
     numberOfSeasons: row.numberOfSeasons ?? undefined,
+    numberOfEpisodes: episodeCountFromSeasonsJson(row.seasonsJson),
     firstAirDate: row.firstAirDate ?? undefined,
     status: row.status ?? undefined,
     inProduction: row.inProduction ?? undefined,
@@ -214,6 +260,7 @@ async function resolveShow(
       voteAverage: details.vote_average ?? null,
       voteCount: details.vote_count ?? null,
       numberOfSeasons: details.number_of_seasons ?? null,
+      seasonsJson,
       firstAirDate: details.first_air_date ?? null,
       status: details.status ?? null,
       inProduction: details.in_production ?? null,

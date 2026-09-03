@@ -133,6 +133,86 @@ describe('enrichShowBreakdowns cache TTL', () => {
   });
 });
 
+describe('numberOfEpisodes', () => {
+  it("sums TMDB's per-season episode counts and excludes the specials season", async () => {
+    // Shaped after the real cached Star Trek row (verified live 2026-09-03):
+    // 4 season entries for 3 real seasons, because season 0 holds specials.
+    const { deps } = freshDeps({
+      searchTv: async () => ({ id: 3, name: 'Star Trek' }),
+      getTv: async () => ({
+        id: 3,
+        name: 'Star Trek',
+        number_of_seasons: 3,
+        seasons: [
+          { season_number: 0, episode_count: 5 },
+          { season_number: 1, episode_count: 29 },
+          { season_number: 2, episode_count: 26 },
+          { season_number: 3, episode_count: 24 },
+        ],
+      }),
+    });
+
+    const [enriched] = await enrichShowBreakdowns([show('star trek')], deps);
+
+    expect(enriched.tmdb?.numberOfEpisodes).toBe(79);
+    expect(enriched.tmdb?.numberOfSeasons).toBe(3);
+  });
+
+  it('serves the same total from cache on a second pass, with no further TMDB call', async () => {
+    let getTvCalls = 0;
+    const { deps } = freshDeps({
+      searchTv: async () => ({ id: 4, name: 'Reacher' }),
+      getTv: async () => {
+        getTvCalls++;
+        return {
+          id: 4,
+          name: 'Reacher',
+          number_of_seasons: 4,
+          seasons: [
+            { season_number: 1, episode_count: 8 },
+            { season_number: 2, episode_count: 8 },
+            { season_number: 3, episode_count: 8 },
+            { season_number: 4, episode_count: 8 },
+          ],
+        };
+      },
+    });
+
+    await enrichShowBreakdowns([show('reacher')], deps);
+    const [again] = await enrichShowBreakdowns([show('reacher')], deps);
+
+    expect(getTvCalls).toBe(1);
+    expect(again.tmdb?.numberOfEpisodes).toBe(32);
+  });
+
+  it('reports undefined, not 0, when TMDB gave no seasons payload — "unknown" must not render as a confident zero', async () => {
+    const { deps } = freshDeps({
+      searchTv: async () => ({ id: 5, name: 'Bare Show' }),
+      getTv: async () => ({ id: 5, name: 'Bare Show', number_of_seasons: 1 }),
+    });
+
+    const [enriched] = await enrichShowBreakdowns([show('bare show')], deps);
+
+    expect(enriched.tmdb?.numberOfEpisodes).toBeUndefined();
+  });
+
+  it('counts announced-but-unaired episodes — a show that has not aired yet still has a size (the "1 season, 0 episodes" report)', async () => {
+    const { deps } = freshDeps({
+      searchTv: async () => ({ id: 6, name: 'A Knight of the Seven Kingdoms' }),
+      getTv: async () => ({
+        id: 6,
+        name: 'A Knight of the Seven Kingdoms',
+        number_of_seasons: 1,
+        seasons: [{ season_number: 1, episode_count: 6 }],
+      }),
+    });
+
+    const [enriched] = await enrichShowBreakdowns([show('a knight')], deps);
+
+    expect(enriched.tmdb?.numberOfEpisodes).toBe(6);
+  });
+});
+
 describe('isSeasonFinished', () => {
   it('is false for an empty episode list', () => {
     expect(isSeasonFinished([])).toBe(false);

@@ -11,6 +11,13 @@ export type TmdbTvShowMeta = {
   voteAverage?: number;
   voteCount?: number;
   numberOfSeasons?: number;
+  /** Total episodes across the show's real seasons (specials excluded),
+   * summed from the per-season counts TMDB returns on the same show-details
+   * call as numberOfSeasons — no extra request, and no new column: the raw
+   * seasons payload was already being cached, just never surfaced. Undefined
+   * when the cache row predates that payload; render it as "unknown", never
+   * as 0. See episodeCountFromSeasonsJson in tmdb/tv-enrichment.ts. */
+  numberOfEpisodes?: number;
   /** The air date of the show's first episode ever — cheap, already part
    * of the same TMDB show-details call as numberOfSeasons, no extra
    * request. Lets the UI say "hasn't aired yet" (future date) honestly and

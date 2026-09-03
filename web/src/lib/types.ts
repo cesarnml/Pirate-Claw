@@ -55,6 +55,10 @@ export type TmdbTvShowMeta = {
 	voteAverage?: number;
 	voteCount?: number;
 	numberOfSeasons?: number;
+	/** Total episodes across the show's real seasons, specials excluded.
+	 * Undefined when the server's TMDB cache row is too old to know — render
+	 * that as unknown, never as 0. */
+	numberOfEpisodes?: number;
 	/** Air date of the show's very first episode — a future date (or an
 	 * empty show entirely) means nothing has aired yet at all. */
 	firstAirDate?: string;

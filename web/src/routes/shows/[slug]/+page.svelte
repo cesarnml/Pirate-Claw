@@ -36,8 +36,17 @@
 		return value.toFixed(1);
 	}
 
-	function episodeCount(show: NonNullable<PageData['show']>): number {
-		return show.seasons.reduce((sum, season) => sum + season.episodes.length, 0);
+	/** TMDB's episode total for the whole show, or null when TMDB hasn't told
+	 * us (a cache row older than the seasons payload).
+	 *
+	 * NOT `show.seasons` — that is local candidate_state queue history, i.e.
+	 * "episodes pirate-claw itself pulled through the RSS pipeline". Summing it
+	 * under an "N episodes" label read 0 for every show acquired any other way,
+	 * and 0 forever for a show that hasn't aired (reported live 2026-09-03: "A
+	 * Knight of the Seven Kingdoms — 1 season, 0 episodes"). Right arithmetic,
+	 * wrong table. */
+	function episodeCount(show: NonNullable<PageData['show']>): number | null {
+		return show.tmdb?.numberOfEpisodes ?? null;
 	}
 
 	// TMDB's real season count when known; falls back to however many seasons
@@ -294,9 +303,11 @@
 							<Badge variant="outline">
 								{seasonCount(data.show)} season{seasonCount(data.show) === 1 ? '' : 's'}
 							</Badge>
-							<Badge variant="outline">
-								{episodeCount(data.show)} episode{episodeCount(data.show) === 1 ? '' : 's'}
-							</Badge>
+							{#if episodeCount(data.show) !== null}
+								<Badge variant="outline">
+									{episodeCount(data.show)} episode{episodeCount(data.show) === 1 ? '' : 's'}
+								</Badge>
+							{/if}
 							{#if data.show.watchCount !== null}
 								<Badge class="border-primary/20 bg-primary/12 text-primary">
 									PLEX PLAYS {data.show.watchCount}
