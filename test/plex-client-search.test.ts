@@ -7,9 +7,13 @@ import {
   videoEntryToShowSearchCandidate,
 } from '../src/plex/client';
 
+// Mirrors src/plex/client.ts's own parser options exactly (including
+// htmlEntities) so this file's tests exercise the same decoding behavior
+// the real client gets.
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '',
+  htmlEntities: true,
 });
 
 describe('plex search XML (hub-aware)', () => {
@@ -165,6 +169,18 @@ describe('plex search XML (hub-aware)', () => {
     const [result] = plexMovieSearchResultsFromContainer(container);
     expect(result.tmdbId).toBeUndefined();
     expect(result.imdbId).toBeUndefined();
+  });
+
+  it('decodes numeric XML entities in titles (regression: "Sh&#333;gun" -> "Shōgun")', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1">
+  <Directory ratingKey="61111" title="Sh&#333;gun" type="show"/>
+</MediaContainer>`;
+    const container = parser.parse(xml) as Parameters<
+      typeof plexShowSearchResultsFromContainer
+    >[0];
+    const [result] = plexShowSearchResultsFromContainer(container);
+    expect(result.title).toBe('Shōgun');
   });
 
   it('dedupes the same ratingKey from top-level and hub shelves', () => {

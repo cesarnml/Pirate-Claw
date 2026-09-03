@@ -55,6 +55,15 @@ type PlexMediaContainer = {
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '',
+  // Plex escapes diacritics/apostrophes in titles as numeric/named XML
+  // entities (e.g. "Sh&#333;gun", "Marty&#39;s"). fast-xml-parser only
+  // decodes the five predefined XML entities by default and leaves numeric
+  // char refs and other named entities untouched, so without this a title
+  // like "Shōgun" came through as the literal string "Sh&#333;gun" —
+  // matching against Plex's own catalog (whose titles ARE decoded) then
+  // failed even after normalizeForMatch's diacritic folding, since there
+  // was no real "ō" character left to fold. 2026-09-02.
+  htmlEntities: true,
 });
 
 export class PlexHttpClient {
