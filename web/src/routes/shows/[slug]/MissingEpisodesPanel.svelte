@@ -441,14 +441,15 @@
 		return grabs.filter((grab) => states.includes(grab.state));
 	}
 
-	/** How many *torrents* these grab rows represent, which is not the same as
-	 * how many rows there are: ManualGrabsStore.setDisposition marks every
-	 * undisposed row sharing a hash, so removing a magnet that happened to be
-	 * grabbed twice for one episode disposes two rows at once and would
-	 * otherwise read as "Attempted (2)" for a single removal. Rows with no
-	 * hash at all (a grab whose Transmission add never returned one) each
-	 * count once — there's nothing to collapse them by. */
-	function countTorrents(grabs: EpisodeManualGrabInfo[]): number {
+	/** How many distinct *releases* these grab rows represent — the episode-level
+	 * question ("how many different releases have I burned through for this
+	 * episode"). Collapses by hash because ManualGrabsStore.setDisposition marks
+	 * every undisposed row sharing a hash, so removing a magnet that happened to
+	 * be grabbed twice while both were live disposes two rows at once and would
+	 * otherwise read as (2) for a single removal. Rows with no hash at all (a
+	 * grab whose Transmission add never returned one) each count once — there's
+	 * nothing to collapse them by. */
+	function countReleases(grabs: EpisodeManualGrabInfo[]): number {
 		const hashes = new Set<string>();
 		let hashless = 0;
 		for (const grab of grabs) {
@@ -456,6 +457,37 @@
 			else hashless++;
 		}
 		return hashes.size + hashless;
+	}
+
+	/** How many separate times these grabs were tried and given up on — the
+	 * per-release question a search-result card asks ("how many times have I
+	 * tried THIS one"). countReleases is structurally useless there: a card is
+	 * scoped to a single release, so its distinct-hash count is always 1 no
+	 * matter how many grab→remove cycles it went through. Confirmed live
+	 * 2026-09-03: one release re-grabbed five separate times still read
+	 * "Attempted (1)", so the badge that exists to stop exactly that said
+	 * nothing.
+	 *
+	 * Collapses on hash + disposedAt rather than hash alone: rows disposed by a
+	 * single setDisposition sweep share a timestamp and are one event, while
+	 * genuinely separate cycles carry distinct timestamps. Rows disposed before
+	 * disposed_at existed all carry null and merge into one — an undercount
+	 * bounded to rows already in the DB when that column landed. */
+	function countAttempts(grabs: EpisodeManualGrabInfo[]): number {
+		return new Set(
+			grabs.map((grab) =>
+				grab.transmissionTorrentHash
+					? `${grab.transmissionTorrentHash}@${grab.disposedAt ?? ''}`
+					: `row:${grab.id}`
+			)
+		).size;
+	}
+
+	/** " (3)" for a count worth stating, "" for one. Same reasoning as the
+	 * "Queued via X" pill: a bare (1) is noise, since the singular is what the
+	 * label already implies. */
+	function countSuffix(count: number): string {
+		return count > 1 ? ` (${count})` : '';
 	}
 
 	/** Collapses grabs into one pill per distinct source, with a torrent count
@@ -474,7 +506,7 @@
 		}
 		return bySource.map(({ source, grabs: sourceGrabs }) => ({
 			source,
-			count: countTorrents(sourceGrabs)
+			count: countReleases(sourceGrabs)
 		}));
 	}
 
@@ -744,7 +776,18 @@
 								{/if}
 							</div>
 							<div class="flex flex-wrap items-center justify-end gap-2">
-								{#if episode.plexStatus !== 'in_library'}
+								<!-- Rendered whatever Plex says about the episode, deliberately.
+								     These pills used to be hidden once plexStatus went
+								     'in_library', which took the attempt strip — and with it every
+								     remove button on the page — away at exactly the wrong moment:
+								     you fire several releases at one episode, one wins, Plex
+								     imports it, and the other torrents are still running in
+								     Transmission with no way left to reach them from here
+								     (reported live 2026-09-03). Cleanup is MORE relevant once the
+								     episode has landed, not less. The search buttons further down
+								     stay gated on 'missing' — there is no reason to go looking for
+								     something you already own. -->
+								{#if episode.manualGrabs.length > 0}
 									<!-- Queued and Stalled are counted separately rather than both
 									     rolling up into "Queued via X": a stalled torrent is still
 									     technically queued in Transmission, so counting it twice
@@ -764,7 +807,7 @@
 											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
 										>
 											<Badge class={`${GRAB_STATE_CLASS.queued} cursor-pointer`}>
-												Queued via {source}{count > 1 ? ` (${count})` : ''}
+												Queued via {source}{countSuffix(count)}
 											</Badge>
 										</button>
 									{/each}
@@ -775,7 +818,7 @@
 											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
 										>
 											<Badge class={`${GRAB_STATE_CLASS.stalled} cursor-pointer`}>
-												Stalled ({countTorrents(stalledGrabs)})
+												Stalled{countSuffix(countReleases(stalledGrabs))}
 											</Badge>
 										</button>
 									{/if}
@@ -786,7 +829,7 @@
 											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
 										>
 											<Badge class={`${GRAB_STATE_CLASS.completed} cursor-pointer`}>
-												Completed ({countTorrents(completedGrabs)})
+												Completed{countSuffix(countReleases(completedGrabs))}
 											</Badge>
 										</button>
 									{/if}
@@ -797,7 +840,7 @@
 											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
 										>
 											<Badge class={`${GRAB_STATE_CLASS.removed} cursor-pointer`}>
-												Attempted ({countTorrents(attemptedGrabs)})
+												Attempted{countSuffix(countReleases(attemptedGrabs))}
 											</Badge>
 										</button>
 									{/if}
@@ -815,7 +858,7 @@
 						     today's first page — in both cases the result-card remove
 						     button is unreachable and this strip is the only way to clear
 						     a torrent without a trip to Torrent Manager. -->
-						{#if episode.plexStatus !== 'in_library' && attemptsOpen && episode.manualGrabs.length > 0}
+						{#if attemptsOpen && episode.manualGrabs.length > 0}
 							<div class="border-border/60 mt-3 space-y-2 rounded-2xl border border-dashed p-3">
 								<p
 									class="text-muted-foreground text-[11px] font-semibold tracking-[0.18em] uppercase"
@@ -933,6 +976,11 @@
 												{@const matchedQueued = grabsInState(matched, 'queued')}
 												{@const matchedCompleted = grabsInState(matched, 'completed')}
 												{@const matchedAttempted = grabsInState(matched, 'removed')}
+												<!-- Times this release was tried and given up on, NOT how many
+											     torrents it represents. A card is one release, so a
+											     distinct-torrent count there is always 1 however many
+											     grab→remove cycles it went through — see countAttempts. -->
+												{@const attemptCount = countAttempts(matchedAttempted)}
 												<!-- Only a *queued* match blocks re-grabbing. A 'completed'
 											     one deliberately does not: done_at is stamped once and
 											     never expires, so a release that finished but whose
@@ -962,7 +1010,7 @@
 															{/if}
 															{#if matchedAttempted.length > 0}
 																<Badge class={GRAB_STATE_CLASS.removed}>
-																	Attempted ({countTorrents(matchedAttempted)})
+																	Attempted{attemptCount > 1 ? ` ×${attemptCount}` : ''}
 																</Badge>
 															{/if}
 															{#if torrent.resolution}

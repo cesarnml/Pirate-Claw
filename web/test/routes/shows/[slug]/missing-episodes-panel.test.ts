@@ -1021,10 +1021,13 @@ describe('MissingEpisodesPanel', () => {
 			await renderWithResults();
 
 			expect(screen.getByText('Queued')).toBeInTheDocument();
-			expect(screen.getByText('Stalled')).toBeInTheDocument();
-			// Two: the result card's own badge, plus the episode header pill
-			// summarising the same attempt.
-			expect(screen.getAllByText('Attempted (1)')).toHaveLength(2);
+			// Two: the card's own badge, plus the episode pill (which now also
+			// drops its bare "(1)"). The header's queued pill reads "Queued via
+			// eztv", so the exact-match "Queued" above stays unambiguous.
+			expect(screen.getAllByText('Stalled')).toHaveLength(2);
+			// A single attempt states no count on either the card or the episode
+			// pill — a bare "(1)" is noise the singular label already implies.
+			expect(screen.getAllByText('Attempted')).toHaveLength(2);
 
 			// Queued hides its Grab entirely; already-attempted keeps one but
 			// demoted to "Grab anyway"; only the untried release gets a plain
@@ -1058,8 +1061,8 @@ describe('MissingEpisodesPanel', () => {
 			});
 
 			expect(screen.getByText('Queued via eztv')).toBeInTheDocument();
-			expect(screen.getByText('Stalled (1)')).toBeInTheDocument();
-			expect(screen.getByText('Attempted (1)')).toBeInTheDocument();
+			expect(screen.getByText('Stalled')).toBeInTheDocument();
+			expect(screen.getByText('Attempted')).toBeInTheDocument();
 		});
 
 		it('expands the per-episode attempt history from a header pill, with a remove button on the live torrents', async () => {
@@ -1073,7 +1076,7 @@ describe('MissingEpisodesPanel', () => {
 			});
 
 			expect(screen.queryByText('Grab attempts')).not.toBeInTheDocument();
-			await fireEvent.click(screen.getByText('Stalled (1)'));
+			await fireEvent.click(screen.getByText('Stalled'));
 
 			expect(screen.getByText('Grab attempts')).toBeInTheDocument();
 			// This strip is the canonical inventory: every attempt shows,
@@ -1163,6 +1166,166 @@ describe('MissingEpisodesPanel', () => {
 			expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
 		});
 
+		it('counts how many TIMES a release was tried on its own card, not how many torrents it is — a card is one release, so a distinct-torrent count there is always 1', async () => {
+			// One release, one magnet, three separate grab -> remove cycles.
+			// Distinct disposed_at is what separates them; a single
+			// setDisposition sweep would have stamped one timestamp on all three.
+			const retried: EpisodeManualGrabInfo[] = [
+				{
+					...grab(1, 'stubborn release', 'removed', 'same-hash'),
+					disposedAt: '2026-08-28T01:00:00.000Z'
+				},
+				{
+					...grab(2, 'stubborn release', 'removed', 'same-hash'),
+					disposedAt: '2026-08-28T02:00:00.000Z'
+				},
+				{
+					...grab(3, 'stubborn release', 'removed', 'same-hash'),
+					disposedAt: '2026-08-28T03:00:00.000Z'
+				}
+			];
+			fetchMock.mockResolvedValue(
+				new Response(JSON.stringify({ torrents: [torrent(30, 'stubborn release')] }), {
+					status: 200
+				})
+			);
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: {
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: false,
+							airedEpisodeCount: 1,
+							plexSource: 'live',
+							episodes: [
+								{
+									episode: 1,
+									name: 'Pilot',
+									airDate: '2026-01-01',
+									plexStatus: 'missing',
+									manualGrabs: retried
+								}
+							]
+						}
+					]
+				},
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Find on EZTV' }));
+			await waitFor(() => {
+				expect(screen.getByText('stubborn release')).toBeInTheDocument();
+			});
+
+			// The card: tried three times. The episode pill: one release burned
+			// through, so no count at all.
+			expect(screen.getByText('Attempted \u00d73')).toBeInTheDocument();
+			expect(screen.getByText('Attempted')).toBeInTheDocument();
+		});
+
+		it('collapses rows disposed by a single sweep into one attempt — removing a magnet grabbed twice while both were live is one removal, not two', async () => {
+			const sweptTogether: EpisodeManualGrabInfo[] = [
+				{
+					...grab(1, 'swept release', 'removed', 'same-hash'),
+					disposedAt: '2026-08-28T01:00:00.000Z'
+				},
+				{
+					...grab(2, 'swept release', 'removed', 'same-hash'),
+					disposedAt: '2026-08-28T01:00:00.000Z'
+				}
+			];
+			fetchMock.mockResolvedValue(
+				new Response(JSON.stringify({ torrents: [torrent(31, 'swept release')] }), { status: 200 })
+			);
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: {
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: false,
+							airedEpisodeCount: 1,
+							plexSource: 'live',
+							episodes: [
+								{
+									episode: 1,
+									name: 'Pilot',
+									airDate: '2026-01-01',
+									plexStatus: 'missing',
+									manualGrabs: sweptTogether
+								}
+							]
+						}
+					]
+				},
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Find on EZTV' }));
+			await waitFor(() => {
+				expect(screen.getByText('swept release')).toBeInTheDocument();
+			});
+
+			// One removal event -> no count, not "\u00d72".
+			expect(screen.queryByText('Attempted \u00d72')).not.toBeInTheDocument();
+			expect(screen.getAllByText('Attempted')).toHaveLength(2);
+		});
+
+		it('keeps the pills and the attempt strip reachable once Plex owns the episode — that is when leftover torrents most need clearing', async () => {
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: {
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: false,
+							airedEpisodeCount: 1,
+							plexSource: 'live',
+							episodes: [
+								{
+									episode: 1,
+									name: 'Pilot',
+									airDate: '2026-01-01',
+									// The winning release landed and Plex imported it; the
+									// losers are still running in Transmission.
+									plexStatus: 'in_library',
+									manualGrabs: [
+										grab(1, 'loser still downloading', 'queued', 'hash-loser'),
+										grab(2, 'winner', 'completed', 'hash-winner')
+									]
+								}
+							]
+						}
+					]
+				},
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			expect(screen.getByText('IN LIBRARY')).toBeInTheDocument();
+			await fireEvent.click(screen.getByText('Queued via eztv'));
+
+			expect(screen.getByText('Grab attempts')).toBeInTheDocument();
+			// Both are still in Transmission — the loser mid-download and the
+			// winner seeding — so both are removable. Neither was reachable at
+			// all before this gate came off.
+			expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(2);
+			// Still no point searching for an episode already owned.
+			expect(screen.queryByText('Find on EZTV')).not.toBeInTheDocument();
+		});
+
 		it("hides the attempt history's remove buttons when the operator cannot write", async () => {
 			render(Panel, {
 				slug: 'the-show',
@@ -1173,7 +1336,7 @@ describe('MissingEpisodesPanel', () => {
 				refreshGeneration: 0
 			});
 
-			await fireEvent.click(screen.getByText('Stalled (1)'));
+			await fireEvent.click(screen.getByText('Stalled'));
 
 			expect(screen.getByText('Grab attempts')).toBeInTheDocument();
 			expect(screen.queryByRole('button', { name: 'Stalled — remove' })).not.toBeInTheDocument();
