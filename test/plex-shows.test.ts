@@ -120,6 +120,46 @@ describe('plex show enrichment', () => {
     });
   });
 
+  it("matches a title with diacritics against Plex's plain-ASCII title (regression: Shōgun vs Shogun)", async () => {
+    const db = new Database(':memory:');
+    ensurePlexSchema(db);
+    const cache = new PlexCache(db);
+
+    await refreshShowLibraryCache(
+      [
+        {
+          normalizedTitle: 'Shōgun',
+          seasons: [],
+          plexStatus: 'unknown',
+          watchCount: null,
+          lastWatchedAt: null,
+        },
+      ],
+      {
+        cache,
+        client: {
+          searchShows: async () => [
+            {
+              ratingKey: '789',
+              title: 'Shogun',
+              type: 'show',
+              viewCount: 0,
+              lastViewedAt: null,
+            },
+          ],
+          listAllTvShowsForMatching: async () => [],
+        } as never,
+        refreshIntervalMinutes: 30,
+        log: () => {},
+      },
+    );
+
+    expect(cache.getTv('Shōgun')).toMatchObject({
+      inLibrary: true,
+      plexRatingKey: '789',
+    });
+  });
+
   it('matches from library catalog when global search returns no rows', async () => {
     const db = new Database(':memory:');
     ensurePlexSchema(db);
