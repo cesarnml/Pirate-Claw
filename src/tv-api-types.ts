@@ -102,4 +102,10 @@ export type ShowBreakdown = {
   /** Undefined = never computed; see ShowSeasonCompletion. */
   seasonCompletions?: ShowSeasonCompletion[];
   tmdb?: TmdbTvShowMeta;
+  /** The operator's pinned TMDB series id for this show, when they've set one
+   * (see TvRule.tmdbId). Undefined means the identity above came from TMDB's
+   * popularity-ranked title search and may well be the wrong series — which
+   * is exactly the distinction the show page's "Fix TMDB match" control needs
+   * to render honestly. */
+  tmdbPinnedId?: number;
 };

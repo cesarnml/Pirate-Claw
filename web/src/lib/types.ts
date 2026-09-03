@@ -115,6 +115,21 @@ export type ShowBreakdown = {
 	plexCheckedAt?: string | null;
 	seasonCompletions?: ShowSeasonCompletion[];
 	tmdb?: TmdbTvShowMeta;
+	/** Set when the operator has pinned this show's TMDB identity to a specific
+	 * series (config's per-show `tmdbId`). Undefined means the identity came
+	 * from TMDB's popularity-ranked title search, which is what puts the wrong
+	 * series on a show whose tracked title is a prefix of a more popular one. */
+	tmdbPinnedId?: number;
+};
+
+/** One option in the show page's "Fix TMDB match" picker — GET
+ * /api/shows/:slug/tmdb/candidates. */
+export type TmdbShowCandidate = {
+	tmdbId: number;
+	name: string;
+	firstAirDate: string | null;
+	overview: string | null;
+	posterUrl: string | null;
 };
 
 // --- Missing-episodes feature (TMDB canonical episode list + live Plex

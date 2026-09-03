@@ -6610,3 +6610,303 @@ describe('POST /api/client-error', () => {
     expect(entry.stack.length).toBe(8_000);
   });
 });
+
+// The TMDB identity pin (TvRule.tmdbId). Its whole reason to exist: show
+// identity comes from a popularity-ranked `/search/tv` whose first result is
+// wrong whenever a tracked title is the start of a bigger show's title
+// ("Tomb Raider" -> "Tomb Raider King", 2026-09-03). Untracking used to be
+// the only response, which threw the tracking away to fix the metadata.
+describe('PUT /api/shows/:slug/tmdb/pin', () => {
+  /** `tmdbClient` opts the deps into a configured-TMDB world, which is what
+   * makes the pin handler verify an id before persisting it; omit it for the
+   * TMDB-unconfigured path, where there is nothing to verify against. */
+  async function pinDeps(tmdbClient?: Record<string, unknown>): Promise<{
+    handler: ReturnType<typeof createApiFetch>;
+    configPath: string;
+    deps: ApiFetchDeps;
+  }> {
+    const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-pin-'));
+    const configPath = join(directory, 'pirate-claw.config.json');
+    await writeCompactTvConfigFile(configPath);
+    const loaded = await loadConfig(configPath);
+    loaded.runtime.apiWriteToken = 'write-token';
+    const deps = createDatabaseBackedDeps(loaded, configPath);
+    if (tmdbClient) {
+      deps.tmdbShows = {
+        cache: new TmdbCache(deps.database!),
+        client: tmdbClient as never,
+        cacheTtlMs: 60_000,
+        negativeCacheTtlMs: 10_000,
+        log: () => {},
+      };
+    }
+    return { handler: createApiFetch(deps), configPath, deps };
+  }
+
+  async function readShows(configPath: string): Promise<unknown[]> {
+    const raw = await Bun.file(configPath).json();
+    return raw.tv.shows as unknown[];
+  }
+
+  function pinRequest(slug: string, body: unknown): Request {
+    return new Request(`http://localhost/api/shows/${slug}/tmdb/pin`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer write-token',
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('writes the pin onto the matching watchlist entry', async () => {
+    const { handler, configPath, deps } = await pinDeps();
+    try {
+      // Lowercased, as every slug this app builds is — the watchlist entry
+      // is "Example Show".
+      const response = await handler(
+        pinRequest('example%20show', { tmdbId: 42 }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await readShows(configPath)).toEqual([
+        { name: 'Example Show', tmdbId: 42 },
+      ]);
+      expect(deps.configHolder!.current.tv[0].tmdbId).toBe(42);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  it('collapses the entry back to a bare name when the pin is cleared', async () => {
+    const { handler, configPath, deps } = await pinDeps();
+    try {
+      await handler(pinRequest('example%20show', { tmdbId: 42 }));
+      const cleared = await handler(
+        pinRequest('example%20show', { tmdbId: null }),
+      );
+
+      expect(cleared.status).toBe(200);
+      // Byte-for-byte what the file held before the pin ever existed —
+      // clearing leaves no residue to reason about later.
+      expect(await readShows(configPath)).toEqual(['Example Show']);
+      expect(deps.configHolder!.current.tv[0].tmdbId).toBeUndefined();
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  // A pinned id is never negative-cached, so a typo'd one would otherwise
+  // make every /api/shows read and every background refresh cycle issue a
+  // fresh, permanently failing TMDB round trip — forever.
+  it('rejects an id TMDB does not know, without writing it', async () => {
+    const { handler, configPath, deps } = await pinDeps({
+      getTv: async () => null,
+    });
+    try {
+      const response = await handler(
+        pinRequest('example%20show', { tmdbId: 999999 }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await readShows(configPath)).toEqual(['Example Show']);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  it('writes an id TMDB confirms exists', async () => {
+    const { handler, configPath, deps } = await pinDeps({
+      getTv: async (id: number) => ({ id, name: 'Tomb Raider' }),
+    });
+    try {
+      const response = await handler(
+        pinRequest('example%20show', { tmdbId: 42 }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await readShows(configPath)).toEqual([
+        { name: 'Example Show', tmdbId: 42 },
+      ]);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  it('404s for a show that is not on the watchlist', async () => {
+    const { handler, deps } = await pinDeps();
+    try {
+      const response = await handler(
+        pinRequest('never%20tracked', { tmdbId: 42 }),
+      );
+      expect(response.status).toBe(404);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  it('rejects a non-positive-integer id', async () => {
+    const { handler, configPath, deps } = await pinDeps();
+    try {
+      const response = await handler(
+        pinRequest('example%20show', { tmdbId: 0 }),
+      );
+      expect(response.status).toBe(400);
+      expect(await readShows(configPath)).toEqual(['Example Show']);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  it('requires a write token', async () => {
+    const { handler, deps } = await pinDeps();
+    try {
+      const response = await handler(
+        new Request('http://localhost/api/shows/example%20show/tmdb/pin', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tmdbId: 42 }),
+        }),
+      );
+      expect(response.status).toBe(401);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  it('caps an over-long candidates query instead of spending the TMDB key on it', async () => {
+    let searched = 0;
+    const { handler, deps } = await pinDeps({
+      searchTvCandidates: async () => {
+        searched += 1;
+        return [];
+      },
+    });
+    try {
+      const response = await handler(
+        new Request(
+          `http://localhost/api/shows/example%20show/tmdb/candidates?q=${'a'.repeat(500)}`,
+        ),
+      );
+
+      expect(response.status).toBe(400);
+      expect(searched).toBe(0);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  it('returns candidates for a normal query', async () => {
+    const { handler, deps } = await pinDeps({
+      searchTvCandidates: async () => [
+        {
+          id: 42,
+          name: 'Tomb Raider',
+          first_air_date: '2026-01-01',
+          overview: 'Lara.',
+          poster_path: '/p.jpg',
+        },
+      ],
+    });
+    try {
+      const response = await handler(
+        new Request(
+          'http://localhost/api/shows/example%20show/tmdb/candidates',
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        query: string;
+        candidates: Record<string, unknown>[];
+      };
+      // Defaults to the tracked title — the very string whose search went
+      // wrong — with no ?q= supplied.
+      expect(body.query).toBe('example show');
+      expect(body.candidates).toEqual([
+        {
+          tmdbId: 42,
+          name: 'Tomb Raider',
+          firstAirDate: '2026-01-01',
+          overview: 'Lara.',
+          posterUrl: 'https://image.tmdb.org/t/p/w500/p.jpg',
+        },
+      ]);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  // The Config page's show-list saves send bare names and never mention
+  // tmdbId. If "no opinion" were treated as "clear it", every unrelated save
+  // (adding a show, toggling Strict on some other row) would silently undo
+  // every pin on the list.
+  it('survives a later config save that does not mention it', async () => {
+    const { handler, configPath, deps } = await pinDeps();
+    try {
+      await handler(pinRequest('example%20show', { tmdbId: 42 }));
+
+      const etag = (
+        await handler(new Request('http://localhost/api/config'))
+      ).headers.get('etag')!;
+      const save = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: { shows: ['Example Show', 'Another Show'] },
+          }),
+        }),
+      );
+
+      expect(save.status).toBe(200);
+      expect(await readShows(configPath)).toEqual([
+        { name: 'Example Show', tmdbId: 42 },
+        'Another Show',
+      ]);
+    } finally {
+      deps.database?.close();
+    }
+  });
+
+  // The TV calendar's "Add show" path: the row the operator clicked already
+  // is a TMDB series, so it pins at add time rather than letting the title
+  // search guess and be corrected later.
+  it('accepts a pin supplied at add time through PUT /api/config', async () => {
+    const { handler, configPath, deps } = await pinDeps();
+    try {
+      const etag = (
+        await handler(new Request('http://localhost/api/config'))
+      ).headers.get('etag')!;
+      const save = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: {
+              shows: [{ name: 'Tomb Raider', tmdbId: 7 }, 'Example Show'],
+            },
+          }),
+        }),
+      );
+
+      expect(save.status).toBe(200);
+      expect(await readShows(configPath)).toEqual([
+        { name: 'Tomb Raider', tmdbId: 7 },
+        'Example Show',
+      ]);
+    } finally {
+      deps.database?.close();
+    }
+  });
+});

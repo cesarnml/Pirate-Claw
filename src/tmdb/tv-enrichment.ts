@@ -17,6 +17,20 @@ export type TvEnrichDeps = {
   cacheTtlMs: number;
   negativeCacheTtlMs: number;
   log: (message: string) => void;
+  /**
+   * The operator's pinned TMDB series id for a tracked title, if any (from
+   * `config.tv`'s per-show `tmdbId` — see TvRule). When it returns an id,
+   * resolveShow fetches that series directly and never runs the title
+   * search.
+   *
+   * Deliberately part of *deps* rather than a per-call option: every path
+   * that resolves a show has to honour it, including the background TMDB
+   * refresh (src/tmdb/background-refresh.ts), which builds its breakdowns
+   * straight from candidate rows and knows nothing about config. Miss that
+   * one and the next refresh cycle silently overwrites the pinned cache row
+   * with the search's wrong first result again.
+   */
+  pinnedTmdbIdFor?: (normalizedTitle: string) => number | undefined;
 };
 
 // A show TMDB itself says is 'Ended'/'Canceled' and not currently producing
@@ -174,42 +188,86 @@ async function resolveShow(
   options?: { forceRefresh?: boolean },
 ): Promise<TmdbTvShowMeta | undefined> {
   try {
+    const pinnedId = deps.pinnedTmdbIdFor?.(normalizedTitle);
+
     const cached = deps.cache.getTv(matchKey);
     if (cached && !options?.forceRefresh && !isCacheExpired(cached.expiresAt)) {
-      return cached.isNegative ? undefined : tvRowToShowMeta(cached);
+      // A cache row that predates the pin (or predates the *current* pin) is
+      // by definition the wrong series, however fresh its TTL says it is —
+      // fall through and re-resolve rather than serve it. This is what makes
+      // pinning take effect immediately without depending on the caller
+      // having evicted the row first.
+      const cacheMatchesPin =
+        pinnedId === undefined ||
+        (!cached.isNegative && cached.tmdbId === pinnedId);
+      if (cacheMatchesPin) {
+        return cached.isNegative ? undefined : tvRowToShowMeta(cached);
+      }
     }
 
-    const search = await deps.client.searchTv(normalizedTitle);
-    if (!search) {
-      deps.cache.upsertTv({
-        matchKey,
-        tmdbId: null,
-        isNegative: true,
-        expiresAt: expiresAtIso(deps.negativeCacheTtlMs),
-        name: null,
-        overview: null,
-        posterPath: null,
-        backdropPath: null,
-        networkName: null,
-        voteAverage: null,
-        voteCount: null,
-        genreIdsJson: null,
-        firstAirDate: null,
-        numberOfSeasons: null,
-        seasonsJson: null,
-        status: null,
-        inProduction: null,
-      });
-      deps.log(`tmdb tv search miss: ${matchKey}`);
-      return undefined;
+    let tvId: number;
+    if (pinnedId !== undefined) {
+      tvId = pinnedId;
+    } else {
+      const search = await deps.client.searchTv(normalizedTitle);
+      if (!search) {
+        deps.cache.upsertTv({
+          matchKey,
+          tmdbId: null,
+          isNegative: true,
+          expiresAt: expiresAtIso(deps.negativeCacheTtlMs),
+          name: null,
+          overview: null,
+          posterPath: null,
+          backdropPath: null,
+          networkName: null,
+          voteAverage: null,
+          voteCount: null,
+          genreIdsJson: null,
+          firstAirDate: null,
+          numberOfSeasons: null,
+          seasonsJson: null,
+          status: null,
+          inProduction: null,
+        });
+        deps.log(`tmdb tv search miss: ${matchKey}`);
+        return undefined;
+      }
+      tvId = search.id;
     }
 
-    const details = await deps.client.getTv(search.id);
+    // The series this title resolves to just changed. The identity row below
+    // is about to be overwritten, but the *season* rows are keyed by title
+    // (`show_match_key`), not by TMDB id, so without this they keep serving
+    // the previous series' episode lists under the corrected show until their
+    // own TTL runs out — up to DORMANT_CACHE_TTL_MULTIPLIER times longer for
+    // a dormant show.
+    //
+    // Living here rather than only in the pin endpoint because a pin can
+    // arrive without that endpoint ever running: the TV calendar's "Add show"
+    // pins through PUT /api/config, and `tv.shows[].tmdbId` is a documented
+    // hand-editable field. (A pin *cleared* by hand-editing the config file
+    // is still only corrected at TTL — with no pin to compare against, an
+    // unexpired row is indistinguishable from a correct one. Clearing through
+    // the API evicts explicitly.)
+    if (cached && cached.tmdbId !== null && cached.tmdbId !== tvId) {
+      deps.log(
+        `tmdb tv identity changed for ${matchKey}: ${String(cached.tmdbId)} -> ${String(tvId)}, dropping cached seasons`,
+      );
+      deps.cache.deleteTv(matchKey);
+    }
+
+    const details = await deps.client.getTv(tvId);
     if (!details) {
       // Same policy as movie enrichment: do not negative-cache detail fetch
-      // failures (may be transient HTTP/network); only search miss is negative.
+      // failures (may be transient HTTP/network); only search miss is
+      // negative. A pinned id that 404s lands here too, and deliberately
+      // stays non-negative: the operator's explicit choice shouldn't be
+      // cached away as "this show doesn't exist" over one bad response.
       deps.log(
-        `tmdb tv details unavailable: ${matchKey} (id=${String(search.id)})`,
+        `tmdb tv details unavailable: ${matchKey} (id=${String(tvId)}${
+          pinnedId !== undefined ? ', pinned' : ''
+        })`,
       );
       return undefined;
     }
@@ -406,10 +464,13 @@ export async function enrichShowBreakdowns(
   return Promise.all(
     shows.map(async (show) => {
       const key = tvMatchKey(show.normalizedTitle);
+      const pinnedTmdbId = deps.pinnedTmdbIdFor?.(show.normalizedTitle);
       const showMeta = await resolveShow(key, show.normalizedTitle, deps);
 
       if (!showMeta?.tmdbId) {
-        return showMeta ? { ...show, tmdb: showMeta } : show;
+        return showMeta
+          ? { ...show, tmdb: showMeta, tmdbPinnedId: pinnedTmdbId }
+          : { ...show, tmdbPinnedId: pinnedTmdbId };
       }
 
       const tvId = showMeta.tmdbId;
@@ -424,6 +485,7 @@ export async function enrichShowBreakdowns(
         ...show,
         seasons,
         tmdb: showMeta,
+        tmdbPinnedId: pinnedTmdbId,
       };
     }),
   );
@@ -434,12 +496,15 @@ export async function refreshShowBreakdown(
   deps: TvEnrichDeps,
 ): Promise<ShowBreakdown> {
   const key = tvMatchKey(show.normalizedTitle);
+  const tmdbPinnedId = deps.pinnedTmdbIdFor?.(show.normalizedTitle);
   const showMeta = await resolveShow(key, show.normalizedTitle, deps, {
     forceRefresh: true,
   });
 
   if (!showMeta?.tmdbId) {
-    return showMeta ? { ...show, tmdb: showMeta } : show;
+    return showMeta
+      ? { ...show, tmdb: showMeta, tmdbPinnedId }
+      : { ...show, tmdbPinnedId };
   }
 
   const dormant = isDormantShow(showMeta);
@@ -456,5 +521,6 @@ export async function refreshShowBreakdown(
     ...show,
     seasons,
     tmdb: showMeta,
+    tmdbPinnedId,
   };
 }

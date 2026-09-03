@@ -1,7 +1,12 @@
 import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { apiFetch, apiRequest, navApiFetch } from '$lib/server/api';
-import type { ShowBreakdown, ShowEpisodeStatus, ShowSeasonCompletion } from '$lib/types';
+import type {
+	ShowBreakdown,
+	ShowEpisodeStatus,
+	ShowSeasonCompletion,
+	TmdbShowCandidate
+} from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -193,6 +198,90 @@ export const actions: Actions = {
 		} catch (error) {
 			console.error('[shows detail] refreshPlex failed:', error);
 			return fail(500, { plexRefreshMessage: 'Could not refresh Plex status.' });
+		}
+	},
+
+	/**
+	 * Loads the TMDB identity picker's options. A form action rather than a
+	 * client-side fetch so the TMDB call stays server-side behind the same
+	 * `apiFetch` plumbing every other call on this page uses — the browser
+	 * never talks to the daemon directly here.
+	 */
+	searchTmdbMatches: async ({ request, params }) => {
+		const formData = await request.formData();
+		const query = String(formData.get('query') ?? '').trim();
+
+		try {
+			const search = query ? `?q=${encodeURIComponent(query)}` : '';
+			const response = await apiFetch<{
+				query: string;
+				candidates: TmdbShowCandidate[];
+			}>(`/api/shows/${encodeURIComponent(params.slug)}/tmdb/candidates${search}`);
+
+			return {
+				matchSearchSuccess: true,
+				matchQuery: response.query,
+				matchCandidates: response.candidates
+			};
+		} catch (error) {
+			console.error('[shows detail] searchTmdbMatches failed:', error);
+			return fail(500, {
+				matchMessage: 'Could not search TMDB for this show.',
+				matchQuery: query
+			});
+		}
+	},
+
+	/**
+	 * Pins this show to a specific TMDB series, or clears the pin when
+	 * `tmdbId` is absent. Clearing is a real operation, not a no-op: it hands
+	 * the identity back to the popularity-ranked title search, which is the
+	 * right answer for a show whose name is unambiguous.
+	 */
+	pinTmdbMatch: async ({ request, params }) => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) {
+			return fail(403, { matchMessage: 'Pinning is unavailable without API write access.' });
+		}
+
+		const formData = await request.formData();
+		const raw = formData.get('tmdbId');
+		const tmdbId = raw === null || String(raw).trim() === '' ? null : Number(raw);
+		if (tmdbId !== null && !Number.isInteger(tmdbId)) {
+			return fail(400, { matchMessage: 'Invalid TMDB show id.' });
+		}
+
+		try {
+			const response = await apiRequest(`/api/shows/${encodeURIComponent(params.slug)}/tmdb/pin`, {
+				method: 'PUT',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${writeToken}`
+				},
+				body: JSON.stringify({ tmdbId })
+			});
+
+			if (!response.ok) {
+				let matchMessage = `Pin failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) matchMessage = body.error;
+				} catch {
+					// Keep fallback message.
+				}
+				return fail(response.status, { matchMessage });
+			}
+
+			return {
+				matchPinSuccess: true,
+				matchMessage:
+					tmdbId === null
+						? 'Pin cleared — this show will be matched by title search again.'
+						: 'TMDB match pinned.'
+			};
+		} catch (error) {
+			console.error('[shows detail] pinTmdbMatch failed:', error);
+			return fail(500, { matchMessage: 'Could not reach the API to pin this show.' });
 		}
 	},
 

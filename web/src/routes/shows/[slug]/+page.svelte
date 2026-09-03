@@ -10,7 +10,9 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import PinIcon from '@lucide/svelte/icons/pin';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
+	import SearchIcon from '@lucide/svelte/icons/search';
 	import StarIcon from '@lucide/svelte/icons/star';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
@@ -76,6 +78,14 @@
 	// what actually gets removed (2026-09-03 incident).
 	let confirmingUntrack = $state(false);
 
+	// The TMDB identity picker. Collapsed by default — it's a correction tool,
+	// not part of the normal reading flow — and opened either by the "Fix TMDB
+	// match" button or by the mismatch warning that appears when TMDB's title
+	// search resolved this show to a name the operator never tracked.
+	let matchPickerOpen = $state(false);
+	let searchingMatches = $state(false);
+	let pinningTmdbId = $state<number | null | undefined>(undefined);
+
 	// Incremented by the two actions that re-walk every season server-side, so
 	// MissingEpisodesPanel knows to clear its whole season cache rather than
 	// merge into it. Every other page-data change (a manual grab, a stalled
@@ -99,6 +109,28 @@
 				await update();
 				setFlag(false);
 			};
+		};
+	}
+
+	function enhanceMatchSearch() {
+		searchingMatches = true;
+		return async ({ update }: { update: () => Promise<void> }) => {
+			await update();
+			searchingMatches = false;
+		};
+	}
+
+	// A pin re-points the show at a different series, so every season already
+	// loaded below it belongs to the *old* one — same reason the TMDB/Plex
+	// refresh buttons bump refreshGeneration, and the one case where not
+	// bumping it would leave visibly wrong episode titles on screen.
+	function enhanceMatchPin(tmdbId: number | null) {
+		pinningTmdbId = tmdbId;
+		return async ({ update }: { update: () => Promise<void> }) => {
+			refreshGeneration += 1;
+			await update();
+			pinningTmdbId = undefined;
+			matchPickerOpen = false;
 		};
 	}
 </script>
@@ -166,6 +198,15 @@
 							{/if}
 						</Button>
 					</form>
+					<Button
+						type="button"
+						variant="outline"
+						class="rounded-full px-4"
+						onclick={() => (matchPickerOpen = !matchPickerOpen)}
+					>
+						<PinIcon class="mr-2 h-4 w-4" />
+						{data.show.tmdbPinnedId ? 'TMDB match pinned' : 'Fix TMDB match'}
+					</Button>
 					{#if confirmingUntrack}
 						<div
 							class="border-destructive/40 bg-destructive/10 flex flex-wrap items-center gap-2 rounded-full border px-3 py-1.5"
@@ -236,6 +277,164 @@
 			</Alert>
 		{/if}
 
+		{#if form?.matchMessage && !matchPickerOpen}
+			<Alert class={form.matchPinSuccess ? 'border-primary/20 bg-primary/8' : ''}>
+				<AlertTitle>{form.matchPinSuccess ? 'TMDB match updated' : 'Pin failed'}</AlertTitle>
+				<AlertDescription>{form.matchMessage}</AlertDescription>
+			</Alert>
+		{/if}
+
+		{#if matchPickerOpen && data.canWrite}
+			<Card class="bg-card/72 rounded-[30px] border-white/10">
+				<CardContent class="space-y-4 pt-6">
+					<div class="space-y-1">
+						<p class="text-lg font-semibold">Which show is this?</p>
+						<p class="text-muted-foreground text-sm leading-6">
+							pirate-claw identifies a tracked show by searching TMDB for its name and taking the
+							most popular hit, which is wrong whenever your title is also the start of a bigger
+							show's title. Pinning a series here settles it for good — RSS matching is unaffected,
+							that's what the Strict toggle on the Config page controls.
+						</p>
+					</div>
+
+					<form
+						method="POST"
+						action="?/searchTmdbMatches"
+						use:enhance={enhanceMatchSearch}
+						class="flex flex-wrap items-center gap-2"
+					>
+						<input
+							type="text"
+							name="query"
+							value={form?.matchQuery ?? data.show.normalizedTitle}
+							placeholder="Search TMDB"
+							class="border-border bg-background/50 focus:border-primary/70 focus:ring-primary/30 min-w-0 flex-1 rounded-full border px-4 py-2 text-sm outline-none focus:ring-2"
+						/>
+						<Button
+							type="submit"
+							variant="outline"
+							class="rounded-full px-4"
+							disabled={searchingMatches}
+						>
+							{#if searchingMatches}
+								<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
+								Searching…
+							{:else}
+								<SearchIcon class="mr-2 h-4 w-4" />
+								Search
+							{/if}
+						</Button>
+					</form>
+
+					{#if form?.matchMessage}
+						<Alert
+							variant={form.matchPinSuccess ? undefined : 'destructive'}
+							class={form.matchPinSuccess ? 'border-primary/20 bg-primary/8' : ''}
+						>
+							<AlertDescription>{form.matchMessage}</AlertDescription>
+						</Alert>
+					{/if}
+
+					{#if form?.matchCandidates}
+						{#if form.matchCandidates.length === 0}
+							<p class="text-muted-foreground text-sm">
+								TMDB returned nothing for that search. Try the show's full title, or its original
+								(non-English) name.
+							</p>
+						{:else}
+							<ul class="space-y-2">
+								{#each form.matchCandidates as candidate (candidate.tmdbId)}
+									{@const isCurrent = data.show.tmdbPinnedId === candidate.tmdbId}
+									<li
+										class="border-border flex items-start gap-3 rounded-2xl border p-3 {isCurrent
+											? 'border-primary/40 bg-primary/8'
+											: ''}"
+									>
+										{#if candidate.posterUrl}
+											<img
+												src={candidate.posterUrl}
+												alt={`Poster for ${candidate.name}`}
+												class="h-24 w-16 shrink-0 rounded-lg object-cover"
+												loading="lazy"
+											/>
+										{:else}
+											<div
+												class="text-muted-foreground bg-background/50 flex h-24 w-16 shrink-0 items-center justify-center rounded-lg text-[10px]"
+											>
+												No art
+											</div>
+										{/if}
+										<div class="min-w-0 flex-1 space-y-1">
+											<p class="text-sm font-semibold">
+												{candidate.name}
+												<span class="text-muted-foreground font-normal">
+													{candidate.firstAirDate ? ` (${candidate.firstAirDate.slice(0, 4)})` : ''}
+												</span>
+											</p>
+											{#if candidate.overview}
+												<p class="text-muted-foreground line-clamp-2 text-xs leading-5">
+													{candidate.overview}
+												</p>
+											{/if}
+											{#if isCurrent}
+												<Badge class="border-primary/20 bg-primary/12 text-primary">Pinned</Badge>
+											{:else}
+												<form
+													method="POST"
+													action="?/pinTmdbMatch"
+													use:enhance={() => enhanceMatchPin(candidate.tmdbId)}
+												>
+													<input type="hidden" name="tmdbId" value={candidate.tmdbId} />
+													<Button
+														type="submit"
+														variant="outline"
+														size="sm"
+														class="rounded-full px-3"
+														disabled={pinningTmdbId !== undefined}
+													>
+														{#if pinningTmdbId === candidate.tmdbId}
+															<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
+															Pinning…
+														{:else}
+															Use this show
+														{/if}
+													</Button>
+												</form>
+											{/if}
+										</div>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					{/if}
+
+					{#if data.show.tmdbPinnedId}
+						<form
+							method="POST"
+							action="?/pinTmdbMatch"
+							use:enhance={() => enhanceMatchPin(null)}
+							class="border-border border-t pt-3"
+						>
+							<Button
+								type="submit"
+								variant="ghost"
+								size="sm"
+								class="rounded-full px-3"
+								disabled={pinningTmdbId !== undefined}
+							>
+								{#if pinningTmdbId === null}
+									<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
+									Clearing…
+								{:else}
+									Clear pin (go back to automatic matching)
+								{/if}
+							</Button>
+						</form>
+					{/if}
+				</CardContent>
+			</Card>
+		{/if}
+
 		<div
 			class="relative overflow-hidden rounded-[34px] border border-white/10"
 			style={`background:
@@ -281,9 +480,21 @@
 								>
 									<TriangleAlertIcon class="h-3.5 w-3.5 shrink-0" />
 									<span>
-										Tracked as <span class="font-semibold">“{trackedAs}”</span> — the title above is a
-										TMDB match, which is looser than the name you track. If it named the wrong series,
-										untrack it below.
+										Tracked as <span class="font-semibold">“{trackedAs}”</span> — the title above is
+										a TMDB match, which is looser than the name you track. If it named the wrong
+										series,
+										{#if data.canWrite}
+											<button
+												type="button"
+												class="underline underline-offset-2"
+												onclick={() => (matchPickerOpen = true)}
+											>
+												pick the right one
+											</button>
+											— tracking is kept either way.
+										{:else}
+											pin the right one from a session with write access.
+										{/if}
 									</span>
 								</p>
 							{/if}

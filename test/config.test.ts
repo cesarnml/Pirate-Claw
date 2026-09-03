@@ -740,7 +740,44 @@ describe('validateConfig', () => {
       }),
     ).toThrow(
       new ConfigError(
-        'Config file "config tv shows[0]" must be a string show name or an object with "name", optional "matchPattern", optional "resolutions", and optional "codecs".',
+        'Config file "config tv shows[0]" must be a string show name or an object with "name", optional "matchPattern", optional "tmdbId", optional "resolutions", and optional "codecs".',
+      ),
+    );
+  });
+
+  it('keeps a per-show tmdbId pin on a compact tv entry', () => {
+    const config = validateConfig({
+      ...createMinimalConfig(),
+      tv: {
+        defaults: {
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+        },
+        shows: [{ name: 'Tomb Raider', tmdbId: 42 }, 'Plain Show'],
+      },
+    });
+
+    expect(config.tv[0].tmdbId).toBe(42);
+    expect(config.tv[1].tmdbId).toBeUndefined();
+  });
+
+  // A typo'd hand-edit should be a loud config error, not a show that
+  // silently loses all its metadata to a 404 on /tv/<id>.
+  it('fails when a per-show tmdbId is not a positive integer', () => {
+    expect(() =>
+      validateConfig({
+        ...createMinimalConfig(),
+        tv: {
+          defaults: {
+            resolutions: ['1080p'],
+            codecs: ['x265'],
+          },
+          shows: [{ name: 'Tomb Raider', tmdbId: -1 }],
+        },
+      }),
+    ).toThrow(
+      new ConfigError(
+        'Config file "config tv shows[0] tmdbId" must be a positive integer TMDB show id.',
       ),
     );
   });

@@ -105,6 +105,13 @@ export const actions: Actions = {
 		const name = String(formData.get('name') ?? '').trim();
 		if (!name) return fail(400, { addShowMessage: 'Show name is required.' });
 
+		// Optional so this action keeps working for any caller that only has a
+		// name; when present it pins the new entry's TMDB identity instead of
+		// leaving it to the daemon's title search (see TvRule.tmdbId).
+		const tmdbIdRaw = formData.get('tmdbId');
+		const tmdbId = tmdbIdRaw === null ? null : Number(tmdbIdRaw);
+		const pinnedTmdbId = tmdbId !== null && Number.isInteger(tmdbId) && tmdbId > 0 ? tmdbId : null;
+
 		let configResponse: Response;
 		try {
 			configResponse = await apiRequest('/api/config');
@@ -118,16 +125,33 @@ export const actions: Actions = {
 		}
 
 		const ifMatch = configResponse.headers.get('etag') ?? '';
-		const config = (await configResponse.json()) as { tv?: { name: string }[] };
-		const existingNames = (config.tv ?? []).map((rule) => rule.name);
+		const config = (await configResponse.json()) as {
+			tv?: { name: string; matchPattern?: string }[];
+		};
+		const existingRules = config.tv ?? [];
 
-		if (existingNames.some((existing) => existing.trim().toLowerCase() === name.toLowerCase())) {
+		if (existingRules.some((rule) => rule.name.trim().toLowerCase() === name.toLowerCase())) {
 			return { addShowSuccess: true, addedName: name, message: `${name} is already tracked.` };
 		}
 
 		// New shows land at the top of the watchlist, matching the Config
 		// page's "Add show" behavior.
-		const showNames = [name, ...existingNames];
+		//
+		// Existing entries are echoed back WITH their matchPattern rather than
+		// as bare names. A bare name is "no opinion" for a pin (so pins would
+		// survive it) but not for matchPattern: the daemon's merge reads a bare
+		// name whose disk entry holds a toggle-generated pattern as "Strict was
+		// just switched off" and drops it (mergeTvShowsPreservingDiskEntries in
+		// src/api.ts). Sending bare names here therefore silently un-Stricted
+		// every show on the list each time anything was added from this page.
+		const showNames: (string | { name: string; matchPattern?: string; tmdbId?: number })[] = [
+			pinnedTmdbId === null ? name : { name, tmdbId: pinnedTmdbId },
+			...existingRules.map((rule) =>
+				rule.matchPattern === undefined
+					? rule.name
+					: { name: rule.name, matchPattern: rule.matchPattern }
+			)
+		];
 
 		try {
 			const response = await apiRequest('/api/config', {

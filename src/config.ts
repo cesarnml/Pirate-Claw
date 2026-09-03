@@ -16,6 +16,25 @@ export type FeedConfig = {
 export type TvRule = {
   name: string;
   matchPattern?: string;
+  /**
+   * Pins this show's TMDB identity to a specific series id, bypassing the
+   * title search TMDB enrichment otherwise does (`/search/tv?query=<name>`,
+   * first result wins — see resolveShow in src/tmdb/tv-enrichment.ts).
+   *
+   * That search is popularity-ranked, so a tracked title that is a prefix of
+   * a more popular show loses: tracking "Tomb Raider" resolved to the anime
+   * "Tomb Raider King" and every /shows surface silently renamed the show to
+   * one the operator never added (2026-09-03). The per-show "Strict" toggle
+   * does NOT help here — matchPattern governs which *RSS releases* match,
+   * a completely separate question from which *TMDB series* this is.
+   *
+   * Deliberately a pin (says which show is right) rather than a rejection
+   * list (says which are wrong): a pin is self-cleaning — there is no stale
+   * negative state to reason about later — and it's the only form that can
+   * also be set at add time, which the TV calendar now does since it already
+   * has the id in hand.
+   */
+  tmdbId?: number;
   resolutions: string[];
   codecs: string[];
 };
@@ -28,6 +47,7 @@ export type CompactTvDefaults = {
 type CompactTvShowEntry = {
   name: string;
   matchPattern?: string;
+  tmdbId?: number;
   resolutions?: string[];
   codecs?: string[];
 };
@@ -233,6 +253,7 @@ function validateTvRule(input: unknown, path: string, index: number): TvRule {
       rule.matchPattern,
       `${path} tv[${index}] matchPattern`,
     ),
+    tmdbId: validateOptionalTmdbId(rule.tmdbId, `${path} tv[${index}] tmdbId`),
     resolutions: requireNormalizedAllowedStringArray(
       rule,
       'resolutions',
@@ -302,6 +323,7 @@ function validateCompactTvRule(
       entry.matchPattern,
       `${path} matchPattern`,
     ),
+    tmdbId: entry.tmdbId,
     resolutions: entry.resolutions
       ? [...entry.resolutions]
       : [...defaults.resolutions],
@@ -319,7 +341,7 @@ function validateCompactTvShowEntry(
 
   if (!isRecord(input)) {
     throw new ConfigError(
-      `Config file "${path}" must be a string show name or an object with "name", optional "matchPattern", optional "resolutions", and optional "codecs".`,
+      `Config file "${path}" must be a string show name or an object with "name", optional "matchPattern", optional "tmdbId", optional "resolutions", and optional "codecs".`,
     );
   }
 
@@ -331,6 +353,7 @@ function validateCompactTvShowEntry(
       entry.matchPattern === undefined
         ? undefined
         : expectString(entry.matchPattern, `${path} matchPattern`),
+    tmdbId: validateOptionalTmdbId(entry.tmdbId, `${path} tmdbId`),
     resolutions:
       entry.resolutions === undefined
         ? undefined
@@ -558,6 +581,27 @@ function validateOptionalMatchPattern(
   }
 
   return value;
+}
+
+/** A TMDB series id — a positive integer, since that's the only shape TMDB
+ * itself issues. Rejecting 0/negatives/floats here (rather than letting them
+ * through to a 404 on `/tv/<id>`) keeps a typo'd hand-edit a loud config
+ * error instead of a show that silently loses all its metadata. */
+function validateOptionalTmdbId(
+  input: unknown,
+  path: string,
+): number | undefined {
+  if (input === undefined || input === null) {
+    return undefined;
+  }
+
+  if (typeof input !== 'number' || !Number.isInteger(input) || input <= 0) {
+    throw new ConfigError(
+      `Config file "${path}" must be a positive integer TMDB show id.`,
+    );
+  }
+
+  return input;
 }
 
 function requireNumberArray(

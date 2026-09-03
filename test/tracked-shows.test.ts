@@ -4,10 +4,11 @@ import { describe, expect, it } from 'bun:test';
 import { ensureSchema } from '../src/repository';
 import { TrackedShowsStore } from '../src/tracked-shows/store';
 import {
+  createPinnedTmdbIdResolver,
   normalizeShowName,
   syncTrackedShowsFromConfig,
 } from '../src/tracked-shows/sync';
-import type { TvRule } from '../src/config';
+import type { AppConfig, TvRule } from '../src/config';
 
 function freshDatabase(): Database {
   const database = new Database(':memory:');
@@ -150,5 +151,45 @@ describe('syncTrackedShowsFromConfig', () => {
     syncTrackedShowsFromConfig(database, [rules[0]!]);
 
     expect(store.list().map((row) => row.normalizedTitle)).toEqual(['Silo']);
+  });
+});
+
+describe('createPinnedTmdbIdResolver', () => {
+  function holder(tv: TvRule[]): { current: AppConfig } {
+    return { current: { tv } as AppConfig };
+  }
+
+  it('resolves a pinned show case-insensitively and leaves others unpinned', () => {
+    const resolver = createPinnedTmdbIdResolver(
+      holder([
+        { name: 'Tomb Raider', tmdbId: 42, resolutions: [], codecs: [] },
+        { name: 'Silo', resolutions: [], codecs: [] },
+      ]),
+    );
+
+    // A show's normalized title can carry a feed item's raw casing rather
+    // than config's, so the lookup has to fold case the way tvMatchKey does.
+    expect(resolver('tomb raider')).toBe(42);
+    expect(resolver('TOMB RAIDER')).toBe(42);
+    expect(resolver('silo')).toBeUndefined();
+    expect(resolver('never tracked')).toBeUndefined();
+  });
+
+  // The resolver is built once at daemon startup but the daemon replaces
+  // configHolder.current on every config write. Reading through the holder is
+  // what makes a pin take effect immediately instead of at the next restart —
+  // which would be the whole feature not working.
+  it('picks up a pin added after it was created', () => {
+    const configHolder = holder([
+      { name: 'Tomb Raider', resolutions: [], codecs: [] },
+    ]);
+    const resolver = createPinnedTmdbIdResolver(configHolder);
+    expect(resolver('tomb raider')).toBeUndefined();
+
+    configHolder.current = holder([
+      { name: 'Tomb Raider', tmdbId: 42, resolutions: [], codecs: [] },
+    ]).current;
+
+    expect(resolver('tomb raider')).toBe(42);
   });
 });

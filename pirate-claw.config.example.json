@@ -22,6 +22,10 @@
         "name": "The Daily Show",
         "matchPattern": "daily show",
         "resolutions": ["1080p"]
+      },
+      {
+        "name": "Tomb Raider",
+        "tmdbId": 240411
       }
     ]
   },

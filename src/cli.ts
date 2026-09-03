@@ -75,7 +75,10 @@ import { ManualMovieGrabsStore } from './manual-movie-grabs/store';
 import { PlexMovieSyncStateStore } from './plex/movie-sync-state';
 import { PlexTvSyncStateStore } from './plex/tv-sync-state';
 import { TrackedShowsStore } from './tracked-shows/store';
-import { syncTrackedShowsFromConfig } from './tracked-shows/sync';
+import {
+  createPinnedTmdbIdResolver,
+  syncTrackedShowsFromConfig,
+} from './tracked-shows/sync';
 
 function plexMovieEnrichDeps(
   database: Database,
@@ -206,10 +209,10 @@ function topMoviesDeps(
 
 function tmdbShowsEnrichDeps(
   database: Database,
-  config: AppConfig,
+  configHolder: { current: AppConfig },
   log: (message: string) => void,
 ): TvEnrichDeps | undefined {
-  const tmdbResolved = resolveTmdbSettings(config);
+  const tmdbResolved = resolveTmdbSettings(configHolder.current);
   if (!tmdbResolved) {
     return undefined;
   }
@@ -221,6 +224,7 @@ function tmdbShowsEnrichDeps(
     cacheTtlMs: tmdbResolved.cacheTtlMs,
     negativeCacheTtlMs: tmdbResolved.negativeCacheTtlMs,
     log: (m: string) => log(`[tmdb] ${m}`),
+    pinnedTmdbIdFor: createPinnedTmdbIdResolver(configHolder),
   };
 }
 
@@ -557,7 +561,7 @@ export async function runCli(argv: string[]): Promise<number> {
           : undefined;
 
         const tmdbMovies = tmdbMovieEnrichDeps(database, config, log);
-        const tmdbShows = tmdbShowsEnrichDeps(database, config, log);
+        const tmdbShows = tmdbShowsEnrichDeps(database, configHolder, log);
         const calendarTv = calendarTvDeps(config, log);
         const calendarMovie = calendarMovieDeps(config, log);
         const topMovies = topMoviesDeps(database, config, log);

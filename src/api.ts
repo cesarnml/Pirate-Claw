@@ -116,6 +116,8 @@ import type {
 import type { CycleResult } from './runtime-artifacts';
 import type { TmdbCache } from './tmdb/cache';
 import { enrichCandidatesFromCache } from './tmdb/candidate-cache-enrich';
+import { posterUrl } from './tmdb/constants';
+import { tvMatchKey } from './tmdb/keys';
 import type { CalendarDeps } from './tmdb/calendar';
 import { getTvCalendar } from './tmdb/calendar';
 import type { MovieCalendarDeps } from './tmdb/movie-calendar';
@@ -382,6 +384,17 @@ function jsonMethodNotAllowed(allow: string): Response {
 
 /** Repository default is 20; HTTP dashboards need a full slice for joins and torrent polling. */
 const API_CANDIDATE_LIST_LIMIT = 50_000;
+
+/** How many TMDB search hits the "Fix TMDB match" picker offers. TMDB
+ * returns 20 per page; the right series is either near the top or the query
+ * itself needs rewording, and a scrollable wall of 20 posters on a phone is
+ * worse at both. */
+const SHOW_TMDB_CANDIDATE_LIMIT = 8;
+
+/** Upper bound on the caller-supplied `?q=` for that picker — see the handler
+ * for why an unauthenticated route that spends the operator's TMDB key needs
+ * one at all. */
+const SHOW_TMDB_CANDIDATE_QUERY_MAX_LENGTH = 200;
 
 /** Caps how long the "Plex TV Sync" POST handler waits on runFullTvPlexSync
  * before responding — unlike the movie sync (one catalog fetch, then pure
@@ -1721,6 +1734,98 @@ export function createApiFetch(
           error instanceof Error
             ? error.message
             : 'failed to update the watchlist',
+      };
+    }
+  }
+
+  /**
+   * Sets (or, with `null`, clears) the TMDB identity pin on the watchlist
+   * entry whose normalized name matches — see TvRule.tmdbId.
+   *
+   * A targeted read-modify-write of the single matching entry rather than a
+   * PUT /api/config round trip, for the same reason removeShowFromWatchlist
+   * above is: the caller here holds a slug, not the whole watchlist, and
+   * echoing 70 shows back through the merge path to change one field is how
+   * a save ends up destroying state it never meant to touch.
+   *
+   * A show with no `tv.shows` entry at all (a candidate-only leftover) is a
+   * real failure here, unlike in removeShowFromWatchlist: there is nowhere
+   * to record the pin, so reporting success would leave the operator
+   * watching the wrong series stay wrong.
+   */
+  async function setShowTmdbPin(
+    normalizedTitle: string,
+    tmdbId: number | null,
+  ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+    try {
+      const baseOnDisk = await readConfigFileRecord(configPath);
+      const tvDisk = baseOnDisk.tv;
+      if (!isRecord(tvDisk) || !Array.isArray(tvDisk.shows)) {
+        return {
+          ok: false,
+          status: 500,
+          error:
+            'config tv is not in the expected compact format; edit the config file directly to pin this show',
+        };
+      }
+
+      // Case-insensitive, unlike removeShowFromWatchlist above: that one is
+      // handed a ledger title (which came from config in the first place),
+      // while this one is handed a URL slug, and showHref lowercases every
+      // slug it builds.
+      const needle = normalizedTitle.toLowerCase();
+      let matched = false;
+      const nextShows = tvDisk.shows.map((entry) => {
+        const name = configShowEntryName(entry);
+        if (
+          name === undefined ||
+          normalizeShowName(name).toLowerCase() !== needle
+        ) {
+          return entry;
+        }
+        matched = true;
+        const base: Record<string, unknown> = isRecord(entry)
+          ? { ...entry, name }
+          : { name };
+        if (tmdbId === null) {
+          const { tmdbId: _cleared, ...rest } = base;
+          // Collapse back to the bare string form when nothing but the name
+          // is left, so clearing a pin leaves the config file exactly as it
+          // would have been had the pin never been set.
+          return Object.keys(rest).length > 1 ? rest : name;
+        }
+        return { ...base, tmdbId };
+      });
+
+      if (!matched) {
+        return {
+          ok: false,
+          status: 404,
+          error: 'show is not on the watchlist',
+        };
+      }
+
+      const merged = {
+        ...baseOnDisk,
+        tv: { ...tvDisk, shows: nextShows },
+      };
+      const validated = validateConfig(
+        merged,
+        'config',
+        await loadConfigEnv(configPath),
+      );
+      writeConfigAtomically(configPath, merged);
+      activeConfig = validated;
+      if (configHolder) {
+        configHolder.current = validated;
+      }
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        status: 500,
+        error:
+          error instanceof Error ? error.message : 'failed to pin this show',
       };
     }
   }
@@ -3204,6 +3309,158 @@ export function createApiFetch(
       }
     }
 
+    // The identity picker behind "Fix TMDB match" on the show detail page.
+    // Read-only and unauthenticated, like GET /api/shows itself — it only
+    // reflects TMDB's own public search back; the write half (pin, below)
+    // is what's gated.
+    const showTmdbCandidatesMatch = path.match(
+      /^\/api\/shows\/([^/]+)\/tmdb\/candidates$/,
+    );
+    if (showTmdbCandidatesMatch) {
+      if (request.method !== 'GET') {
+        return jsonMethodNotAllowed('GET');
+      }
+
+      if (!tmdbShows) {
+        return Response.json(
+          { error: 'tmdb is not configured' },
+          { status: 409 },
+        );
+      }
+
+      try {
+        const slug = decodeURIComponent(showTmdbCandidatesMatch[1]);
+        // The tracked title is the default query because that is precisely
+        // the string whose search result went wrong; an explicit ?q= lets
+        // the operator retry with a better one (a fuller title, a year) when
+        // the tracked name is too generic to find the show at all.
+        const query = (
+          new URL(request.url).searchParams.get('q') ?? slug
+        ).trim();
+        if (!query) {
+          return Response.json(
+            { error: 'search query is required' },
+            { status: 400 },
+          );
+        }
+        // This route is unauthenticated (like GET /api/shows) but, unlike it,
+        // spends the operator's own TMDB key on caller-supplied text. Bounding
+        // the query keeps anything on the LAN from turning that key's quota
+        // into an open proxy one long request at a time. No real show title
+        // comes close to this.
+        if (query.length > SHOW_TMDB_CANDIDATE_QUERY_MAX_LENGTH) {
+          return Response.json(
+            { error: 'search query is too long' },
+            { status: 400 },
+          );
+        }
+
+        const results = await tmdbShows.client.searchTvCandidates(
+          query,
+          SHOW_TMDB_CANDIDATE_LIMIT,
+        );
+
+        return Response.json({
+          query,
+          candidates: results.map((result) => ({
+            tmdbId: result.id,
+            name: result.name,
+            firstAirDate: result.first_air_date ?? null,
+            overview: result.overview ?? null,
+            posterUrl: posterUrl(result.poster_path) ?? null,
+          })),
+        });
+      } catch {
+        return json500();
+      }
+    }
+
+    const showTmdbPinMatch = path.match(/^\/api\/shows\/([^/]+)\/tmdb\/pin$/);
+    if (showTmdbPinMatch) {
+      if (request.method !== 'PUT') {
+        return jsonMethodNotAllowed('PUT');
+      }
+
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return Response.json({ error: 'invalid json body' }, { status: 400 });
+      }
+
+      const rawPin = isRecord(body) ? body.tmdbId : undefined;
+      let tmdbId: number | null;
+      if (rawPin === null) {
+        tmdbId = null;
+      } else if (
+        typeof rawPin === 'number' &&
+        Number.isInteger(rawPin) &&
+        rawPin > 0
+      ) {
+        tmdbId = rawPin;
+      } else {
+        return Response.json(
+          { error: 'tmdbId must be a positive integer, or null to clear' },
+          { status: 400 },
+        );
+      }
+
+      // Confirm the id is a real series before writing it. A pinned id is
+      // never negative-cached (an operator's explicit choice shouldn't be
+      // cached away as "no such show" over one bad response), so a typo'd id
+      // would otherwise make every /api/shows read and every background
+      // refresh cycle issue a fresh, permanently failing TMDB round trip.
+      // Skipped when TMDB isn't configured — there is nothing to verify
+      // against, and refusing the write would be worse than accepting it.
+      if (tmdbId !== null && tmdbShows) {
+        let exists: boolean;
+        try {
+          exists = (await tmdbShows.client.getTv(tmdbId)) !== null;
+        } catch {
+          return Response.json(
+            { error: 'could not reach TMDB to verify that show id' },
+            { status: 502 },
+          );
+        }
+        if (!exists) {
+          return Response.json(
+            { error: `TMDB has no show with id ${String(tmdbId)}` },
+            { status: 400 },
+          );
+        }
+      }
+
+      const slug = decodeURIComponent(showTmdbPinMatch[1]);
+      const result = await setShowTmdbPin(normalizeShowName(slug), tmdbId);
+      if (!result.ok) {
+        return Response.json(
+          { error: result.error },
+          { status: result.status },
+        );
+      }
+
+      // Evict the cached identity *and* its season rows before answering.
+      // resolveShow would ignore a stale row on the next read anyway (its
+      // tmdb_id no longer matches the pin), but the season rows are keyed by
+      // title, not id, so without this the corrected show would keep serving
+      // the previous series' episode lists until their own TTL ran out.
+      // Clearing a pin depends on this outright: with no pin to compare
+      // against, an unexpired row is served as-is.
+      if (tmdbShows) {
+        tmdbShows.cache.deleteTv(tvMatchKey(normalizeShowName(slug)));
+      }
+      console.log(
+        `[shows] TMDB pin for "${slug}" ${
+          tmdbId === null ? 'cleared' : `set to ${String(tmdbId)}`
+        }`,
+      );
+
+      return Response.json({ ok: true, pinnedTmdbId: tmdbId });
+    }
+
     const showPlexRefreshMatch = path.match(
       /^\/api\/shows\/([^/]+)\/plex\/refresh$/,
     );
@@ -3800,15 +4057,29 @@ export function createApiFetch(
               }
               matchPattern = entry.matchPattern;
             }
+            let tmdbId: number | undefined;
+            if (entry.tmdbId !== undefined && entry.tmdbId !== null) {
+              if (
+                typeof entry.tmdbId !== 'number' ||
+                !Number.isInteger(entry.tmdbId) ||
+                entry.tmdbId <= 0
+              ) {
+                throw new ConfigError(
+                  `Config file "request body tv shows[${i}] tmdbId" must be a positive integer TMDB show id.`,
+                );
+              }
+              tmdbId = entry.tmdbId;
+            }
             showsRequest.push({
               name: rawName.trim(),
               matchPattern,
               hasMatchPatternField,
+              tmdbId,
             });
             continue;
           }
           throw new ConfigError(
-            `Config file "request body tv shows[${i}]" must be a string show name or an object with "name" and optional "matchPattern".`,
+            `Config file "request body tv shows[${i}]" must be a string show name or an object with "name", optional "matchPattern", and optional "tmdbId".`,
           );
         }
 
@@ -5549,6 +5820,14 @@ type ShowsRequestEntry = {
   // True for an object row (name + matchPattern, e.g. the Strict toggle
   // turned on): the caller's matchPattern always wins, disk or not.
   hasMatchPatternField: boolean;
+  // The TMDB identity pin (TvRule.tmdbId). Same present/absent semantics as
+  // matchPattern above, minus the toggle-generated special case: absent means
+  // "no opinion, keep whatever's on disk", which is what lets the Config
+  // page's show-list saves (which never mention tmdbId) leave existing pins
+  // alone. Set by the TV calendar's "Add show", which already has the id in
+  // hand — pinning at add time is strictly better than letting the title
+  // search guess and correcting it later.
+  tmdbId?: number;
 };
 
 /**
@@ -5605,17 +5884,32 @@ function mergeTvShowsPreservingDiskEntries(
   }
 
   const next: unknown[] = [];
-  for (const { name, matchPattern, hasMatchPatternField } of requested) {
+  for (const {
+    name,
+    matchPattern,
+    hasMatchPatternField,
+    tmdbId,
+  } of requested) {
     const prev = byName.get(name);
+    // A tmdbId on the request always wins; its absence is "no opinion", so
+    // a pin already on disk survives every save that doesn't mention it
+    // (the Config page's show-list saves never do). Clearing a pin goes
+    // through the dedicated pin endpoint, not through here.
+    const pin = tmdbId !== undefined ? { tmdbId } : {};
 
     if (hasMatchPatternField) {
       // Explicit override from this request — always wins over disk,
       // including replacing a previously-different matchPattern.
       next.push(
         isRecord(prev)
-          ? { ...prev, name, matchPattern }
-          : { name, matchPattern },
+          ? { ...prev, name, matchPattern, ...pin }
+          : { name, matchPattern, ...pin },
       );
+      continue;
+    }
+
+    if (tmdbId !== undefined) {
+      next.push(isRecord(prev) ? { ...prev, name, ...pin } : { name, ...pin });
       continue;
     }
 

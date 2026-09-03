@@ -431,6 +431,11 @@
 								{:else}
 									<form method="POST" action="?/addShow" use:enhance={enhanceAddShow}>
 										<input type="hidden" name="name" value={item.name} />
+										<!-- Pins the show's TMDB identity at add time. This row *is* a
+										TMDB series, so guessing it back from the title later — which is
+										what the daemon otherwise does, popularity-ranked first hit — can
+										only ever do worse. -->
+										<input type="hidden" name="tmdbId" value={item.tmdbId} />
 										<Button
 											type="submit"
 											variant="outline"

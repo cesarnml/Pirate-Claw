@@ -286,3 +286,138 @@ describe('loadSeasonEpisodes cache TTL', () => {
     expect(ttl).toBeLessThanOrEqual(deps.cacheTtlMs + 1000);
   });
 });
+
+describe('enrichShowBreakdowns TMDB pin', () => {
+  it('fetches the pinned series directly and never runs the title search', async () => {
+    let searched = 0;
+    const { deps } = freshDeps({
+      searchTv: async () => {
+        searched += 1;
+        return { id: 999, name: 'Tomb Raider King' };
+      },
+      getTv: async (id: number) => ({
+        id,
+        name: 'Tomb Raider',
+        number_of_seasons: 1,
+      }),
+    });
+    deps.pinnedTmdbIdFor = (title) =>
+      title === 'tomb raider' ? 42 : undefined;
+
+    const [enriched] = await enrichShowBreakdowns([show('tomb raider')], deps);
+
+    expect(searched).toBe(0);
+    expect(enriched.tmdb?.tmdbId).toBe(42);
+    expect(enriched.tmdb?.name).toBe('Tomb Raider');
+    expect(enriched.tmdbPinnedId).toBe(42);
+  });
+
+  it('ignores an unexpired cache row left over from a different series', async () => {
+    const { deps, cache } = freshDeps({
+      searchTv: async () => ({ id: 999, name: 'Tomb Raider King' }),
+      getTv: async (id: number) => ({ id, name: 'Tomb Raider' }),
+    });
+
+    // Whatever the pre-pin search resolved to, cached and still fresh.
+    await enrichShowBreakdowns([show('tomb raider')], deps);
+    expect(cache.getTv(tvMatchKey('tomb raider'))?.tmdbId).toBe(999);
+
+    // The pin has to win immediately — a TTL that hasn't expired is not a
+    // reason to keep serving a series the operator just said was wrong.
+    deps.pinnedTmdbIdFor = () => 42;
+    const [enriched] = await enrichShowBreakdowns([show('tomb raider')], deps);
+
+    expect(enriched.tmdb?.tmdbId).toBe(42);
+    expect(cache.getTv(tvMatchKey('tomb raider'))?.tmdbId).toBe(42);
+  });
+
+  it('leaves an unpinned show on the search path', async () => {
+    const { deps } = freshDeps({
+      searchTv: async () => ({ id: 7, name: 'Some Show' }),
+      getTv: async (id: number) => ({ id, name: 'Some Show' }),
+    });
+    deps.pinnedTmdbIdFor = () => undefined;
+
+    const [enriched] = await enrichShowBreakdowns([show('some show')], deps);
+
+    expect(enriched.tmdb?.tmdbId).toBe(7);
+    expect(enriched.tmdbPinnedId).toBeUndefined();
+  });
+
+  it('does not negative-cache a pinned id whose details fetch fails', async () => {
+    const { deps, cache } = freshDeps({
+      searchTv: async () => ({ id: 999, name: 'Wrong Show' }),
+      getTv: async () => null,
+    });
+    deps.pinnedTmdbIdFor = () => 42;
+
+    const [enriched] = await enrichShowBreakdowns([show('tomb raider')], deps);
+
+    expect(enriched.tmdb).toBeUndefined();
+    // A transient TMDB failure must not persist as "this show doesn't exist",
+    // which would then be served from cache for the whole negative TTL.
+    expect(cache.getTv(tvMatchKey('tomb raider'))).toBeUndefined();
+  });
+});
+
+describe('resolveShow season-cache eviction on identity change', () => {
+  // Season rows are keyed by title, not TMDB id, so a title that starts
+  // resolving to a different series keeps serving the old series' episode
+  // lists until TTL unless they're dropped here. Reachable without the pin
+  // endpoint ever running: the TV calendar pins through PUT /api/config, and
+  // tv.shows[].tmdbId is a documented hand-editable field.
+  it('drops cached seasons when a title starts resolving to a different series', async () => {
+    const { deps, cache } = freshDeps({
+      searchTv: async () => ({ id: 999, name: 'Tomb Raider King' }),
+      getTv: async (id: number) => ({
+        id,
+        name: id === 999 ? 'Tomb Raider King' : 'Tomb Raider',
+        number_of_seasons: 1,
+      }),
+      getTvSeason: async () => ({
+        season_number: 1,
+        episodes: [{ episode_number: 1, name: 'Wrong Show Episode' }],
+      }),
+    });
+
+    const withSeason: ShowBreakdown = {
+      ...show('tomb raider'),
+      seasons: [{ season: 1, episodes: [] }],
+    };
+    await enrichShowBreakdowns([withSeason], deps);
+    expect(cache.getTvSeason(tvMatchKey('tomb raider'), 1)).toBeDefined();
+
+    deps.pinnedTmdbIdFor = () => 42;
+    await enrichShowBreakdowns([show('tomb raider')], deps);
+
+    // The old series' episodes must be gone, not merely shadowed.
+    expect(cache.getTvSeason(tvMatchKey('tomb raider'), 1)).toBeUndefined();
+    expect(cache.getTv(tvMatchKey('tomb raider'))?.tmdbId).toBe(42);
+  });
+
+  it('leaves cached seasons alone when the series is unchanged', async () => {
+    const { deps, cache } = freshDeps({
+      searchTv: async () => ({ id: 42, name: 'Stable Show' }),
+      getTv: async (id: number) => ({ id, name: 'Stable Show' }),
+      getTvSeason: async () => ({
+        season_number: 1,
+        episodes: [{ episode_number: 1, name: 'Pilot' }],
+      }),
+    });
+
+    const withSeason: ShowBreakdown = {
+      ...show('stable show'),
+      seasons: [{ season: 1, episodes: [] }],
+    };
+    await enrichShowBreakdowns([withSeason], deps);
+    const before = cache.getTvSeason(tvMatchKey('stable show'), 1);
+    expect(before).toBeDefined();
+
+    // Same id, arrived at via a pin this time — nothing changed, so nothing
+    // should be thrown away and re-fetched.
+    deps.pinnedTmdbIdFor = () => 42;
+    await enrichShowBreakdowns([withSeason], deps);
+
+    expect(cache.getTvSeason(tvMatchKey('stable show'), 1)).toEqual(before!);
+  });
+});

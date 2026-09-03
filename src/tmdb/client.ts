@@ -65,6 +65,9 @@ export type TmdbSearchTvResult = {
   id: number;
   name: string;
   first_air_date?: string;
+  overview?: string;
+  poster_path?: string | null;
+  popularity?: number;
 };
 
 export type TmdbTvDetails = {
@@ -257,6 +260,22 @@ export class TmdbHttpClient {
     );
     const first = data?.results?.[0];
     return first ?? null;
+  }
+
+  /** The same search `searchTv` runs, but returning the whole (still
+   * popularity-ordered) page instead of collapsing it to `results[0]`.
+   * Backs the show page's "Fix TMDB match" picker: when first place is the
+   * wrong series, the right one is almost always a few rows further down,
+   * and the operator is the only one who can say which. */
+  async searchTvCandidates(
+    query: string,
+    limit: number,
+  ): Promise<TmdbSearchTvResult[]> {
+    const q = encodeURIComponent(query);
+    const data = await this.getJson<{ results?: TmdbSearchTvResult[] }>(
+      `/search/tv?query=${q}`,
+    );
+    return (data?.results ?? []).slice(0, limit);
   }
 
   async getTv(tvId: number): Promise<TmdbTvDetails | null> {

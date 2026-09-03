@@ -204,6 +204,24 @@ export class TmdbCache {
     );
   }
 
+  /**
+   * Drops a show's cached identity *and* every cached season under it.
+   *
+   * Both halves matter, and the season half is the easy one to forget: season
+   * rows are keyed by `show_match_key` (the tracked title), not by TMDB id, so
+   * re-pointing a title at a different series leaves the old series' episode
+   * lists sitting under the new one's key until their own TTL expires — a show
+   * whose identity was just corrected would keep rendering the wrong show's
+   * episode titles. Called when a TMDB pin is set, changed, or cleared
+   * (see the pin handler in src/api.ts).
+   */
+  deleteTv(matchKey: string): void {
+    this.db.run(`DELETE FROM tmdb_tv_cache WHERE match_key = ?1`, [matchKey]);
+    this.db.run(`DELETE FROM tmdb_tv_season_cache WHERE show_match_key = ?1`, [
+      matchKey,
+    ]);
+  }
+
   getTvSeason(
     showMatchKey: string,
     seasonNumber: number,
