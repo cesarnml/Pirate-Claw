@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import { MOVIE_CALENDAR_PAGE_SIZE } from '$lib/movieCalendarConfig';
-	import { formatRelativeTime } from '$lib/helpers';
+	import { broadcastTodayIsoDate, formatRelativeTime } from '$lib/helpers';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import type { PageData } from './$types';
@@ -166,8 +166,7 @@
 
 	function dayLabel(dateIso: string | null): string {
 		if (!dateIso) return 'Release date unknown';
-		const today = new Date();
-		const todayIso = today.toISOString().slice(0, 10);
+		const todayIso = broadcastTodayIsoDate();
 		if (dateIso === todayIso) return 'Today';
 		const date = new Date(`${dateIso}T00:00:00Z`);
 		const diffDays = Math.round(
@@ -260,8 +259,11 @@
 		| { status: 'ready'; scrapeError: string | null; fetchedAt: string; fromCache: boolean };
 	const currentYear = new Date().getFullYear();
 	// ISO date (YYYY-MM-DD) string comparison works fine against TMDB's
-	// release_date, which is always this shape.
-	const todayIso = new Date().toISOString().slice(0, 10);
+	// release_date, which is always this shape. Pinned to the US broadcast
+	// day (see broadcastTodayIsoDate), not UTC/browser-local — same fix as
+	// the missing-episode grace period, see grill-me: missing-episode grace
+	// period + manual-grab dedup, 2026-09-03.
+	const todayIso = broadcastTodayIsoDate();
 	let topYear = $state(currentYear);
 	let topByYear = $state<Record<number, TopMovieItem[] | undefined>>({});
 	// Keyed alongside topByYear so switching back to an already-fetched year

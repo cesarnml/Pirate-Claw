@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import { CALENDAR_PAGE_SIZE } from '$lib/calendarConfig';
+	import { broadcastTodayIsoDate } from '$lib/helpers';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from '$lib/toast';
 	import type { ActionData, PageData } from './$types';
@@ -217,8 +218,7 @@
 
 	function dayLabel(dateIso: string | null): string {
 		if (!dateIso) return 'Air date unknown';
-		const today = new Date();
-		const todayIso = today.toISOString().slice(0, 10);
+		const todayIso = broadcastTodayIsoDate();
 		if (dateIso === todayIso) return 'Today';
 		const date = new Date(`${dateIso}T00:00:00Z`);
 		const diffDays = Math.round(
