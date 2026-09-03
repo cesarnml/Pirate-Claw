@@ -40,6 +40,7 @@ import { PlexCache } from '../src/plex/cache';
 import { ensurePlexSchema } from '../src/plex/schema';
 import { TmdbCache } from '../src/tmdb/cache';
 import { ManualGrabsStore } from '../src/manual-grabs/store';
+import { TrackedShowsStore } from '../src/tracked-shows/store';
 import { ManualMovieGrabsStore } from '../src/manual-movie-grabs/store';
 import { CalendarCache } from '../src/tmdb/calendar';
 import type { TmdbDiscoverTvResult, TmdbHttpClient } from '../src/tmdb/client';
@@ -3694,6 +3695,202 @@ describe('PUT /api/config', () => {
       );
 
       expect(secondPut.status).toBe(200);
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
+  // The Config page's per-show "X" removes a show by PUT-ing a shorter
+  // tv.shows list. Before this, that left the tracked-show ledger row behind
+  // — and since buildShowBreakdowns renders /shows from the ledger, not from
+  // config, the "removed" show kept reappearing there forever while the
+  // Config page listed it as gone (2026-09-03 incident).
+  it('removes the tracked-show ledger row for a show dropped from tv.shows', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-untrack-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      loaded.runtime.apiWriteToken = 'write-token';
+      const deps = createDatabaseBackedDeps(loaded, configPath);
+      deps.trackedShows = new TrackedShowsStore(deps.database!);
+      const handler = createApiFetch(deps);
+
+      const seed = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': (
+              await handler(new Request('http://localhost/api/config'))
+            ).headers.get('etag')!,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: { shows: ['Tomb Raider', 'The Grim Lover'] },
+          }),
+        }),
+      );
+      expect(seed.status).toBe(200);
+      expect(
+        deps.trackedShows
+          .list()
+          .map((s) => s.normalizedTitle)
+          .sort(),
+      ).toEqual(['The Grim Lover', 'Tomb Raider']);
+
+      const drop = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': seed.headers.get('etag')!,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: { shows: ['The Grim Lover'] },
+          }),
+        }),
+      );
+
+      expect(drop.status).toBe(200);
+      expect(deps.trackedShows.list().map((s) => s.normalizedTitle)).toEqual([
+        'The Grim Lover',
+      ]);
+      deps.database?.close();
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
+  // Guards the scoping decision in pruneLedgerRowsDroppedFromWatchlist: only
+  // shows this write actually dropped are pruned. A ledger row that was never
+  // in tv.shows must survive a config write that never mentioned it.
+  it('leaves a ledger row that was never in tv.shows untouched', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-untrack-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      loaded.runtime.apiWriteToken = 'write-token';
+      const deps = createDatabaseBackedDeps(loaded, configPath);
+      deps.trackedShows = new TrackedShowsStore(deps.database!);
+      deps.trackedShows.createIfMissing({
+        normalizedTitle: 'candidate only show',
+        displayTitle: 'candidate only show',
+        resolutions: [],
+        codecs: [],
+      });
+      const handler = createApiFetch(deps);
+
+      const put = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': (
+              await handler(new Request('http://localhost/api/config'))
+            ).headers.get('etag')!,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: { shows: ['Alpha Show'] },
+          }),
+        }),
+      );
+
+      expect(put.status).toBe(200);
+      expect(
+        deps.trackedShows.getByNormalizedTitleCaseInsensitive(
+          'candidate only show',
+        ),
+      ).toBeDefined();
+      deps.database?.close();
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
+  // The Config page's Save-runtime button echoes the whole watchlist back
+  // from its on-screen inputs, so a momentarily-wrong list there must never
+  // be able to destroy ledger history. Only a shows-editor save (empty
+  // runtime patch) may prune. See the guard in the PUT handler.
+  it('never prunes ledger rows on a write that also changes runtime', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(join(tmpdir(), 'pirate-claw-untrack-'));
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      loaded.runtime.apiWriteToken = 'write-token';
+      const deps = createDatabaseBackedDeps(loaded, configPath);
+      deps.trackedShows = new TrackedShowsStore(deps.database!);
+      const handler = createApiFetch(deps);
+
+      const seed = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': (
+              await handler(new Request('http://localhost/api/config'))
+            ).headers.get('etag')!,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: { shows: ['Keeper Show', 'Fragile Show'] },
+          }),
+        }),
+      );
+      expect(seed.status).toBe(200);
+      expect(deps.trackedShows.list()).toHaveLength(2);
+
+      // Exactly the damaging shape: a runtime save whose echoed show list has
+      // lost a row (a name input that was blank/mid-edit when it fired).
+      const runtimeSave = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': seed.headers.get('etag')!,
+          },
+          body: JSON.stringify({
+            runtime: { runIntervalMinutes: 45 },
+            tv: { shows: ['Keeper Show'] },
+          }),
+        }),
+      );
+
+      expect(runtimeSave.status).toBe(200);
+      // Config still gets truncated (pre-existing, recoverable by re-saving
+      // the list) — but the ledger history survives, which is the part that
+      // cannot be undone.
+      expect(
+        deps.trackedShows.getByNormalizedTitleCaseInsensitive('Fragile Show'),
+      ).toBeDefined();
+      deps.database?.close();
     } finally {
       if (prevWrite !== undefined) {
         process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;

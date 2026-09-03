@@ -8,7 +8,8 @@
 		safeHttpsUrl,
 		showDisplayTitle,
 		showHeroBackdropSrc,
-		showHref
+		showHref,
+		showTrackedIdentityMismatch
 	} from '$lib/helpers';
 	import type { ShowBreakdown } from '$lib/types';
 	import StarIcon from '@lucide/svelte/icons/star';
@@ -16,6 +17,11 @@
 	const props = $props();
 
 	const title = $derived(showDisplayTitle(props.show));
+	// Non-null only when TMDB resolved this show to a different name than it is
+	// tracked under — see showTrackedIdentityMismatch. Surfaced here as well as
+	// on the detail page so a wrong TMDB match is visible while scanning the
+	// grid, not only after clicking into the show.
+	const trackedAs = $derived(showTrackedIdentityMismatch(props.show));
 	const tmdbBackdrop = $derived(safeHttpsUrl(props.show.tmdb?.backdropUrl));
 	const posterUrl = $derived(safeHttpsUrl(props.show.tmdb?.posterUrl));
 	const heroBackdropSrc = $derived(
@@ -84,6 +90,11 @@
 				<div class="flex items-start justify-between gap-3">
 					<div class="min-w-0 space-y-2">
 						<h2 class="truncate text-2xl font-semibold tracking-[-0.03em]">{title}</h2>
+						{#if trackedAs}
+							<p class="truncate text-xs text-amber-200/90" title={`Tracked as “${trackedAs}”`}>
+								Tracked as “{trackedAs}”
+							</p>
+						{/if}
 						<div class="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs">
 							{#if props.show.tmdb?.voteAverage !== undefined}
 								<span class="inline-flex items-center gap-1">

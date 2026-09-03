@@ -322,6 +322,43 @@ export function showDisplayTitle(show: ShowBreakdown): string {
 	return show.tmdb?.name ?? show.normalizedTitle;
 }
 
+/**
+ * The show's *tracked* identity when TMDB resolved it to a meaningfully
+ * different name — otherwise `null`.
+ *
+ * `showDisplayTitle` above shows `tmdb.name` in preference to the tracked
+ * title, which is the right default (TMDB's title is properly cased and
+ * punctuated) but hides a real failure mode: when TMDB matches the wrong
+ * series, every surface silently renames the show to one the operator never
+ * tracked, and the URL slug, the untrack action, and the RSS matching all
+ * still key off the *tracked* title. That is how an operator ended up staring
+ * at a "Tomb Raider King" card they never added, with no way to tell what
+ * "Untrack show" would actually remove (2026-09-03 incident).
+ *
+ * Casing/punctuation differences are not a divergence — "test show" resolving
+ * to "Test Show" is the normal, healthy case and must stay quiet, or the
+ * warning becomes noise on every card and stops being read.
+ */
+export function showTrackedIdentityMismatch(show: ShowBreakdown): string | null {
+	const tmdbName = show.tmdb?.name;
+	if (!tmdbName) return null;
+	if (normalizeTitleForCompare(tmdbName) === normalizeTitleForCompare(show.normalizedTitle)) {
+		return null;
+	}
+	return show.normalizedTitle;
+}
+
+/** Mirrors the daemon's own `normalizeForMatch` (src/adoption/title-match.ts):
+ * fold diacritics, drop non-alphanumerics, collapse whitespace. */
+function normalizeTitleForCompare(input: string): string {
+	return input
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, ' ')
+		.trim();
+}
+
 export function showHref(normalizedTitle: string): string {
 	return `/shows/${encodeURIComponent(normalizedTitle.toLowerCase())}`;
 }

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { PlexAuthStatusResponse } from '$lib/types';
-	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	type Props = {
 		status: PlexAuthStatusResponse;
@@ -178,10 +177,7 @@
 
 	{#if mode === 'config'}
 		<form method="POST" action={saveAction} class="space-y-1">
-			<div class="flex flex-wrap items-center justify-between gap-2">
-				<label class="text-sm font-medium" for="plex-url">Plex Media Server URL</label>
-				<ApplyModeBadge mode="restart" />
-			</div>
+			<label class="text-sm font-medium" for="plex-url">Plex Media Server URL</label>
 			<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
 				<div class="md:col-start-1">
 					<input

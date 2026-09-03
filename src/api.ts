@@ -1722,6 +1722,69 @@ export function createApiFetch(
     }
   }
 
+  /**
+   * Removes the tracked-show ledger row for any show this config write just
+   * dropped from `tv.shows`.
+   *
+   * Without this, the Config page's per-show "X" was only ever a *partial*
+   * untrack: it rewrote `tv.shows` (so the RSS pipeline stopped matching new
+   * episodes) but left the ledger row behind, and the ledger — not config —
+   * is what buildShowBreakdowns renders /shows from. The removed show
+   * therefore kept reappearing on /shows indefinitely, still being TMDB-
+   * refreshed, while the Config page listed it as gone (2026-09-03 incident).
+   * DELETE /api/shows/:slug always did both halves; this makes the two
+   * removal paths agree instead of quietly diverging.
+   *
+   * Deliberately scoped to shows dropped *by this specific write* rather than
+   * "every ledger row not currently in config": the startup backfill
+   * legitimately creates ledger rows for candidate-only shows that were never
+   * in `tv.shows` at all (see syncTrackedShowsFromConfig's
+   * `leftoverNormalizedTitles`), and a blanket reconcile would silently
+   * delete those.
+   */
+  function pruneLedgerRowsDroppedFromWatchlist(
+    oldShows: unknown[],
+    newShows: unknown[],
+  ): void {
+    if (!trackedShows) return;
+
+    const normalizedNames = (entries: unknown[]): Set<string> => {
+      const names = new Set<string>();
+      for (const entry of entries) {
+        const name = configShowEntryName(entry);
+        if (name === undefined) continue;
+        const normalized = normalizeShowName(name);
+        if (normalized.length === 0) continue;
+        // Lowercased for the same reason syncTrackedShowsFromConfig dedupes
+        // that way: a ledger row's casing can come from a feed item's raw
+        // title rather than from config.
+        names.add(normalized.toLowerCase());
+      }
+      return names;
+    };
+
+    const before = normalizedNames(oldShows);
+    const after = normalizedNames(newShows);
+    const dropped = [...before].filter((name) => !after.has(name));
+    if (dropped.length === 0) return;
+
+    for (const normalizedTitle of dropped) {
+      const existing =
+        trackedShows.getByNormalizedTitleCaseInsensitive(normalizedTitle);
+      if (!existing) {
+        console.log(
+          `[shows] watchlist dropped "${normalizedTitle}" but no ledger row existed`,
+        );
+        continue;
+      }
+      const removed = trackedShows.remove(existing.normalizedTitle);
+      console.log(
+        `[shows] untracked "${existing.normalizedTitle}" via config write ` +
+          `(ledger row removed=${String(removed)})`,
+      );
+    }
+  }
+
   return async (request: Request) => {
     const path = new URL(request.url).pathname;
 
@@ -3052,8 +3115,19 @@ export function createApiFetch(
         const slug = decodeURIComponent(showDeleteMatch[1]);
         const existing = trackedShows.getByNormalizedTitleCaseInsensitive(slug);
         if (!existing) {
+          console.log(
+            `[shows] DELETE /api/shows/${slug}: no ledger row matched, nothing untracked`,
+          );
           return Response.json({ error: 'show not found' }, { status: 404 });
         }
+        // Logged with both the requested slug and the ledger's own canonical
+        // title: these can legitimately differ in casing, and a show whose
+        // TMDB metadata resolved to a different name than it is tracked under
+        // is exactly the situation where "did I just untrack the right thing?"
+        // has to be answerable from logs alone.
+        console.log(
+          `[shows] DELETE /api/shows/${slug}: untracking ledger title "${existing.normalizedTitle}"`,
+        );
         // Untrack removes the ledger row *and* stops the RSS pipeline from
         // matching new episodes for it — otherwise the next feed poll would
         // just re-create the ledger row via syncTrackedShowsFromConfig.
@@ -3072,7 +3146,11 @@ export function createApiFetch(
             );
           }
         }
-        trackedShows.remove(existing.normalizedTitle);
+        const removed = trackedShows.remove(existing.normalizedTitle);
+        console.log(
+          `[shows] untracked "${existing.normalizedTitle}" via DELETE ` +
+            `(ledger row removed=${String(removed)})`,
+        );
         return Response.json({ ok: true });
       } catch {
         return json500();
@@ -3810,6 +3888,20 @@ export function createApiFetch(
         // waiting on an RSS match or a daemon restart.
         if (database && trackedShows) {
           syncTrackedShowsFromConfig(database, validated.tv);
+          // Only a watchlist-editing save may delete ledger rows. The Config
+          // page's Save-runtime button (intervals, ports) also echoes the
+          // whole show list back, read straight from the on-screen inputs —
+          // so a list that is momentarily wrong there would otherwise
+          // irreversibly destroy a show's ledger history (added_at,
+          // last_reconciled_at, per-show resolutions/codecs). The two saves
+          // are trivially distinguishable: the show-list editor sends an
+          // empty `runtime` patch, the runtime editor sends a populated one.
+          // Cheap insurance on an operation with no undo — an unreachable
+          // guard costs nothing, and "that sequence can't happen" is exactly
+          // the reasoning that left the resurrection bug in src/cli.ts.
+          if (Object.keys(runtimePatch).length === 0) {
+            pruneLedgerRowsDroppedFromWatchlist(oldShows, mergedShows);
+          }
         }
 
         const redacted = redactConfig(activeConfig);

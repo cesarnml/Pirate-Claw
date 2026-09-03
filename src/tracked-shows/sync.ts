@@ -17,60 +17,35 @@ export function normalizeShowName(name: string): string {
  * ledger. Never overwrites an existing row (createIfMissing) — a show's
  * ledger history is never clobbered by a config reload or a repeat call.
  *
- * Called at daemon startup (handles the one-time backfill for shows added to
- * config before this table existed, plus the ordinary case of new shows
- * added since) and again after every successful `PUT /api/config` that
- * changes `tv.shows` (so "Add show" on the calendar route creates the ledger
- * row immediately, not just on next restart).
+ * Called at daemon startup (picking up config edits made outside the API)
+ * and again after every successful `PUT /api/config` that changes
+ * `tv.shows` (so "Add show" on the calendar route creates the ledger row
+ * immediately, not just on next restart).
  *
- * `leftoverNormalizedTitles` backfills a bare ledger row (no matching
- * fields) for any show that only exists via historical `candidate_state`
- * rows and isn't in the current watchlist — e.g. a show removed from config
- * after it was already matched. Only meaningful for the one-time startup
- * backfill; omit on the post-config-write sync.
+ * The watchlist is the ONLY source a row is created from. This previously
+ * also accepted a `leftoverNormalizedTitles` list that backfilled bare rows
+ * from historical `candidate_state` titles absent from the watchlist. That
+ * parameter is gone, not merely unused, because passing anything into it
+ * re-arms a resurrection bug: untrack deliberately leaves candidate_state
+ * intact, so any such backfill re-creates the ledger row on the next
+ * restart and silently undoes the untrack — see the call site in
+ * src/cli.ts for the full incident history.
  */
 export function syncTrackedShowsFromConfig(
   database: Database,
   tv: TvRule[],
-  leftoverNormalizedTitles: string[] = [],
 ): void {
   const store = new TrackedShowsStore(database);
-  // Lowercased: a candidate's normalizedTitle comes from an actual feed
-  // item's raw title, not from config, so its casing can differ from the
-  // config-derived one for the same show (e.g. config has "the mandalorian",
-  // a matched release normalized to "The Mandalorian"). Comparing case-
-  // sensitively here would create two separate PK rows in tracked_shows for
-  // one real show — SQLite's TEXT primary key is case-sensitive, so
-  // createIfMissing's INSERT OR IGNORE wouldn't catch it either.
-  const seen = new Set<string>();
 
   for (const rule of tv) {
     const normalizedTitle = normalizeShowName(rule.name);
     if (normalizedTitle.length === 0) continue;
-    seen.add(normalizedTitle.toLowerCase());
     store.createIfMissing({
       normalizedTitle,
       displayTitle: rule.name,
       matchPattern: rule.matchPattern ?? null,
       resolutions: rule.resolutions,
       codecs: rule.codecs,
-    });
-  }
-
-  for (const normalizedTitle of leftoverNormalizedTitles) {
-    if (normalizedTitle.length === 0) continue;
-    const lower = normalizedTitle.toLowerCase();
-    if (seen.has(lower)) continue;
-    // Belt-and-suspenders beyond the in-memory `seen` set above: also check
-    // the store directly, in case a differently-cased row already exists
-    // from before this case-insensitive dedup existed.
-    if (store.getByNormalizedTitleCaseInsensitive(normalizedTitle)) continue;
-    seen.add(lower);
-    store.createIfMissing({
-      normalizedTitle,
-      displayTitle: normalizedTitle,
-      resolutions: [],
-      codecs: [],
     });
   }
 }

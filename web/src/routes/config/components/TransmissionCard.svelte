@@ -8,7 +8,6 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import CableIcon from '@lucide/svelte/icons/cable';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
-	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	interface Props {
 		canWrite: boolean;
@@ -175,14 +174,9 @@
 			class="space-y-4 border-t border-white/8 pt-5"
 			use:enhance={enhanceSaveQueueCaps}
 		>
-			<div class="flex flex-wrap items-center justify-between gap-2">
-				<p
-					class="text-muted-foreground font-mono text-xs font-semibold tracking-[0.18em] uppercase"
-				>
-					Queue Caps
-				</p>
-				<ApplyModeBadge mode="immediate" />
-			</div>
+			<p class="text-muted-foreground font-mono text-xs font-semibold tracking-[0.18em] uppercase">
+				Queue Caps
+			</p>
 			<p class="text-muted-foreground text-sm">
 				Transmission's own active-torrent limits — a torrent past these caps sits queued in
 				Transmission itself (not paused by pirate-claw) until a slot frees up.

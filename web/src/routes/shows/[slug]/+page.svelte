@@ -7,13 +7,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import ShowCompletionBadge from '$lib/components/ShowCompletionBadge.svelte';
-	import { showHeroBackdropSrc } from '$lib/helpers';
+	import { showHeroBackdropSrc, showTrackedIdentityMismatch } from '$lib/helpers';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import LayersIcon from '@lucide/svelte/icons/layers-3';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import RefreshCcwIcon from '@lucide/svelte/icons/refresh-ccw';
 	import StarIcon from '@lucide/svelte/icons/star';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import MissingEpisodesPanel from './MissingEpisodesPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -24,6 +25,12 @@
 	function displayTitle(show: NonNullable<PageData['show']>): string {
 		return show.tmdb?.name ?? show.normalizedTitle;
 	}
+
+	// The title this show is actually tracked/matched/untracked under, surfaced
+	// only when TMDB resolved it to a different name — see
+	// showTrackedIdentityMismatch. Everything destructive on this page (the
+	// untrack form's slug) keys off this, not off the TMDB name in the <h1>.
+	const trackedAs = $derived(data.show ? showTrackedIdentityMismatch(data.show) : null);
 
 	function formatRating(value: number | undefined): string {
 		if (value === undefined) return '—';
@@ -53,6 +60,13 @@
 	let refreshingTmdb = $state(false);
 	let refreshingPlex = $state(false);
 	let removingShow = $state(false);
+
+	// Untrack is a two-step click rather than a single button, specifically so
+	// the confirmation can name the *tracked* title being removed. When TMDB
+	// has matched the wrong series this page's <h1> shows a show the operator
+	// never added, and a one-click "Untrack show" gives them no way to know
+	// what actually gets removed (2026-09-03 incident).
+	let confirmingUntrack = $state(false);
 
 	function enhanceRefresh(flag: 'tmdb' | 'plex' | 'remove') {
 		const setFlag = (value: boolean) => {
@@ -134,22 +148,51 @@
 							{/if}
 						</Button>
 					</form>
-					<form method="POST" action="?/removeShow" use:enhance={enhanceRefresh('remove')}>
+					{#if confirmingUntrack}
+						<div
+							class="border-destructive/40 bg-destructive/10 flex flex-wrap items-center gap-2 rounded-full border px-3 py-1.5"
+						>
+							<span class="text-xs">
+								Untrack <span class="font-semibold">“{data.show.normalizedTitle}”</span>?
+							</span>
+							<form method="POST" action="?/removeShow" use:enhance={enhanceRefresh('remove')}>
+								<Button
+									type="submit"
+									variant="destructive"
+									size="sm"
+									class="rounded-full px-3"
+									disabled={removingShow}
+								>
+									{#if removingShow}
+										<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
+										Untracking…
+									{:else}
+										Confirm
+									{/if}
+								</Button>
+							</form>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								class="rounded-full px-3"
+								disabled={removingShow}
+								onclick={() => (confirmingUntrack = false)}
+							>
+								Cancel
+							</Button>
+						</div>
+					{:else}
 						<Button
-							type="submit"
+							type="button"
 							variant="outline"
 							class="rounded-full px-4"
-							disabled={removingShow}
+							onclick={() => (confirmingUntrack = true)}
 						>
-							{#if removingShow}
-								<Loader2Icon class="mr-2 h-4 w-4 animate-spin" />
-								Untracking…
-							{:else}
-								<Trash2Icon class="mr-2 h-4 w-4" />
-								Untrack show
-							{/if}
+							<Trash2Icon class="mr-2 h-4 w-4" />
+							Untrack show
 						</Button>
-					</form>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -214,6 +257,18 @@
 							>
 								{displayTitle(data.show)}
 							</h1>
+							{#if trackedAs}
+								<p
+									class="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200"
+								>
+									<TriangleAlertIcon class="h-3.5 w-3.5 shrink-0" />
+									<span>
+										Tracked as <span class="font-semibold">“{trackedAs}”</span> — the title above is a
+										TMDB match, which is looser than the name you track. If it named the wrong series,
+										untrack it below.
+									</span>
+								</p>
+							{/if}
 							<p class="text-muted-foreground max-w-3xl text-sm leading-6 lg:text-base">
 								{data.show.tmdb?.overview ?? 'TMDB overview not available yet for this show.'}
 							</p>

@@ -116,26 +116,39 @@ describe('syncTrackedShowsFromConfig', () => {
     });
   });
 
-  it('backfills a bare row for a leftover candidate-only title not in config', () => {
+  // Replaces two tests that asserted the opposite (a leftover
+  // candidate-only title got a bare backfill row). That backfill was a
+  // resurrection machine: untrack leaves candidate_state intact, so the row
+  // came straight back on the next daemon restart — see the call site in
+  // src/cli.ts. The watchlist is now the only thing that creates a row.
+  it('creates rows only for watchlist entries, never for anything else', () => {
     const database = freshDatabase();
-    syncTrackedShowsFromConfig(database, [], ['legacy show']);
-
     const store = new TrackedShowsStore(database);
-    expect(store.get('legacy show')).toMatchObject({
-      displayTitle: 'legacy show',
-      resolutions: [],
-      codecs: [],
-    });
+    // Stands in for a show the operator untracked whose candidate_state /
+    // manual_grabs history still exists.
+    syncTrackedShowsFromConfig(database, [
+      { name: 'Silo', resolutions: ['2160p'], codecs: ['x265'] },
+    ]);
+
+    expect(store.list().map((row) => row.normalizedTitle)).toEqual(['Silo']);
   });
 
-  it('does not double-create a leftover title already covered by config', () => {
+  it('does not resurrect an untracked show on a repeat sync', () => {
     const database = freshDatabase();
-    syncTrackedShowsFromConfig(
-      database,
-      [{ name: 'Silo', resolutions: ['2160p'], codecs: ['x265'] }],
-      ['Silo'],
-    );
+    const store = new TrackedShowsStore(database);
+    const rules: TvRule[] = [
+      { name: 'Silo', resolutions: [], codecs: [] },
+      { name: 'Tomb Raider', resolutions: [], codecs: [] },
+    ];
+    syncTrackedShowsFromConfig(database, rules);
+    expect(store.list()).toHaveLength(2);
 
-    expect(new TrackedShowsStore(database).list()).toHaveLength(1);
+    // Untrack drops the ledger row and the watchlist entry together (what
+    // DELETE /api/shows/:slug does). A later sync — daemon restart, or any
+    // other config write — must not bring it back.
+    store.remove('Tomb Raider');
+    syncTrackedShowsFromConfig(database, [rules[0]!]);
+
+    expect(store.list().map((row) => row.normalizedTitle)).toEqual(['Silo']);
   });
 });

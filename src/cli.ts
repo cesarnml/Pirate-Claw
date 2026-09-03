@@ -505,26 +505,30 @@ export async function runCli(argv: string[]): Promise<number> {
         ensureSchema(database);
         const repository = createRepository(database);
         const trackedShows = new TrackedShowsStore(database);
-        // One-time backfill (idempotent) for shows already in the watchlist
-        // or with pre-existing candidate history before this ledger existed,
-        // plus the ordinary case of picking up config edits made outside the
-        // API (e.g. hand-editing the config file) since the last restart.
-        syncTrackedShowsFromConfig(
-          database,
-          config.tv,
-          // Repository default is 20; this backfill needs the full history.
-          // mediaType filter matters: an unfiltered leftover list promotes a
-          // movie candidate's normalized title into a phantom tracked *show*
-          // (TMDB's TV search can resolve a same-titled but unrelated TV
-          // entry for it) — and since candidate_state is untouched by
-          // untrack, that phantom row would silently reappear on every
-          // daemon restart. Found live 2026-08-29 ("Barreda" — a real movie
-          // candidate — surfaced as a bogus tracked TV show).
-          repository
-            .listCandidateStates(50_000)
-            .filter((c) => c.mediaType === 'tv')
-            .map((c) => c.normalizedTitle),
-        );
+        // Picks up config edits made outside the API (e.g. hand-editing the
+        // config file) since the last restart. The watchlist is the ONLY
+        // source a ledger row is created from here.
+        //
+        // This deliberately no longer backfills rows from leftover
+        // candidate_state history. That backfill began as a one-time
+        // migration for shows matched before this ledger existed, but since
+        // untrack intentionally leaves candidate_state alone (see
+        // TrackedShowsStore.remove), it had become a resurrection machine:
+        // every restart re-created a tracked row for any show with RSS
+        // history, silently undoing an untrack the operator had already
+        // performed. Worse, loose per-show matching means the resurrected
+        // title is often a *release's* name rather than a show the operator
+        // ever added — "Tomb Raider King" came back as its own phantom show
+        // because a loose "Tomb Raider" watchlist entry had matched it once
+        // (2026-09-03 incident; the identical movie-side failure was found
+        // and fixed on 2026-08-29 while this TV path was left open).
+        //
+        // Consequence, accepted deliberately: a show with download history
+        // but no watchlist entry no longer appears on /shows. Untracked now
+        // means untracked, across restarts. candidate_state, manual_grabs,
+        // and files on disk are untouched — this only governs what /shows
+        // lists.
+        syncTrackedShowsFromConfig(database, config.tv);
         const downloader = createTransmissionDownloader(config.transmission, {
           warn: log,
         });

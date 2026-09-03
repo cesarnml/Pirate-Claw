@@ -7,7 +7,6 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
-	import ApplyModeBadge from '$lib/components/ApplyModeBadge.svelte';
 
 	interface Props {
 		health: DaemonHealth | null;
@@ -162,14 +161,9 @@
 				<input type="hidden" name="currentShow" value={name} />
 			{/each}
 
-			<div class="flex flex-wrap items-center justify-between gap-2">
-				<p
-					class="text-muted-foreground font-mono text-xs font-semibold tracking-[0.18em] uppercase"
-				>
-					Runtime Controls
-				</p>
-				<ApplyModeBadge mode="restart" />
-			</div>
+			<p class="text-muted-foreground font-mono text-xs font-semibold tracking-[0.18em] uppercase">
+				Runtime Controls
+			</p>
 
 			<div class="grid gap-3 sm:grid-cols-2">
 				<label class="grid gap-1 text-sm">
