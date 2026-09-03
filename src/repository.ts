@@ -9,7 +9,10 @@ import { ensurePlexMovieCatalogCacheSchema } from './adoption/movie-plex-reconci
 import { ensurePlexMovieSyncStateSchema } from './plex/movie-sync-state';
 import { ensurePlexTvSyncStateSchema } from './plex/tv-sync-state';
 import { ensurePlexSchema } from './plex/schema';
+import { buildMovieIdentityKey } from './movie-match';
 import type { TmdbMoviePublic } from './movie-api-types';
+import { normalizeFeedItem } from './normalize';
+import { buildTvIdentityKey } from './tv-match';
 import { ensureTmdbSchema } from './tmdb/schema';
 import { ensureTrackedShowsSchema } from './tracked-shows/schema';
 import type { TmdbTvShowMeta } from './tv-api-types';
@@ -173,6 +176,12 @@ export type Repository = {
     hash: string,
   ): CandidateStateRecord | undefined;
   isCandidateQueued(identityKey: string): boolean;
+  /** Identity keys of every still-active manual grab (TV and movie), in the
+   * same key space matchTvItem/matchMovieItem produce. Manual grabs never
+   * write to candidate_state by design (see manual-grabs/schema.ts), so
+   * without this the RSS pipeline's duplicate check can't see them and
+   * re-downloads an episode the operator already grabbed by hand. */
+  listActiveManualGrabIdentityKeys(): Set<string>;
   recordCandidateOutcome(
     input: RecordCandidateOutcomeInput,
   ): CandidateStateRecord;
@@ -902,6 +911,84 @@ export function createRepository(database: Database): Repository {
 
     isCandidateQueued(identityKey: string): boolean {
       return this.getCandidateState(identityKey)?.queuedAt !== undefined;
+    },
+
+    listActiveManualGrabIdentityKeys(): Set<string> {
+      const keys = new Set<string>();
+
+      // manual_grabs.normalized_title is the *tracked show's* canonical
+      // name, not the release's own parsed title — matchTvItem builds its
+      // key from the latter, and a matchPattern that tolerates extra tokens
+      // (e.g. "Example Show" matching a release titled "Example Show UK",
+      // see tv-match.ts) makes those two diverge. Add both: the stored
+      // column as a cheap common case, and raw_title re-parsed through
+      // normalizeFeedItem — the same code path a live feed item takes — to
+      // catch the case a stricter/looser pattern let through. season/episode
+      // stay the explicit stored ints either way; they're not derived from
+      // title text, so there's nothing to reparse there.
+      const tvRows = database
+        .query(
+          `SELECT normalized_title AS normalizedTitle, season, episode,
+                  raw_title AS rawTitle
+           FROM manual_grabs
+           WHERE disposition IS NULL`,
+        )
+        .all() as {
+        normalizedTitle: string;
+        season: number;
+        episode: number;
+        rawTitle: string;
+      }[];
+
+      for (const row of tvRows) {
+        keys.add(buildTvIdentityKey(row));
+        const normalized = normalizeFeedItem({
+          mediaType: 'tv',
+          rawTitle: row.rawTitle,
+        });
+        keys.add(
+          buildTvIdentityKey({
+            normalizedTitle: normalized.normalizedTitle,
+            season: row.season,
+            episode: row.episode,
+          }),
+        );
+      }
+
+      // Movies have no such shared field: manual_movie_grabs is keyed on
+      // tmdb_id, which never appears in a release title. Running the stored
+      // raw_title back through normalizeFeedItem is the only bridge into the
+      // pipeline's key space, and it goes through the identical code path the
+      // feed item itself would. Imperfect by nature — a different release
+      // group's title for the same film can normalize differently — but a
+      // missed match here only costs a duplicate download, which is exactly
+      // the status quo. movie_year backfills the year when the release title
+      // omits one.
+      const movieRows = database
+        .query(
+          `SELECT raw_title AS rawTitle, movie_year AS movieYear
+           FROM manual_movie_grabs
+           WHERE disposition IS NULL`,
+        )
+        .all() as {
+        rawTitle: string;
+        movieYear: number | null;
+      }[];
+
+      for (const row of movieRows) {
+        const normalized = normalizeFeedItem({
+          mediaType: 'movie',
+          rawTitle: row.rawTitle,
+        });
+        keys.add(
+          buildMovieIdentityKey({
+            normalizedTitle: normalized.normalizedTitle,
+            year: normalized.year ?? row.movieYear ?? undefined,
+          }),
+        );
+      }
+
+      return keys;
     },
 
     recordCandidateOutcome(

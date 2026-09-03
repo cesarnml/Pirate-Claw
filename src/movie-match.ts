@@ -70,8 +70,21 @@ export function getMovieNoMatchReason(
   return undefined;
 }
 
+/** Movie-shaped sibling of buildTvIdentityKey (see tv-match.ts) — exported
+ * for the same reason: manual movie grabs have to be able to produce this
+ * exact key so the feed can recognize one it already has. */
+export function buildMovieIdentityKey(input: {
+  normalizedTitle: string;
+  year: number | undefined;
+}): string {
+  return `movie:${input.normalizedTitle.trim().toLowerCase()}|${input.year ?? ''}`;
+}
+
 function buildIdentityKey(item: NormalizedFeedItem): string {
-  return `movie:${item.normalizedTitle.trim().toLowerCase()}|${item.year ?? ''}`;
+  return buildMovieIdentityKey({
+    normalizedTitle: item.normalizedTitle,
+    year: item.year,
+  });
 }
 
 function matchesMovieQuality(

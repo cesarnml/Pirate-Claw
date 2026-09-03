@@ -227,10 +227,36 @@ export type ShowCompletion =
  * clicked at least once — `{ status: null }` means that hasn't happened
  * yet, and the caller should show nothing rather than guess.
  */
+/** "Today" in TMDB air_date's own timezone — the US broadcast day. Mirrors
+ * broadcastTodayIsoDate in src/shows/episode-status.ts; the two have to
+ * agree or the shows list and a show's own page disagree about what has
+ * aired. Not the browser's local date (the operator travels) and not UTC
+ * (~5h ahead of Eastern, so it rolls the air day over mid-broadcast).
+ *
+ * Built from formatToParts with 'en-US', not the more direct
+ * `new Intl.DateTimeFormat('en-CA', {timeZone}).format(now)` — a Node build
+ * with small-icu (no full timezone-aware locale data, which Docker's slim
+ * base images commonly ship) silently mis-renders 'en-CA' as M/D/YYYY
+ * instead of YYYY-MM-DD, corrupting every string comparison against
+ * airDate. 'en-US' + explicit numeric fields is the same underlying
+ * Intl.DateTimeFormat/ICU machinery, so it's still timezone-correct either
+ * way, but reassembling the digits ourselves sidesteps locale-data
+ * completeness entirely. */
+export function broadcastTodayIsoDate(now: Date = new Date()): string {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: 'America/New_York',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).formatToParts(now);
+	const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+	return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 export function computeShowCompletion(show: ShowBreakdown): ShowCompletion {
-	const todayIsoDate = new Date().toISOString().slice(0, 10);
+	const todayIsoDate = broadcastTodayIsoDate();
 	const firstAirDate = show.tmdb?.firstAirDate;
-	if (firstAirDate !== undefined && firstAirDate > todayIsoDate) {
+	if (firstAirDate !== undefined && firstAirDate >= todayIsoDate) {
 		return { status: 'unaired' };
 	}
 

@@ -28,6 +28,7 @@ function stubRepository(): Repository {
     getCandidateState: () => undefined,
     getCandidateStateByTransmissionHash: () => undefined,
     isCandidateQueued: () => false,
+    listActiveManualGrabIdentityKeys: () => new Set(),
     recordCandidateOutcome: () => ({}) as never,
     recordCandidateReconciliation: () => ({}) as never,
     recordFeedItemOutcome: () => ({}) as never,

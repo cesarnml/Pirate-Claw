@@ -244,6 +244,7 @@ function stubRepository(): Repository {
     getCandidateState: () => undefined,
     getCandidateStateByTransmissionHash: () => undefined,
     isCandidateQueued: () => false,
+    listActiveManualGrabIdentityKeys: () => new Set(),
     updateCandidateReconciliation: () => ({}) as never,
     retryCandidate: () => ({}) as never,
     listFeedItemOutcomes: () => [],

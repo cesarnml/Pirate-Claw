@@ -7,6 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import { broadcastTodayIsoDate } from '$lib/helpers';
 	import { toast } from '$lib/toast';
 	import type {
 		ShowBreakdown,
@@ -28,7 +29,7 @@
 		canWrite: boolean;
 	}>();
 
-	const todayIsoDate = new Date().toISOString().slice(0, 10);
+	const todayIsoDate = broadcastTodayIsoDate();
 
 	/** An episode with a future/no air date can't have leaked online yet —
 	 * "missing" is still technically true, but offering "Find on EZTV" for
@@ -43,9 +44,16 @@
 	/** Stricter than hasAired — only true for a *confirmed future* air date,
 	 * not merely "we don't have one." Used for the "UNAIRED" badge, since
 	 * claiming that confidently based on a missing TMDB date would be its own
-	 * dishonesty (the episode could easily have already aired). */
+	 * dishonesty (the episode could easily have already aired).
+	 *
+	 * Deliberately `>=`, not `>`, so this is NOT the mirror image of hasAired:
+	 * an episode airing *today* stays "UNAIRED" while still offering the grab
+	 * buttons. Calling it MISSING the moment the calendar flips is a lie —
+	 * indexers lag broadcast by hours, and the feed usually catches it on its
+	 * own. Effectively a one-day grace period before we accuse the feed of
+	 * having failed. */
 	function isConfirmedUnaired(airDate: string | undefined): boolean {
-		return airDate !== undefined && airDate > todayIsoDate;
+		return airDate !== undefined && airDate >= todayIsoDate;
 	}
 
 	type SearchSource = 'eztv' | 'thepiratebay';

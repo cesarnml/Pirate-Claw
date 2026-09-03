@@ -10,6 +10,29 @@ import { fetchTorrentStats, type TorrentStatSnapshot } from '../transmission';
 
 export type EpisodePlexStatus = 'in_library' | 'missing' | 'unknown';
 
+/** "Today" in the timezone TMDB's `air_date` is expressed in — the US
+ * broadcast day. The server's own clock is the wrong reference (this box
+ * sits in Pacific, and the operator reads the UI from wherever they are),
+ * and UTC runs ~5h ahead of Eastern, which flips an episode's air day over
+ * while it's still airing on the east coast.
+ *
+ * Built from formatToParts with 'en-US', not the more direct
+ * `new Intl.DateTimeFormat('en-CA', {timeZone}).format(now)` — a Node build
+ * with small-icu (no full timezone-aware locale data) silently mis-renders
+ * 'en-CA' as M/D/YYYY instead of YYYY-MM-DD, corrupting every string
+ * comparison against airDate. Reassembling the digits ourselves sidesteps
+ * locale-data completeness entirely; mirrors web/src/lib/helpers.ts. */
+export function broadcastTodayIsoDate(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 export type EpisodeManualGrabInfo = {
   queuedAt: string;
   source: string;
@@ -126,7 +149,7 @@ export async function buildShowEpisodeStatus(
   }
 
   const matchKey = tvMatchKey(show.normalizedTitle);
-  const todayIsoDate = new Date().toISOString().slice(0, 10);
+  const todayIsoDate = broadcastTodayIsoDate();
   const targetSeason = options?.season;
   const plexPresence = await loadPlexPresence(show, deps.plex, targetSeason);
   const manualGrabsByKey = groupManualGrabsByEpisode(
@@ -184,7 +207,23 @@ export async function buildShowEpisodeStatus(
       // count instead. Confirmed live against a real currently-airing
       // show (Stuart Fails to Save the Universe): season 1 lists 10
       // TMDB episodes, 4 of them not yet aired.
+      //
+      // Strictly-before-today, not on-or-before: an episode airing *today*
+      // isn't yet something we can call unaccounted for. Indexers lag
+      // broadcast by hours and the feed normally catches it on its own, so
+      // counting it as "aired and owed" is what produced phantom missing
+      // episodes for every currently-airing show, every air day. Mirrors
+      // isConfirmedUnaired in web MissingEpisodesPanel.svelte — the two have
+      // to agree or the shows list and the show page contradict each other.
       const airedEpisodeCount = episodes.filter(
+        (ep) => ep.airDate !== undefined && ep.airDate < todayIsoDate,
+      ).length;
+      // On an air day, either count is legitimate: the episode may already be
+      // in Plex (grabbed fast) or not (feed hasn't caught it). Treating a
+      // single exact number as correct would just move the false mismatch
+      // from one side of the boundary to the other, so accept the whole
+      // window instead.
+      const airedIncludingTodayCount = episodes.filter(
         (ep) => ep.airDate !== undefined && ep.airDate <= todayIsoDate,
       ).length;
       const season: SeasonWithStatus = {
@@ -193,7 +232,10 @@ export async function buildShowEpisodeStatus(
         episodeCountMismatch:
           plexSeason === undefined
             ? undefined
-            : plexSeason.episodeCount !== airedEpisodeCount,
+            : plexSeason.episodeCount === undefined
+              ? true
+              : plexSeason.episodeCount < airedEpisodeCount ||
+                plexSeason.episodeCount > airedIncludingTodayCount,
         airedEpisodeCount,
       };
       return season;

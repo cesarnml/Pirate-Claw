@@ -104,8 +104,25 @@ function deriveMatchPattern(name: string): string {
   return `(?:^| )${tokens.join(' +')}(?:$| )`;
 }
 
+/** The identity a TV release is deduplicated on. Exported so the manual-grab
+ * ledger can build the same key for its own rows (see
+ * Repository.listActiveManualGrabIdentityKeys) — a manual grab and an RSS
+ * candidate for the same episode must collide here, or the feed re-downloads
+ * something the operator already pulled by hand. */
+export function buildTvIdentityKey(input: {
+  normalizedTitle: string;
+  season: number | undefined;
+  episode: number | undefined;
+}): string {
+  return `tv:${input.normalizedTitle.toLowerCase()}|s${padNumber(input.season)}e${padNumber(input.episode)}`;
+}
+
 function buildIdentityKey(item: NormalizedFeedItem): string {
-  return `tv:${item.normalizedTitle.toLowerCase()}|s${padNumber(item.season)}e${padNumber(item.episode)}`;
+  return buildTvIdentityKey({
+    normalizedTitle: item.normalizedTitle,
+    season: item.season,
+    episode: item.episode,
+  });
 }
 
 function scoreMatch(rule: TvRule, item: NormalizedFeedItem): number {

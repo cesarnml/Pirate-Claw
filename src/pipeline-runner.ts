@@ -49,6 +49,12 @@ export function createPipelineCoordinator(input: {
     async submitMatchedCandidates(
       candidates: MatchedFeedItem[],
     ): Promise<void> {
+      // Read once per run rather than per candidate: the set is small, and a
+      // manual grab landing mid-run would be picked up by the next cycle
+      // anyway.
+      const manuallyGrabbed =
+        input.repository.listActiveManualGrabIdentityKeys();
+
       for (const group of groupByIdentity(candidates).values()) {
         const winner = selectWinningCandidate(group);
 
@@ -67,6 +73,17 @@ export function createPipelineCoordinator(input: {
             status: 'skipped_duplicate',
             match: winner.match,
             message: 'Candidate already queued in a previous run.',
+          });
+          continue;
+        }
+
+        if (manuallyGrabbed.has(winner.match.identityKey)) {
+          recordFeedItemOutcome(input.repository, {
+            runId: input.run.id,
+            feedItemId: winner.feedItem.id,
+            status: 'skipped_duplicate',
+            match: winner.match,
+            message: 'Already grabbed manually outside the feed.',
           });
           continue;
         }
