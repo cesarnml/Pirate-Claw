@@ -40,8 +40,6 @@
 		runtimeChangesPending,
 		enhanceRestartDaemon
 	}: Props = $props();
-
-	const restartActionable = $derived(canWrite && !restarting && runtimeChangesPending);
 </script>
 
 {#if runtimeChangesPending}
@@ -49,9 +47,9 @@
 		method="POST"
 		action="?/restartDaemon"
 		use:enhance={enhanceRestartDaemon}
-		class="border-border bg-background/95 sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-lg backdrop-blur"
+		class="border-warning/30 bg-warning/10 text-warning sticky top-0 z-20 flex flex-col items-stretch justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-lg backdrop-blur sm:flex-row sm:items-center"
 	>
-		<p class="text-muted-foreground">
+		<p>
 			{#if restartPhase === 'requested'}
 				Restart requested. Waiting for the daemon to go away.
 			{:else if restartPhase === 'restarting'}
@@ -65,8 +63,8 @@
 		</p>
 		<Button
 			type="submit"
-			variant={restartActionable ? 'default' : 'outline'}
-			class="shrink-0 rounded-full px-5"
+			variant="outline"
+			class="border-warning/40 text-warning hover:bg-warning/10 dark:hover:bg-warning/10 w-full shrink-0 rounded-full px-5 sm:w-auto"
 			disabled={!canWrite || restarting}
 			title={!canWrite ? writeDisabledTooltip : undefined}
 		>
