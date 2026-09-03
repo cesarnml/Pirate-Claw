@@ -119,14 +119,26 @@ export type ShowBreakdown = {
 // above, which reflect local queue history (candidate_state), not TMDB's full
 // episode list.
 
+/** Where one grab attempt stands. Resolved server-side in strict precedence
+ * order (completed > removed > stalled > queued) — see
+ * EpisodeManualGrabState in src/shows/episode-status.ts. */
+export type EpisodeManualGrabState = 'queued' | 'stalled' | 'completed' | 'removed';
+
 export type EpisodeManualGrabInfo = {
+	/** manual_grabs row id — a per-attempt unique key, unlike the hash, which
+	 * repeats when the same magnet is grabbed twice for one episode. */
+	id: number;
 	queuedAt: string;
 	source: string;
 	rawTitle: string;
 	transmissionTorrentHash: string | null;
-	/** True when this grab's torrent looks stuck (see episode-status.ts's
-	 * isStalledSnapshot) — powers the inline remove button. */
-	stalled: boolean;
+	state: EpisodeManualGrabState;
+	/** Whether this grab was ever disposed — `state` alone can't say, since
+	 * 'completed' outranks 'removed'. Gates whether a remove button would do
+	 * anything for a completed torrent. */
+	disposed: boolean;
+	disposedAt: string | null;
+	doneAt: string | null;
 };
 
 export type EpisodeWithStatus = {
@@ -135,9 +147,10 @@ export type EpisodeWithStatus = {
 	overview?: string;
 	airDate?: string;
 	plexStatus: PlexStatus;
-	/** Every still-active manual grab for this episode, most recent first —
-	 * plural since a replacement grab is meant to leave a stalled one
-	 * visible/removable alongside it, not hide it. Empty when there's none. */
+	/** Every manual grab ever recorded for this episode, most recent first,
+	 * whatever became of it — each carrying its own `state`. Disposed rows are
+	 * included: that history is what marks a search result "Attempted". Filter
+	 * on `state` for anything that means "live torrent". */
 	manualGrabs: EpisodeManualGrabInfo[];
 };
 

@@ -37,19 +37,50 @@ export function broadcastTodayIsoDate(now: Date = new Date()): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+/**
+ * Where one grab attempt currently stands. Resolved in strict precedence
+ * order (see toGrabState), so exactly one of these is true at a time:
+ *
+ *  - 'completed' — Transmission was observed at 100% for this hash
+ *    (manual_grabs.done_at). Wins over 'removed' deliberately: a torrent
+ *    that finished and was *then* cleared out of Transmission is a success
+ *    story, and must not be counted among the releases that failed.
+ *  - 'removed'   — disposed without ever completing. This is the "tried that
+ *    one, don't try it again" record; it is what the panel counts as
+ *    Attempted.
+ *  - 'stalled'   — still active, and its torrent looks stuck (see
+ *    isStalledSnapshot).
+ *  - 'queued'    — still active and not (yet) stuck. The ordinary case.
+ */
+export type EpisodeManualGrabState =
+  | 'queued'
+  | 'stalled'
+  | 'completed'
+  | 'removed';
+
 export type EpisodeManualGrabInfo = {
+  /** The manual_grabs row id. Carried purely so the client has a key that is
+   * genuinely unique per attempt — the same magnet grabbed twice for one
+   * episode yields two rows sharing a hash, which collides as a Svelte keyed
+   * `each` key and silently drops one of them from the DOM. */
+  id: number;
   queuedAt: string;
   source: string;
   rawTitle: string;
   transmissionTorrentHash: string | null;
-  /** True when this grab's torrent looks stuck and probably won't ever
-   * complete — see isStalledSnapshot for the exact definition. Always false
-   * when transmission config isn't available to this build, or when the
-   * live lookup itself failed (fails open: never claim "stalled" on a
-   * signal we couldn't actually confirm). Powers the inline remove button
-   * on the missing-episodes panel — see grill-me: torrent queue/grab UX
-   * fixes, 2026-09-01. */
-  stalled: boolean;
+  state: EpisodeManualGrabState;
+  /** Whether this grab was ever disposed, which `state` alone can't answer:
+   * 'completed' outranks 'removed', so a finished-then-cleared torrent and a
+   * finished-and-still-seeding one both read 'completed'. The panel needs the
+   * difference to decide whether a remove button would do anything — pulling
+   * an already-removed torrent just earns a 400. Not derivable from
+   * disposedAt either: rows disposed before that column existed have none. */
+  disposed: boolean;
+  /** When it was disposed — null while active, and null on rows disposed
+   * before disposed_at existed. Shown in the panel's per-episode attempt
+   * history so "when did I give up on this one" is answerable. */
+  disposedAt: string | null;
+  doneAt: string | null;
 };
 
 export type EpisodeWithStatus = {
@@ -58,14 +89,19 @@ export type EpisodeWithStatus = {
   overview?: string;
   airDate?: string;
   plexStatus: EpisodePlexStatus;
-  /** Every still-active (non-disposed) manual grab for this episode, most
-   * recent first — plural because grabbing a replacement for a stalled
-   * torrent is meant to leave the old one in place (and manageable) until
-   * you've confirmed the new one is actually working, not silently hide it.
-   * Empty, not null, when there's no active grab — a single collapsed
-   * "latest wins" value used to make a second concurrent grab invisible in
-   * the UI even though it was still a real, running Transmission torrent
-   * (see grill-me: torrent queue/grab UX fixes, 2026-09-02 follow-up). */
+  /** Every manual grab ever recorded for this episode, most recent first,
+   * whatever became of it — each carrying its own `state`. Plural because
+   * grabbing a replacement for a stalled torrent is meant to leave the old
+   * one in place (and manageable) until you've confirmed the new one is
+   * actually working, not silently hide it (see grill-me: torrent queue/grab
+   * UX fixes, 2026-09-02 follow-up).
+   *
+   * Disposed rows are included, not filtered out — that history is exactly
+   * what lets the panel mark a search result "Attempted (2)" so the operator
+   * doesn't re-grab a release they already gave up on (grill-me: per-torrent
+   * grab state, 2026-09-03). Consumers that only care about live torrents
+   * must filter on `state`; the "Queued via X" badge in particular has to,
+   * or a long-abandoned grab would read as queued forever. */
   manualGrabs: EpisodeManualGrabInfo[];
 };
 
@@ -622,14 +658,20 @@ function resolveEpisodeStatus(
 
 /**
  * One batched Transmission torrent-get for every still-active grab's hash
- * on this page, mutating each entry's `stalled` in place. Batched rather
+ * on this page, promoting 'queued' entries to 'stalled' in place. Batched
+ * rather
  * than one lookup per episode — a season with several manual grabs must
  * cost one RPC round trip, not N (see grill-me Q1, 2026-09-01: live lookup
  * at render time was chosen over a background poller specifically on the
  * condition it stays batched). Best-effort: any failure (no config, RPC
- * error) just leaves every `stalled` at its already-set false, same as
- * every other best-effort Transmission read in this codebase — a page
- * render must never hard-fail because Transmission is briefly unreachable.
+ * error) just leaves every state at 'queued', same as every other
+ * best-effort Transmission read in this codebase — a page render must never
+ * hard-fail because Transmission is briefly unreachable.
+ *
+ * Only 'queued' grabs are candidates. A 'removed' or 'completed' row is
+ * already in a terminal state the DB is authoritative about, and its hash
+ * may well have been reused by nothing at all — asking Transmission about
+ * it would at best waste a lookup and at worst re-open a settled question.
  */
 async function annotateStalledGrabs(
   manualGrabsByKey: Map<string, EpisodeManualGrabInfo[]>,
@@ -637,10 +679,12 @@ async function annotateStalledGrabs(
 ): Promise<void> {
   if (!transmissionConfig) return;
 
-  const allGrabs = Array.from(manualGrabsByKey.values()).flat();
+  const activeGrabs = Array.from(manualGrabsByKey.values())
+    .flat()
+    .filter((grab) => grab.state === 'queued');
   const hashes = Array.from(
     new Set(
-      allGrabs
+      activeGrabs
         .map((grab) => grab.transmissionTorrentHash)
         .filter((hash): hash is string => hash !== null),
     ),
@@ -651,9 +695,11 @@ async function annotateStalledGrabs(
   if (!result.ok) return;
 
   const byHash = new Map(result.torrents.map((t) => [t.hash, t]));
-  for (const grab of allGrabs) {
+  for (const grab of activeGrabs) {
     if (!grab.transmissionTorrentHash) continue;
-    grab.stalled = isStalledSnapshot(byHash.get(grab.transmissionTorrentHash));
+    if (isStalledSnapshot(byHash.get(grab.transmissionTorrentHash))) {
+      grab.state = 'stalled';
+    }
   }
 }
 
@@ -661,35 +707,42 @@ function episodeKey(season: number, episode: number): string {
   return `${season}:${episode}`;
 }
 
+/** The DB-only half of a grab's state — everything decidable without asking
+ * Transmission anything. 'stalled' can only be reached later, by
+ * annotateStalledGrabs, since it depends on a live snapshot. See
+ * EpisodeManualGrabState for why doneAt outranks disposition. */
+function toGrabState(row: {
+  doneAt: string | null;
+  disposition: string | null;
+}): EpisodeManualGrabState {
+  if (row.doneAt !== null) return 'completed';
+  if (row.disposition !== null) return 'removed';
+  return 'queued';
+}
+
 function groupManualGrabsByEpisode(
   rows: ReturnType<ManualGrabsStore['listForShow']>,
 ): Map<string, EpisodeManualGrabInfo[]> {
   const map = new Map<string, EpisodeManualGrabInfo[]>();
-  // rows is already most-recent-first. Every still-active row for an
-  // episode is kept, not just the latest — grabbing a replacement for a
-  // stalled torrent is meant to leave the stalled one visible (and its own
-  // remove button reachable) until it's actually cleared, not make it
-  // vanish the moment a second grab exists for the same episode. See
-  // grill-me: torrent queue/grab UX fixes, 2026-09-02 follow-up.
+  // rows is already most-recent-first. Every row for an episode is kept —
+  // both because a replacement grab must leave the stalled one it replaces
+  // visible and removable (grill-me: torrent queue/grab UX fixes, 2026-09-02
+  // follow-up), and because disposed rows are the "already tried that
+  // release" history the panel needs to stop the operator re-grabbing a
+  // known-dead swarm (2026-09-03). Disposition is no longer a filter, it's a
+  // `state` — every consumer that means "live torrent" must say so.
   for (const row of rows) {
-    // A grab already marked removed/deleted (via Torrent Manager, or this
-    // feature's own stalled-torrent remove button) must not keep showing
-    // "Queued via X" forever — treat it exactly as if this episode had no
-    // manual grab at all, so plexStatus alone (which will read 'missing'
-    // here, since Plex never got the file) drives the badge instead. This
-    // was the actual bug behind grill-me's "queued torrent made clear to
-    // the user" ask: the badge used to be pure DB-row-existence, blind to
-    // disposition.
-    if (row.disposition !== null) {
-      continue;
-    }
     const key = episodeKey(row.season, row.episode);
     const grab: EpisodeManualGrabInfo = {
+      id: row.id,
       queuedAt: row.queuedAt,
       source: row.source,
       rawTitle: row.rawTitle,
       transmissionTorrentHash: row.transmissionTorrentHash,
-      stalled: false,
+      state: toGrabState(row),
+      disposed: row.disposition !== null,
+      disposedAt: row.disposedAt,
+      doneAt: row.doneAt,
     };
     const existing = map.get(key);
     if (existing) {

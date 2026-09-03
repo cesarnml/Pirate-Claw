@@ -58,6 +58,18 @@ export function ensureManualGrabsSchema(database: Database): void {
   // ManualGrabsStore.setDisposition.
   ensureManualGrabsColumn(database, 'disposition', 'TEXT');
 
+  // When that disposition was recorded. `disposition` alone says *what*
+  // happened to a grab but not *when*, which makes the attempt history
+  // unorderable ("which release did I give up on first?") and makes
+  // time-to-failure uncomputable for the future auto-grab heuristic the
+  // resolution/seeds/peers columns below are being collected for. Stalledness
+  // itself is never persisted — it's derived live from Transmission at render
+  // time (see episode-status.ts's isStalledSnapshot) and is gone the instant
+  // the torrent is removed — so the pairing of disposed_at with queued_at is
+  // the only durable record that a swarm was tried and abandoned. Nullable:
+  // every row predating this column, and every still-active grab, has none.
+  ensureManualGrabsColumn(database, 'disposed_at', 'TEXT');
+
   // Declared/parsed quality and swarm-health signal at grab time — logged
   // purely so a future auto-grab heuristic has real manual-grab outcomes to
   // derive weights from (see grill-me: torrent queue/grab UX fixes,

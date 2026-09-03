@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Panel from '../../../../src/routes/shows/[slug]/MissingEpisodesPanel.svelte';
 import type {
+	EpisodeManualGrabInfo,
+	EpisodeManualGrabState,
 	EztvTorrent,
 	ShowBreakdown,
 	ShowEpisodeStatus,
@@ -52,11 +54,15 @@ const statusWithMixedEpisodes: ShowEpisodeStatus = {
 					plexStatus: 'missing',
 					manualGrabs: [
 						{
+							id: 1,
 							queuedAt: '2026-08-27T00:00:00.000Z',
 							source: 'eztv',
 							rawTitle: 'grabbed release',
 							transmissionTorrentHash: 'abc123',
-							stalled: false
+							state: 'queued',
+							disposed: false,
+							disposedAt: null,
+							doneAt: null
 						}
 					]
 				}
@@ -914,6 +920,264 @@ describe('MissingEpisodesPanel', () => {
 
 			expect(screen.getByText('Retried Pilot')).toBeInTheDocument();
 			expect(screen.queryByText('Stale Original Pilot')).not.toBeInTheDocument();
+		});
+	});
+
+	// The workflow these cover: an episode nobody is seeding well, where the
+	// operator fires several releases at it and clears whichever swarm dies.
+	// That only works if each result card says what already happened to it —
+	// which is what replaced collapsing the whole list on a successful grab.
+	describe('per-torrent grab state (grill-me: per-torrent grab state, 2026-09-03)', () => {
+		function grab(
+			id: number,
+			rawTitle: string,
+			state: EpisodeManualGrabState,
+			hash: string
+		): EpisodeManualGrabInfo {
+			return {
+				id,
+				queuedAt: '2026-08-27T00:00:00.000Z',
+				source: 'eztv',
+				rawTitle,
+				transmissionTorrentHash: hash,
+				state,
+				disposed: state === 'removed',
+				disposedAt: state === 'removed' ? '2026-08-28T00:00:00.000Z' : null,
+				doneAt: state === 'completed' ? '2026-08-29T00:00:00.000Z' : null
+			};
+		}
+
+		const statusWithGrabHistory: ShowEpisodeStatus = {
+			plexReachable: true,
+			seasons: [
+				{
+					season: 1,
+					episodeCountMismatch: false,
+					airedEpisodeCount: 1,
+					plexSource: 'live',
+					episodes: [
+						{
+							episode: 1,
+							name: 'Pilot',
+							airDate: '2026-01-01',
+							plexStatus: 'missing',
+							manualGrabs: [
+								grab(3, 'live release', 'queued', 'hash-live'),
+								grab(2, 'stuck release', 'stalled', 'hash-stuck'),
+								grab(1, 'dead release', 'removed', 'hash-dead')
+							]
+						}
+					]
+				}
+			]
+		};
+
+		function torrent(id: number, title: string): EztvTorrent {
+			return {
+				id,
+				title,
+				filename: `${id}.mkv`,
+				magnetUrl: `magnet:?xt=urn:btih:${id}`,
+				season: 1,
+				episode: 1,
+				sizeBytes: 500_000_000,
+				seeds: 5,
+				peers: 1,
+				dateReleasedUnix: 1,
+				resolution: '1080p',
+				codec: 'x264'
+			};
+		}
+
+		async function renderWithResults(): Promise<void> {
+			fetchMock.mockResolvedValue(
+				new Response(
+					JSON.stringify({
+						torrents: [
+							torrent(10, 'live release'),
+							torrent(11, 'stuck release'),
+							torrent(12, 'dead release'),
+							torrent(13, 'untried release')
+						]
+					}),
+					{ status: 200 }
+				)
+			);
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: statusWithGrabHistory,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+			await fireEvent.click(screen.getByRole('button', { name: 'Find on EZTV' }));
+			await waitFor(() => {
+				expect(screen.getByText('untried release')).toBeInTheDocument();
+			});
+		}
+
+		it('badges each result with what already happened to it, and offers Grab only on the untried one', async () => {
+			await renderWithResults();
+
+			expect(screen.getByText('Queued')).toBeInTheDocument();
+			expect(screen.getByText('Stalled')).toBeInTheDocument();
+			// Two: the result card's own badge, plus the episode header pill
+			// summarising the same attempt.
+			expect(screen.getAllByText('Attempted (1)')).toHaveLength(2);
+
+			// Queued hides its Grab entirely; already-attempted keeps one but
+			// demoted to "Grab anyway"; only the untried release gets a plain
+			// "Grab". One of each, so nothing is silently duplicated.
+			expect(screen.getAllByRole('button', { name: 'Grab' })).toHaveLength(1);
+			expect(screen.getAllByRole('button', { name: 'Grab anyway' })).toHaveLength(1);
+		});
+
+		it("turns the stalled result's Grab into Remove + delete — the dead swarm is the thing to act on, not re-grab", async () => {
+			await renderWithResults();
+
+			expect(screen.getByRole('button', { name: 'Remove + delete' })).toBeInTheDocument();
+		});
+
+		it('keeps the result list open after the panel re-renders — no auto-collapse to scroll away from', async () => {
+			await renderWithResults();
+
+			// The "Hide" label is the proof the list is still expanded.
+			expect(screen.getByRole('button', { name: 'Hide EZTV results' })).toBeInTheDocument();
+			expect(screen.getByText('untried release')).toBeInTheDocument();
+		});
+
+		it('counts queued and stalled separately in the episode header, so one stuck torrent is not also counted as a live download', () => {
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: statusWithGrabHistory,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			expect(screen.getByText('Queued via eztv')).toBeInTheDocument();
+			expect(screen.getByText('Stalled (1)')).toBeInTheDocument();
+			expect(screen.getByText('Attempted (1)')).toBeInTheDocument();
+		});
+
+		it('expands the per-episode attempt history from a header pill, with a remove button on the live torrents', async () => {
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: statusWithGrabHistory,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			expect(screen.queryByText('Grab attempts')).not.toBeInTheDocument();
+			await fireEvent.click(screen.getByText('Stalled (1)'));
+
+			expect(screen.getByText('Grab attempts')).toBeInTheDocument();
+			// This strip is the canonical inventory: every attempt shows,
+			// including the removed one that no search result may ever match.
+			expect(screen.getByText('dead release')).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'Stalled — remove' })).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+		});
+
+		it('leaves a completed release re-grabbable — done_at never expires, so a finished torrent whose episode still reads MISSING must not be a dead end', async () => {
+			fetchMock.mockResolvedValue(
+				new Response(JSON.stringify({ torrents: [torrent(20, 'finished release')] }), {
+					status: 200
+				})
+			);
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: {
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: false,
+							airedEpisodeCount: 1,
+							plexSource: 'live',
+							episodes: [
+								{
+									episode: 1,
+									name: 'Pilot',
+									airDate: '2026-01-01',
+									plexStatus: 'missing',
+									manualGrabs: [grab(1, 'finished release', 'completed', 'hash-done')]
+								}
+							]
+						}
+					]
+				},
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Find on EZTV' }));
+			await waitFor(() => {
+				expect(screen.getByText('finished release')).toBeInTheDocument();
+			});
+
+			expect(screen.getByRole('button', { name: 'Grab anyway' })).toBeInTheDocument();
+		});
+
+		it('opens the attempt history from the Queued pill too, so an episode with only live grabs can still reach its remove buttons', async () => {
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: {
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: false,
+							airedEpisodeCount: 1,
+							plexSource: 'live',
+							episodes: [
+								{
+									episode: 1,
+									name: 'Pilot',
+									airDate: '2026-01-01',
+									plexStatus: 'missing',
+									// An adopted grab: never appears in any tracker search, so
+									// this strip is its only reachable remove control.
+									manualGrabs: [grab(1, 'adopted from transmission', 'queued', 'hash-adopted')]
+								}
+							]
+						}
+					]
+				},
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			expect(screen.queryByText('Grab attempts')).not.toBeInTheDocument();
+			await fireEvent.click(screen.getByText('Queued via eztv'));
+
+			expect(screen.getByText('Grab attempts')).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+		});
+
+		it("hides the attempt history's remove buttons when the operator cannot write", async () => {
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(1),
+				episodeStatus: statusWithGrabHistory,
+				episodeStatusError: null,
+				canWrite: false,
+				refreshGeneration: 0
+			});
+
+			await fireEvent.click(screen.getByText('Stalled (1)'));
+
+			expect(screen.getByText('Grab attempts')).toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: 'Stalled — remove' })).not.toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
 		});
 	});
 });

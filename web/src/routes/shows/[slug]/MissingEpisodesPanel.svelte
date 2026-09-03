@@ -9,6 +9,8 @@
 	import { broadcastTodayIsoDate } from '$lib/helpers';
 	import { toast } from '$lib/toast';
 	import type {
+		EpisodeManualGrabInfo,
+		EpisodeManualGrabState,
 		ShowBreakdown,
 		ShowEpisodeStatus,
 		SeasonWithStatus,
@@ -172,6 +174,13 @@
 		seenRefreshGeneration = props.refreshGeneration;
 		if (isNewShow || isExplicitRefresh) {
 			seasonCache = {};
+		}
+		// Keyed `season:episode` only, so it would otherwise survive a
+		// navigation to a different show and render that show's S2E5 attempt
+		// strip pre-expanded — this component instance is deliberately reused
+		// across shows (see seenSlug above).
+		if (isNewShow) {
+			untrack(() => (expandedAttemptsKey = null));
 		}
 
 		if (!props.episodeStatus || props.episodeStatus.seasons.length === 0) {
@@ -425,29 +434,97 @@
 		return `${(bytes / 1_048_576).toFixed(0)} MB`;
 	}
 
-	/** Collapses an episode's active grabs into one "Queued via X" pill per
-	 * distinct source, with a count when more than one grab shares that
-	 * source (e.g. a replacement grabbed from the same tracker as the
-	 * stalled one it's meant to replace) — reads as "Queued via thepiratebay
-	 * (2)" instead of two identical pills side by side. Order follows first
-	 * appearance in `grabs` (already most-recent-first), not alphabetical.
-	 * Purely a display grouping — the per-grab stalled/remove state below
-	 * stays keyed to each individual grab regardless of this collapsing. */
-	function groupBySource(grabs: { source: string }[]): { source: string; count: number }[] {
-		const counts: { source: string; count: number }[] = [];
-		for (const grab of grabs) {
-			const existing = counts.find((c) => c.source === grab.source);
-			if (existing) {
-				existing.count++;
-			} else {
-				counts.push({ source: grab.source, count: 1 });
-			}
-		}
-		return counts;
+	function grabsInState(
+		grabs: EpisodeManualGrabInfo[],
+		...states: EpisodeManualGrabState[]
+	): EpisodeManualGrabInfo[] {
+		return grabs.filter((grab) => states.includes(grab.state));
 	}
 
-	let pendingGrabId = $state<number | null>(null);
-	let pendingRemoveHash = $state<string | null>(null);
+	/** How many *torrents* these grab rows represent, which is not the same as
+	 * how many rows there are: ManualGrabsStore.setDisposition marks every
+	 * undisposed row sharing a hash, so removing a magnet that happened to be
+	 * grabbed twice for one episode disposes two rows at once and would
+	 * otherwise read as "Attempted (2)" for a single removal. Rows with no
+	 * hash at all (a grab whose Transmission add never returned one) each
+	 * count once — there's nothing to collapse them by. */
+	function countTorrents(grabs: EpisodeManualGrabInfo[]): number {
+		const hashes = new Set<string>();
+		let hashless = 0;
+		for (const grab of grabs) {
+			if (grab.transmissionTorrentHash) hashes.add(grab.transmissionTorrentHash);
+			else hashless++;
+		}
+		return hashes.size + hashless;
+	}
+
+	/** Collapses grabs into one pill per distinct source, with a torrent count
+	 * when more than one shares that source (e.g. a replacement grabbed from
+	 * the same tracker as the stalled one it's meant to replace) — reads as
+	 * "Queued via thepiratebay (2)" instead of two identical pills side by
+	 * side. Order follows first appearance in `grabs` (already
+	 * most-recent-first), not alphabetical. Purely a display grouping — the
+	 * per-grab state and actions stay keyed to each individual grab. */
+	function groupBySource(grabs: EpisodeManualGrabInfo[]): { source: string; count: number }[] {
+		const bySource: { source: string; grabs: EpisodeManualGrabInfo[] }[] = [];
+		for (const grab of grabs) {
+			const existing = bySource.find((entry) => entry.source === grab.source);
+			if (existing) existing.grabs.push(grab);
+			else bySource.push({ source: grab.source, grabs: [grab] });
+		}
+		return bySource.map(({ source, grabs: sourceGrabs }) => ({
+			source,
+			count: countTorrents(sourceGrabs)
+		}));
+	}
+
+	/** Every grab recorded against this exact release title. Exact string
+	 * equality on rawTitle is the only join the data supports — the same
+	 * release listed on the *other* tracker with different punctuation will
+	 * not match, which is a known ceiling on how good per-result state can
+	 * get, not a bug to chase. */
+	function grabsForTitle(grabs: EpisodeManualGrabInfo[], title: string): EpisodeManualGrabInfo[] {
+		return grabs.filter((grab) => grab.rawTitle === title);
+	}
+
+	const GRAB_STATE_LABEL: Record<EpisodeManualGrabState, string> = {
+		queued: 'Queued',
+		stalled: 'Stalled',
+		completed: 'Completed',
+		removed: 'Removed'
+	};
+
+	const GRAB_STATE_CLASS: Record<EpisodeManualGrabState, string> = {
+		queued: 'border-primary/20 bg-primary/12 text-primary',
+		stalled: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+		completed: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+		removed: 'border-muted-foreground/25 bg-muted/40 text-muted-foreground'
+	};
+
+	function shortDate(iso: string | null): string {
+		return iso ? iso.slice(0, 10) : '';
+	}
+
+	/** Which episode's attempt history is expanded, keyed `season:episode`.
+	 * One at a time, same as the search-result lists. */
+	let expandedAttemptsKey = $state<string | null>(null);
+
+	function attemptsKey(season: number, episode: number): string {
+		return `${season}:${episode}`;
+	}
+
+	function toggleAttempts(season: number, episode: number): void {
+		const key = attemptsKey(season, episode);
+		expandedAttemptsKey = expandedAttemptsKey === key ? null : key;
+	}
+
+	// Sets, not single slots. The workflow this panel exists for is "fire
+	// several releases at the same episode and keep whichever swarm survives"
+	// — a single `pendingGrabId` disabled *every* Grab button on the page
+	// while one request was in flight, which made exactly that impossible.
+	// Plain arrays reassigned on write, since $state doesn't proxy a Set.
+	let pendingGrabIds = $state<number[]>([]);
+	let pendingRemoveHashes = $state<string[]>([]);
 
 	// Reuses Torrent Manager's own remove-and-delete action (see
 	// resolveManagedTorrentAction/api.ts) via a dedicated form action on this
@@ -456,8 +533,8 @@
 	// different release can be grabbed for the same episode, without a trip
 	// to Torrent Manager. See grill-me: torrent queue/grab UX fixes,
 	// 2026-09-01, slice 3.
-	function enhanceRemoveStalled(hash: string) {
-		pendingRemoveHash = hash;
+	function enhanceRemoveGrab(hash: string, season: number) {
+		pendingRemoveHashes = [...pendingRemoveHashes, hash];
 		return async ({
 			result,
 			update
@@ -468,12 +545,16 @@
 			// Same one-round-trip reasoning as enhanceGrab below: removing a
 			// torrent changes this episode's manual-grab rows and nothing else
 			// on the page, so apply the action result and re-fetch only the
-			// season on screen.
+			// season this grab belongs to. That season, not selectedSeason:
+			// switching seasons mid-request would otherwise refresh the wrong
+			// grid and leave the removed torrent on screen until its own season
+			// is clicked again.
 			await update({ invalidateAll: false });
-			pendingRemoveHash = null;
-			if (selectedSeason !== null) void loadSeason(selectedSeason, { force: true });
+			// Awaited before the button is re-enabled — see enhanceGrab.
+			await loadSeason(season, { force: true });
+			pendingRemoveHashes = pendingRemoveHashes.filter((h) => h !== hash);
 			if (result.type === 'success') {
-				toast('Removed', 'success', 'Stalled torrent removed — pick another release below.');
+				toast('Removed', 'success', 'Torrent removed — pick another release below.');
 			} else if (result.type === 'failure') {
 				toast('Remove failed', 'error', (result.data?.removeMessage as string) ?? undefined);
 			} else if (result.type === 'error') {
@@ -482,8 +563,8 @@
 		};
 	}
 
-	function enhanceGrab(torrentId: number, season: number, episode: number) {
-		pendingGrabId = torrentId;
+	function enhanceGrab(torrentId: number, season: number) {
+		pendingGrabIds = [...pendingGrabIds, torrentId];
 		return async ({
 			result,
 			update
@@ -500,32 +581,42 @@
 			// third of the work, and the top-of-page cards it skips (Plex
 			// Status, Last Watched) can't change from queueing a torrent anyway.
 			await update({ invalidateAll: false });
-			pendingGrabId = null;
 			if (result.type === 'success') {
 				toast('Queued', 'success', (result.data?.grabMessage as string) ?? undefined);
-				// This episode is grabbed — every source's cached result list
-				// for it is now stale noise, not just the one it was grabbed
-				// from. Leaving another source's list showing (with a live
-				// Grab button) is exactly the duplicate-grab risk this cleanup
-				// exists to prevent. Collapse whichever one is open and drop
-				// every cached result keyed to this episode, regardless of
-				// source, so a future expand re-searches fresh.
-				const episodeKeys = SEARCH_SOURCES.map((s) => episodeKey(season, episode, s.source));
-				if (episodeKeys.includes(expandedKey ?? '')) expandedKey = null;
-				const rest = { ...searchResults };
-				for (const k of episodeKeys) delete rest[k];
-				searchResults = rest;
-				// This episode's manual-grab rows just changed — re-fetch this
-				// one season so the "Queued via X" pill appears. Forced rather
-				// than delete-then-load: loadSeason now refreshes a ready
-				// season in place, so the grid never unmounts and the page
-				// height never moves.
-				void loadSeason(season, { force: true });
+				// The open result list deliberately STAYS open, and its cached
+				// results deliberately stay cached (2026-09-03). Collapsing on
+				// a successful grab existed to stop the operator re-grabbing
+				// the same episode from a stale list — that risk is now
+				// handled at its source, since every result card derives its
+				// own Queued/Stalled/Completed/Attempted badge from
+				// episode.manualGrabs and hides or demotes its Grab button
+				// accordingly, including in the *other* source's list once
+				// it's re-opened. Collapsing on top of that only served to
+				// yank the page out from under an operator who had scrolled
+				// down to find the release, and who is usually about to try a
+				// second one.
+				//
+				// Re-fetch this one season so the new grab's badges appear.
+				// Forced rather than delete-then-load: loadSeason refreshes a
+				// ready season in place, so the grid never unmounts and the
+				// page height never moves.
+				//
+				// AWAITED, and the button stays disabled until it lands. This
+				// refetch is a live Plex+TMDB season walk that can legitimately
+				// run for seconds (see loadSeason's own note, and the 8s retry
+				// threshold above) — and until it resolves, the card still
+				// shows a plain enabled Grab with no Queued badge. Re-enabling
+				// on the toast alone reopens exactly the double-grab window the
+				// removed auto-collapse used to guard: the operator sees the
+				// toast, sees the card unchanged, clicks again, and queues the
+				// identical magnet twice.
+				await loadSeason(season, { force: true });
 			} else if (result.type === 'failure') {
 				toast('Grab failed', 'error', (result.data?.grabMessage as string) ?? undefined);
 			} else if (result.type === 'error') {
 				toast('Grab failed', 'error', 'Could not reach the API.');
 			}
+			pendingGrabIds = pendingGrabIds.filter((id) => id !== torrentId);
 		};
 	}
 </script>
@@ -631,6 +722,12 @@
 						episode.plexStatus === 'missing' && isConfirmedUnaired(episode.airDate)
 							? 'unaired'
 							: episode.plexStatus}
+					{@const queuedGrabs = grabsInState(episode.manualGrabs, 'queued')}
+					{@const stalledGrabs = grabsInState(episode.manualGrabs, 'stalled')}
+					{@const completedGrabs = grabsInState(episode.manualGrabs, 'completed')}
+					{@const attemptedGrabs = grabsInState(episode.manualGrabs, 'removed')}
+					{@const attemptsOpen =
+						expandedAttemptsKey === attemptsKey(activeSeason.season, episode.episode)}
 					<div class="bg-card/74 rounded-[24px] border border-white/10 p-4">
 						<div class="flex flex-wrap items-start justify-between gap-3">
 							<div class="min-w-0">
@@ -648,42 +745,138 @@
 							</div>
 							<div class="flex flex-wrap items-center justify-end gap-2">
 								{#if episode.plexStatus !== 'in_library'}
-									{#each groupBySource(episode.manualGrabs) as { source, count } (source)}
-										<Badge class="border-primary/20 bg-primary/12 text-primary">
-											Queued via {source}{count > 1 ? ` (${count})` : ''}
-										</Badge>
+									<!-- Queued and Stalled are counted separately rather than both
+									     rolling up into "Queued via X": a stalled torrent is still
+									     technically queued in Transmission, so counting it twice
+									     would read as two live downloads when there is one. -->
+									<!-- A toggle like the other pills, not a bare badge: an
+									     episode whose only grabs are 'queued' has no Stalled or
+									     Attempted pill to open the attempt strip with, and that
+									     is precisely the case for every adopted grab (which
+									     never appears in a tracker search) and for a healthy
+									     grab the operator wants to cancel before the 24h stall
+									     threshold. Without this the strip is unreachable for
+									     exactly the grabs it was built to reach. -->
+									{#each groupBySource(queuedGrabs) as { source, count } (source)}
+										<button
+											type="button"
+											aria-expanded={attemptsOpen}
+											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
+										>
+											<Badge class={`${GRAB_STATE_CLASS.queued} cursor-pointer`}>
+												Queued via {source}{count > 1 ? ` (${count})` : ''}
+											</Badge>
+										</button>
 									{/each}
-									{#each episode.manualGrabs as grab (grab.transmissionTorrentHash ?? grab.queuedAt)}
-										{#if grab.stalled && grab.transmissionTorrentHash && props.canWrite}
+									{#if stalledGrabs.length > 0}
+										<button
+											type="button"
+											aria-expanded={attemptsOpen}
+											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
+										>
+											<Badge class={`${GRAB_STATE_CLASS.stalled} cursor-pointer`}>
+												Stalled ({countTorrents(stalledGrabs)})
+											</Badge>
+										</button>
+									{/if}
+									{#if completedGrabs.length > 0}
+										<button
+											type="button"
+											aria-expanded={attemptsOpen}
+											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
+										>
+											<Badge class={`${GRAB_STATE_CLASS.completed} cursor-pointer`}>
+												Completed ({countTorrents(completedGrabs)})
+											</Badge>
+										</button>
+									{/if}
+									{#if attemptedGrabs.length > 0}
+										<button
+											type="button"
+											aria-expanded={attemptsOpen}
+											onclick={() => toggleAttempts(activeSeason.season, episode.episode)}
+										>
+											<Badge class={`${GRAB_STATE_CLASS.removed} cursor-pointer`}>
+												Attempted ({countTorrents(attemptedGrabs)})
+											</Badge>
+										</button>
+									{/if}
+								{/if}
+								<StatusChip status={displayStatus} />
+							</div>
+						</div>
+
+						<!-- The canonical inventory of everything ever grabbed for this
+						     episode, and the canonical place to clear one. It is
+						     deliberately NOT derived from search results: an adopted grab
+						     (source 'adopted-transmission'/'adopted-filesystem') came from
+						     Transmission or from disk and will never appear in any tracker
+						     search, and a release grabbed yesterday may have shuffled off
+						     today's first page — in both cases the result-card remove
+						     button is unreachable and this strip is the only way to clear
+						     a torrent without a trip to Torrent Manager. -->
+						{#if episode.plexStatus !== 'in_library' && attemptsOpen && episode.manualGrabs.length > 0}
+							<div class="border-border/60 mt-3 space-y-2 rounded-2xl border border-dashed p-3">
+								<p
+									class="text-muted-foreground text-[11px] font-semibold tracking-[0.18em] uppercase"
+								>
+									Grab attempts
+								</p>
+								{#each episode.manualGrabs as grab (grab.id)}
+									<div
+										class="bg-background/40 flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-2"
+									>
+										<div class="min-w-0 flex-1 space-y-1">
+											<p class="truncate text-xs font-medium">{grab.rawTitle}</p>
+											<div class="flex flex-wrap items-center gap-2 text-[11px]">
+												<Badge class={GRAB_STATE_CLASS[grab.state]}>
+													{GRAB_STATE_LABEL[grab.state]}
+												</Badge>
+												<span class="text-muted-foreground">{grab.source}</span>
+												<span class="text-muted-foreground">
+													queued {shortDate(grab.queuedAt)}
+													{#if grab.doneAt}· done {shortDate(grab.doneAt)}{/if}
+													{#if grab.disposedAt && !grab.doneAt}· removed {shortDate(
+															grab.disposedAt
+														)}{/if}
+												</span>
+											</div>
+										</div>
+										<!-- Removable whenever the torrent is still in Transmission —
+										     which includes a 'completed' one that hasn't been disposed
+										     (finished and still seeding). `disposed` is what answers
+										     that, not `state`: 'completed' outranks 'removed', so a
+										     finished-then-cleared torrent reads 'completed' too, and
+										     offering Remove for it would only earn a 400. -->
+										{#if !grab.disposed && grab.transmissionTorrentHash && props.canWrite}
 											{@const hash = grab.transmissionTorrentHash}
 											<form
 												method="POST"
 												action="?/removeStalledGrab"
-												use:enhance={() => enhanceRemoveStalled(hash)}
+												use:enhance={() => enhanceRemoveGrab(hash, activeSeason.season)}
 											>
 												<input type="hidden" name="hash" value={hash} />
 												<Button
 													type="submit"
 													variant="outline"
 													size="sm"
-													class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
-													disabled={pendingRemoveHash !== null}
+													class="border-destructive/30 text-destructive hover:bg-destructive/10 shrink-0 rounded-full"
+													disabled={pendingRemoveHashes.includes(hash)}
 												>
-													{#if pendingRemoveHash === hash}
+													{#if pendingRemoveHashes.includes(hash)}
 														<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
 														Removing…
 													{:else}
 														<Trash2Icon class="mr-2 h-3.5 w-3.5" />
-														Stalled — remove
+														{grab.state === 'stalled' ? 'Stalled — remove' : 'Remove'}
 													{/if}
 												</Button>
 											</form>
 										{/if}
-									{/each}
-								{/if}
-								<StatusChip status={displayStatus} />
+									</div>
+								{/each}
 							</div>
-						</div>
+						{/if}
 
 						{#if episode.plexStatus === 'missing' && props.canWrite && hasAired(episode.airDate)}
 							<div class="mt-3 flex flex-wrap gap-2">
@@ -730,19 +923,46 @@
 											</p>
 										{:else}
 											{#each lookup.torrents as torrent (torrent.id)}
-												{@const isAlreadyQueued = episode.manualGrabs.some(
-													(grab) => grab.rawTitle === torrent.title
-												)}
+												<!-- Everything this release has ever been tried as, joined
+												     by exact title. This is what replaced collapsing the
+												     whole list on a successful grab: the duplicate-grab
+												     risk is answered on the card itself, so the list can
+												     stay open while the operator lines up a second try. -->
+												{@const matched = grabsForTitle(episode.manualGrabs, torrent.title)}
+												{@const matchedStalled = grabsInState(matched, 'stalled')}
+												{@const matchedQueued = grabsInState(matched, 'queued')}
+												{@const matchedCompleted = grabsInState(matched, 'completed')}
+												{@const matchedAttempted = grabsInState(matched, 'removed')}
+												<!-- Only a *queued* match blocks re-grabbing. A 'completed'
+											     one deliberately does not: done_at is stamped once and
+											     never expires, so a release that finished but whose
+											     episode still reads MISSING (bad import, wrong filename,
+											     file since deleted) would otherwise be a permanent dead
+											     end — no Grab, no Remove — exactly when re-grabbing is
+											     the thing the operator wants. It falls through to the
+											     demoted "Grab anyway" below instead. -->
+												{@const isLive = matchedQueued.length > 0}
 												<div
 													class="bg-background/50 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 px-4 py-3"
 												>
 													<div class="min-w-0 flex-1 space-y-1">
 														<p class="truncate text-sm font-medium">{torrent.title}</p>
 														<div class="flex flex-wrap gap-2 text-xs">
-															{#if isAlreadyQueued}
-																<Badge class="border-amber-500/30 bg-amber-500/10 text-amber-400">
+															{#if matchedQueued.length > 0}
+																<Badge class={GRAB_STATE_CLASS.queued}>
 																	<LinkIcon class="mr-1 h-3 w-3" />
-																	This is the queued torrent
+																	Queued
+																</Badge>
+															{/if}
+															{#if matchedStalled.length > 0}
+																<Badge class={GRAB_STATE_CLASS.stalled}>Stalled</Badge>
+															{/if}
+															{#if matchedCompleted.length > 0}
+																<Badge class={GRAB_STATE_CLASS.completed}>Completed</Badge>
+															{/if}
+															{#if matchedAttempted.length > 0}
+																<Badge class={GRAB_STATE_CLASS.removed}>
+																	Attempted ({countTorrents(matchedAttempted)})
 																</Badge>
 															{/if}
 															{#if torrent.resolution}
@@ -757,41 +977,84 @@
 															>
 														</div>
 													</div>
-													<form
-														method="POST"
-														action="?/manualGrab"
-														use:enhance={() =>
-															enhanceGrab(torrent.id, activeSeason.season, episode.episode)}
-													>
-														<input type="hidden" name="season" value={activeSeason.season} />
-														<input type="hidden" name="episode" value={episode.episode} />
-														<input type="hidden" name="magnetUrl" value={torrent.magnetUrl} />
-														<input type="hidden" name="rawTitle" value={torrent.title} />
-														<input type="hidden" name="source" value={source} />
-														{#if torrent.resolution}
-															<input type="hidden" name="resolution" value={torrent.resolution} />
-														{/if}
-														{#if torrent.codec}
-															<input type="hidden" name="codec" value={torrent.codec} />
-														{/if}
-														<input type="hidden" name="sizeBytes" value={torrent.sizeBytes} />
-														<input type="hidden" name="seeds" value={torrent.seeds} />
-														<input type="hidden" name="peers" value={torrent.peers} />
-														<Button
-															type="submit"
-															size="sm"
-															class="shrink-0 rounded-full"
-															disabled={pendingGrabId !== null}
+													{#if matchedStalled.length > 0 && matchedStalled[0].transmissionTorrentHash && props.canWrite}
+														<!-- Same server action as the attempts strip above, put
+														     on the card the operator is already looking at.
+														     Stalled means "this swarm is dead" — the useful
+														     action here is clearing it, not grabbing it again. -->
+														{@const stalledHash = matchedStalled[0].transmissionTorrentHash}
+														<form
+															method="POST"
+															action="?/removeStalledGrab"
+															use:enhance={() =>
+																enhanceRemoveGrab(stalledHash, activeSeason.season)}
 														>
-															{#if pendingGrabId === torrent.id}
-																<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
-																Queuing…
-															{:else}
-																<DownloadIcon class="mr-2 h-3.5 w-3.5" />
-																Grab
+															<input type="hidden" name="hash" value={stalledHash} />
+															<Button
+																type="submit"
+																variant="outline"
+																size="sm"
+																class="border-destructive/30 text-destructive hover:bg-destructive/10 shrink-0 rounded-full"
+																disabled={pendingRemoveHashes.includes(stalledHash)}
+															>
+																{#if pendingRemoveHashes.includes(stalledHash)}
+																	<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+																	Removing…
+																{:else}
+																	<Trash2Icon class="mr-2 h-3.5 w-3.5" />
+																	Remove + delete
+																{/if}
+															</Button>
+														</form>
+													{:else if isLive}
+														<!-- Already queued, or already downloaded and waiting on a
+														     Plex scan. Nothing to do from here; re-grabbing would
+														     just add a duplicate torrent for the same file. -->
+													{:else}
+														<form
+															method="POST"
+															action="?/manualGrab"
+															use:enhance={() => enhanceGrab(torrent.id, activeSeason.season)}
+														>
+															<input type="hidden" name="season" value={activeSeason.season} />
+															<input type="hidden" name="episode" value={episode.episode} />
+															<input type="hidden" name="magnetUrl" value={torrent.magnetUrl} />
+															<input type="hidden" name="rawTitle" value={torrent.title} />
+															<input type="hidden" name="source" value={source} />
+															{#if torrent.resolution}
+																<input type="hidden" name="resolution" value={torrent.resolution} />
 															{/if}
-														</Button>
-													</form>
+															{#if torrent.codec}
+																<input type="hidden" name="codec" value={torrent.codec} />
+															{/if}
+															<input type="hidden" name="sizeBytes" value={torrent.sizeBytes} />
+															<input type="hidden" name="seeds" value={torrent.seeds} />
+															<input type="hidden" name="peers" value={torrent.peers} />
+															<Button
+																type="submit"
+																size="sm"
+																variant={matchedAttempted.length > 0 || matchedCompleted.length > 0
+																	? 'outline'
+																	: 'default'}
+																class="shrink-0 rounded-full"
+																disabled={pendingGrabIds.includes(torrent.id)}
+															>
+																{#if pendingGrabIds.includes(torrent.id)}
+																	<Loader2Icon class="mr-2 h-3.5 w-3.5 animate-spin" />
+																	Queuing…
+																{:else}
+																	<DownloadIcon class="mr-2 h-3.5 w-3.5" />
+																	<!-- Demoted, not blocked: a swarm that was dead
+																     yesterday can be alive today, so this stays
+																     clickable — it just stops looking like the
+																     obvious next move. -->
+																	{matchedAttempted.length > 0 || matchedCompleted.length > 0
+																		? 'Grab anyway'
+																		: 'Grab'}
+																{/if}
+															</Button>
+														</form>
+													{/if}
 												</div>
 											{/each}
 										{/if}

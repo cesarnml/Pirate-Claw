@@ -394,11 +394,11 @@ describe('buildShowEpisodeStatus', () => {
     });
 
     expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
-      { source: 'eztv', rawTitle: 'grabbed release' },
+      { source: 'eztv', rawTitle: 'grabbed release', state: 'queued' },
     ]);
   });
 
-  it('drops a manual grab already marked removed/deleted — the "Queued" badge must revert to plain plexStatus, not stick forever (grill-me: torrent queue/grab UX fixes, 2026-09-01)', async () => {
+  it('reports a removed/deleted grab as state "removed" rather than dropping it — that history is what marks a release Attempted so it isn\'t re-grabbed (grill-me: per-torrent grab state, 2026-09-03)', async () => {
     const db = freshDb();
     const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
     const manualGrabs = new ManualGrabsStore(db);
@@ -411,17 +411,101 @@ describe('buildShowEpisodeStatus', () => {
       transmissionTorrentHash: 'stalled-hash',
       transmissionTorrentId: 1,
     });
-    manualGrabs.setDisposition('stalled-hash', 'deleted');
+    manualGrabs.setDisposition(
+      'stalled-hash',
+      'deleted',
+      '2026-09-02T10:00:00.000Z',
+    );
 
     const result = await buildShowEpisodeStatus(showFixture(4), {
       tmdb,
       manualGrabs,
     });
 
-    expect(result?.seasons[0].episodes[0].manualGrabs).toEqual([]);
+    expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
+      {
+        rawTitle: 'stalled release',
+        state: 'removed',
+        disposedAt: '2026-09-02T10:00:00.000Z',
+      },
+    ]);
   });
 
-  it('keeps only the still-active grab when an older one for the same episode was removed/deleted', async () => {
+  it('reports a grab observed at 100% as "completed", outranking a later disposition — a torrent that finished and was then cleared out of Transmission is not a failed attempt', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
+    const manualGrabs = new ManualGrabsStore(db);
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'finished release',
+      transmissionTorrentHash: 'done-hash',
+      transmissionTorrentId: 1,
+    });
+    manualGrabs.markDone('done-hash', '2026-09-01T00:00:00.000Z');
+    manualGrabs.setDisposition('done-hash', 'removed');
+
+    const result = await buildShowEpisodeStatus(showFixture(4), {
+      tmdb,
+      manualGrabs,
+    });
+
+    expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
+      {
+        state: 'completed',
+        doneAt: '2026-09-01T00:00:00.000Z',
+        disposed: true,
+      },
+    ]);
+  });
+
+  it('does not back-stamp a re-grab\'s completion onto the abandoned earlier row that shares its hash — the Attempted history must survive "Grab anyway"', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
+    const manualGrabs = new ManualGrabsStore(db);
+    // Same magnet grabbed, given up on, then grabbed again — one hash, two
+    // rows. Only the live one may be marked done.
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'stubborn release',
+      transmissionTorrentHash: 'same-hash',
+      transmissionTorrentId: 1,
+      queuedAt: '2026-08-01T00:00:00.000Z',
+    });
+    manualGrabs.setDisposition(
+      'same-hash',
+      'deleted',
+      '2026-08-02T00:00:00.000Z',
+    );
+    manualGrabs.record({
+      normalizedTitle: 'strange new worlds',
+      season: 4,
+      episode: 1,
+      source: 'eztv',
+      rawTitle: 'stubborn release',
+      transmissionTorrentHash: 'same-hash',
+      transmissionTorrentId: 2,
+      queuedAt: '2026-08-03T00:00:00.000Z',
+    });
+    manualGrabs.markDone('same-hash', '2026-08-04T00:00:00.000Z');
+
+    const result = await buildShowEpisodeStatus(showFixture(4), {
+      tmdb,
+      manualGrabs,
+    });
+
+    expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
+      { state: 'completed', doneAt: '2026-08-04T00:00:00.000Z' },
+      { state: 'removed', doneAt: null },
+    ]);
+  });
+
+  it('carries both the removed and the still-active grab when an older one for the same episode was removed/deleted', async () => {
     const db = freshDb();
     const tmdb = fakeTmdb({ 4: [{ episode_number: 1, name: 'Ep 1' }] });
     const manualGrabs = new ManualGrabsStore(db);
@@ -453,7 +537,16 @@ describe('buildShowEpisodeStatus', () => {
     });
 
     expect(result?.seasons[0].episodes[0].manualGrabs).toMatchObject([
-      { source: 'thepiratebay', rawTitle: 'second attempt, active' },
+      {
+        source: 'thepiratebay',
+        rawTitle: 'second attempt, active',
+        state: 'queued',
+      },
+      {
+        source: 'eztv',
+        rawTitle: 'first attempt, stalled',
+        state: 'removed',
+      },
     ]);
   });
 

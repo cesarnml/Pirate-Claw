@@ -29,6 +29,14 @@ export type ManualGrabRecord = {
    * store) because episode-status.ts needs it to stop showing "Queued" for
    * a grab that was pulled before it ever completed. */
   disposition: PirateClawDisposition | null;
+  /** When `disposition` was recorded — null while the grab is still active,
+   * and null for rows disposed before disposed_at existed. See the column's
+   * schema comment. */
+  disposedAt: string | null;
+  /** When this grab's torrent was first observed at 100% — see markDone.
+   * null means "never seen complete", which for a still-active grab is the
+   * ordinary case. */
+  doneAt: string | null;
 };
 
 export type RecordManualGrabInput = {
@@ -91,6 +99,8 @@ type ManualGrabRow = {
   transmission_torrent_id: number | null;
   queued_at: string;
   disposition: string | null;
+  disposed_at: string | null;
+  done_at: string | null;
 };
 
 function rowToRecord(row: ManualGrabRow): ManualGrabRecord {
@@ -105,6 +115,8 @@ function rowToRecord(row: ManualGrabRow): ManualGrabRecord {
     transmissionTorrentId: row.transmission_torrent_id,
     queuedAt: row.queued_at,
     disposition: row.disposition as PirateClawDisposition | null,
+    disposedAt: row.disposed_at,
+    doneAt: row.done_at,
   };
 }
 
@@ -162,6 +174,8 @@ export class ManualGrabsStore {
       transmissionTorrentId: input.transmissionTorrentId,
       queuedAt,
       disposition: null,
+      disposedAt: null,
+      doneAt: null,
     };
   }
 
@@ -255,14 +269,20 @@ export class ManualGrabsStore {
    * from the Torrent Manager remove/remove-and-delete/dispose handlers
    * (api.ts), same as candidate_state's disposition. Only the first
    * disposition sticks (WHERE disposition IS NULL): a hash already marked
-   * terminal shouldn't flip states again. */
-  setDisposition(hash: string, disposition: PirateClawDisposition): void {
+   * terminal shouldn't flip states again. Stamps disposed_at alongside it so
+   * the attempt history is orderable and time-to-failure is derivable — see
+   * that column's schema comment. */
+  setDisposition(
+    hash: string,
+    disposition: PirateClawDisposition,
+    disposedAt: string = new Date().toISOString(),
+  ): void {
     this.database
       .query(
-        `UPDATE manual_grabs SET disposition = ?2
+        `UPDATE manual_grabs SET disposition = ?2, disposed_at = ?3
          WHERE transmission_torrent_hash = ?1 AND disposition IS NULL`,
       )
-      .run(hash, disposition);
+      .run(hash, disposition, disposedAt);
   }
 
   /** Records the first observed completion for a manually-grabbed torrent —
@@ -270,12 +290,25 @@ export class ManualGrabsStore {
    * 100% done. Idempotent: only rows still NULL are touched, so the first
    * completion timestamp sticks even if this fires again later (e.g. after
    * a re-seed cycle resets Transmission's own doneDate). See done_at's
-   * schema comment for why this can't just be read live from Transmission. */
+   * schema comment for why this can't just be read live from Transmission.
+   *
+   * Skips rows already in a terminal disposition, not just already-done ones.
+   * A hash identifies a magnet, not a grab, so re-grabbing a release that was
+   * previously given up on produces a second row with the SAME hash — and
+   * without this guard, the new row completing would back-stamp done_at onto
+   * the old abandoned row too. Since done_at outranks disposition in
+   * toGrabState (episode-status.ts), that would silently rewrite "I tried
+   * this release and it died" into "this release completed", erasing the
+   * Attempted history the panel shows and feeding a false success to the
+   * auto-grab heuristic these columns are being collected for. A row already
+   * disposed cannot newly complete, so nothing legitimate is lost. */
   markDone(hash: string, doneAt: string): void {
     this.database
       .query(
         `UPDATE manual_grabs SET done_at = ?2
-         WHERE transmission_torrent_hash = ?1 AND done_at IS NULL`,
+         WHERE transmission_torrent_hash = ?1
+           AND done_at IS NULL
+           AND disposition IS NULL`,
       )
       .run(hash, doneAt);
   }
@@ -343,7 +376,7 @@ export class ManualGrabsStore {
       .query(
         `SELECT id, normalized_title, season, episode, source, raw_title,
                 transmission_torrent_hash, transmission_torrent_id, queued_at,
-                disposition
+                disposition, disposed_at, done_at
          FROM manual_grabs
          WHERE normalized_title = ?1
          ORDER BY queued_at DESC`,
