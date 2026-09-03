@@ -3669,21 +3669,61 @@ export function createApiFetch(
           );
         }
 
-        const showsStrings: string[] = [];
+        // Each entry is either a plain show name (no per-show matchPattern
+        // opinion — whatever's on disk for that name is preserved as-is,
+        // same as before this per-show override support existed) or an
+        // object naming an explicit matchPattern to set, e.g. the Config
+        // page's per-show "Strict" toggle
+        // (web/src/routes/config/+page.server.ts's saveShows action). A
+        // string row is NOT the same as "no opinion" when the disk entry's
+        // matchPattern is itself toggle-generated (see
+        // strictMatchPatternForShowName below): that combination means
+        // Strict was just turned back off, so the override should be
+        // dropped rather than silently reinstated — see
+        // mergeTvShowsPreservingDiskEntries.
+        const showsRequest: ShowsRequestEntry[] = [];
         for (let i = 0; i < rawShows.length; i++) {
           const entry = rawShows[i];
-          if (typeof entry !== 'string') {
-            throw new ConfigError(
-              `Config file "request body tv shows[${i}]" must be a string show name.`,
-            );
+          if (typeof entry === 'string') {
+            const trimmed = entry.trim();
+            if (!trimmed) {
+              throw new ConfigError(
+                `Config file "request body tv shows[${i}]" must be a non-empty show name.`,
+              );
+            }
+            showsRequest.push({ name: trimmed, hasMatchPatternField: false });
+            continue;
           }
-          const trimmed = entry.trim();
-          if (!trimmed) {
-            throw new ConfigError(
-              `Config file "request body tv shows[${i}]" must be a non-empty show name.`,
-            );
+          if (isRecord(entry)) {
+            const rawName = entry.name;
+            if (typeof rawName !== 'string' || !rawName.trim()) {
+              throw new ConfigError(
+                `Config file "request body tv shows[${i}] name" must be a non-empty string.`,
+              );
+            }
+            const hasMatchPatternField = 'matchPattern' in entry;
+            let matchPattern: string | undefined;
+            if (hasMatchPatternField) {
+              if (
+                typeof entry.matchPattern !== 'string' ||
+                !entry.matchPattern.trim()
+              ) {
+                throw new ConfigError(
+                  `Config file "request body tv shows[${i}] matchPattern" must be a non-empty string.`,
+                );
+              }
+              matchPattern = entry.matchPattern;
+            }
+            showsRequest.push({
+              name: rawName.trim(),
+              matchPattern,
+              hasMatchPatternField,
+            });
+            continue;
           }
-          showsStrings.push(trimmed);
+          throw new ConfigError(
+            `Config file "request body tv shows[${i}]" must be a string show name or an object with "name" and optional "matchPattern".`,
+          );
         }
 
         const baseOnDisk = await readConfigFileRecord(configPath);
@@ -3708,7 +3748,7 @@ export function createApiFetch(
         }
 
         const mergedShows = mergeTvShowsPreservingDiskEntries(
-          showsStrings,
+          showsRequest,
           oldShows,
         );
 
@@ -5370,13 +5410,52 @@ function truncateClientErrorField(
   return input.length > maxLength ? input.slice(0, maxLength) : input;
 }
 
+type ShowsRequestEntry = {
+  name: string;
+  matchPattern?: string;
+  // False for a plain-string request row: the caller expressed no opinion
+  // on matchPattern, so whatever's on disk for this name is normally kept.
+  // True for an object row (name + matchPattern, e.g. the Strict toggle
+  // turned on): the caller's matchPattern always wins, disk or not.
+  hasMatchPatternField: boolean;
+};
+
 /**
- * Build on-disk `tv.shows` from API name strings. When the previous file had a
- * matching show name, keep the existing entry (string or object) so per-show
- * fields edited only on disk are not dropped.
+ * Mirrors web/src/lib/tv-strict-match.ts's strictMatchPatternFor exactly —
+ * duplicated here (small, pure, tokenizing/escaping only) rather than
+ * imported since the web app and daemon are separate packages. Used only to
+ * recognize a disk matchPattern that the Strict toggle itself generated, so
+ * that turning it back off (see mergeTvShowsPreservingDiskEntries) can tell
+ * "the toggle set this, clear it" apart from "someone hand-authored this
+ * regex in config.json, leave it alone."
+ */
+function strictMatchPatternForShowName(name: string): string {
+  const normalizedName = name
+    .trim()
+    .replace(/[._-]+/g, ' ')
+    .replace(/[()[\]{}]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  const tokens = normalizedName
+    .split(' ')
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return '^$';
+  }
+  return `^${tokens.join(' +')}$`;
+}
+
+/**
+ * Build on-disk `tv.shows` from the API request's per-show entries. When the
+ * previous file had a matching show name, keep the existing entry's other
+ * fields (string or object) so per-show fields edited only on disk are not
+ * dropped — same as before per-show matchPattern overrides were settable
+ * through this endpoint (see ShowsRequestEntry's hasMatchPatternField for
+ * how a request row's own matchPattern, or the deliberate absence of one,
+ * takes precedence over that disk-preserving default).
  */
 function mergeTvShowsPreservingDiskEntries(
-  namesInOrder: string[],
+  requested: ShowsRequestEntry[],
   oldShows: unknown[],
 ): unknown[] {
   const byName = new Map<string, unknown>();
@@ -5395,17 +5474,40 @@ function mergeTvShowsPreservingDiskEntries(
   }
 
   const next: unknown[] = [];
-  for (const name of namesInOrder) {
+  for (const { name, matchPattern, hasMatchPatternField } of requested) {
     const prev = byName.get(name);
-    if (prev === undefined) {
-      next.push(name);
-    } else if (typeof prev === 'string') {
-      next.push(name);
-    } else if (isRecord(prev)) {
-      next.push({ ...prev, name });
-    } else {
-      next.push(name);
+
+    if (hasMatchPatternField) {
+      // Explicit override from this request — always wins over disk,
+      // including replacing a previously-different matchPattern.
+      next.push(
+        isRecord(prev)
+          ? { ...prev, name, matchPattern }
+          : { name, matchPattern },
+      );
+      continue;
     }
+
+    if (isRecord(prev)) {
+      if (
+        typeof prev.matchPattern === 'string' &&
+        prev.matchPattern === strictMatchPatternForShowName(name)
+      ) {
+        // Toggle-generated override, and this save carries no matchPattern
+        // for this row — Strict was just turned back off. Drop it rather
+        // than silently reinstating it (the pre-fix behavior — see this
+        // function's history for the 2026-09-03 bug this replaced).
+        const { matchPattern: _unused, ...rest } = prev;
+        next.push(Object.keys(rest).length > 1 ? { ...rest, name } : name);
+        continue;
+      }
+      // Hand-authored (or otherwise non-toggle) disk override this request
+      // didn't ask to touch — preserve it untouched.
+      next.push({ ...prev, name });
+      continue;
+    }
+
+    next.push(name);
   }
   return next;
 }

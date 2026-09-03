@@ -3298,6 +3298,151 @@ describe('PUT /api/config', () => {
     }
   });
 
+  // 2026-09-03: the Config page's per-show Strict toggle (see
+  // web/src/routes/config/+page.server.ts's saveShows action) sends an
+  // object entry ({ name, matchPattern }) for a strict row instead of a
+  // plain string — this endpoint used to reject any non-string entry
+  // outright (`must be a string show name`), so every save silently 400'd
+  // and no show's matchPattern was ever actually persisted despite the web
+  // UI reporting "TV show edited" success. These two tests cover the fix.
+  it('accepts an object entry to set a per-show matchPattern', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'pirate-claw-api-config-'),
+      );
+      const configPath = join(directory, 'pirate-claw.config.json');
+      await writeCompactTvConfigFile(configPath);
+      const loaded = await loadConfig(configPath);
+      const deps = createDeps();
+      deps.config = loaded;
+      deps.configPath = configPath;
+
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const put = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: {
+              shows: [
+                { name: 'Example Show', matchPattern: '^Example +Show$' },
+              ],
+            },
+          }),
+        }),
+      );
+
+      expect(put.status).toBe(200);
+      const disk = await Bun.file(configPath).json();
+      expect(disk.tv.shows).toEqual([
+        { name: 'Example Show', matchPattern: '^Example +Show$' },
+      ]);
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
+  it('clears a toggle-generated matchPattern when the row is resent as a plain name, but leaves a hand-authored one alone', async () => {
+    const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+    try {
+      const directory = await mkdtemp(
+        join(tmpdir(), 'pirate-claw-api-config-'),
+      );
+      const configPath = join(directory, 'pirate-claw.config.json');
+      const doc = {
+        feeds: [
+          {
+            name: 'TV Feed',
+            url: 'https://example.test/tv.rss',
+            mediaType: 'tv',
+          },
+        ],
+        tv: {
+          defaults: { resolutions: ['1080p'], codecs: ['x265'] },
+          shows: [
+            // Toggle-generated (matches strictMatchPatternForShowName) —
+            // resending this row as a plain string should clear it.
+            { name: 'Tomb raider', matchPattern: '^Tomb +raider$' },
+            // Hand-authored — doesn't match the generated pattern, must
+            // survive an unrelated save untouched.
+            { name: 'Beta', matchPattern: 'beta-pattern' },
+          ],
+        },
+        movies: {
+          years: [2024],
+          resolutions: ['1080p'],
+          codecs: ['x265'],
+          codecPolicy: 'prefer',
+        },
+        transmission: {
+          url: 'http://localhost:9091/transmission/rpc',
+          username: 'user',
+          password: 'pass',
+        },
+        runtime: {
+          runIntervalMinutes: RUN_INTERVAL_MINUTES_DEFAULT,
+          reconcileIntervalSeconds: RECONCILE_INTERVAL_SECONDS_DEFAULT,
+          artifactDir: '.pirate-claw/runtime',
+          artifactRetentionDays: 7,
+          apiWriteToken: 'write-token',
+        },
+      };
+      await Bun.write(configPath, `${JSON.stringify(doc, null, 2)}\n`);
+      const loaded = await loadConfig(configPath);
+      const deps = createDeps();
+      deps.config = loaded;
+      deps.configPath = configPath;
+
+      const handler = createApiFetch(deps);
+      const get = await handler(new Request('http://localhost/api/config'));
+      const etag = get.headers.get('etag')!;
+
+      const put = await handler(
+        new Request('http://localhost/api/config', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer write-token',
+            'if-match': etag,
+          },
+          body: JSON.stringify({
+            runtime: {},
+            tv: { shows: ['Tomb raider', 'Beta'] },
+          }),
+        }),
+      );
+
+      expect(put.status).toBe(200);
+      const disk = await Bun.file(configPath).json();
+      expect(disk.tv.shows[0]).toBe('Tomb raider');
+      expect(disk.tv.shows[1]).toEqual({
+        name: 'Beta',
+        matchPattern: 'beta-pattern',
+      });
+    } finally {
+      if (prevWrite !== undefined) {
+        process.env.PIRATE_CLAW_API_WRITE_TOKEN = prevWrite;
+      } else {
+        delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
+      }
+    }
+  });
+
   it('rejects tv.defaults in the request body', async () => {
     const prevWrite = process.env.PIRATE_CLAW_API_WRITE_TOKEN;
     delete process.env.PIRATE_CLAW_API_WRITE_TOKEN;
