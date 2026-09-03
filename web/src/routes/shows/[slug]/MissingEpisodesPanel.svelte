@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import StatusChip from '$lib/components/StatusChip.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
@@ -27,6 +26,11 @@
 		episodeStatus: ShowEpisodeStatus | null;
 		episodeStatusError: string | null;
 		canWrite: boolean;
+		/** Bumped by the parent page for the two actions that genuinely
+		 * invalidate every season at once (Refresh TMDB / Refresh Plex, both of
+		 * which re-walk server-side). Any *other* page-data change merges into
+		 * the season cache instead of clearing it — see the seeding effect. */
+		refreshGeneration: number;
 	}>();
 
 	const todayIsoDate = broadcastTodayIsoDate();
@@ -82,10 +86,26 @@
 	// Other seasons' buttons get their "(6/8)" suffix from show.seasonCompletions
 	// (cached counts, no live fetch) until the operator actually clicks into
 	// them, at which point their full grid is fetched once and cached here.
+	//
+	// A season already 'ready' never regresses to 'loading' when it's
+	// re-fetched — it stays ready and carries a `refreshingToken` instead.
+	// That distinction is the whole fix for the "tug of war" the operator
+	// reported (2026-09-03): the loading branch below replaces the entire
+	// episode grid with a single line of text, so collapsing a season we
+	// already have shrinks the page by thousands of pixels, the browser
+	// clamps scrollTop to the new height, and scroll anchoring then drags the
+	// viewport back down when the grid returns. Keeping the stale grid
+	// mounted keeps the page height stable, so a refresh is invisible except
+	// for the badges that actually changed.
 	type SeasonFetchState =
 		| { status: 'loading'; startedAt: number; token: number }
 		| { status: 'error'; message: string }
-		| { status: 'ready'; plexReachable: boolean; season: SeasonWithStatus };
+		| {
+				status: 'ready';
+				plexReachable: boolean;
+				season: SeasonWithStatus;
+				refreshingToken?: number;
+		  };
 	let seasonCache = $state<Record<number, SeasonFetchState>>({});
 	// Monotonic counter, one increment per loadSeason call — lets a resolving
 	// fetch tell whether it's still the latest attempt for its season before
@@ -123,36 +143,47 @@
 	// Show B also has a season 3, since the old seeding guard only wrote a
 	// season key the first time it was ever missing.
 	let seenSlug = $state<string | null>(null);
+	let seenRefreshGeneration = $state<number | null>(null);
 
 	// Seeds the cache with whatever season the server just loaded — the
 	// page's default season on first mount, but also whenever a fresh
-	// episodeStatus arrives later (a client-side show-to-show navigation,
-	// or an explicit "Refresh Plex"/"Refresh TMDB" reload). Every prior
-	// season entry is dropped rather than merged: a full reload can mean
-	// Refresh Plex just re-walked every season server-side, so a stale
-	// cached grid for some other season is no longer trustworthy either —
-	// safer to force a re-fetch next time it's viewed than to keep
-	// showing pre-refresh data under a "fresh" banner.
+	// episodeStatus arrives later.
+	//
+	// Merges by default; only wipes on a *different show* or an explicit
+	// refresh (props.refreshGeneration). The old code wiped unconditionally,
+	// which was honest for Refresh Plex (it really does re-walk every season
+	// server-side) but wrong for everything else: a manual grab on one
+	// episode discarded every other season this visit had already loaded and
+	// forced them to be re-fetched one at a time on the next click. Season
+	// data for a season the server didn't just re-walk is exactly as valid
+	// after an unrelated form action as it was before it.
 	$effect(() => {
 		// Reactive dependencies of this effect are deliberately just
-		// props.episodeStatus and props.slug — every read of selectedSeason
-		// below is wrapped in untrack so that clicking a season button
-		// (which sets selectedSeason from outside this effect) never
-		// re-triggers it. Without that, this effect would also depend on
-		// selectedSeason, and its own conditional loadSeason call below
-		// would double up with the click handler's own call every time.
-		if (!props.episodeStatus || props.episodeStatus.seasons.length === 0) {
+		// props.episodeStatus, props.slug and props.refreshGeneration — every
+		// read of selectedSeason below is wrapped in untrack so that clicking
+		// a season button (which sets selectedSeason from outside this
+		// effect) never re-triggers it. Without that, this effect would also
+		// depend on selectedSeason, and its own conditional loadSeason call
+		// below would double up with the click handler's own call every time.
+		const isNewShow = props.slug !== untrack(() => seenSlug);
+		const isExplicitRefresh =
+			untrack(() => seenRefreshGeneration) !== null &&
+			props.refreshGeneration !== untrack(() => seenRefreshGeneration);
+		seenRefreshGeneration = props.refreshGeneration;
+		if (isNewShow || isExplicitRefresh) {
 			seasonCache = {};
+		}
+
+		if (!props.episodeStatus || props.episodeStatus.seasons.length === 0) {
 			untrack(() => {
-				if (props.slug !== seenSlug) {
+				if (isNewShow) {
 					seenSlug = props.slug;
 					selectedSeason = null;
 				}
-				// The server's default season (the latest one — see the
-				// /episodes route's own comment) came back with no episode
-				// data at all, e.g. an announced-but-unaired season (found
-				// live 2026-08-30: Wednesday season 3, TMDB lists the season
-				// but has published zero episodes for it yet). Without this,
+				// The server's default season came back with no episode data at
+				// all, e.g. an announced-but-unaired season (found live
+				// 2026-08-30: Wednesday season 3, TMDB lists the season but has
+				// published zero episodes for it yet). Without this,
 				// selectedSeason stays null forever and the panel is stuck
 				// showing "Loading season…" with nothing ever in flight to
 				// end it. Fall back one season earlier — the previous season
@@ -160,6 +191,23 @@
 				// one. If that fallback also turns out empty, loadSeason
 				// still resolves it to a proper "Could not load this
 				// season." error instead of an infinite spinner.
+				//
+				// Since 2026-09-03 the server picks its default the same way
+				// (resolveDefaultSeason), so this should now be unreachable in
+				// practice — kept as the client-side safety net it always was.
+				//
+				// Keep whatever season the operator was already on rather than
+				// yanking them to the fallback, but only after making sure
+				// something is actually in flight for it: a wipe above (new show
+				// or explicit refresh) may have just dropped its cache entry,
+				// and this branch carries no replacement data. Returning here
+				// with an empty cache and no request pending is what leaves the
+				// panel on a bare "Loading season…" — no elapsed timer, no
+				// Retry button, both of which are gated on a real loading state.
+				if (selectedSeason !== null) {
+					if (!seasonCache[selectedSeason]) void loadSeason(selectedSeason);
+					return;
+				}
 				const numberOfSeasons = props.show?.tmdb?.numberOfSeasons;
 				if (numberOfSeasons && numberOfSeasons >= 1) {
 					const fallback = numberOfSeasons > 1 ? numberOfSeasons - 1 : 1;
@@ -170,24 +218,21 @@
 			return;
 		}
 		const initial = props.episodeStatus.seasons[0];
-		const isNewShow = props.slug !== seenSlug;
+		const plexReachable = props.episodeStatus.plexReachable;
 		seenSlug = props.slug;
-		seasonCache = {
-			[initial.season]: {
-				status: 'ready',
-				plexReachable: props.episodeStatus.plexReachable,
-				season: initial
-			}
-		};
 		untrack(() => {
+			seasonCache = {
+				...seasonCache,
+				[initial.season]: { status: 'ready', plexReachable, season: initial }
+			};
 			if (isNewShow || selectedSeason === null) {
 				selectedSeason = initial.season;
-			} else if (selectedSeason !== initial.season) {
-				// The operator was viewing a different season than the one
-				// this fresh load carries — that season's cache entry was
-				// just dropped above, so re-fetch it now instead of leaving
-				// the panel stuck on "Loading season…" until they click its
-				// button again.
+			} else if (selectedSeason !== initial.season && !seasonCache[selectedSeason]) {
+				// The operator is on a different season than the one this load
+				// carries, and a wipe just dropped it (new show, or an explicit
+				// refresh) — re-fetch it now rather than leave the panel stuck
+				// on "Loading season…" until they click its button again. When
+				// nothing was wiped, its cached grid is still good: no fetch.
 				void loadSeason(selectedSeason);
 			}
 		});
@@ -209,6 +254,13 @@
 	);
 	const activeSeason = $derived(
 		activeSeasonState?.status === 'ready' ? activeSeasonState.season : null
+	);
+	// A re-check running behind a grid that's already on screen. Worth a small
+	// marker next to the heading — silently swapping badges under the
+	// operator's cursor is its own kind of confusing — but deliberately not
+	// worth moving, dimming, or unmounting anything.
+	const activeSeasonRefreshing = $derived(
+		activeSeasonState?.status === 'ready' && activeSeasonState.refreshingToken !== undefined
 	);
 
 	function suffixFromCounts(aired: number, owned: number): string {
@@ -253,9 +305,20 @@
 		const token = ++seasonLoadAttempts;
 		const isCurrentAttempt = () => {
 			const current = seasonCache[season];
-			return current?.status === 'loading' && current.token === token;
+			if (current?.status === 'loading') return current.token === token;
+			if (current?.status === 'ready') return current.refreshingToken === token;
+			return false;
 		};
-		seasonCache = { ...seasonCache, [season]: { status: 'loading', startedAt: Date.now(), token } };
+		// Re-fetching a season we already have keeps the existing grid on
+		// screen (see SeasonFetchState) — only a season with nothing to show
+		// gets the collapsing 'loading' state.
+		seasonCache = {
+			...seasonCache,
+			[season]:
+				existing?.status === 'ready'
+					? { ...existing, refreshingToken: token }
+					: { status: 'loading', startedAt: Date.now(), token }
+		};
 		try {
 			const res = await fetch(`/shows/${encodeURIComponent(props.slug)}/episodes?season=${season}`);
 			const body = (await res.json()) as {
@@ -267,7 +330,7 @@
 			if (!res.ok || !body.seasons || body.seasons.length === 0) {
 				seasonCache = {
 					...seasonCache,
-					[season]: { status: 'error', message: body.error ?? 'Could not load this season.' }
+					[season]: failedRefreshState(season, body.error ?? 'Could not load this season.')
 				};
 				return;
 			}
@@ -283,14 +346,36 @@
 			if (!isCurrentAttempt()) return;
 			seasonCache = {
 				...seasonCache,
-				[season]: { status: 'error', message: 'Could not reach the API.' }
+				[season]: failedRefreshState(season, 'Could not reach the API.')
 			};
 		}
 	}
 
+	/** What a failed load leaves behind. A first load has nothing to fall
+	 * back on, so it surfaces the error. A *refresh* of a season already on
+	 * screen keeps the grid it already had and just drops the refreshing
+	 * flag — replacing a working grid with an error panel because a
+	 * background re-check failed is the same "throw away good data" reflex
+	 * this whole change is undoing. The stale grid stays visible and the next
+	 * refresh (or Retry) can still correct it. */
+	function failedRefreshState(season: number, message: string): SeasonFetchState {
+		const existing = seasonCache[season];
+		if (existing?.status === 'ready') {
+			return { status: 'ready', plexReachable: existing.plexReachable, season: existing.season };
+		}
+		return { status: 'error', message };
+	}
+
 	function selectSeason(season: number): void {
+		// Clicking the season you're already on re-checks it. Cheap to do now
+		// that a refresh keeps the grid mounted (see loadSeason), and it gives
+		// back a per-season manual re-check: the Retry button only ever appears
+		// under the collapsing 'loading' state, which a season with data no
+		// longer enters. The alternative — a full "Refresh Plex" — re-walks
+		// every season of the show to answer a question about one.
+		const force = selectedSeason === season;
 		selectedSeason = season;
-		void loadSeason(season);
+		void loadSeason(season, { force });
 	}
 
 	function episodeKey(season: number, episode: number, source: SearchSource): string {
@@ -378,11 +463,15 @@
 			update
 		}: {
 			result: { type: string; data?: Record<string, unknown> };
-			update: () => Promise<void>;
+			update: (options?: { invalidateAll?: boolean }) => Promise<void>;
 		}) => {
-			await update();
-			await invalidateAll();
+			// Same one-round-trip reasoning as enhanceGrab below: removing a
+			// torrent changes this episode's manual-grab rows and nothing else
+			// on the page, so apply the action result and re-fetch only the
+			// season on screen.
+			await update({ invalidateAll: false });
 			pendingRemoveHash = null;
+			if (selectedSeason !== null) void loadSeason(selectedSeason, { force: true });
 			if (result.type === 'success') {
 				toast('Removed', 'success', 'Stalled torrent removed — pick another release below.');
 			} else if (result.type === 'failure') {
@@ -400,10 +489,17 @@
 			update
 		}: {
 			result: { type: string; data?: Record<string, unknown> };
-			update: () => Promise<void>;
+			update: (options?: { invalidateAll?: boolean }) => Promise<void>;
 		}) => {
-			await update();
-			await invalidateAll();
+			// One round trip, not three. update() invalidates all page data by
+			// default, so the explicit invalidateAll() that used to follow it
+			// was a straight duplicate — and the page load it re-ran fetches
+			// /api/shows plus a whole season's Plex walk to learn one thing: a
+			// new manual-grab row for one episode. Opting out of it and doing a
+			// single targeted season re-fetch below gets the same result for a
+			// third of the work, and the top-of-page cards it skips (Plex
+			// Status, Last Watched) can't change from queueing a torrent anyway.
+			await update({ invalidateAll: false });
 			pendingGrabId = null;
 			if (result.type === 'success') {
 				toast('Queued', 'success', (result.data?.grabMessage as string) ?? undefined);
@@ -419,14 +515,12 @@
 				const rest = { ...searchResults };
 				for (const k of episodeKeys) delete rest[k];
 				searchResults = rest;
-				// This season's owned/missing counts just changed — the cached
-				// grid (and the button suffix derived from it) is now stale.
-				// Re-fetch it rather than leave a manual grab invisible until
-				// the next unrelated reload.
-				const stale = { ...seasonCache };
-				delete stale[season];
-				seasonCache = stale;
-				void loadSeason(season);
+				// This episode's manual-grab rows just changed — re-fetch this
+				// one season so the "Queued via X" pill appears. Forced rather
+				// than delete-then-load: loadSeason now refreshes a ready
+				// season in place, so the grid never unmounts and the page
+				// height never moves.
+				void loadSeason(season, { force: true });
 			} else if (result.type === 'failure') {
 				toast('Grab failed', 'error', (result.data?.grabMessage as string) ?? undefined);
 			} else if (result.type === 'error') {
@@ -442,7 +536,15 @@
 			<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase">
 				Plex vs TMDB
 			</p>
-			<h2 class="text-2xl font-semibold tracking-[-0.03em]">Missing episodes</h2>
+			<div class="flex flex-wrap items-center gap-3">
+				<h2 class="text-2xl font-semibold tracking-[-0.03em]">Missing episodes</h2>
+				{#if activeSeasonRefreshing}
+					<span class="text-muted-foreground flex items-center gap-1.5 text-xs">
+						<Loader2Icon class="h-3.5 w-3.5 animate-spin" />
+						Refreshing…
+					</span>
+				{/if}
+			</div>
 		</div>
 		{#if props.episodeStatus}
 			<div class="flex flex-wrap gap-2">

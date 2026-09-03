@@ -1,7 +1,11 @@
 import type { PlexHttpClient } from '../plex/client';
 import type { PlexCache } from '../plex/cache';
 import { selectBestShowMatch } from '../plex/shows';
-import { loadSeasonEpisodes, type TvEnrichDeps } from '../tmdb/tv-enrichment';
+import {
+  isSeasonFinished,
+  loadSeasonEpisodes,
+  type TvEnrichDeps,
+} from '../tmdb/tv-enrichment';
 import { tvMatchKey } from '../tmdb/keys';
 import type { ManualGrabsStore } from '../manual-grabs/store';
 import type { ShowBreakdown } from '../tv-api-types';
@@ -77,6 +81,13 @@ export type SeasonWithStatus = {
    * air dates — exposed so callers (e.g. api.ts's persistSeasonCompletions)
    * reuse this instead of re-deriving the same date comparison themselves. */
   airedEpisodeCount: number;
+  /** Where this season's per-episode `plexStatus` values came from.
+   * 'cached-completion' means no Plex call was made at all — the season is
+   * TMDB-finished and the cached plex_tv_season_completion row already says
+   * every aired episode is owned (see canServeFromCompletionCache). Callers
+   * that write *back* into that cache must skip these seasons, or the cache
+   * would keep re-confirming itself from itself and never re-verify. */
+  plexSource: 'live' | 'cached-completion';
 };
 
 export type ShowEpisodeStatus = {
@@ -136,11 +147,15 @@ function isStalledSnapshot(torrent: TorrentStatSnapshot | undefined): boolean {
  * from this function's output — so omitting them here costs nothing in the
  * UI. Omitting `options.season` entirely still walks every season (used by
  * the explicit "Refresh Plex" action, which is deliberately a full refresh).
+ *
+ * `options.forceLivePlex` disables the cached-completion fast path below.
+ * That same "Refresh Plex" action is the one caller that means *re-verify*
+ * rather than "answer as cheaply as you honestly can."
  */
 export async function buildShowEpisodeStatus(
   show: ShowBreakdown,
   deps: EpisodeStatusDeps,
-  options?: { season?: number },
+  options?: { season?: number; forceLivePlex?: boolean },
 ): Promise<ShowEpisodeStatus | null> {
   const tmdbId = show.tmdb?.tmdbId;
   const numberOfSeasons = show.tmdb?.numberOfSeasons;
@@ -151,7 +166,6 @@ export async function buildShowEpisodeStatus(
   const matchKey = tvMatchKey(show.normalizedTitle);
   const todayIsoDate = broadcastTodayIsoDate();
   const targetSeason = options?.season;
-  const plexPresence = await loadPlexPresence(show, deps.plex, targetSeason);
   const manualGrabsByKey = groupManualGrabsByEpisode(
     deps.manualGrabs.listForShow(show.normalizedTitle),
   );
@@ -164,88 +178,260 @@ export async function buildShowEpisodeStatus(
     targetSeason !== undefined
       ? [targetSeason]
       : Array.from({ length: numberOfSeasons }, (_, i) => i + 1);
-  const seasonResults = await Promise.all(
-    seasonNumbers.map(async (seasonNumber) => {
-      const tmdbEpisodes = await loadSeasonEpisodes(
-        matchKey,
-        tmdbId,
-        seasonNumber,
-        deps.tmdb,
-      );
-      if (!tmdbEpisodes) {
-        return null;
-      }
 
-      const plexSeason = plexPresence.seasons.get(seasonNumber);
-      const episodes: EpisodeWithStatus[] = tmdbEpisodes
-        .slice()
-        .sort((a, b) => a.episode_number - b.episode_number)
-        .map((ep) => {
-          const grabs = manualGrabsByKey.get(
-            episodeKey(seasonNumber, ep.episode_number),
-          );
-          return {
-            episode: ep.episode_number,
-            name: ep.name,
-            overview: ep.overview,
-            airDate: ep.air_date,
-            plexStatus: resolveEpisodeStatus(
-              plexPresence.reachable,
-              plexSeason,
-              ep.episode_number,
-            ),
-            manualGrabs: grabs ?? [],
-          };
-        });
-
-      // TMDB's season episode list includes unaired future episodes (a
-      // "Returning Series" season lists all planned episodes up front,
-      // most with a future air_date) — Plex's leafCount can only ever
-      // count episodes that actually exist as files, so comparing it
-      // against the *full* TMDB count would flag a mismatch for every
-      // currently-airing show, every time. Compare against aired-so-far
-      // count instead. Confirmed live against a real currently-airing
-      // show (Stuart Fails to Save the Universe): season 1 lists 10
-      // TMDB episodes, 4 of them not yet aired.
-      //
-      // Strictly-before-today, not on-or-before: an episode airing *today*
-      // isn't yet something we can call unaccounted for. Indexers lag
-      // broadcast by hours and the feed normally catches it on its own, so
-      // counting it as "aired and owed" is what produced phantom missing
-      // episodes for every currently-airing show, every air day. Mirrors
-      // isConfirmedUnaired in web MissingEpisodesPanel.svelte — the two have
-      // to agree or the shows list and the show page contradict each other.
-      const airedEpisodeCount = episodes.filter(
-        (ep) => ep.airDate !== undefined && ep.airDate < todayIsoDate,
-      ).length;
-      // On an air day, either count is legitimate: the episode may already be
-      // in Plex (grabbed fast) or not (feed hasn't caught it). Treating a
-      // single exact number as correct would just move the false mismatch
-      // from one side of the boundary to the other, so accept the whole
-      // window instead.
-      const airedIncludingTodayCount = episodes.filter(
-        (ep) => ep.airDate !== undefined && ep.airDate <= todayIsoDate,
-      ).length;
-      const season: SeasonWithStatus = {
-        season: seasonNumber,
-        episodes,
-        episodeCountMismatch:
-          plexSeason === undefined
-            ? undefined
-            : plexSeason.episodeCount === undefined
-              ? true
-              : plexSeason.episodeCount < airedEpisodeCount ||
-                plexSeason.episodeCount > airedIncludingTodayCount,
-        airedEpisodeCount,
-      };
-      return season;
-    }),
+  // TMDB resolves before Plex, deliberately. The two halves of this grid have
+  // wildly different volatility and cost: TMDB's per-season episode list is
+  // SQLite-cached for 7 days (42 once the season is finished — see
+  // tv-enrichment.ts) and usually costs zero network, while the Plex half is
+  // 2-3 live PMS round trips per view. Doing TMDB first is what lets
+  // canServeFromCompletionCache decide, per season, whether the Plex half is
+  // needed at all — that question can't be answered without the season's air
+  // dates.
+  type TmdbSeasonEpisodes = Awaited<ReturnType<typeof loadSeasonEpisodes>>;
+  const tmdbSeasons = new Map<number, TmdbSeasonEpisodes>(
+    await Promise.all(
+      seasonNumbers.map(
+        async (seasonNumber) =>
+          [
+            seasonNumber,
+            await loadSeasonEpisodes(matchKey, tmdbId, seasonNumber, deps.tmdb),
+          ] as const,
+      ),
+    ),
   );
+
+  // Any season a cached completion row can answer for free (finished, and
+  // already fully owned) drops out of the live walk entirely. For a
+  // long-running show this is the difference between "clicking into a 2003
+  // season costs three PMS calls" and "it costs none."
+  const cachedSeasons = new Set<number>();
+  let needsLiveWalk = false;
+  for (const seasonNumber of seasonNumbers) {
+    const tmdbEpisodes = tmdbSeasons.get(seasonNumber);
+    if (!tmdbEpisodes) continue;
+    if (
+      !options?.forceLivePlex &&
+      deps.plex !== undefined &&
+      canServeFromCompletionCache(
+        show,
+        seasonNumber,
+        tmdbEpisodes,
+        todayIsoDate,
+      )
+    ) {
+      cachedSeasons.add(seasonNumber);
+    } else {
+      needsLiveWalk = true;
+    }
+  }
+
+  const plexPresence: PlexPresence = needsLiveWalk
+    ? await loadPlexPresence(show, deps.plex, targetSeason)
+    : { reachable: false, seasons: new Map() };
+
+  const seasonResults = seasonNumbers.map((seasonNumber) => {
+    const tmdbEpisodes = tmdbSeasons.get(seasonNumber);
+    if (!tmdbEpisodes) {
+      return null;
+    }
+    const servedFromCache = cachedSeasons.has(seasonNumber);
+
+    const plexSeason = plexPresence.seasons.get(seasonNumber);
+    const episodes: EpisodeWithStatus[] = tmdbEpisodes
+      .slice()
+      .sort((a, b) => a.episode_number - b.episode_number)
+      .map((ep) => {
+        const grabs = manualGrabsByKey.get(
+          episodeKey(seasonNumber, ep.episode_number),
+        );
+        return {
+          episode: ep.episode_number,
+          name: ep.name,
+          overview: ep.overview,
+          airDate: ep.air_date,
+          plexStatus: servedFromCache
+            ? ('in_library' as const)
+            : resolveEpisodeStatus(
+                plexPresence.reachable,
+                plexSeason,
+                ep.episode_number,
+              ),
+          manualGrabs: grabs ?? [],
+        };
+      });
+
+    // TMDB's season episode list includes unaired future episodes (a
+    // "Returning Series" season lists all planned episodes up front,
+    // most with a future air_date) — Plex's leafCount can only ever
+    // count episodes that actually exist as files, so comparing it
+    // against the *full* TMDB count would flag a mismatch for every
+    // currently-airing show, every time. Compare against aired-so-far
+    // count instead. Confirmed live against a real currently-airing
+    // show (Stuart Fails to Save the Universe): season 1 lists 10
+    // TMDB episodes, 4 of them not yet aired.
+    //
+    // Strictly-before-today, not on-or-before: an episode airing *today*
+    // isn't yet something we can call unaccounted for. Indexers lag
+    // broadcast by hours and the feed normally catches it on its own, so
+    // counting it as "aired and owed" is what produced phantom missing
+    // episodes for every currently-airing show, every air day. Mirrors
+    // isConfirmedUnaired in web MissingEpisodesPanel.svelte — the two have
+    // to agree or the shows list and the show page contradict each other.
+    const airedEpisodeCount = episodes.filter(
+      (ep) => ep.airDate !== undefined && ep.airDate < todayIsoDate,
+    ).length;
+    // On an air day, either count is legitimate: the episode may already be
+    // in Plex (grabbed fast) or not (feed hasn't caught it). Treating a
+    // single exact number as correct would just move the false mismatch
+    // from one side of the boundary to the other, so accept the whole
+    // window instead.
+    const airedIncludingTodayCount = episodes.filter(
+      (ep) => ep.airDate !== undefined && ep.airDate <= todayIsoDate,
+    ).length;
+    const season: SeasonWithStatus = {
+      season: seasonNumber,
+      episodes,
+      // No live Plex read happened for a cached season, so there is no
+      // leafCount to compare against — "no data to compare" (undefined),
+      // not a fabricated `false`. The cached row's own owned==aired
+      // agreement is what licenses the fast path in the first place.
+      episodeCountMismatch: servedFromCache
+        ? undefined
+        : plexSeason === undefined
+          ? undefined
+          : plexSeason.episodeCount === undefined
+            ? true
+            : plexSeason.episodeCount < airedEpisodeCount ||
+              plexSeason.episodeCount > airedIncludingTodayCount,
+      airedEpisodeCount,
+      plexSource: servedFromCache ? 'cached-completion' : 'live',
+    };
+    return season;
+  });
 
   const seasons = seasonResults.filter(
     (s): s is SeasonWithStatus => s !== null,
   );
-  return { plexReachable: plexPresence.reachable, seasons };
+  // A season answered from the completion cache is confidently answered —
+  // reporting plexReachable:false there would make the UI show its "every
+  // episode reads unknown" banner over a grid that is, in fact, all
+  // in_library.
+  return {
+    plexReachable: plexPresence.reachable || cachedSeasons.size > 0,
+    seasons,
+  };
+}
+
+/**
+ * True when this season's per-episode Plex status can be answered from the
+ * cached plex_tv_season_completion row alone, with no live PMS call.
+ *
+ * Requires all of:
+ *  - TMDB considers the season finished (every episode has an air date and
+ *    the last one is >14 days past — see isSeasonFinished). A currently-
+ *    airing season is never eligible: that's exactly the season whose status
+ *    changes week to week, and the one the operator is actually here to check.
+ *  - A cached completion row exists saying every aired episode is owned
+ *    (ownedCount >= airedCount > 0). A partially-owned season has real
+ *    per-episode gaps this shortcut couldn't place, so it goes live.
+ *  - The row's airedCount still matches what TMDB now lists as aired. Guards
+ *    against a row written when the season had a different episode count —
+ *    e.g. TMDB later split or added an episode, which would otherwise get
+ *    silently marked owned.
+ *  - The row explicitly records that the live walk behind it saw *no*
+ *    episode-count mismatch. Serving a mismatched season from cache would
+ *    suppress its "count doesn't match TMDB" banner on every later view —
+ *    and because ownedCount can hit airedCount while Plex holds extra files,
+ *    such a season stays cache-eligible forever, so the banner would never
+ *    come back. `undefined` (a row written before this column existed) is
+ *    treated as ineligible: unknown is not "no mismatch".
+ *  - The row is younger than COMPLETION_CACHE_MAX_AGE_MS, so the season is
+ *    periodically re-verified no matter what.
+ *
+ * The trade-off, accepted deliberately: a file deleted out of band keeps
+ * showing a stale in_library badge for this season until the row ages past
+ * that window, or "Refresh Plex" (which passes forceLivePlex) rewrites it.
+ * Nothing else rewrites it — persistSeasonCompletions is the only writer of
+ * this table and it deliberately skips cache-served seasons, so without the
+ * age bound a deleted file would stay invisible indefinitely rather than
+ * "until the next sweep". A badge briefly optimistic on a finished season
+ * nobody is chasing episodes for is cheap next to three PMS round trips on
+ * every click into every back-catalogue season of a 38-season show.
+ */
+const COMPLETION_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function canServeFromCompletionCache(
+  show: ShowBreakdown,
+  seasonNumber: number,
+  tmdbEpisodes: { air_date?: string }[],
+  todayIsoDate: string,
+): boolean {
+  if (tmdbEpisodes.length === 0) return false;
+  if (!isSeasonFinished(tmdbEpisodes)) return false;
+
+  const completion = show.seasonCompletions?.find(
+    (c) => c.season === seasonNumber,
+  );
+  if (!completion) return false;
+  if (completion.airedCount <= 0) return false;
+  if (completion.ownedCount < completion.airedCount) return false;
+  if (completion.episodeCountMismatch !== false) return false;
+
+  const cachedAtMs = Date.parse(completion.cachedAt);
+  if (Number.isNaN(cachedAtMs)) return false;
+  if (Date.now() - cachedAtMs > COMPLETION_CACHE_MAX_AGE_MS) return false;
+
+  const airedNow = tmdbEpisodes.filter(
+    (ep) => ep.air_date !== undefined && ep.air_date < todayIsoDate,
+  ).length;
+  return airedNow === completion.airedCount;
+}
+
+/**
+ * Which season the show detail page opens on when the caller didn't name one.
+ *
+ * "Highest season number" is the obvious answer and the wrong one: TMDB lists
+ * an announced-but-unaired season (The Simpsons season 38, live 2026-09-03)
+ * in numberOfSeasons while publishing zero episodes for it. Defaulting there
+ * returned an empty grid, cost a full Plex walk for a season that doesn't
+ * exist as files, and left the client to notice and re-fetch the *real*
+ * latest season — a guaranteed spinner plus a wasted round trip on every
+ * single page view of that show.
+ *
+ * Steps down until it finds a season with episodes on record. TMDB-only and
+ * cache-first (loadSeasonEpisodes), so the probe normally costs no network at
+ * all, and never touches Plex.
+ *
+ * Bounded by DEFAULT_SEASON_PROBE_LIMIT rather than walking to season 1: two
+ * announced-empty seasons stacked on top of each other is already unusual, and
+ * a show whose TMDB data is broken outright shouldn't turn one page view into
+ * dozens of probes. On giving up it returns the last season it tried, which
+ * still lands the caller somewhere real-looking and lets the normal "Could not
+ * load this season" path report the problem honestly.
+ */
+const DEFAULT_SEASON_PROBE_LIMIT = 3;
+
+export async function resolveDefaultSeason(
+  show: ShowBreakdown,
+  tmdb: TvEnrichDeps,
+): Promise<number | undefined> {
+  const tmdbId = show.tmdb?.tmdbId;
+  const numberOfSeasons = show.tmdb?.numberOfSeasons;
+  if (!tmdbId || !numberOfSeasons || numberOfSeasons < 1) return undefined;
+
+  const matchKey = tvMatchKey(show.normalizedTitle);
+  let season = numberOfSeasons;
+  for (
+    let probe = 0;
+    probe < DEFAULT_SEASON_PROBE_LIMIT && season >= 1;
+    probe++
+  ) {
+    const episodes = await loadSeasonEpisodes(matchKey, tmdbId, season, tmdb);
+    if (episodes && episodes.length > 0) return season;
+    if (season === 1) break;
+    season--;
+  }
+  return season;
 }
 
 type PlexSeasonPresence = {
@@ -270,19 +456,44 @@ async function loadPlexPresence(
     return empty;
   }
 
-  const ratingKey = await resolveLiveOrCachedRatingKey(show, plex);
-  if (ratingKey === undefined) {
-    // Neither a live search nor the cache could confirm anything right now.
+  const resolved = await resolveRatingKey(show, plex);
+  if (resolved.ratingKey === undefined) {
+    // Neither the cache nor a live search could confirm anything right now.
     return empty;
   }
-  if (ratingKey === null) {
+  if (resolved.ratingKey === null) {
     // Confidently not in Plex — confident "missing" territory, not
     // "unknown". reachable:true with an empty seasons map means every
     // episode resolves to 'missing' below.
     return { reachable: true, seasons: new Map() };
   }
 
-  const allPlexSeasons = await plex.client.getShowSeasons(ratingKey);
+  let allPlexSeasons = await plex.client.getShowSeasons(resolved.ratingKey);
+  // The optimistically-used cached ratingKey didn't pan out — the show may
+  // have been removed and re-added in Plex (new ratingKey), or the key may
+  // have been reused by an unrelated item after a library rebuild. Pay for
+  // the live search we skipped rather than trusting a key we now doubt.
+  //
+  // Empty counts as "didn't pan out" alongside null, not just null: a key
+  // pointing at a live-but-wrong item (a movie, some other entry) answers
+  // 200 with zero season children, and treating that as a real answer would
+  // report every episode of a fully-owned show as `missing` and invite a
+  // full re-grab. `null` alone would miss that case entirely.
+  if (
+    resolved.fromCache &&
+    (allPlexSeasons === null || allPlexSeasons.length === 0)
+  ) {
+    const live = await liveSearchRatingKey(show, plex);
+    if (live !== undefined && live !== resolved.ratingKey) {
+      const retried = await plex.client.getShowSeasons(live);
+      // Only take the retry when it actually found something — a show
+      // legitimately having zero seasons must not be turned into
+      // "unreachable" by a fallback that also came back empty.
+      if (retried !== null && retried.length > 0) {
+        allPlexSeasons = retried;
+      }
+    }
+  }
   if (allPlexSeasons === null) {
     // Have a ratingKey, but the live walk failed just now — transient,
     // not "this show isn't in Plex".
@@ -316,43 +527,64 @@ async function loadPlexPresence(
 }
 
 /**
- * Resolves this show's Plex ratingKey live first, falling back to the
- * periodically-refreshed plex_tv_cache only when live search can't confirm
- * anything. A page view here is occasional and manual — same reasoning that
- * already justifies the uncached per-episode walk above — so there's no
- * reason to let a stale background-sweep snapshot be the *only* source for
- * "is this show even in Plex," which was letting a show sit unconfirmed (or
- * wrongly missing) between sweep runs even though a live check would have
- * answered it immediately.
+ * Resolves this show's Plex ratingKey, preferring a cached *positive* row
+ * over a live search.
+ *
+ * A ratingKey is the most stable thing Plex exposes about a show, and
+ * /library/search is by far the most expensive of the three PMS calls this
+ * module makes — it's a library-wide query, where getShowSeasons is a keyed
+ * lookup. Skipping it whenever the cache already says "in library, key K"
+ * takes the common path from three round trips to two. If K turns out to be
+ * wrong, the caller falls back to a live search (see loadPlexPresence), so
+ * this is a shortcut, not a new source of truth.
+ *
+ * Only a *positive* cached row short-circuits. A cached "not in library" must
+ * still go through live search first, or a show added to Plex since the last
+ * background sweep would keep reading missing until the sweep caught up —
+ * the exact staleness the previous live-first ordering existed to avoid.
  *
  * A live search miss does NOT by itself mean "confidently not in library" —
  * falls through to cache regardless, since /library/search is documented
  * elsewhere in this codebase (refreshShowLibraryCache) to sometimes omit or
  * reshape hits. Only a *cached* "not in library" is trusted as confident.
  *
- * Returns a ratingKey when found (live or cached); null when confidently not
+ * Returns a ratingKey when found (cached or live); null when confidently not
  * in the library; undefined when nothing could confirm either way.
+ * `fromCache` tells the caller whether the key was taken on trust.
  */
-async function resolveLiveOrCachedRatingKey(
+async function resolveRatingKey(
   show: ShowBreakdown,
   plex: NonNullable<EpisodeStatusDeps['plex']>,
-): Promise<string | null | undefined> {
-  const liveResults = await plex.client.searchShows(show.normalizedTitle);
-  if (liveResults !== null) {
-    const match = selectBestShowMatch(show.normalizedTitle, liveResults);
-    if (match?.ratingKey) {
-      return match.ratingKey;
-    }
+): Promise<{ ratingKey: string | null | undefined; fromCache: boolean }> {
+  const cacheRow = plex.cache.getTv(show.normalizedTitle);
+  if (cacheRow?.inLibrary && cacheRow.plexRatingKey) {
+    return { ratingKey: cacheRow.plexRatingKey, fromCache: true };
   }
 
-  const cacheRow = plex.cache.getTv(show.normalizedTitle);
+  const live = await liveSearchRatingKey(show, plex);
+  if (live !== undefined) {
+    return { ratingKey: live, fromCache: false };
+  }
+
   if (!cacheRow) {
-    return undefined;
+    return { ratingKey: undefined, fromCache: false };
   }
-  if (!cacheRow.inLibrary || !cacheRow.plexRatingKey) {
-    return null;
-  }
-  return cacheRow.plexRatingKey;
+  // Reached only for a cached row that is negative or key-less — positive
+  // rows short-circuited above.
+  return { ratingKey: null, fromCache: false };
+}
+
+/** The live /library/search half of resolveRatingKey, split out so
+ * loadPlexPresence can re-run it on its own when a cached ratingKey turns
+ * out to be stale. undefined when the search found nothing usable. */
+async function liveSearchRatingKey(
+  show: ShowBreakdown,
+  plex: NonNullable<EpisodeStatusDeps['plex']>,
+): Promise<string | undefined> {
+  const liveResults = await plex.client.searchShows(show.normalizedTitle);
+  if (liveResults === null) return undefined;
+  const match = selectBestShowMatch(show.normalizedTitle, liveResults);
+  return match?.ratingKey ?? undefined;
 }
 
 function resolveEpisodeStatus(

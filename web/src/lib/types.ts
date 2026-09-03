@@ -74,6 +74,9 @@ export type ShowSeasonCompletion = {
 	 * trustworthy "as of" bound for any whole-show claim built from all of
 	 * them together. */
 	cachedAt: string;
+	/** Whether the live walk behind these counts saw Plex disagree with
+	 * TMDB on this season's episode count. undefined = unknown. */
+	episodeCountMismatch?: boolean;
 };
 
 export type PlexStatus = 'in_library' | 'missing' | 'unknown';
@@ -147,6 +150,10 @@ export type SeasonWithStatus = {
 	 * air dates — see src/shows/episode-status.ts on the server. Reuse this
 	 * instead of re-deriving the same date comparison client-side. */
 	airedEpisodeCount: number;
+	/** 'cached-completion' means the server answered this season's statuses
+	 * from the cached completion counts with no live Plex call — see
+	 * canServeFromCompletionCache in src/shows/episode-status.ts. */
+	plexSource: 'live' | 'cached-completion';
 };
 
 export type ShowEpisodeStatus = {

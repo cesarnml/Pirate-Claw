@@ -142,36 +142,57 @@ export class PlexCache {
         season,
         aired_count,
         owned_count,
-        cached_at
-      ) VALUES (?1, ?2, ?3, ?4, ?5)
+        cached_at,
+        episode_count_mismatch
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
       ON CONFLICT(normalized_title, season) DO UPDATE SET
         aired_count = excluded.aired_count,
         owned_count = excluded.owned_count,
-        cached_at = excluded.cached_at`,
+        cached_at = excluded.cached_at,
+        episode_count_mismatch = excluded.episode_count_mismatch`,
       [
         row.normalizedTitle,
         row.season,
         row.airedCount,
         row.ownedCount,
         row.cachedAt,
+        row.episodeCountMismatch === undefined
+          ? null
+          : row.episodeCountMismatch
+            ? 1
+            : 0,
       ],
     );
   }
 
   getSeasonCompletions(normalizedTitle: string): PlexTvSeasonCompletionRow[] {
-    return this.db
+    const rows = this.db
       .query(
         `SELECT
           normalized_title AS normalizedTitle,
           season,
           aired_count AS airedCount,
           owned_count AS ownedCount,
-          cached_at AS cachedAt
+          cached_at AS cachedAt,
+          episode_count_mismatch AS episodeCountMismatch
         FROM plex_tv_season_completion
         WHERE normalized_title = ?1
         ORDER BY season`,
       )
-      .all(normalizedTitle) as PlexTvSeasonCompletionRow[];
+      .all(normalizedTitle) as Array<
+      Omit<PlexTvSeasonCompletionRow, 'episodeCountMismatch'> & {
+        episodeCountMismatch: number | null;
+      }
+    >;
+    return rows.map((row) => ({
+      ...row,
+      // NULL (pre-migration row) stays undefined — "we don't know", which
+      // callers must not read as "no mismatch".
+      episodeCountMismatch:
+        row.episodeCountMismatch === null
+          ? undefined
+          : row.episodeCountMismatch === 1,
+    }));
   }
 }
 
@@ -190,4 +211,8 @@ export type PlexTvSeasonCompletionRow = {
   airedCount: number;
   ownedCount: number;
   cachedAt: string;
+  /** Whether the live walk behind this row saw Plex's episode count disagree
+   * with TMDB's. undefined = unknown (row predates this column, or the walk
+   * had nothing to compare) — never treat that as "no mismatch". */
+  episodeCountMismatch?: boolean;
 };

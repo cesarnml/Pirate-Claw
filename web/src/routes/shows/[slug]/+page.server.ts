@@ -30,6 +30,12 @@ function mergeFreshSeasonCompletions(
 	const cachedAt = new Date().toISOString();
 	const fresh: ShowSeasonCompletion[] = [];
 	for (const season of episodeStatus.seasons) {
+		// Mirrors persistSeasonCompletions on the daemon side: a season the
+		// server answered *from* the completion cache carries no newer
+		// information than the counts already on `show`, so overwriting them
+		// (with a fresh cachedAt) would only make stale data look fresh.
+		if (season.plexSource === 'cached-completion') continue;
+
 		const hasUnknownEpisode = season.episodes.some((e) => e.plexStatus === 'unknown');
 		if (hasUnknownEpisode) continue;
 

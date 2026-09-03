@@ -40,6 +40,7 @@ export function enrichShowBreakdownsFromPlexCache(
               airedCount: r.airedCount,
               ownedCount: r.ownedCount,
               cachedAt: r.cachedAt,
+              episodeCountMismatch: r.episodeCountMismatch,
             })),
           }
         : show;

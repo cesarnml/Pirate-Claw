@@ -104,6 +104,17 @@ export function ensurePlexSchema(database: Database): void {
     );
     ensurePlexTableColumn(database, 'plex_auth_sessions', 'pin_id', 'INTEGER');
     ensurePlexTableColumn(database, 'plex_auth_sessions', 'pin_code', 'TEXT');
+    // Whether the live walk that produced this row saw Plex's own episode
+    // count disagree with TMDB's. Recorded so the cached-completion fast path
+    // (canServeFromCompletionCache) can refuse a season whose warning banner
+    // it would otherwise suppress forever. NULL = written before this column
+    // existed, i.e. unknown, which the fast path treats as ineligible.
+    ensurePlexTableColumn(
+      database,
+      'plex_tv_season_completion',
+      'episode_count_mismatch',
+      'INTEGER',
+    );
   })();
 }
 

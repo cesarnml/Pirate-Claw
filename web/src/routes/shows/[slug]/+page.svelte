@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
 	import ApiUnavailableAlert from '$lib/components/ApiUnavailableAlert.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
@@ -68,6 +67,13 @@
 	// what actually gets removed (2026-09-03 incident).
 	let confirmingUntrack = $state(false);
 
+	// Incremented by the two actions that re-walk every season server-side, so
+	// MissingEpisodesPanel knows to clear its whole season cache rather than
+	// merge into it. Every other page-data change (a manual grab, a stalled
+	// remove) leaves already-loaded seasons alone — see the panel's seeding
+	// effect for why the old unconditional wipe was too blunt.
+	let refreshGeneration = $state(0);
+
 	function enhanceRefresh(flag: 'tmdb' | 'plex' | 'remove') {
 		const setFlag = (value: boolean) => {
 			if (flag === 'tmdb') refreshingTmdb = value;
@@ -76,9 +82,12 @@
 		};
 		return () => {
 			setFlag(true);
+			// No invalidateAll() after update() — update() already invalidates
+			// all page data by default, so the pair was one wasted full reload
+			// (/api/shows plus a season walk) on every refresh.
 			return async ({ update }: { update: () => Promise<void> }) => {
+				if (flag !== 'remove') refreshGeneration += 1;
 				await update();
-				await invalidateAll();
 				setFlag(false);
 			};
 		};
@@ -336,6 +345,7 @@
 			episodeStatus={data.episodeStatus}
 			episodeStatusError={data.episodeStatusError}
 			canWrite={data.canWrite}
+			{refreshGeneration}
 		/>
 
 		<div class="flex justify-end">

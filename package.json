@@ -21,7 +21,7 @@
     "format:web": "bun run bootstrap:web && bun run --cwd web format",
     "format:web:quiet": "bun run ./scripts/format-web-quiet.ts",
     "hooks:install": "git config core.hooksPath .githooks",
-    "lint": "eslint .",
+    "lint": "bun --bun node_modules/eslint/bin/eslint.js .",
     "lint:web": "bun run bootstrap:web && bun run --cwd web lint",
     "run": "bun run ./src/cli.ts",
     "closeout-stack": "bun run ./scripts/closeout-stack.ts",

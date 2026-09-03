@@ -44,7 +44,10 @@ import type { ManualGrabSource } from './manual-grabs/store';
 import { ManualMovieGrabsStore } from './manual-movie-grabs/store';
 import type { ManualMovieGrabSource } from './manual-movie-grabs/store';
 import { manualMovieGrabsAsBreakdowns } from './manual-movie-grabs/store';
-import { buildShowEpisodeStatus } from './shows/episode-status';
+import {
+  buildShowEpisodeStatus,
+  resolveDefaultSeason,
+} from './shows/episode-status';
 import type { ShowEpisodeStatus } from './shows/episode-status';
 import type { PlexCache } from './plex/cache';
 import { TrackedShowsStore } from './tracked-shows/store';
@@ -3254,11 +3257,17 @@ export function createApiFetch(
               [refreshed],
               tmdbShows,
             );
-            const status = await buildShowEpisodeStatus(withTmdb, {
-              tmdb: tmdbShows,
-              plex: { client: plexShows.client, cache: plexShows.cache },
-              manualGrabs: new ManualGrabsStore(database),
-            });
+            const status = await buildShowEpisodeStatus(
+              withTmdb,
+              {
+                tmdb: tmdbShows,
+                plex: { client: plexShows.client, cache: plexShows.cache },
+                manualGrabs: new ManualGrabsStore(database),
+              },
+              // The whole point of this action is re-verification — never
+              // answer it from the very completion cache it exists to rewrite.
+              { forceLivePlex: true },
+            );
             if (status) {
               persistSeasonCompletions(
                 plexShows.cache,
@@ -3305,15 +3314,14 @@ export function createApiFetch(
         // `?season=` scopes the live Plex+TMDB walk to just that one season
         // (see buildShowEpisodeStatus's doc comment) — the passive per-page-
         // view load path this route serves must stay O(1) regardless of how
-        // many seasons a show has. Default to the most recent season when
-        // omitted: that's the one an operator opening this page is almost
-        // always here to check, and it needs no extra data to compute (just
-        // TMDB's already-known numberOfSeasons).
+        // many seasons a show has. When omitted, resolveDefaultSeason picks
+        // the latest season TMDB actually has episodes for, which is not
+        // always numberOfSeasons — see its doc comment.
         const seasonParam = new URL(request.url).searchParams.get('season');
         const parsedSeason = seasonParam === null ? NaN : Number(seasonParam);
         const season = Number.isInteger(parsedSeason)
           ? parsedSeason
-          : show.tmdb?.numberOfSeasons;
+          : await resolveDefaultSeason(show, tmdbShows);
 
         const status = await buildShowEpisodeStatus(
           show,
@@ -5769,6 +5777,12 @@ function persistSeasonCompletions(
 
   const cachedAt = new Date().toISOString();
   for (const season of status.seasons) {
+    // A season answered *from* this cache must not be written back into it —
+    // that would refresh its cachedAt from nothing but its own prior contents,
+    // laundering a cached verdict into a freshly-confirmed-looking one and
+    // guaranteeing it never gets re-verified.
+    if (season.plexSource === 'cached-completion') continue;
+
     const hasUnknownEpisode = season.episodes.some(
       (episode) => episode.plexStatus === 'unknown',
     );
@@ -5783,6 +5797,7 @@ function persistSeasonCompletions(
       airedCount: season.airedEpisodeCount,
       ownedCount,
       cachedAt,
+      episodeCountMismatch: season.episodeCountMismatch,
     });
   }
 }

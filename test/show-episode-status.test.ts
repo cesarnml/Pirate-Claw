@@ -12,7 +12,10 @@ import type {
 } from '../src/plex/client';
 import { PlexCache } from '../src/plex/cache';
 import { ManualGrabsStore } from '../src/manual-grabs/store';
-import { buildShowEpisodeStatus } from '../src/shows/episode-status';
+import {
+  buildShowEpisodeStatus,
+  resolveDefaultSeason,
+} from '../src/shows/episode-status';
 import { ensureSchema } from '../src/repository';
 import type { ShowBreakdown } from '../src/tv-api-types';
 
@@ -494,5 +497,486 @@ describe('buildShowEpisodeStatus', () => {
         rawTitle: 'first attempt, stalled but not yet removed',
       },
     ]);
+  });
+
+  it('prefers a cached ratingKey over a live library-wide search — the expensive call is skipped entirely when the cache already has a positive row', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 1: [{ episode_number: 1, name: 'Pilot' }] });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'strange new worlds',
+      plexRatingKey: '35033',
+      inLibrary: true,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    let searchCalls = 0;
+    const seasonsForKey: string[] = [];
+    const plexClient = {
+      searchShows: async (): Promise<PlexSearchResult[]> => {
+        searchCalls++;
+        return [];
+      },
+      getShowSeasons: async (ratingKey: string) => {
+        seasonsForKey.push(ratingKey);
+        return [
+          { ratingKey: '68673', seasonNumber: 1, episodeCount: 1 },
+        ] as PlexSeasonSummary[];
+      },
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> => [
+        { episodeNumber: 1, title: 'Pilot' },
+      ],
+    } as unknown as PlexHttpClient;
+
+    const result = await buildShowEpisodeStatus(showFixture(1), {
+      tmdb,
+      plex: { client: plexClient, cache: plexCache },
+      manualGrabs: new ManualGrabsStore(db),
+    });
+
+    expect(searchCalls).toBe(0);
+    expect(seasonsForKey).toEqual(['35033']);
+    expect(result?.seasons[0].episodes[0].plexStatus).toBe('in_library');
+  });
+
+  it('falls back to a live search when the cached ratingKey resolves to a live-but-wrong item (200 OK, zero seasons)', async () => {
+    // A ratingKey reused by an unrelated item after a library rebuild answers
+    // 200 with no season children — `[]`, not `null`. Trusting that would
+    // report every episode of a fully-owned show as missing and invite a
+    // full re-grab, so an empty result must trigger the same re-search a
+    // failed one does.
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 1: [{ episode_number: 1, name: 'Pilot' }] });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'strange new worlds',
+      plexRatingKey: 'reused-key',
+      inLibrary: true,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    const plexClient = {
+      searchShows: async (): Promise<PlexSearchResult[]> => [
+        {
+          ratingKey: 'correct-key',
+          title: 'Star Trek: Strange New Worlds',
+          type: 'show',
+        },
+      ],
+      getShowSeasons: async (ratingKey: string) =>
+        ratingKey === 'reused-key'
+          ? ([] as PlexSeasonSummary[])
+          : ([
+              { ratingKey: '68673', seasonNumber: 1, episodeCount: 1 },
+            ] as PlexSeasonSummary[]),
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> => [
+        { episodeNumber: 1, title: 'Pilot' },
+      ],
+    } as unknown as PlexHttpClient;
+
+    const result = await buildShowEpisodeStatus(showFixture(1), {
+      tmdb,
+      plex: { client: plexClient, cache: plexCache },
+      manualGrabs: new ManualGrabsStore(db),
+    });
+
+    expect(result?.seasons[0].episodes[0].plexStatus).toBe('in_library');
+  });
+
+  it('falls back to a live search when the cached ratingKey turns out to be stale', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 1: [{ episode_number: 1, name: 'Pilot' }] });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'strange new worlds',
+      plexRatingKey: 'stale-key',
+      inLibrary: true,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    const plexClient = {
+      searchShows: async (): Promise<PlexSearchResult[]> => [
+        {
+          ratingKey: 'fresh-key',
+          title: 'Star Trek: Strange New Worlds',
+          type: 'show',
+        },
+      ],
+      // The stale key no longer resolves; the re-searched one does.
+      getShowSeasons: async (ratingKey: string) =>
+        ratingKey === 'stale-key'
+          ? null
+          : ([
+              { ratingKey: '68673', seasonNumber: 1, episodeCount: 1 },
+            ] as PlexSeasonSummary[]),
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> => [
+        { episodeNumber: 1, title: 'Pilot' },
+      ],
+    } as unknown as PlexHttpClient;
+
+    const result = await buildShowEpisodeStatus(showFixture(1), {
+      tmdb,
+      plex: { client: plexClient, cache: plexCache },
+      manualGrabs: new ManualGrabsStore(db),
+    });
+
+    expect(result?.plexReachable).toBe(true);
+    expect(result?.seasons[0].episodes[0].plexStatus).toBe('in_library');
+  });
+
+  describe('cached-completion fast path', () => {
+    /** A season that finished airing well over SEASON_FINISHED_BUFFER_MS ago
+     * — the eligibility gate for answering from cached counts. */
+    function longFinishedSeason() {
+      return [
+        { episode_number: 1, name: 'One', air_date: '2003-01-05' },
+        { episode_number: 2, name: 'Two', air_date: '2003-01-12' },
+      ];
+    }
+
+    function countingPlex(db: Database) {
+      const calls: string[] = [];
+      const client = {
+        searchShows: async () => {
+          calls.push('searchShows');
+          return [] as PlexSearchResult[];
+        },
+        getShowSeasons: async () => {
+          calls.push('getShowSeasons');
+          return [] as PlexSeasonSummary[];
+        },
+        getSeasonEpisodes: async () => {
+          calls.push('getSeasonEpisodes');
+          return [] as PlexEpisodeSummary[];
+        },
+      } as unknown as PlexHttpClient;
+      return { calls, plex: { client, cache: new PlexCache(db) } };
+    }
+
+    it('answers a finished, fully-owned season from cached counts with zero Plex calls', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              airedCount: 2,
+              ownedCount: 2,
+              cachedAt: new Date().toISOString(),
+              episodeCountMismatch: false,
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({ 5: longFinishedSeason() }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5 },
+      );
+
+      expect(calls).toEqual([]);
+      expect(result?.plexReachable).toBe(true);
+      expect(result?.seasons[0].plexSource).toBe('cached-completion');
+      expect(result?.seasons[0].episodes.map((e) => e.plexStatus)).toEqual([
+        'in_library',
+        'in_library',
+      ]);
+      // No live leafCount was read, so there is nothing to compare against.
+      expect(result?.seasons[0].episodeCountMismatch).toBeUndefined();
+    });
+
+    it('still walks Plex when the cached counts say the season is only partly owned', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              airedCount: 2,
+              ownedCount: 1,
+              cachedAt: new Date().toISOString(),
+              episodeCountMismatch: false,
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({ 5: longFinishedSeason() }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5 },
+      );
+
+      expect(calls).toContain('searchShows');
+      expect(result?.seasons[0].plexSource).toBe('live');
+    });
+
+    it('never short-circuits a currently-airing season — that is the one whose status actually changes', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+      const airingSoon = new Date(Date.now() + 7 * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              airedCount: 1,
+              ownedCount: 1,
+              cachedAt: new Date().toISOString(),
+              episodeCountMismatch: false,
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({
+            5: [
+              { episode_number: 1, name: 'Aired', air_date: '2003-01-05' },
+              { episode_number: 2, name: 'Next week', air_date: airingSoon },
+            ],
+          }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5 },
+      );
+
+      expect(calls).toContain('searchShows');
+      expect(result?.seasons[0].plexSource).toBe('live');
+    });
+
+    it('ignores a completion row whose airedCount no longer matches TMDB — a season that gained an episode must be re-walked, not marked owned', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              // Written when TMDB listed 2 episodes; it now lists 3.
+              airedCount: 2,
+              ownedCount: 2,
+              cachedAt: new Date().toISOString(),
+              episodeCountMismatch: false,
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({
+            5: [
+              ...longFinishedSeason(),
+              { episode_number: 3, name: 'Three', air_date: '2003-01-19' },
+            ],
+          }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5 },
+      );
+
+      expect(calls).toContain('searchShows');
+      expect(result?.seasons[0].plexSource).toBe('live');
+    });
+
+    it('refuses a season whose last live walk saw an episode-count mismatch — otherwise its warning banner would be suppressed forever', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              airedCount: 2,
+              ownedCount: 2,
+              cachedAt: new Date().toISOString(),
+              // Plex holds more files than TMDB lists; ownedCount still
+              // reaches airedCount, so without this gate the season stays
+              // cache-eligible forever and the banner never returns.
+              episodeCountMismatch: true,
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({ 5: longFinishedSeason() }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5 },
+      );
+
+      expect(calls).toContain('searchShows');
+      expect(result?.seasons[0].plexSource).toBe('live');
+    });
+
+    it('refuses a row predating the mismatch column — unknown is not "no mismatch"', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              airedCount: 2,
+              ownedCount: 2,
+              cachedAt: new Date().toISOString(),
+              // episodeCountMismatch deliberately absent.
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({ 5: longFinishedSeason() }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5 },
+      );
+
+      expect(calls).toContain('searchShows');
+      expect(result?.seasons[0].plexSource).toBe('live');
+    });
+
+    it('re-verifies once the cached row ages out, so an out-of-band deletion cannot stay invisible forever', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+      const longAgo = new Date(
+        Date.now() - 400 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              airedCount: 2,
+              ownedCount: 2,
+              cachedAt: longAgo,
+              episodeCountMismatch: false,
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({ 5: longFinishedSeason() }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5 },
+      );
+
+      expect(calls).toContain('searchShows');
+      expect(result?.seasons[0].plexSource).toBe('live');
+    });
+
+    it('forceLivePlex re-verifies even an eligible season — that is what "Refresh Plex" means', async () => {
+      const db = freshDb();
+      const { calls, plex } = countingPlex(db);
+
+      const result = await buildShowEpisodeStatus(
+        {
+          ...showFixture(5),
+          seasonCompletions: [
+            {
+              season: 5,
+              airedCount: 2,
+              ownedCount: 2,
+              cachedAt: new Date().toISOString(),
+              episodeCountMismatch: false,
+            },
+          ],
+        },
+        {
+          tmdb: fakeTmdb({ 5: longFinishedSeason() }),
+          plex,
+          manualGrabs: new ManualGrabsStore(db),
+        },
+        { season: 5, forceLivePlex: true },
+      );
+
+      expect(calls).toContain('searchShows');
+      expect(result?.seasons[0].plexSource).toBe('live');
+    });
+  });
+});
+
+describe('resolveDefaultSeason', () => {
+  it('steps down when TMDB lists the top season but has published no episodes for it (the Simpsons S38 case)', async () => {
+    const tmdb = fakeTmdb({
+      37: [{ episode_number: 1, name: 'Ep 1', air_date: '2025-09-28' }],
+      // No key for 38 — fakeTmdb's client returns null, same as TMDB
+      // publishing an announced season with an empty episode list.
+    });
+
+    expect(await resolveDefaultSeason(showFixture(38), tmdb)).toBe(37);
+  });
+
+  it('uses the top season when it does have episodes', async () => {
+    const tmdb = fakeTmdb({
+      38: [{ episode_number: 1, name: 'Ep 1', air_date: '2026-09-28' }],
+    });
+
+    expect(await resolveDefaultSeason(showFixture(38), tmdb)).toBe(38);
+  });
+
+  it('keeps stepping down past two empty seasons to the real latest one with data', async () => {
+    const tmdb = fakeTmdb({
+      36: [{ episode_number: 1, name: 'Ep 1', air_date: '2025-09-28' }],
+      // 37 and 38 both announced but empty.
+    });
+
+    expect(await resolveDefaultSeason(showFixture(38), tmdb)).toBe(36);
+  });
+
+  it('gives up after a bounded number of probes rather than walking every season of a broken show', async () => {
+    let probes = 0;
+    const tmdb: TvEnrichDeps = {
+      cache: new TmdbCache(freshDb()),
+      client: {
+        getTvSeason: async () => {
+          probes++;
+          return null;
+        },
+      } as unknown as TmdbHttpClient,
+      cacheTtlMs: 1000 * 60,
+      negativeCacheTtlMs: 1000 * 60,
+      log: () => {},
+    };
+
+    await resolveDefaultSeason(showFixture(38), tmdb);
+    expect(probes).toBeLessThanOrEqual(3);
+  });
+
+  it('never steps below season 1 for a single-season show', async () => {
+    expect(await resolveDefaultSeason(showFixture(1), fakeTmdb({}))).toBe(1);
+  });
+
+  it('returns undefined when the show has no TMDB match to count seasons from', async () => {
+    expect(
+      await resolveDefaultSeason(
+        { ...showFixture(1), tmdb: undefined },
+        fakeTmdb({}),
+      ),
+    ).toBeUndefined();
   });
 });

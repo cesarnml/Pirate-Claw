@@ -47,6 +47,10 @@ export type ShowSeasonCompletion = {
    * "as of" bound for any whole-show claim (COMPLETE/MISSING) built from
    * all of them together. */
   cachedAt: string;
+  /** Whether the live walk behind these counts saw Plex disagree with TMDB
+   * on this season's episode count. undefined = unknown (row predates the
+   * column, or there was nothing to compare) — never "no mismatch". */
+  episodeCountMismatch?: boolean;
 };
 
 /** Per-episode TMDB fields merged next to local candidate state. */

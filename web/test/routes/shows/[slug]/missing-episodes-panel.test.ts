@@ -29,6 +29,7 @@ const statusWithMixedEpisodes: ShowEpisodeStatus = {
 			season: 4,
 			episodeCountMismatch: true,
 			airedEpisodeCount: 3,
+			plexSource: 'live',
 			episodes: [
 				{
 					episode: 1,
@@ -82,7 +83,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(1),
 			episodeStatus: null,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByText('No TMDB match yet.')).toBeInTheDocument();
@@ -94,7 +96,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(1),
 			episodeStatus: null,
 			episodeStatusError: 'Could not load the missing-episodes panel.',
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByText('Missing-episodes panel unavailable')).toBeInTheDocument();
@@ -106,7 +109,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
@@ -127,12 +131,14 @@ describe('MissingEpisodesPanel', () => {
 						season: 1,
 						episodeCountMismatch: undefined,
 						airedEpisodeCount: 1,
+						plexSource: 'live',
 						episodes: [{ episode: 1, name: 'Pilot', plexStatus: 'unknown', manualGrabs: [] }]
 					}
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByText("Plex hasn't confirmed this show yet")).toBeInTheDocument();
@@ -152,6 +158,7 @@ describe('MissingEpisodesPanel', () => {
 						season: 1,
 						episodeCountMismatch: undefined,
 						airedEpisodeCount: 0,
+						plexSource: 'live',
 						episodes: [
 							{
 								episode: 1,
@@ -172,7 +179,8 @@ describe('MissingEpisodesPanel', () => {
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		// Confirmed future date -> honest "UNAIRED", not "MISSING".
@@ -189,7 +197,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: false
+			canWrite: false,
+			refreshGeneration: 0
 		});
 
 		expect(screen.queryByText('Find on EZTV')).not.toBeInTheDocument();
@@ -219,7 +228,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		const buttons = screen.getAllByRole('button', { name: 'Find on EZTV' });
@@ -238,7 +248,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		// Season 4: 3 episodes, all aired (past air dates), only 1 owned.
@@ -257,6 +268,7 @@ describe('MissingEpisodesPanel', () => {
 						season: 1,
 						episodeCountMismatch: undefined,
 						airedEpisodeCount: 0,
+						plexSource: 'live',
 						episodes: [
 							{
 								episode: 1,
@@ -270,7 +282,8 @@ describe('MissingEpisodesPanel', () => {
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByRole('button', { name: 'Season 1' })).toBeInTheDocument();
@@ -287,6 +300,7 @@ describe('MissingEpisodesPanel', () => {
 						season: 1,
 						episodeCountMismatch: undefined,
 						airedEpisodeCount: 1,
+						plexSource: 'live',
 						episodes: [
 							{
 								episode: 1,
@@ -300,7 +314,8 @@ describe('MissingEpisodesPanel', () => {
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByRole('button', { name: 'Season 1 (1)' })).toBeInTheDocument();
@@ -312,7 +327,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getAllByRole('button', { name: 'Find on EZTV' }).length).toBeGreaterThan(0);
@@ -341,7 +357,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		const buttons = screen.getAllByRole('button', { name: 'Find on ThePirateBay' });
@@ -369,7 +386,8 @@ describe('MissingEpisodesPanel', () => {
 			show,
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		// Season 1 and 2 were never fetched this visit — their suffixes come
@@ -390,6 +408,7 @@ describe('MissingEpisodesPanel', () => {
 						season: 1,
 						episodeCountMismatch: undefined,
 						airedEpisodeCount: 1,
+						plexSource: 'live',
 						episodes: [
 							{
 								episode: 1,
@@ -403,7 +422,8 @@ describe('MissingEpisodesPanel', () => {
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 		expect(screen.getByText('Show A Ep1')).toBeInTheDocument();
 
@@ -420,6 +440,7 @@ describe('MissingEpisodesPanel', () => {
 						season: 1,
 						episodeCountMismatch: undefined,
 						airedEpisodeCount: 1,
+						plexSource: 'live',
 						episodes: [
 							{
 								episode: 1,
@@ -433,7 +454,8 @@ describe('MissingEpisodesPanel', () => {
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByText('Show B Ep1')).toBeInTheDocument();
@@ -446,7 +468,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 		expect(screen.getByText('The Griffin Incident')).toBeInTheDocument();
 
@@ -467,7 +490,8 @@ describe('MissingEpisodesPanel', () => {
 				]
 			},
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		expect(screen.getByText('Refreshed Episode Name')).toBeInTheDocument();
@@ -484,6 +508,7 @@ describe('MissingEpisodesPanel', () => {
 							season: 1,
 							episodeCountMismatch: undefined,
 							airedEpisodeCount: 1,
+							plexSource: 'live',
 							episodes: [
 								{
 									episode: 1,
@@ -505,7 +530,8 @@ describe('MissingEpisodesPanel', () => {
 			show: showWithSeasons(4),
 			episodeStatus: statusWithMixedEpisodes,
 			episodeStatusError: null,
-			canWrite: true
+			canWrite: true,
+			refreshGeneration: 0
 		});
 
 		// Only season 4 (the server-preloaded default) is fetched at first —
@@ -524,6 +550,227 @@ describe('MissingEpisodesPanel', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /Season 4/ }));
 		expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	// The operator's "tug of war" report, 2026-09-03: one manual grab made the
+	// page jump to the season buttons and back several times. Root cause was
+	// the panel throwing away everything it knew on any page-data change and
+	// collapsing the episode grid — thousands of pixels — down to a single
+	// "Loading season…" line while it re-fetched. These pin both halves of
+	// the fix.
+	describe('season cache survives unrelated page-data changes', () => {
+		function seasonOneResponse(name: string) {
+			return new Response(
+				JSON.stringify({
+					plexReachable: true,
+					seasons: [
+						{
+							season: 1,
+							episodeCountMismatch: undefined,
+							airedEpisodeCount: 1,
+							plexSource: 'live',
+							episodes: [
+								{
+									episode: 1,
+									name,
+									airDate: '2026-01-01',
+									plexStatus: 'in_library',
+									manualGrabs: []
+								}
+							]
+						}
+					]
+				}),
+				{ status: 200 }
+			);
+		}
+
+		it('keeps an already-loaded season cached across an unrelated reload — no re-fetch when clicking back into it', async () => {
+			fetchMock.mockResolvedValue(seasonOneResponse('Season One Pilot'));
+
+			const { rerender } = render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: statusWithMixedEpisodes,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Season 1' }));
+			await waitFor(() => {
+				expect(screen.getByText('Season One Pilot')).toBeInTheDocument();
+			});
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+
+			// An unrelated page-data change (what a manual grab used to trigger
+			// via invalidateAll) — same show, same refresh generation.
+			rerender({
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: { ...statusWithMixedEpisodes },
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			// Back to season 4, then into season 1 again — the suffix makes the
+			// button's accessible name "Season 1 (1)" once its grid is loaded.
+			await fireEvent.click(screen.getByRole('button', { name: /^Season 4/ }));
+			await fireEvent.click(screen.getByRole('button', { name: /^Season 1/ }));
+			expect(screen.getByText('Season One Pilot')).toBeInTheDocument();
+			// Still one — season 1 was never discarded, so nothing to re-fetch.
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+
+		it('does clear every cached season when refreshGeneration bumps (Refresh Plex really did re-walk them server-side)', async () => {
+			fetchMock.mockResolvedValue(seasonOneResponse('Season One Pilot'));
+
+			const { rerender } = render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: statusWithMixedEpisodes,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Season 1' }));
+			await waitFor(() => {
+				expect(screen.getByText('Season One Pilot')).toBeInTheDocument();
+			});
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+
+			fetchMock.mockResolvedValue(seasonOneResponse('Re-walked Pilot'));
+			rerender({
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: { ...statusWithMixedEpisodes },
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 1
+			});
+
+			// The wipe drops season 1, and the seeding effect re-fetches it
+			// immediately because it's the season on screen — no click needed.
+			await waitFor(() => {
+				expect(screen.getByText('Re-walked Pilot')).toBeInTheDocument();
+			});
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+		});
+
+		it('never collapses a season already on screen while it re-fetches — the grid stays mounted, only a "Refreshing…" marker appears', async () => {
+			let release: (value: Response) => void = () => {};
+			fetchMock.mockReturnValue(
+				new Promise<Response>((resolve) => {
+					release = resolve;
+				})
+			);
+
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: statusWithMixedEpisodes,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+			expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
+
+			// Re-fetch the season currently on screen — clicking the active
+			// season pill forces it, same code path a successful manual grab
+			// takes.
+			await fireEvent.click(screen.getByRole('button', { name: /^Season 4/ }));
+
+			await waitFor(() => {
+				expect(screen.getByText('Refreshing…')).toBeInTheDocument();
+			});
+			// The whole point: the episode grid never left the DOM, so the page
+			// height never moved and the viewport never got yanked.
+			expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
+			expect(screen.queryByText(/Loading season/)).not.toBeInTheDocument();
+
+			release(
+				new Response(
+					JSON.stringify({
+						plexReachable: true,
+						seasons: [
+							{
+								...statusWithMixedEpisodes.seasons[0],
+								episodes: statusWithMixedEpisodes.seasons[0].episodes.map((e) =>
+									e.episode === 1 ? { ...e, name: 'Refreshed Marineris' } : e
+								)
+							}
+						]
+					}),
+					{ status: 200 }
+				)
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText('Refreshed Marineris')).toBeInTheDocument();
+			});
+			expect(screen.queryByText('Refreshing…')).not.toBeInTheDocument();
+		});
+
+		it('re-fetches the operator\'s season after a refresh wipe delivers empty episodeStatus, instead of stranding a bare "Loading season…"', async () => {
+			fetchMock.mockResolvedValue(seasonOneResponse('Season One Pilot'));
+
+			const { rerender } = render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: statusWithMixedEpisodes,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Season 1' }));
+			await waitFor(() => {
+				expect(screen.getByText('Season One Pilot')).toBeInTheDocument();
+			});
+
+			// Refresh Plex bumps the generation (wiping the cache) but the
+			// reload comes back with no seasons at all. Nothing would be in
+			// flight if the effect just bailed here, leaving a "Loading season…"
+			// line with no elapsed timer and no Retry — both gated on a real
+			// loading state — until the operator clicked a pill.
+			fetchMock.mockResolvedValue(seasonOneResponse('Recovered Pilot'));
+			rerender({
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: { plexReachable: true, seasons: [] },
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 1
+			});
+
+			await waitFor(() => {
+				expect(screen.getByText('Recovered Pilot')).toBeInTheDocument();
+			});
+		});
+
+		it('keeps the stale grid rather than an error panel when a background refresh fails', async () => {
+			fetchMock.mockRejectedValue(new Error('network down'));
+
+			render(Panel, {
+				slug: 'the-show',
+				show: showWithSeasons(4),
+				episodeStatus: statusWithMixedEpisodes,
+				episodeStatusError: null,
+				canWrite: true,
+				refreshGeneration: 0
+			});
+			expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
+
+			await fireEvent.click(screen.getByRole('button', { name: /^Season 4/ }));
+
+			await waitFor(() => {
+				expect(screen.queryByText('Refreshing…')).not.toBeInTheDocument();
+			});
+			expect(screen.getByText('Valles Marineris')).toBeInTheDocument();
+			expect(screen.queryByText('Could not load this season')).not.toBeInTheDocument();
+		});
 	});
 
 	// Investigated live 2026-09-02: a season could sit on "Loading season…"
@@ -554,7 +801,8 @@ describe('MissingEpisodesPanel', () => {
 				show: showWithSeasons(4),
 				episodeStatus: statusWithMixedEpisodes,
 				episodeStatusError: null,
-				canWrite: true
+				canWrite: true,
+				refreshGeneration: 0
 			});
 
 			// The "(Ns)" suffix is one interpolated expression alongside
@@ -595,7 +843,8 @@ describe('MissingEpisodesPanel', () => {
 				show: showWithSeasons(4),
 				episodeStatus: statusWithMixedEpisodes,
 				episodeStatusError: null,
-				canWrite: true
+				canWrite: true,
+				refreshGeneration: 0
 			});
 
 			await fireEvent.click(screen.getByRole('button', { name: 'Season 1' }));
@@ -611,6 +860,7 @@ describe('MissingEpisodesPanel', () => {
 								season: 1,
 								episodeCountMismatch: false,
 								airedEpisodeCount: 1,
+								plexSource: 'live',
 								episodes: [
 									{
 										episode: 1,
@@ -644,6 +894,7 @@ describe('MissingEpisodesPanel', () => {
 								season: 1,
 								episodeCountMismatch: false,
 								airedEpisodeCount: 1,
+								plexSource: 'live',
 								episodes: [
 									{
 										episode: 1,
