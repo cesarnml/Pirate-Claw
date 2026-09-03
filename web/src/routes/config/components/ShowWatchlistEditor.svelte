@@ -5,6 +5,7 @@
 
 	interface Props {
 		showRows: string[];
+		showStrict: boolean[];
 		canWrite: boolean;
 		currentEtag: string | null;
 		showsMessage?: string;
@@ -15,10 +16,12 @@
 		onUpdateShowName: (index: number, value: string) => void;
 		onHandleShowEnter: (index: number) => void;
 		onRemoveShow: (index: number) => void;
+		onToggleShowStrict: (index: number) => void;
 	}
 
 	const {
 		showRows,
+		showStrict,
 		canWrite,
 		currentEtag,
 		showsMessage,
@@ -28,7 +31,8 @@
 		setShowsSubmitButtonEl,
 		onUpdateShowName,
 		onHandleShowEnter,
-		onRemoveShow
+		onRemoveShow,
+		onToggleShowStrict
 	}: Props = $props();
 
 	let showsFormEl = $state<HTMLFormElement | null>(null);
@@ -89,9 +93,27 @@
 								}
 							}}
 						/>
+						<input type="hidden" name="showStrict" value={showStrict[index] ? 'true' : 'false'} />
 						<button
 							type="button"
-							class={`border-border text-muted-foreground hover:border-primary/60 hover:text-primary hover:bg-muted inline-flex size-5 items-center justify-center rounded-full border text-xs transition-[opacity,color,border-color,background-color] disabled:opacity-50 ${
+							class={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[0.65rem] font-medium tracking-wide uppercase transition-colors disabled:opacity-50 ${
+								showStrict[index]
+									? 'border-primary/60 bg-primary/15 text-primary'
+									: 'border-border text-muted-foreground hover:border-primary/60 hover:text-primary'
+							}`}
+							disabled={!canWrite}
+							title={!canWrite
+								? writeDisabledTooltip
+								: showStrict[index]
+									? 'Strict: only exact-title RSS matches are tracked. Click to allow loose matches again.'
+									: 'Loose: RSS releases whose title starts with this one also match (e.g. a sequel or spin-off). Click for an exact-title-only match.'}
+							onclick={() => onToggleShowStrict(index)}
+						>
+							Strict
+						</button>
+						<button
+							type="button"
+							class={`border-border text-muted-foreground hover:border-primary/60 hover:text-primary hover:bg-muted inline-flex size-5 shrink-0 items-center justify-center rounded-full border text-xs transition-[opacity,color,border-color,background-color] disabled:opacity-50 ${
 								focusedShowIndex === index ? 'pointer-events-none opacity-0' : 'opacity-100'
 							}`}
 							disabled={!canWrite || showRows.length <= 1}

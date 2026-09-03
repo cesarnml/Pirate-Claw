@@ -416,6 +416,72 @@ describe('config page server actions', () => {
 				})
 			);
 		});
+
+		it('sends an anchored matchPattern object for rows marked showStrict, plain strings for the rest', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-2"' } })
+			);
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.append('showName', 'Tomb raider');
+			body.append('showStrict', 'true');
+			body.append('showName', 'Breaking Bad');
+			body.append('showStrict', 'false');
+
+			const result = await actions.saveShows({
+				request: formPostRequest('http://localhost/config', body)
+			} as never);
+
+			expect((result as { showsSuccess?: boolean }).showsSuccess).toBe(true);
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/config',
+				expect.objectContaining({
+					method: 'PUT',
+					body: JSON.stringify({
+						runtime: {},
+						tv: {
+							shows: [{ name: 'Tomb raider', matchPattern: '^Tomb +raider$' }, 'Breaking Bad']
+						}
+					})
+				})
+			);
+		});
+
+		it('keeps showName/showStrict aligned by index even when a blank row is filtered out', async () => {
+			vi.doMock('$env/dynamic/private', () => ({
+				env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+			}));
+			const { actions } = await import('../../../src/routes/config/+page.server');
+			apiRequestMock.mockResolvedValue(
+				new Response(null, { status: 200, headers: { etag: '"rev-2"' } })
+			);
+
+			const body = new URLSearchParams();
+			body.set('ifMatch', '"rev-1"');
+			body.append('showName', '');
+			body.append('showStrict', 'true');
+			body.append('showName', 'Tomb raider');
+			body.append('showStrict', 'true');
+
+			await actions.saveShows({
+				request: formPostRequest('http://localhost/config', body)
+			} as never);
+
+			expect(apiRequestMock).toHaveBeenCalledWith(
+				'/api/config',
+				expect.objectContaining({
+					body: JSON.stringify({
+						runtime: {},
+						tv: { shows: [{ name: 'Tomb raider', matchPattern: '^Tomb +raider$' }] }
+					})
+				})
+			);
+		});
 	});
 
 	describe('saveRuntime', () => {

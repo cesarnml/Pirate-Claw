@@ -224,13 +224,18 @@ describe('/config', () => {
 		);
 	});
 
-	it('seeds the editable watchlist from matchPattern when present', () => {
+	it('seeds the editable watchlist from the show name, not a raw matchPattern override', () => {
+		// Was: fell back to showing matchPattern (raw regex) as the row's text
+		// when present, so a show with any override displayed as its own
+		// pattern instead of its name. Fixed alongside the Strict toggle
+		// (2026-09-02) — the row always shows `name`; whether matchPattern is
+		// set is now surfaced via the Strict button instead.
 		renderPage({
 			config: {
 				...mockConfig,
 				tv: [
 					{
-						name: 'hd-tv',
+						name: 'Tomb raider',
 						matchPattern: 'The Show',
 						resolutions: ['1080p'],
 						codecs: ['x265']
@@ -243,7 +248,42 @@ describe('/config', () => {
 			onboarding: null
 		});
 
-		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toHaveValue('The Show');
+		expect(screen.getByRole('textbox', { name: 'TV show 1' })).toHaveValue('Tomb raider');
+	});
+
+	it('shows Strict as active only when matchPattern equals the generated strict pattern for the name', () => {
+		renderPage({
+			config: {
+				...mockConfig,
+				tv: [
+					{
+						name: 'Tomb raider',
+						matchPattern: '^Tomb +raider$',
+						resolutions: ['1080p'],
+						codecs: ['x265']
+					},
+					{
+						name: 'Andor',
+						resolutions: ['1080p'],
+						codecs: ['x265']
+					}
+				]
+			},
+			error: null,
+			etag: '"rev-1"',
+			canWrite: true,
+			onboarding: null
+		});
+
+		const strictButtons = screen.getAllByRole('button', { name: 'Strict' });
+		expect(strictButtons[0]).toHaveAttribute(
+			'title',
+			expect.stringContaining('Strict: only exact-title')
+		);
+		expect(strictButtons[1]).toHaveAttribute(
+			'title',
+			expect.stringContaining('Loose: RSS releases')
+		);
 	});
 
 	it('confirms before removing a movie year', async () => {

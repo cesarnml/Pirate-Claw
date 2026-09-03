@@ -8,6 +8,7 @@
 	import { maskConfiguredValue, parseHostPortFromUrl } from '$lib/helpers';
 	import { hasRestartTimedOut, loadRestartRoundTripPhase } from '$lib/restart-roundtrip';
 	import { toast } from '$lib/toast';
+	import { isStrictRule } from '$lib/tv-strict-match';
 	import type { FeedConfig, RestartStatus } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 	import NetworkPostureBanner from '$lib/components/NetworkPostureBanner.svelte';
@@ -61,6 +62,12 @@
 	});
 
 	let showRows = $state<string[]>([]);
+	// Aligned 1:1 with showRows by index — see ShowWatchlistEditor's "Strict"
+	// toggle. Initial values on load/reload are derived from whether each
+	// tracked show's matchPattern already equals what we'd generate for its
+	// name (isStrictRule), not stored separately, since the backend has no
+	// dedicated "strict" field — the strictness IS the matchPattern override.
+	let showStrict = $state<boolean[]>([]);
 	let tvResolutions = $state<string[]>([]);
 	let tvCodecs = $state<string[]>([]);
 	let tvSubmitting = $state(false);
@@ -235,7 +242,6 @@
 	onMount(() => {
 		runtimeChangesSavedAt = readRuntimeChangesSavedAt();
 
-
 		// A pending entry only means something if this load itself couldn't
 		// reach the API — if data.config/data.error say we're fine, the
 		// daemon is already back (we just missed the notification, e.g. the
@@ -283,7 +289,13 @@
 	$effect(() => {
 		const config = data.config;
 		if (!config) return;
-		showRows = config.tv.map((rule) => rule.matchPattern ?? rule.name);
+		// Was `rule.matchPattern ?? rule.name`: any show with a matchPattern
+		// override (from config.json, or now from the Strict toggle below)
+		// displayed its raw regex as the "name" instead of the human-readable
+		// name — the two rows below now source it from rule.name directly, and
+		// keep the toggle's own strict-or-not state instead.
+		showRows = config.tv.map((rule) => rule.name);
+		showStrict = config.tv.map((rule) => isStrictRule(rule));
 		tvResolutions = [...(config.tvDefaults?.resolutions ?? [])];
 		tvCodecs = [...(config.tvDefaults?.codecs ?? [])];
 		movieYears = [...(config.movies?.years ?? [])];
@@ -345,6 +357,11 @@
 		const name = showAddDraftName.trim();
 		if (!name) return;
 		showRows = [name, ...showRows];
+		// New shows default to loose matching, unchanged — see the "Default
+		// state" call on the Strict toggle feature: opt-in per show rather than
+		// opt-out, since loose is harmless for most titles and only a handful
+		// of generic/prefix-prone names (like "Tomb raider") need strict.
+		showStrict = [false, ...showStrict];
 		showAddDraftName = '';
 		if (keepOpen) {
 			await tick();
@@ -398,6 +415,7 @@
 		if (!showDeleteConfirm) return;
 		const { index, name } = showDeleteConfirm;
 		showRows = showRows.filter((_, i) => i !== index);
+		showStrict = showStrict.filter((_, i) => i !== index);
 		showDeleteConfirm = null;
 		await tick();
 		submitShows({ type: 'delete', name });
@@ -405,6 +423,17 @@
 
 	function updateShowName(index: number, value: string) {
 		showRows = showRows.map((row, i) => (i === index ? value : row));
+	}
+
+	// Strict-ness is baked into matchPattern from the (possibly just-edited)
+	// name at save time — see +page.server.ts's saveShows action — so
+	// toggling it submits immediately, same as the Enter-to-save name flow,
+	// rather than waiting for some other blur/submit trigger.
+	function toggleShowStrict(index: number) {
+		showStrict = showStrict.map((value, i) => (i === index ? !value : value));
+		const name = showRows[index]?.trim() ?? '';
+		if (!name) return;
+		void submitShows({ type: 'edit', name });
 	}
 
 	function toggleSelection(values: string[], value: string): string[] {
@@ -983,6 +1012,7 @@
 					</div>
 					<ShowWatchlistEditor
 						{showRows}
+						{showStrict}
 						{canWrite}
 						{currentEtag}
 						showsMessage={form?.showsMessage}
@@ -993,6 +1023,7 @@
 						onUpdateShowName={updateShowName}
 						onHandleShowEnter={handleShowEnter}
 						onRemoveShow={removeShow}
+						onToggleShowStrict={toggleShowStrict}
 					/>
 				</div>
 			</div>

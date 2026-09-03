@@ -2,6 +2,7 @@ import { env } from '$env/dynamic/private';
 import { fail } from '@sveltejs/kit';
 import { deriveOnboardingStatus } from '$lib/onboarding';
 import { apiRequest, navApiRequest } from '$lib/server/api';
+import { strictMatchPatternFor } from '$lib/tv-strict-match';
 import type {
 	AppConfig,
 	OnboardingStatus,
@@ -381,8 +382,21 @@ export const actions: Actions = {
 		}
 
 		const rawShowNames = formData.getAll('showName').map((v) => String(v).trim());
-		const showNames = rawShowNames.filter((n) => n.length > 0);
-		if (showNames.length < 1) {
+		// Aligned 1:1 with rawShowNames by index — ShowWatchlistEditor renders
+		// one hidden "showStrict" input per row alongside its "showName" input,
+		// always present (unlike a checkbox, which only submits when checked),
+		// so the two getAll() results stay in lockstep even before the empty-
+		// name filter below.
+		const rawStrictFlags = formData.getAll('showStrict').map((v) => String(v) === 'true');
+		const shows = rawShowNames
+			.map((name, index) => ({ name, strict: rawStrictFlags[index] ?? false }))
+			.filter((entry) => entry.name.length > 0)
+			.map((entry) =>
+				entry.strict
+					? { name: entry.name, matchPattern: strictMatchPatternFor(entry.name) }
+					: entry.name
+			);
+		if (shows.length < 1) {
 			return fail(400, { showsMessage: 'At least one TV show name is required.' });
 		}
 
@@ -394,7 +408,7 @@ export const actions: Actions = {
 					authorization: `Bearer ${writeToken}`,
 					'if-match': ifMatch
 				},
-				body: JSON.stringify({ runtime: {}, tv: { shows: showNames } })
+				body: JSON.stringify({ runtime: {}, tv: { shows } })
 			});
 
 			if (!response.ok) {
