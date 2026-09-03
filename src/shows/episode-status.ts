@@ -398,16 +398,24 @@ function canServeFromCompletionCache(
  * latest season — a guaranteed spinner plus a wasted round trip on every
  * single page view of that show.
  *
- * Steps down until it finds a season with episodes on record. TMDB-only and
- * cache-first (loadSeasonEpisodes), so the probe normally costs no network at
- * all, and never touches Plex.
+ * Steps down until it finds a season with at least one *aired* episode. Not
+ * merely "has episodes on record": confirmed live 2026-09-03, TMDB had already
+ * published Simpsons season 38 episode 1 with an air date 24 days in the
+ * future, so an episodes-exist test lands the operator on a season holding one
+ * UNAIRED row and nothing to act on — the same wasted trip back to season 37
+ * this function exists to remove, just relocated. "Aired" uses the same
+ * strictly-before-today rule as airedEpisodeCount, so an episode airing today
+ * doesn't yank the default forward mid-broadcast.
+ *
+ * TMDB-only and cache-first (loadSeasonEpisodes), so the probe normally costs
+ * no network at all, and never touches Plex.
  *
  * Bounded by DEFAULT_SEASON_PROBE_LIMIT rather than walking to season 1: two
- * announced-empty seasons stacked on top of each other is already unusual, and
- * a show whose TMDB data is broken outright shouldn't turn one page view into
- * dozens of probes. On giving up it returns the last season it tried, which
- * still lands the caller somewhere real-looking and lets the normal "Could not
- * load this season" path report the problem honestly.
+ * announced-or-unaired seasons stacked on top of each other is already
+ * unusual, and a show whose TMDB data is broken outright shouldn't turn one
+ * page view into dozens of probes. On giving up it returns the last season it
+ * tried — for a show that simply hasn't aired yet that's the right landing
+ * spot anyway (its UNAIRED grid is all there is to show).
  */
 const DEFAULT_SEASON_PROBE_LIMIT = 3;
 
@@ -420,6 +428,7 @@ export async function resolveDefaultSeason(
   if (!tmdbId || !numberOfSeasons || numberOfSeasons < 1) return undefined;
 
   const matchKey = tvMatchKey(show.normalizedTitle);
+  const todayIsoDate = broadcastTodayIsoDate();
   let season = numberOfSeasons;
   for (
     let probe = 0;
@@ -427,7 +436,10 @@ export async function resolveDefaultSeason(
     probe++
   ) {
     const episodes = await loadSeasonEpisodes(matchKey, tmdbId, season, tmdb);
-    if (episodes && episodes.length > 0) return season;
+    const hasAiredEpisode = episodes?.some(
+      (ep) => ep.air_date !== undefined && ep.air_date < todayIsoDate,
+    );
+    if (hasAiredEpisode) return season;
     if (season === 1) break;
     season--;
   }

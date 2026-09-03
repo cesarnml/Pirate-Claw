@@ -931,12 +931,26 @@ describe('resolveDefaultSeason', () => {
     expect(await resolveDefaultSeason(showFixture(38), tmdb)).toBe(37);
   });
 
-  it('uses the top season when it does have episodes', async () => {
+  it('uses the top season when it has an aired episode', async () => {
     const tmdb = fakeTmdb({
-      38: [{ episode_number: 1, name: 'Ep 1', air_date: '2026-09-28' }],
+      38: [{ episode_number: 1, name: 'Ep 1', air_date: '2020-09-28' }],
     });
 
     expect(await resolveDefaultSeason(showFixture(38), tmdb)).toBe(38);
+  });
+
+  it('steps past a top season whose only episode is still unaired (real Simpsons S38 reproduction, 2026-09-03)', async () => {
+    // TMDB publishes next season's premiere weeks ahead of broadcast. Landing
+    // there shows one UNAIRED row and nothing actionable.
+    const future = new Date(Date.now() + 24 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const tmdb = fakeTmdb({
+      37: [{ episode_number: 1, name: 'Aired', air_date: '2025-09-28' }],
+      38: [{ episode_number: 1, name: 'Upcoming', air_date: future }],
+    });
+
+    expect(await resolveDefaultSeason(showFixture(38), tmdb)).toBe(37);
   });
 
   it('keeps stepping down past two empty seasons to the real latest one with data', async () => {
