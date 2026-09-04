@@ -33,6 +33,7 @@ function stubRepository(): Repository {
     listCandidateStates: () => [],
     listReconcilableCandidates: () => [],
     listRetryableCandidates: () => [],
+    listDistinctFeedItems: () => [],
     listRecentFeedItemOutcomesForReview: () => [],
     listDistinctUnmatchedAndFailedOutcomes: () => [],
     setPirateClawDisposition: () => {},

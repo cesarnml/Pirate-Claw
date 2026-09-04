@@ -197,6 +197,18 @@ export type Repository = {
   listReconcilableCandidates(limit?: number): CandidateStateRecord[];
   listRetryableCandidates(limit?: number): CandidateStateRecord[];
   /**
+   * One row per distinct feed item ever recorded — newest run's copy of each,
+   * newest first. Backs the feed-history rescan (see rescanFeedHistory in
+   * src/pipeline.ts).
+   *
+   * Deduped on `guid_or_link`, the feed's own stable item id: `recordFeedItem`
+   * inserts a fresh row every time an item is seen, so the same release
+   * accumulates one row per poll it appears in. On the live box that is 44k
+   * rows for roughly 2.3k distinct releases — rescanning the raw table would
+   * do twenty times the work to reach the same answer.
+   */
+  listDistinctFeedItems(limit?: number): FeedItemRecord[];
+  /**
    * One row per matched `identity_key`: latest `failed` feed outcome while
    * `candidate_state` is still failed (Transmission enqueue failure), within the
    * day window.
@@ -424,6 +436,23 @@ export function createRepository(database: Database): Repository {
       published_at,
       download_url
     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+  );
+  // MAX(id) picks the most recent row per guid; every other column is read
+  // from that same row because SQLite resolves a bare column against the row
+  // that produced the MAX in a simple aggregate query.
+  const selectDistinctFeedItems = database.query(
+    `SELECT
+      MAX(id) AS id,
+      run_id AS runId,
+      feed_name AS feedName,
+      guid_or_link AS guidOrLink,
+      raw_title AS rawTitle,
+      published_at AS publishedAt,
+      download_url AS downloadUrl
+    FROM feed_items
+    GROUP BY guid_or_link
+    ORDER BY id DESC
+    LIMIT ?1`,
   );
   const selectFeedItem = database.query(
     `SELECT
@@ -1122,6 +1151,12 @@ export function createRepository(database: Database): Repository {
       return (
         listRetryableCandidatesStatement.all(limit) as CandidateStateRow[]
       ).map(mapCandidateStateRow);
+    },
+
+    listDistinctFeedItems(limit = 50_000): FeedItemRecord[] {
+      return (selectDistinctFeedItems.all(limit) as FeedItemRow[]).map(
+        mapFeedItemRow,
+      );
     },
 
     setPirateClawDisposition(

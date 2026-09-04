@@ -91,6 +91,7 @@ Most owner tasks happen in the dashboard:
 
 - add or remove feeds
 - add TV shows and movie preferences
+- rescan already-seen feed items after changing what should match
 - connect or reconnect Plex
 - inspect matched TV and movie candidates
 - watch active Transmission progress
@@ -121,7 +122,8 @@ Manual configuration remains available for advanced users. Start from:
 The main configuration areas are:
 
 - feeds
-- TV defaults and show-specific overrides
+- TV defaults and show-specific overrides (per-show `matchPattern` for release-naming
+  quirks, and `tmdbId` to pin which series a show actually is)
 - movie quality policy
 - Transmission connection and download directories
 - Plex connection

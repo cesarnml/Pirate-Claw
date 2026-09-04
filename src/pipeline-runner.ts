@@ -58,15 +58,42 @@ export function createPipelineCoordinator(input: {
       for (const group of groupByIdentity(candidates).values()) {
         const winner = selectWinningCandidate(group);
 
+        // Whether this episode is already accounted for, decided before any
+        // losing release is recorded. recordDuplicateOutcome upserts
+        // candidate_state, and that upsert overwrites raw_title / resolution
+        // / codec / download_url / status from whichever release it is
+        // handed — so recording a loser against an episode already
+        // downloaded rewrites the row to describe a release the operator
+        // does not have, and flips its status to 'skipped_duplicate'. Losers
+        // in that case get a feed-item outcome only (telemetry keeps its
+        // shape) and never touch candidate_state. Latent in a normal run;
+        // the feed rescan replays all history every pass, which would make
+        // it systematic.
+        const alreadyQueued = input.repository.isCandidateQueued(
+          winner.match.identityKey,
+        );
+        const alreadyHeld =
+          alreadyQueued || manuallyGrabbed.has(winner.match.identityKey);
+
         for (const candidate of group) {
-          if (candidate !== winner) {
+          if (candidate === winner) continue;
+          const message = 'Higher-ranked candidate selected for this identity.';
+          if (alreadyHeld) {
+            recordFeedItemOutcome(input.repository, {
+              runId: input.run.id,
+              feedItemId: candidate.feedItem.id,
+              status: 'skipped_duplicate',
+              match: candidate.match,
+              message,
+            });
+          } else {
             recordDuplicateOutcome(input.repository, input.run, candidate, {
-              message: 'Higher-ranked candidate selected for this identity.',
+              message,
             });
           }
         }
 
-        if (input.repository.isCandidateQueued(winner.match.identityKey)) {
+        if (alreadyQueued) {
           recordFeedItemOutcome(input.repository, {
             runId: input.run.id,
             feedItemId: winner.feedItem.id,

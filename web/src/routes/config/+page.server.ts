@@ -723,6 +723,52 @@ export const actions: Actions = {
 		}
 	},
 
+	/**
+	 * Replays every feed item already on record against the current watchlist.
+	 * Adding a show does this automatically; this is the manual handle for
+	 * everything else that changes what should match — widening the quality
+	 * defaults, editing a match pattern, or clearing a Strict toggle.
+	 */
+	rescanFeed: async () => {
+		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
+		if (!writeToken) return fail(403, { rescanError: 'Config writes are disabled.' });
+
+		try {
+			const response = await apiRequest('/api/feed/rescan', {
+				method: 'POST',
+				headers: {
+					authorization: `Bearer ${writeToken}`
+				}
+			});
+
+			if (!response.ok) {
+				let rescanError = `Rescan failed (${response.status}).`;
+				try {
+					const body = (await response.json()) as { error?: string };
+					if (body.error) rescanError = body.error;
+				} catch {
+					// keep fallback
+				}
+				return fail(response.status, { rescanError });
+			}
+
+			const body = (await response.json()) as {
+				counts?: Record<string, number>;
+			};
+			const queued = body.counts?.queued ?? 0;
+			return {
+				rescanned: true,
+				rescanMessage:
+					queued === 0
+						? 'Rescan complete — nothing new to grab.'
+						: `Rescan complete — queued ${queued} episode${queued === 1 ? '' : 's'}.`
+			};
+		} catch (error) {
+			console.error('[config] rescanFeed failed:', error);
+			return fail(502, { rescanError: 'Could not reach the API to rescan.' });
+		}
+	},
+
 	restartDaemon: async () => {
 		const writeToken = env.PIRATE_CLAW_API_WRITE_TOKEN;
 		if (writeToken === undefined || writeToken === null)

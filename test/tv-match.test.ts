@@ -65,13 +65,12 @@ describe('matchTvItem', () => {
     expect(matchTvItem(item, rules)).toEqual([]);
   });
 
-  it('rejects a generic single-word rule name floating inside an unrelated title', () => {
-    // Real bug: a rule for a generically-named show like "From" used to match
-    // any unrelated release whose title happened to contain "from" as a
-    // word anywhere, because the derived pattern allowed the match to start
-    // mid-string. Single-word rule names now require an exact whole-title
-    // match instead of boundary matching, which fixes this while multi-word
-    // rule names keep the original, more tolerant boundary matching.
+  it('leaves a generic single-word rule name tolerant until Strict is set', () => {
+    // A rule named "From" does match "Escape From New York" on the derived
+    // pattern. That is deliberate: word count is a bad proxy for ambiguity,
+    // and anchoring every single-word name silently broke the far more
+    // common case of a release title carrying a year (see deriveMatchPattern).
+    // Overmatch is the operator's call now, via the Strict toggle below.
     const item = normalizeFeedItem({
       mediaType: 'tv',
       rawTitle: 'Escape From New York S01E02 1080p WEB x265',
@@ -84,7 +83,45 @@ describe('matchTvItem', () => {
       },
     ];
 
+    expect(matchTvItem(item, rules)).toHaveLength(1);
+  });
+
+  it('rejects the unrelated title once the show is marked Strict', () => {
+    // The Strict toggle writes exactly this anchored matchPattern (see
+    // strictMatchPatternFor in web/src/lib/tv-strict-match.ts).
+    const item = normalizeFeedItem({
+      mediaType: 'tv',
+      rawTitle: 'Escape From New York S01E02 1080p WEB x265',
+    });
+    const rules: TvRule[] = [
+      {
+        name: 'From',
+        matchPattern: '^From$',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ];
+
     expect(matchTvItem(item, rules)).toEqual([]);
+  });
+
+  // The undermatch that reverting the anchor exists to fix: scene releases
+  // routinely append the premiere year, and 27 of the 75 shows on the live
+  // watchlist are single-word names.
+  it('matches a single-word show whose release title carries a year', () => {
+    const item = normalizeFeedItem({
+      mediaType: 'tv',
+      rawTitle: 'Lanterns 2026 S01E03 1080p HEVC x265-MeGusta',
+    });
+    const rules: TvRule[] = [
+      {
+        name: 'Lanterns',
+        resolutions: ['1080p'],
+        codecs: ['x265'],
+      },
+    ];
+
+    expect(matchTvItem(item, rules)).toHaveLength(1);
   });
 
   it('still matches the intended generic-named show as an exact title', () => {
@@ -103,10 +140,9 @@ describe('matchTvItem', () => {
     expect(matchTvItem(item, rules)).toHaveLength(1);
   });
 
-  it('rejects a single-word rule name that is only a prefix of a longer title', () => {
-    // A plain start-anchor (without requiring an exact whole-title match)
-    // would still wrongly match this — "From" is a prefix of "From The
-    // Ashes", not the whole title.
+  it('rejects a longer title that merely starts with a Strict rule name', () => {
+    // "From" is a prefix of "From The Ashes", not the whole title. Strict
+    // anchors both ends, so the prefix case is excluded too.
     const item = normalizeFeedItem({
       mediaType: 'tv',
       rawTitle: 'From The Ashes S01E02 1080p WEB x265',
@@ -114,6 +150,7 @@ describe('matchTvItem', () => {
     const rules: TvRule[] = [
       {
         name: 'From',
+        matchPattern: '^From$',
         resolutions: ['1080p'],
         codecs: ['x265'],
       },

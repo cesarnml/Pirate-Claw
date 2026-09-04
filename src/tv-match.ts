@@ -87,20 +87,25 @@ function deriveMatchPattern(name: string): string {
     return '^$';
   }
 
-  // Single-word rule names (e.g. "From") are where generic titles cause
-  // real overmatch: boundary-matching anywhere in the title lets the word
-  // float and match unrelated releases whose title happens to contain it
-  // (e.g. "Escape From New York"). Require an exact whole-title match
-  // instead — normalizedTitle (everything before the S/E marker) must be
-  // just that one word, nothing else. Multi-word rule names are already
-  // specific enough that this isn't a real risk, and reverting them to
-  // boundary matching preserves legitimate tolerance for extra words
-  // adjacent to the title, e.g. "Example Show" still matching a release
-  // titled "Example Show UK". Overmatch found and fixed 2026-08-27.
-  if (tokens.length === 1) {
-    return `^${tokens[0]}$`;
-  }
-
+  // Every rule name — one word or many — gets the same tolerant boundary
+  // pattern, so a release title carrying extra words still matches:
+  // "Example Show" matches "Example Show UK", and "Lanterns" matches
+  // "Lanterns 2026".
+  //
+  // Single-word names briefly got an anchored `^name$` instead (2026-08-27),
+  // to stop a rule named "From" matching "Escape From New York". That cured
+  // the overmatch and caused a far bigger silent undermatch: scene releases
+  // routinely append the premiere year, so `^lanterns$` never matches
+  // "Lanterns 2026" — and 27 of the 75 shows on the live watchlist are
+  // single-word names. Measured against stored feed history, the anchor was
+  // costing real episodes (Lioness, Lanterns) while protecting exactly one
+  // hypothetical rule.
+  //
+  // Overmatch is now the operator's call, not an inference from word count:
+  // the Config page's per-show "Strict" toggle writes an explicit anchored
+  // matchPattern for the handful of genuinely generic names. That is both
+  // more precise (it knows which names are ambiguous, which token counting
+  // cannot) and visible in the UI, where a silently-anchored pattern was not.
   return `(?:^| )${tokens.join(' +')}(?:$| )`;
 }
 

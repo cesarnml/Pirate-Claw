@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { onDestroy, onMount, tick } from 'svelte';
@@ -101,6 +102,7 @@
 	let showsSubmitButtonEl = $state<HTMLButtonElement | null>(null);
 	let showDeleteConfirm = $state<{ index: number; name: string } | null>(null);
 	let showAddDraftActive = $state(false);
+	let rescanningFeed = $state(false);
 	let showAddDraftName = $state('');
 	let showAddDraftInputEl = $state<HTMLInputElement | null>(null);
 	// Persisted (see markRuntimeChangesPending/RUNTIME_PENDING_STORAGE_KEY
@@ -732,6 +734,19 @@
 		};
 	};
 
+	const enhanceRescanFeed: SubmitFunction = () => {
+		rescanningFeed = true;
+		// invalidateAll: false — the default re-runs `load` and refires the
+		// effect that re-seeds showRows/showStrict/feeds/movie fields from
+		// data.config, silently discarding whatever the operator has typed but
+		// not saved. This button sits directly above the editable show list, and
+		// rescanning is not a save; it must not throw away an in-progress edit.
+		return async ({ update }) => {
+			await update({ invalidateAll: false });
+			rescanningFeed = false;
+		};
+	};
+
 	const enhanceSaveShows: SubmitFunction = ({ formData }) => {
 		showsSubmitting = true;
 		// Logs the *actual serialized DOM form data* about to be sent — the
@@ -1031,18 +1046,45 @@
 								</button>
 							</div>
 						{:else}
-							<Button
-								type="button"
-								variant="outline"
-								class="rounded-full px-5"
-								disabled={!canWrite}
-								title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
-								onclick={startAddShowDraft}
-							>
-								Add show
-							</Button>
+							<div class="flex flex-wrap items-center gap-2">
+								<!-- Adding a show rescans automatically; this covers the other
+								changes that alter what should match — quality defaults, a
+								hand-written pattern, a Strict toggle switched off. -->
+								<form method="POST" action="?/rescanFeed" use:enhance={enhanceRescanFeed}>
+									<Button
+										type="submit"
+										variant="ghost"
+										class="rounded-full px-4"
+										disabled={!canWrite || rescanningFeed}
+										title={!canWrite
+											? WRITE_DISABLED_TOOLTIP
+											: 'Re-check every feed item already seen against this watchlist'}
+									>
+										{rescanningFeed ? 'Rescanning…' : 'Rescan feed'}
+									</Button>
+								</form>
+								<Button
+									type="button"
+									variant="outline"
+									class="rounded-full px-5"
+									disabled={!canWrite}
+									title={!canWrite ? WRITE_DISABLED_TOOLTIP : undefined}
+									onclick={startAddShowDraft}
+								>
+									Add show
+								</Button>
+							</div>
 						{/if}
 					</div>
+					{#if form?.rescanMessage || form?.rescanError}
+						<p
+							class={form?.rescanError
+								? 'text-destructive mt-3 text-sm'
+								: 'text-muted-foreground mt-3 text-sm'}
+						>
+							{form?.rescanError ?? form?.rescanMessage}
+						</p>
+					{/if}
 					<ShowWatchlistEditor
 						{showRows}
 						{showStrict}

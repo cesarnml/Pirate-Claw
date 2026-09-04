@@ -115,6 +115,7 @@ import type {
 } from './repository';
 import type { CycleResult } from './runtime-artifacts';
 import type { TmdbCache } from './tmdb/cache';
+import { rescanFeedHistory } from './pipeline';
 import { enrichCandidatesFromCache } from './tmdb/candidate-cache-enrich';
 import { posterUrl } from './tmdb/constants';
 import { tvMatchKey } from './tmdb/keys';
@@ -1739,6 +1740,31 @@ export function createApiFetch(
   }
 
   /**
+   * Serializes feed rescans within this daemon. Two adds in quick succession,
+   * or a manual rescan overlapping an automatic one, would otherwise run
+   * concurrently — and `isCandidateQueued` is checked *before* the awaited
+   * Transmission submit, so both runs can decide to grab the same identity
+   * and race each other's `candidate_state` writes. Returns undefined when a
+   * rescan is already in flight; the caller decides whether that is a 409 or
+   * simply nothing worth doing.
+   */
+  let rescanInFlight = false;
+  async function runExclusiveRescan(
+    args: Parameters<typeof rescanFeedHistory>[0],
+  ): Promise<Awaited<ReturnType<typeof rescanFeedHistory>> | undefined> {
+    if (rescanInFlight) {
+      console.log('[feed] rescan requested while one is already running');
+      return undefined;
+    }
+    rescanInFlight = true;
+    try {
+      return await rescanFeedHistory(args);
+    } finally {
+      rescanInFlight = false;
+    }
+  }
+
+  /**
    * Sets (or, with `null`, clears) the TMDB identity pin on the watchlist
    * entry whose normalized name matches — see TvRule.tmdbId.
    *
@@ -3309,6 +3335,48 @@ export function createApiFetch(
       }
     }
 
+    if (path === '/api/feed/rescan') {
+      if (request.method !== 'POST') {
+        return jsonMethodNotAllowed('POST');
+      }
+
+      const authError = checkWriteAuth(request, activeConfig);
+      if (authError) return authError;
+
+      if (!downloader) {
+        return Response.json(
+          { error: 'rescan is not available without a downloader' },
+          { status: 503 },
+        );
+      }
+
+      try {
+        const result = await runExclusiveRescan({
+          config: activeConfig,
+          repository,
+          downloader,
+        });
+        if (!result) {
+          return Response.json(
+            { error: 'a rescan is already running' },
+            { status: 409 },
+          );
+        }
+        console.log(
+          `[feed] rescan queued ${String(result.counts.queued ?? 0)}, ` +
+            `skipped ${String(result.counts.skipped_duplicate ?? 0)} already-held`,
+        );
+        return Response.json({ ok: true, counts: result.counts });
+      } catch (error) {
+        console.log(
+          `[feed] rescan failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return json500();
+      }
+    }
+
     // The identity picker behind "Fix TMDB match" on the show detail page.
     // Read-only and unauthenticated, like GET /api/shows itself — it only
     // reflects TMDB's own public search back; the write half (pin, below)
@@ -4181,6 +4249,52 @@ export function createApiFetch(
           if (Object.keys(runtimePatch).length === 0) {
             pruneLedgerRowsDroppedFromWatchlist(oldShows, mergedShows);
           }
+        }
+
+        // A show added here is otherwise blind to everything the feed has
+        // already seen — matching happens once, at poll time, and is never
+        // revisited (see rescanFeedHistory). Replaying stored history on add
+        // is what makes "track it and it catches up" true instead of
+        // something the operator has to backfill by hand.
+        //
+        // Deliberately not awaited: the rescan submits to Transmission, and
+        // the operator is sitting in front of a Save button. Its safeguards
+        // make a stray run harmless (already-queued and already-manually-
+        // grabbed identities are skipped), so the worst case of letting it
+        // run loose is a log line.
+        const added = addedShowNames(oldShows, mergedShows);
+        if (downloader && added.length > 0) {
+          console.log(
+            `[feed] watchlist gained ${added.join(', ')} — rescanning feed history`,
+          );
+          void runExclusiveRescan({
+            config: activeConfig,
+            repository,
+            downloader,
+            onlyShowNames: added,
+          })
+            .then((result) => {
+              // undefined means another rescan held the lock. That run is
+              // very likely scoped to different shows, so these ones were
+              // genuinely skipped rather than covered — say so, and leave
+              // the Rescan button on the Config page as the way to retry.
+              if (!result) {
+                console.log(
+                  `[feed] rescan for ${added.join(', ')} skipped — another rescan held the lock`,
+                );
+                return;
+              }
+              console.log(
+                `[feed] rescan after add queued ${String(result.counts.queued ?? 0)}`,
+              );
+            })
+            .catch((error: unknown) =>
+              console.log(
+                `[feed] rescan after add failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+            );
         }
 
         const redacted = redactConfig(activeConfig);
@@ -5494,12 +5608,29 @@ export function buildShowBreakdowns(
 
   const showMap = new Map<string, Map<number, ShowEpisode[]>>();
 
+  // A candidate's `normalizedTitle` comes from the release, not from config:
+  // "Lanterns 2026 S01E03" normalizes to "Lanterns 2026" while the show is
+  // tracked as "Lanterns". Grouping on the release title alone therefore
+  // files the episode under a title no tracked show has, and the ledger
+  // filter below then deletes it — the torrent downloads, the show page
+  // still reports the episode missing, and the operator grabs a second copy
+  // by hand. `rule_name` is the config show name the matcher actually
+  // matched, so it maps the episode back onto the card it belongs to.
+  const trackedByLower = new Map(
+    (trackedNormalizedTitles ?? []).map((title) => [
+      title.toLowerCase(),
+      title,
+    ]),
+  );
+  const groupTitleFor = (c: CandidateStateRecord): string =>
+    trackedByLower.get((c.ruleName ?? '').toLowerCase()) ?? c.normalizedTitle;
+
   for (const c of tvCandidates) {
     if (c.season === undefined || c.episode === undefined) {
       continue;
     }
 
-    const title = c.normalizedTitle;
+    const title = groupTitleFor(c);
     if (!showMap.has(title)) {
       showMap.set(title, new Map());
     }
@@ -5789,6 +5920,28 @@ function writeConfigAtomically(
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+/** Show names present in `next` but not in `prev`, compared the same
+ * case-insensitive way pruneLedgerRowsDroppedFromWatchlist compares the other
+ * direction. Drives the rescan-on-add in the config PUT handler; a save that
+ * only reorders, renames patterns, or removes shows yields an empty list and
+ * triggers nothing. */
+function addedShowNames(prev: unknown[], next: unknown[]): string[] {
+  const before = new Set(
+    prev
+      .map(configShowEntryName)
+      .filter((name): name is string => name !== undefined)
+      .map((name) => name.trim().toLowerCase()),
+  );
+  const added: string[] = [];
+  for (const entry of next) {
+    const name = configShowEntryName(entry);
+    if (name === undefined) continue;
+    if (before.has(name.trim().toLowerCase())) continue;
+    added.push(name);
+  }
+  return added;
 }
 
 /** A config.tv.shows entry is either a plain string name or an object with a

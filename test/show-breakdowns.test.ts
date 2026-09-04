@@ -81,3 +81,70 @@ describe('buildShowBreakdowns', () => {
     expect(untracked[0].seasons).toHaveLength(0);
   });
 });
+
+describe('buildShowBreakdowns rule attribution', () => {
+  // The release title carries a year the tracked name does not, so grouping
+  // on normalizedTitle alone files the episode under "Lanterns 2026" — a
+  // title no tracked show has — and the ledger filter then deletes it. Net
+  // effect before this: the torrent downloads, the show page still says the
+  // episode is missing, and the operator grabs a second copy by hand.
+  it('files an episode under the tracked show its rule matched', () => {
+    const shows = buildShowBreakdowns(
+      [
+        {
+          identityKey: 'tv:lanterns 2026|s01e03',
+          mediaType: 'tv',
+          status: 'queued',
+          normalizedTitle: 'Lanterns 2026',
+          ruleName: 'Lanterns',
+          season: 1,
+          episode: 3,
+          rawTitle: 'Lanterns 2026 S01E03 1080p HEVC x265-MeGusta',
+          resolution: '1080p',
+          codec: 'x265',
+        },
+      ] as never,
+      ['Lanterns'],
+    );
+
+    expect(shows).toHaveLength(1);
+    expect(shows[0]!.normalizedTitle).toBe('Lanterns');
+    expect(shows[0]!.seasons).toEqual([
+      {
+        season: 1,
+        episodes: [
+          {
+            episode: 3,
+            identityKey: 'tv:lanterns 2026|s01e03',
+            status: 'queued',
+            resolution: '1080p',
+            codec: 'x265',
+          },
+        ],
+      },
+    ]);
+  });
+
+  // Attribution must not become a back door around untracking: a rule name
+  // that is no longer on the watchlist falls through to the release title,
+  // which the ledger filter then drops as before.
+  it('still drops a candidate whose rule is no longer tracked', () => {
+    const shows = buildShowBreakdowns(
+      [
+        {
+          identityKey: 'tv:tomb raider king|s01e09',
+          mediaType: 'tv',
+          status: 'queued',
+          normalizedTitle: 'Tomb Raider King',
+          ruleName: 'Tomb raider',
+          season: 1,
+          episode: 9,
+          rawTitle: 'Tomb Raider King S01E09 1080p',
+        },
+      ] as never,
+      ['Something Else'],
+    );
+
+    expect(shows.map((s) => s.normalizedTitle)).toEqual(['Something Else']);
+  });
+});
