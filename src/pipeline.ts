@@ -6,6 +6,11 @@ import {
   type TransmissionConfig,
 } from './config';
 import { fetchFeed, type RawFeedItem } from './feed';
+import {
+  formatFeedWindowAlarm,
+  formatFeedWindowLine,
+  summarizeFeedWindow,
+} from './feed-window';
 import { getMovieNoMatchReason, matchMovieItem } from './movie-match';
 import { normalizeFeedItem, type NormalizedFeedItem } from './normalize';
 import {
@@ -38,8 +43,17 @@ export async function runPipeline(input: {
   repository: Repository;
   downloader: Downloader;
   fetchFeed?: FetchFeedFn;
+  /** Defaults to console; `level` routes the feed-window alarm to console.warn
+   * so `grep WINDOW ROTATED` and a plain warn-level filter both find it. */
+  log?: (message: string, level?: 'info' | 'warn') => void;
 }): Promise<RunPipelineResult> {
   const fetchFeedImpl = input.fetchFeed ?? fetchFeed;
+  const log =
+    input.log ??
+    ((message: string, level?: 'info' | 'warn') => {
+      if (level === 'warn') console.warn(message);
+      else console.log(message);
+    });
   const run = input.repository.startRun();
   const coordinator = createPipelineCoordinator({
     run,
@@ -53,6 +67,30 @@ export async function runPipeline(input: {
 
     for (const feed of input.config.feeds) {
       const items = await fetchFeedImpl(feed);
+
+      // Coverage telemetry for this poll — see src/feed-window.ts for why the
+      // only thing here worth alarming on is the window rotating past us.
+      // Both reads filter on run_id < this run, so they are correct whether
+      // they run before or after this poll's own recordFeedItem inserts.
+      const windowStats = summarizeFeedWindow({
+        feedName: feed.name,
+        items,
+        knownGuids: new Set(
+          input.repository.listKnownFeedItemGuids(
+            feed.name,
+            [...new Set(items.map((item) => item.guidOrLink))],
+            run.id,
+          ),
+        ),
+        previousPollAt: input.repository.getPreviousFeedPollAt(
+          feed.name,
+          run.id,
+        ),
+      });
+      log(formatFeedWindowLine(windowStats));
+      if (windowStats.windowRotatedPastUs) {
+        log(formatFeedWindowAlarm(windowStats), 'warn');
+      }
 
       for (const item of items) {
         const feedItem = input.repository.recordFeedItem(run.id, item);

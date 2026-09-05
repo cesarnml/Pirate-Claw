@@ -21,6 +21,8 @@ function stubRepository(): Repository {
     completeRun: () => ({ id: 1, startedAt: '', status: 'completed' }),
     failRun: () => ({ id: 1, startedAt: '', status: 'failed' }),
     recordFeedItem: () => ({}) as never,
+    listKnownFeedItemGuids: () => [],
+    getPreviousFeedPollAt: () => undefined,
     getCandidateState: () => undefined,
     getCandidateStateByTransmissionHash: () => undefined,
     isCandidateQueued: () => false,

@@ -170,6 +170,30 @@ export type Repository = {
   completeRun(runId: number, completedAt?: string): RunRecord;
   failRun(runId: number, failedAt?: string): RunRecord;
   recordFeedItem(runId: number, item: RawFeedItem): FeedItemRecord;
+  /**
+   * Of `guids`, those this feed already recorded in a run *earlier* than
+   * `beforeRunId` — i.e. which of the items a poll just returned we had
+   * already seen. Backs the feed-window coverage line (see
+   * src/feed-window.ts). Filtering on `run_id <` rather than `!=` makes this
+   * safe to call either side of the current run's own inserts.
+   */
+  listKnownFeedItemGuids(
+    feedName: string,
+    guids: string[],
+    beforeRunId: number,
+  ): string[];
+  /**
+   * `started_at` of the most recent run that polled this feed before
+   * `beforeRunId`, or undefined on the feed's first ever poll. This is the
+   * *observed* gap between polls, which is deliberately not the configured
+   * interval — a cycle deferred behind the shared 'main' lock stretches the
+   * real gap well past the setting (65 minutes against a nominal 15 observed
+   * live), and the whole point of the feed-window line is to catch that.
+   */
+  getPreviousFeedPollAt(
+    feedName: string,
+    beforeRunId: number,
+  ): string | undefined;
   getCandidateState(identityKey: string): CandidateStateRecord | undefined;
   /** First candidate row with this Transmission hash, if any. */
   getCandidateStateByTransmissionHash(
@@ -285,6 +309,16 @@ export function ensureSchema(database: Database): void {
       published_at TEXT NOT NULL,
       download_url TEXT NOT NULL
     );
+
+    -- feed_items grows one row per item per poll and never prunes (44k rows
+    -- for ~2.3k distinct releases on the live box). Both feed-window queries
+    -- below filter on exactly this pair, and they run on the daemon's single
+    -- thread during a poll — the same thread whose synchronous stalls the
+    -- dashboard review is chasing — so a full scan per poll is not acceptable
+    -- just to collect telemetry. This also covers listDistinctFeedItems'
+    -- grouping, which was scanning unindexed before.
+    CREATE INDEX IF NOT EXISTS idx_feed_items_feed_run
+      ON feed_items (feed_name, run_id);
 
     CREATE TABLE IF NOT EXISTS candidate_state (
       identity_key TEXT PRIMARY KEY,
@@ -918,6 +952,49 @@ export function createRepository(database: Database): Repository {
         | null
         | undefined;
       return mapFeedItemRow(requireRow(row, 'feed item'));
+    },
+
+    listKnownFeedItemGuids(
+      feedName: string,
+      guids: string[],
+      beforeRunId: number,
+    ): string[] {
+      if (guids.length === 0) return [];
+      const known: string[] = [];
+      // Chunked well under SQLite's default 999-variable cap. A feed page is
+      // ~30 items so this is one query in practice; the chunking exists so a
+      // pathologically large feed can't turn into a runtime error.
+      const chunkSize = 400;
+      for (let start = 0; start < guids.length; start += chunkSize) {
+        const chunk = guids.slice(start, start + chunkSize);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const rows = database
+          .query(
+            `SELECT DISTINCT guid_or_link AS guidOrLink
+             FROM feed_items
+             WHERE feed_name = ?
+               AND run_id < ?
+               AND guid_or_link IN (${placeholders})`,
+          )
+          .all(feedName, beforeRunId, ...chunk) as { guidOrLink: string }[];
+        for (const row of rows) known.push(row.guidOrLink);
+      }
+      return known;
+    },
+
+    getPreviousFeedPollAt(
+      feedName: string,
+      beforeRunId: number,
+    ): string | undefined {
+      const row = database
+        .query(
+          `SELECT MAX(runs.started_at) AS polledAt
+           FROM feed_items
+           JOIN runs ON runs.id = feed_items.run_id
+           WHERE feed_items.feed_name = ? AND feed_items.run_id < ?`,
+        )
+        .get(feedName, beforeRunId) as { polledAt: string | null } | null;
+      return row?.polledAt ?? undefined;
     },
 
     getCandidateState(identityKey: string): CandidateStateRecord | undefined {
