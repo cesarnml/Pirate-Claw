@@ -149,6 +149,11 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
 	return {
 		user: locals.user ?? null,
 		health: healthResult.status === 'fulfilled' ? healthResult.value : null,
+		// Raw config, so +page.server.ts can read it via parent() instead of
+		// independently re-fetching /api/config — see roadmap item #5 in the
+		// dashboard-load-path review. This layout already pays for the fetch;
+		// nothing downstream needs a second copy.
+		config: configResult.status === 'fulfilled' ? configResult.value : null,
 		transmissionSession: sessionResult.status === 'fulfilled' ? sessionResult.value : null,
 		plexAuthState: normalizePlexAuthState(configHasPlex, plexAuthState),
 		setupState,

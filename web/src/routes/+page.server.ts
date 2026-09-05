@@ -1,8 +1,8 @@
 import { env } from '$env/dynamic/private';
 import { deriveOnboardingStatus } from '$lib/onboarding';
 import { apiRequest, navApiFetch } from '$lib/server/api';
+import { currentRequestId } from '$lib/server/request-context';
 import type {
-	AppConfig,
 	CandidateStateRecord,
 	DaemonHealth,
 	ManualGrabArchiveEntry,
@@ -32,24 +32,27 @@ let lastGoodOnboarding: OnboardingStatus | null = null;
 let lastGoodManualGrabArchive: ManualGrabArchiveEntry[] | null = null;
 let lastGoodManualGrabsTracked: ManualGrabTrackedEntry[] | null = null;
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ parent }) => {
+	const start = Date.now();
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
-	const [
-		healthResult,
-		torrentsResult,
-		candidatesResult,
-		statusResult,
-		outcomesResult,
-		configResult,
-		manualGrabArchiveResult,
-		manualGrabsTrackedResult
-	] = await Promise.allSettled([
-		navApiFetch<DaemonHealth>('/api/health'),
+
+	// Fire this page's own 6 calls immediately, then await parent() — do NOT
+	// await parent() first. The layout's load() already fetches /api/health
+	// and /api/config (see roadmap item #5, dashboard-load-path review), so
+	// reading them from parent() instead of re-fetching removes 2 of the 16
+	// daemon round trips per navigation for free. But parent() also waits on
+	// layout calls this page doesn't need (readiness, install-health,
+	// auth/state) — awaiting it before starting this page's own fetches
+	// would serialize this page's latency behind the layout's worst-case
+	// call instead of overlapping them, turning a "free" dedupe into a
+	// regression on the p99 tail. Firing both in parallel and joining at the
+	// end keeps the same fully-parallel shape the pre-existing 8-call
+	// Promise.allSettled had.
+	const resultsPromise = Promise.allSettled([
 		navApiFetch<{ torrents: TorrentStatSnapshot[] }>('/api/transmission/torrents'),
 		navApiFetch<{ candidates: CandidateStateRecord[] }>('/api/candidates'),
 		navApiFetch<{ runs: RunSummaryRecord[] }>('/api/status'),
 		navApiFetch<{ outcomes: ReviewOutcomeRecord[] }>('/api/outcomes?status=failed_enqueue'),
-		navApiFetch<AppConfig>('/api/config'),
 		// The manual-grab-sourced half of Your Haul — see ArchiveStrip/+page.svelte.
 		navApiFetch<{ items: ManualGrabArchiveEntry[] }>('/api/manual-grabs/completed'),
 		// Every manual grab with a hash, independent of Transmission — powers
@@ -57,8 +60,20 @@ export const load: PageServerLoad = async () => {
 		navApiFetch<{ items: ManualGrabTrackedEntry[] }>('/api/manual-grabs/tracked')
 	]);
 
-	if (healthResult.status === 'fulfilled') lastGoodHealth = healthResult.value;
-	const health = healthResult.status === 'fulfilled' ? healthResult.value : lastGoodHealth;
+	const parentData = await parent();
+
+	const [
+		torrentsResult,
+		candidatesResult,
+		statusResult,
+		outcomesResult,
+		manualGrabArchiveResult,
+		manualGrabsTrackedResult
+	] = await resultsPromise;
+
+	if (parentData.health) lastGoodHealth = parentData.health;
+	const health = parentData.health ?? lastGoodHealth;
+	const healthFresh = parentData.health !== null;
 
 	if (torrentsResult.status === 'fulfilled') {
 		lastGoodTransmissionTorrents = torrentsResult.value.torrents;
@@ -99,18 +114,24 @@ export const load: PageServerLoad = async () => {
 			? manualGrabsTrackedResult.value.items
 			: lastGoodManualGrabsTracked;
 
-	if (configResult.status === 'fulfilled') {
-		lastGoodOnboarding = deriveOnboardingStatus(configResult.value, canWrite);
+	// config comes from the layout's parent() data now (see roadmap item #5)
+	// rather than its own fetch — null here means the layout's own
+	// /api/config call failed, same meaning the old configResult.status ===
+	// 'rejected' check had.
+	const config = parentData.config;
+	// deriveOnboardingStatus is pure, so compute it once and reuse it for
+	// both the cache write and this load's own value — no need to call it
+	// twice with identical arguments.
+	if (config) {
+		lastGoodOnboarding = deriveOnboardingStatus(config, canWrite);
 	}
-	const onboarding: OnboardingStatus | null =
-		configResult.status === 'fulfilled'
-			? deriveOnboardingStatus(configResult.value, canWrite)
-			: lastGoodOnboarding;
+	const onboarding: OnboardingStatus | null = lastGoodOnboarding;
 
 	// The page-level error gate hides every section ({#if data.error} in
 	// +page.svelte), so it must only fire when there is genuinely nothing to
-	// render. /api/health is the cheapest of the 8 calls above and, under
-	// daemon contention, one of the more likely to time out on its own — a
+	// render. /api/health is the cheapest of this navigation's daemon calls
+	// and, under daemon contention, one of the more likely to time out on its
+	// own — a
 	// lone health miss is closer to queue contention than an outage, and
 	// blanking sections that loaded fine in the same request was the
 	// highest-visibility flicker in the dashboard-load-path review (roadmap
@@ -137,8 +158,14 @@ export const load: PageServerLoad = async () => {
 			? 'Could not reach the API.'
 			: null;
 
+	// Only log at error level when there's truly nothing to show (no fresh
+	// value, no last-good fallback) — a lone health miss covered by the
+	// last-good cache isn't an outage (roadmap item #2's whole point), so it
+	// shouldn't reintroduce the alert noise that item was meant to remove.
+	// The structured load_outcome line below already records every
+	// last-good-fallback case via fields_served_from_last_good.
 	if (health === null) {
-		console.error('[dashboard] failed to load /api/health');
+		console.error('[dashboard] health unavailable — no fresh value and no last-good fallback');
 	}
 	if (torrentsResult.status === 'rejected') {
 		console.error('[dashboard] failed to load /api/transmission/torrents', torrentsResult.reason);
@@ -152,8 +179,14 @@ export const load: PageServerLoad = async () => {
 	if (outcomesResult.status === 'rejected') {
 		console.error('[dashboard] failed to load /api/outcomes', outcomesResult.reason);
 	}
-	if (configResult.status === 'rejected') {
-		console.error('[dashboard] failed to load /api/config', configResult.reason);
+	// Same "only alarm when there's nothing to fall back to" rule as health
+	// above — onboarding isn't part of the error-gate quorum anyway (see the
+	// comment above `contentFields`), so a config miss covered by
+	// lastGoodOnboarding is even less noteworthy than a health miss.
+	if (!config && lastGoodOnboarding === null) {
+		console.error(
+			'[dashboard] config unavailable — no fresh value and no last-good onboarding fallback'
+		);
 	}
 	if (manualGrabArchiveResult.status === 'rejected') {
 		console.error(
@@ -167,6 +200,52 @@ export const load: PageServerLoad = async () => {
 			manualGrabsTrackedResult.reason
 		);
 	}
+
+	// One structured per-load outcome line (roadmap item #15). §01/§11 of the
+	// dashboard-load-path review had to hand-correlate scattered [dashboard]
+	// failure lines across two containers' logs to answer "did this load
+	// actually succeed, and how well" — this answers it in one grep.
+	// fields_served_from_last_good is the number to watch first: it's the
+	// only thing that retroactively measures how often the last-good cache
+	// (roadmap item #1) actually fires, which is the phenomenon §01's
+	// flagged-but-unverified "~51% of loads" figure was trying to describe.
+	const fieldFreshness: Record<string, boolean> = {
+		health: healthFresh,
+		transmissionTorrents: torrentsResult.status === 'fulfilled',
+		candidates: candidatesResult.status === 'fulfilled',
+		runSummaries: statusResult.status === 'fulfilled',
+		outcomes: outcomesResult.status === 'fulfilled',
+		onboarding: config !== null,
+		manualGrabArchive: manualGrabArchiveResult.status === 'fulfilled',
+		manualGrabsTracked: manualGrabsTrackedResult.status === 'fulfilled'
+	};
+	const fieldValues: Record<string, unknown> = {
+		health,
+		transmissionTorrents,
+		candidates,
+		runSummaries,
+		outcomes,
+		onboarding,
+		manualGrabArchive,
+		manualGrabsTracked
+	};
+	let nFailed = 0;
+	let fieldsServedFromLastGood = 0;
+	for (const key of Object.keys(fieldFreshness)) {
+		if (fieldFreshness[key]) continue;
+		if (fieldValues[key] !== null) {
+			fieldsServedFromLastGood++;
+		} else {
+			nFailed++;
+		}
+	}
+	console.log(
+		`[dashboard] load_outcome id=${currentRequestId() ?? 'n/a'} n_calls=${
+			Object.keys(fieldFreshness).length
+		} n_failed=${nFailed} fields_served_from_last_good=${fieldsServedFromLastGood} total_ms=${
+			Date.now() - start
+		} health_stress=${health?.stress ?? 'unknown'}`
+	);
 
 	return {
 		health,

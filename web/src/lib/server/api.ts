@@ -96,13 +96,33 @@ export async function apiRequest(
 	const timeoutSignal = AbortSignal.timeout(limitMs);
 	const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
 
+	// Stamp the per-navigation request id (see request-context.ts) as an
+	// outbound header so the daemon's own [route] timing line (src/api.ts)
+	// can be grepped by the same id as every [route]/[api] line this
+	// request produced on the web side, instead of correlating two
+	// containers' logs by eyeballing timestamps — see roadmap item #9 in
+	// the dashboard-load-path review. Doesn't overwrite a caller-supplied
+	// header of the same name.
+	const reqId = currentRequestId();
+	let headers = init?.headers;
+	if (reqId) {
+		headers = new Headers(init?.headers);
+		if (!headers.has('x-request-id')) headers.set('x-request-id', reqId);
+	}
+
 	const inflight = beginApiCall();
 	try {
-		return await logTimedRequest('[api]', method, path, () => fetch(url, { ...init, signal }), {
-			timeoutDetail: `limit ${limitMs}ms`,
-			isCallerAbort: () => init?.signal?.aborted ?? false,
-			note: `inflight=${inflight}`
-		});
+		return await logTimedRequest(
+			'[api]',
+			method,
+			path,
+			() => fetch(url, { ...init, headers, signal }),
+			{
+				timeoutDetail: `limit ${limitMs}ms`,
+				isCallerAbort: () => init?.signal?.aborted ?? false,
+				note: `inflight=${inflight}`
+			}
+		);
 	} finally {
 		endApiCall();
 	}

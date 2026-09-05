@@ -11,6 +11,17 @@ vi.mock('$lib/server/api', () => ({
 	navApiFetch: apiFetchMock
 }));
 
+vi.mock('$lib/server/request-context', () => ({
+	currentRequestId: () => 'test-req-id'
+}));
+
+/** health/config are no longer fetched by +page.server.ts's own load() —
+ * they come from +layout.server.ts via parent() (roadmap item #5, dashboard-
+ * load-path review). This stands in for SvelteKit's real parent(). */
+function fakeParent(health: unknown, config: unknown) {
+	return async () => ({ health, config });
+}
+
 describe('dashboard page server load', () => {
 	beforeEach(() => {
 		apiFetchMock.mockReset();
@@ -24,17 +35,16 @@ describe('dashboard page server load', () => {
 		const { load } = await import('../../src/routes/+page.server');
 
 		apiFetchMock
-			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(emptyConfig)
-			.mockResolvedValueOnce({ version: '4.0.0' })
 			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
-		const result = await load({} as never);
+		const result = await load({
+			parent: fakeParent({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' }, emptyConfig)
+		} as never);
 		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
 			'initial_empty'
 		);
@@ -50,17 +60,16 @@ describe('dashboard page server load', () => {
 		const { load } = await import('../../src/routes/+page.server');
 
 		apiFetchMock
-			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(feedOnlyConfig)
-			.mockResolvedValueOnce({ version: '4.0.0' })
 			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
-		const result = await load({} as never);
+		const result = await load({
+			parent: fakeParent({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' }, feedOnlyConfig)
+		} as never);
 		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
 			'partial_setup'
 		);
@@ -73,17 +82,16 @@ describe('dashboard page server load', () => {
 		const { load } = await import('../../src/routes/+page.server');
 
 		apiFetchMock
-			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(emptyConfig)
-			.mockResolvedValueOnce({ version: '4.0.0' })
 			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
-		const result = await load({} as never);
+		const result = await load({
+			parent: fakeParent({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' }, emptyConfig)
+		} as never);
 		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
 			'writes_disabled'
 		);
@@ -97,16 +105,16 @@ describe('dashboard page server load', () => {
 
 		const torrents = [{ hash: 'abc', name: 'Some Show S01E01' }];
 		apiFetchMock
-			.mockResolvedValueOnce({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' })
 			.mockResolvedValueOnce({ torrents })
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(emptyConfig)
 			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
-		const first = await load({} as never);
+		const first = await load({
+			parent: fakeParent({ uptime: 1, startedAt: '2024-01-01T00:00:00Z' }, emptyConfig)
+		} as never);
 		expect((first as { transmissionTorrents: unknown[] | null }).transmissionTorrents).toEqual(
 			torrents
 		);
@@ -115,16 +123,16 @@ describe('dashboard page server load', () => {
 		// times out. The stale-but-good torrent list must survive, not be
 		// wiped to null (dashboard-load-path review, roadmap item #1).
 		apiFetchMock
-			.mockResolvedValueOnce({ uptime: 2, startedAt: '2024-01-01T00:00:00Z' })
 			.mockRejectedValueOnce(new Error('timed out after 12000ms'))
 			.mockResolvedValueOnce({ candidates: [] })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(emptyConfig)
 			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
-		const second = await load({} as never);
+		const second = await load({
+			parent: fakeParent({ uptime: 2, startedAt: '2024-01-01T00:00:00Z' }, emptyConfig)
+		} as never);
 		expect((second as { transmissionTorrents: unknown[] | null }).transmissionTorrents).toEqual(
 			torrents
 		);
@@ -139,16 +147,16 @@ describe('dashboard page server load', () => {
 
 		const candidates = [{ id: 1, title: 'Some Show S01E01' }];
 		apiFetchMock
-			.mockRejectedValueOnce(new Error('timed out after 12000ms'))
 			.mockResolvedValueOnce({ torrents: [] })
 			.mockResolvedValueOnce({ candidates })
 			.mockResolvedValueOnce({ runs: [] })
 			.mockResolvedValueOnce({ outcomes: [] })
-			.mockResolvedValueOnce(emptyConfig)
 			.mockResolvedValueOnce({ items: [] })
 			.mockResolvedValueOnce({ items: [] });
 
-		const result = await load({} as never);
+		// The layout's own /api/health fetch failed — parent() surfaces that
+		// as health: null, same as before this used its own navApiFetch call.
+		const result = await load({ parent: fakeParent(null, emptyConfig) } as never);
 		expect((result as { error: string | null }).error).toBeNull();
 		expect((result as { candidates: unknown[] | null }).candidates).toEqual(candidates);
 		expect((result as { health: unknown }).health).toBeNull();
@@ -164,16 +172,15 @@ describe('dashboard page server load', () => {
 		const { load } = await import('../../src/routes/+page.server');
 
 		apiFetchMock
-			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // health
 			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // torrents
 			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // candidates
 			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // status
 			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // outcomes
-			.mockResolvedValueOnce(emptyConfig) // config — succeeds
 			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // manual-grabs/completed
 			.mockRejectedValueOnce(new Error('timed out after 12000ms')); // manual-grabs/tracked
 
-		const result = await load({} as never);
+		// health fails; config (from the layout) succeeds.
+		const result = await load({ parent: fakeParent(null, emptyConfig) } as never);
 		expect((result as { error: string | null }).error).toBe('Could not reach the API.');
 		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
 			'initial_empty'
@@ -188,7 +195,8 @@ describe('dashboard page server load', () => {
 
 		apiFetchMock.mockRejectedValue(new Error('timed out after 12000ms'));
 
-		const result = await load({} as never);
+		// The layout's own health and config fetches failed too.
+		const result = await load({ parent: fakeParent(null, null) } as never);
 		expect((result as { error: string | null }).error).toBe('Could not reach the API.');
 	});
 });

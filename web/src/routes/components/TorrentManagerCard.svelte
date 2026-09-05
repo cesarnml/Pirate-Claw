@@ -143,6 +143,19 @@
 	let inflightAction = $state<string | null>(null);
 	let retryingTransmission = $state(false);
 
+	/** The one lock executeAction, enhanceDispose, and the row/dispose
+	 * disabled states all read — a single torrent action, a dispose, and a
+	 * bulk action all contend for the same Transmission RPCs, so any one of
+	 * them running has to block the other two, not just its own kind.
+	 * Previously inFlightRow only reflected `inflightAction === torrent.hash`
+	 * (so *other* rows looked clickable while executeAction's own guard was
+	 * silently no-opping them) and dispose buttons never checked
+	 * inflightAction at all — see roadmap item #3 in the dashboard-load-path
+	 * review. */
+	function anyActionInFlight(): boolean {
+		return inflightAction !== null || inflightDispose !== null || bulkAction !== null;
+	}
+
 	/** transmissionLoaded false means the daemon's own fetch to Transmission
 	 * failed for this page load — Transmission itself can be perfectly
 	 * healthy (confirmed live: its own web UI loading fine) while this one
@@ -164,7 +177,17 @@
 	};
 
 	function enhanceDispose(hash: string, disposition: string) {
-		return () => {
+		return ({ cancel }: { cancel: () => void }) => {
+			// Mirrors executeAction's guard — a dispose sharing Transmission RPCs
+			// with an in-flight row action or bulk action must not overlap it
+			// either. The disabled attribute on the button already covers the
+			// common case; this covers a click that lands before that state
+			// re-renders (e.g. a bulk action starting the same tick).
+			if (anyActionInFlight()) {
+				cancel();
+				toast('Another action is already running — try again in a moment', 'error');
+				return;
+			}
 			inflightDispose = hash;
 			return async ({
 				result,
@@ -238,7 +261,10 @@
 	}
 
 	async function bulkDisposeMissing(disposition: 'removed' | 'deleted') {
-		if (bulkAction) return;
+		if (anyActionInFlight()) {
+			toast('Another action is already running — try again in a moment', 'error');
+			return;
+		}
 		const hashes = missingItems.map((item) => item.hash);
 		if (hashes.length === 0) return;
 
@@ -281,7 +307,10 @@
 	 * marks 'deleted': not finding the file doesn't prove it was deleted, so
 	 * that call is left to a human either way. */
 	async function autoReconcileMissing() {
-		if (bulkAction) return;
+		if (anyActionInFlight()) {
+			toast('Another action is already running — try again in a moment', 'error');
+			return;
+		}
 		bulkAction = 'autoReconcile';
 		try {
 			const res = await fetch(`${base}/?/autoReconcile`, {
@@ -411,13 +440,19 @@
 	}
 
 	async function executeAction(action: MenuAction, hash: string) {
-		// Also blocked while a bulk torrent action is running, not just another
-		// single action — runBulkTorrentAction's sequential loop exists
-		// specifically to avoid a burst of simultaneous RPCs against
-		// Transmission (see its own comment); a concurrent single-row action
-		// from a row outside that bulk action's own hash list (which its
-		// per-row inFlightRow check doesn't cover) would defeat that.
-		if (inflightAction || bulkAction !== null) return;
+		// Also blocked while a bulk torrent action or a dispose is running, not
+		// just another single row action — runBulkTorrentAction's sequential
+		// loop exists specifically to avoid a burst of simultaneous RPCs
+		// against Transmission (see its own comment), and a dispose POST hits
+		// the same daemon path. A concurrent action from outside that other
+		// action's own scope (which a narrower per-row check wouldn't catch)
+		// would defeat that. This used to fail silently — see anyActionInFlight
+		// and the matching inFlightRow/dispose-button fix below for why a
+		// blocked click could previously look like it did nothing.
+		if (anyActionInFlight()) {
+			toast('Another action is already running — try again in a moment', 'error');
+			return;
+		}
 		menuState = null;
 		inflightAction = hash;
 		try {
@@ -510,7 +545,10 @@
 		action: MenuAction,
 		hashes: string[]
 	) {
-		if (bulkAction || inflightAction) return;
+		if (anyActionInFlight()) {
+			toast('Another action is already running — try again in a moment', 'error');
+			return;
+		}
 		if (hashes.length === 0) return;
 
 		bulkAction = kind;
@@ -621,7 +659,7 @@
 							variant="outline"
 							size="sm"
 							class="rounded-full"
-							disabled={bulkAction !== null || inflightAction !== null}
+							disabled={anyActionInFlight()}
 							onclick={bulkResumeAll}
 						>
 							{#if bulkAction === 'resumeAll'}
@@ -639,7 +677,7 @@
 							variant="outline"
 							size="sm"
 							class="rounded-full"
-							disabled={bulkAction !== null || inflightAction !== null}
+							disabled={anyActionInFlight()}
 							onclick={bulkPauseAll}
 						>
 							{#if bulkAction === 'pauseAll'}
@@ -658,7 +696,7 @@
 						variant="outline"
 						size="sm"
 						class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
-						disabled={bulkAction !== null || inflightAction !== null}
+						disabled={anyActionInFlight()}
 						onclick={bulkRemoveSeeding}
 					>
 						{#if bulkAction === 'removeSeeding'}
@@ -716,14 +754,7 @@
 					{@const episode = candidate?.episode ?? torrent.episode ?? null}
 					{@const origin = torrentOrigin(candidate, torrent.source)}
 					{@const rowState = rowDisplayState(torrent, candidate)}
-					{@const inFlightRow =
-						inflightAction === torrent.hash ||
-						// executeAction blocks every row while a bulk torrent action is
-						// running (see its own guard), not just the rows that bulk
-						// action targets — the disabled state here has to match that
-						// exactly, or a row outside the bulk action's hash list
-						// renders enabled while clicking it is silently a no-op.
-						bulkAction !== null}
+					{@const inFlightRow = anyActionInFlight()}
 					{@const showUpload =
 						rowState === 'completed' ||
 						rowState === 'seeding' ||
@@ -948,7 +979,7 @@
 							variant="outline"
 							size="sm"
 							class="rounded-full"
-							disabled={bulkAction !== null}
+							disabled={anyActionInFlight()}
 							onclick={autoReconcileMissing}
 						>
 							{#if bulkAction === 'autoReconcile'}
@@ -964,7 +995,7 @@
 							variant="outline"
 							size="sm"
 							class="rounded-full"
-							disabled={bulkAction !== null}
+							disabled={anyActionInFlight()}
 							onclick={() => bulkDisposeMissing('removed')}
 						>
 							{#if bulkAction === 'removeAllMissing'}
@@ -979,7 +1010,7 @@
 							variant="outline"
 							size="sm"
 							class="border-destructive/30 text-destructive hover:bg-destructive/10 rounded-full"
-							disabled={bulkAction !== null}
+							disabled={anyActionInFlight()}
 							onclick={() => bulkDisposeMissing('deleted')}
 						>
 							{#if bulkAction === 'deleteAllMissing'}
@@ -993,7 +1024,7 @@
 				</div>
 				<ul class="space-y-3">
 					{#each missingItems as item (item.hash)}
-						{@const inFlight = inflightDispose === item.hash || bulkAction !== null}
+						{@const inFlight = anyActionInFlight()}
 						<li
 							class="border-border bg-background/45 flex items-center justify-between gap-3 rounded-[20px] border p-3"
 						>

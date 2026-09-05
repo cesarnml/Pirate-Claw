@@ -72,6 +72,12 @@ describe('layout server load', () => {
 			// only a confirmed-absent one may (see +layout.server.ts).
 			untrustedOrigin: null,
 			networkPosture: null,
+			config: {
+				plex: {
+					url: 'http://localhost:32400',
+					token: '[redacted]'
+				}
+			},
 			health: { uptime: 1, startedAt: '2024-01-01T00:00:00Z' },
 			transmissionSession: {
 				version: '3.0',
@@ -202,6 +208,7 @@ describe('layout server load', () => {
 				user: null,
 				untrustedOrigin: null,
 				networkPosture: null,
+				config: null,
 				health: null,
 				transmissionSession: null,
 				plexAuthState: 'unavailable',

@@ -80,6 +80,7 @@ const baseData = {
 	user: null,
 	untrustedOrigin: null,
 	networkPosture: null,
+	config: null,
 	health: mockHealth,
 	transmissionSession: null,
 	plexAuthState: 'unavailable' as const,

@@ -1919,9 +1919,12 @@ export function createApiFetch(
     }
   }
 
-  return async (request: Request) => {
-    const path = new URL(request.url).pathname;
-
+  // path is parsed once by the outer timing wrapper below and passed in,
+  // rather than re-parsed here — the wrapper needs it before dispatch runs
+  // anyway (for the [route] log line), so re-deriving it a second time per
+  // request was pure duplicated work on the daemon's single dispatch choke
+  // point.
+  async function dispatch(request: Request, path: string): Promise<Response> {
     if (path === '/api/health') {
       const uptimeMs = Date.now() - new Date(health.startedAt).getTime();
       return Response.json({
@@ -5566,6 +5569,59 @@ export function createApiFetch(
     }
 
     return Response.json({ error: 'not found' }, { status: 404 });
+  }
+
+  // Above this threshold, a route is worth flagging as slow even though it
+  // succeeded — mirrors the web side's SLOW_REQUEST_MS
+  // (web/src/lib/server/route-timing.ts) so "what counts as slow" doesn't
+  // drift between the two processes' logs.
+  const SLOW_ROUTE_MS = 5_000;
+
+  // One request-timing middleware around the whole dispatch table, rather
+  // than instrumenting all 14+ branches individually — closes the
+  // dashboard-load-path review's observability gap (§10/§14, roadmap #9) in
+  // one place. Reads the request id the web side now stamps on every
+  // outbound call (web/src/lib/server/api.ts's apiRequest) so a slow
+  // [route] line here can be grepped by the exact same id as the [route]
+  // and [api] lines it produced on the web side, instead of correlating two
+  // containers' logs by eyeballing timestamps (see §11's manual
+  // correlation, which this replaces with `grep <id>` across both).
+  // health.stress is computed on every /api/health response already
+  // (computeDaemonStress above) but was otherwise never logged — folding it
+  // into this line for every route (not just /api/health) lets a slow
+  // request be correlated against "was the daemon actually busy at that
+  // moment" without a separate lookup.
+  return async (request: Request) => {
+    const start = Date.now();
+    const method = request.method;
+    const path = new URL(request.url).pathname;
+    const reqId = request.headers.get('x-request-id');
+    const tag = reqId ? `[route]:${reqId}` : '[route]';
+
+    let response: Response;
+    try {
+      response = await dispatch(request, path);
+    } catch (error) {
+      const elapsed = Date.now() - start;
+      const message = error instanceof Error ? error.message : String(error);
+      // Stress is read at completion, not at request start — the whole
+      // point is correlating "was the daemon busy while this request was
+      // in flight," and a long-running request can span a stress-state
+      // change (a cycle starting/finishing) that only the end-of-request
+      // read reflects.
+      console.error(
+        `${tag} ${method} ${path} failed after ${elapsed}ms: ${message} stress=${computeDaemonStress(health)}`,
+      );
+      throw error;
+    }
+
+    const elapsed = Date.now() - start;
+    const slow = elapsed >= SLOW_ROUTE_MS;
+    const log = slow ? console.warn : console.log;
+    log(
+      `${tag}${slow ? ' SLOW' : ''} ${method} ${path} -> ${response.status} (${elapsed}ms) stress=${computeDaemonStress(health)}`,
+    );
+    return response;
   };
 }
 

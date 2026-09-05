@@ -9,6 +9,7 @@ const sharedLayoutData: Pick<
 	| 'user'
 	| 'untrustedOrigin'
 	| 'networkPosture'
+	| 'config'
 	| 'health'
 	| 'transmissionSession'
 	| 'plexAuthState'
@@ -19,6 +20,7 @@ const sharedLayoutData: Pick<
 	user: null,
 	untrustedOrigin: null,
 	networkPosture: null,
+	config: null,
 	health: null,
 	transmissionSession: null,
 	plexAuthState: 'unavailable',

@@ -79,6 +79,7 @@ const sharedLayoutData = {
 	user: null,
 	untrustedOrigin: null,
 	networkPosture: null,
+	config: null,
 	installHealthState: null
 };
 
