@@ -1,4 +1,5 @@
 import type { RuntimeConfig } from './config';
+import { startEventLoopLagProbe } from './event-loop-lag';
 import type { CycleResult } from './runtime-artifacts';
 
 export type DaemonOptions = {
@@ -221,10 +222,19 @@ export async function runDaemonLoop(input: {
 
   log('daemon started');
 
+  // Live for the whole daemon lifetime, including the two cycles below — the
+  // point is catching a stall wherever it happens, not just once the timers
+  // are running. See event-loop-lag.ts for why this exists: cycle-level
+  // "completed" logging can't tell a cycle that was mostly awaiting I/O from
+  // one that blocked the thread, and a stall has been observed to outlast its
+  // own cycle's logged completion entirely.
+  const eventLoopLagProbe = startEventLoopLagProbe({ log });
+
   await guardedCycle('run', runCycle);
   await guardedCycle('reconcile', reconcileCycle);
 
   if (signal.aborted) {
+    eventLoopLagProbe.stop();
     if (server) {
       server.stop();
       log('api stopped');
@@ -271,6 +281,7 @@ export async function runDaemonLoop(input: {
     signal.addEventListener('abort', () => resolve(), { once: true });
   });
 
+  eventLoopLagProbe.stop();
   clearInterval(runTimer);
   clearInterval(reconcileTimer);
   if (tmdbTimer) {
