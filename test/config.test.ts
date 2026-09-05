@@ -15,7 +15,7 @@ import {
 } from '../src/install-bootstrap';
 
 const RUN_INTERVAL_MINUTES_DEFAULT = 15;
-const RECONCILE_INTERVAL_SECONDS_DEFAULT = 30;
+const RECONCILE_INTERVAL_SECONDS_DEFAULT = 240;
 
 /** Avoid coupling tests to a developer's real `PIRATE_CLAW_API_WRITE_TOKEN` in `.env`. */
 function envWithoutProcessWriteToken(): Record<string, string | undefined> {

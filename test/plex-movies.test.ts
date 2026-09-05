@@ -12,7 +12,7 @@ import { ensurePlexSchema } from '../src/plex/schema';
 import type { Repository } from '../src/repository';
 
 const RUN_INTERVAL_MINUTES_DEFAULT = 15;
-const RECONCILE_INTERVAL_SECONDS_DEFAULT = 30;
+const RECONCILE_INTERVAL_SECONDS_DEFAULT = 240;
 
 function stubRepository(): Repository {
   return {

@@ -68,7 +68,7 @@ afterEach(async () => {
 });
 
 const RUN_INTERVAL_MINUTES_DEFAULT = 15;
-const RECONCILE_INTERVAL_SECONDS_DEFAULT = 30;
+const RECONCILE_INTERVAL_SECONDS_DEFAULT = 240;
 
 function stubRepository(overrides: Partial<Repository> = {}): Repository {
   return {

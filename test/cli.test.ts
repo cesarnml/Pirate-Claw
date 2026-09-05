@@ -23,7 +23,7 @@ import {
 setDefaultTimeout(20_000);
 
 const RUN_INTERVAL_MINUTES_DEFAULT = 15;
-const RECONCILE_INTERVAL_SECONDS_DEFAULT = 30;
+const RECONCILE_INTERVAL_SECONDS_DEFAULT = 240;
 
 const tempDirs: string[] = [];
 const openDatabases: Database[] = [];

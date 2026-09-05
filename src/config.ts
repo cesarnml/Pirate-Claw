@@ -114,8 +114,29 @@ export type PlexConfig = {
 };
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
+  // 15 minutes, unchanged. Confirmed adequate against live feed-window data
+  // (2026-09-05): the shallowest feed's 30-item window still reached back
+  // 122 minutes at its worst observed point — roughly 8x this interval — and
+  // no poll has ever been observed where the window failed to reach back past
+  // the previous poll, which is the only way an item can be missed outright.
+  // Shortening this would only add contention on the shared 'main' lock for
+  // no coverage gain; see the dashboard-load-path review, §12.
   runIntervalMinutes: 15,
-  reconcileIntervalSeconds: 30,
+  // Was 30. Reconcile rewrites every tracked candidate's row unconditionally
+  // (no dirty check — src/pipeline.ts's recordCandidateReconciliation), so at
+  // 30s it had to start, call Transmission, write N rows and finish inside 30
+  // seconds forever or collide with its own next tick and log
+  // "already_running". That collision is the fingerprint behind the 5.1x
+  // contended-lock lift measured against degraded dashboard loads (review
+  // §11), and because reconcile shares the 'main' lock with the feed poller,
+  // a reconcile that runs long also defers the feed run behind it — observed
+  // live pushing a nominal 15-minute feed cadence out to 30-65 minutes.
+  // 240s gives the same cycle 8x the headroom. The only user-visible cost is
+  // that a finished download can take up to one interval longer to appear in
+  // the archive strip / "completed this week" tiles (review §12), which
+  // nothing in this app treats as urgent. The live deployment has run this
+  // value since 2026-09-05; this promotes it to the shipped default.
+  reconcileIntervalSeconds: 240,
   artifactDir: '.pirate-claw/runtime',
   artifactRetentionDays: 7,
   tmdbRefreshIntervalMinutes: 360,
