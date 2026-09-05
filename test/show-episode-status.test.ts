@@ -233,6 +233,114 @@ describe('buildShowEpisodeStatus', () => {
     ]);
   });
 
+  it('logs one [plex-match] line with per-phase timing on a live walk (roadmap item 22)', async () => {
+    const db = freshDb();
+    const tmdb = fakeTmdb({
+      4: [{ episode_number: 1, name: 'Valles Marineris' }],
+    });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'strange new worlds',
+      plexRatingKey: '35033',
+      inLibrary: true,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    const plexClient = {
+      searchShows: async (): Promise<PlexSearchResult[]> => [
+        { ratingKey: '35033', title: 'Star Trek: Strange New Worlds' },
+      ],
+      getShowSeasons: async (): Promise<PlexSeasonSummary[]> => [
+        { ratingKey: '68673', seasonNumber: 4, episodeCount: 1 },
+      ],
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> => [
+        { episodeNumber: 1 },
+      ],
+    } as unknown as PlexHttpClient;
+
+    const lines: string[] = [];
+    await buildShowEpisodeStatus(
+      showFixture(4),
+      {
+        tmdb,
+        plex: { client: plexClient, cache: plexCache },
+        manualGrabs: new ManualGrabsStore(db),
+        log: (message) => lines.push(message),
+        requestId: 'req-abc123',
+      },
+      { season: 4 },
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toStartWith('[plex-match]:req-abc123 ');
+    expect(lines[0]).toContain('outcome=ok');
+    expect(lines[0]).toContain('seasons=1');
+    expect(lines[0]).toMatch(/rating_key_ms=\d+/);
+    expect(lines[0]).toMatch(/show_seasons_ms=\d+/);
+    expect(lines[0]).toMatch(/retry_search_ms=\d+/);
+    expect(lines[0]).toMatch(/season_episodes_ms=\d+/);
+    expect(lines[0]).toMatch(/total_ms=\d+/);
+  });
+
+  it('attributes a stale-cache retry search to retry_search_ms, not show_seasons_ms (roadmap item 22)', async () => {
+    // resolveRatingKey's own doc comment calls /library/search "by far the
+    // most expensive of the three PMS calls this module makes" — this test
+    // exists so that call can never again go silently uncounted inside the
+    // wrong phase.
+    const db = freshDb();
+    const tmdb = fakeTmdb({ 1: [{ episode_number: 1, name: 'Pilot' }] });
+    const plexCache = new PlexCache(db);
+    plexCache.upsertTv({
+      normalizedTitle: 'strange new worlds',
+      plexRatingKey: 'stale-key',
+      inLibrary: true,
+      watchCount: 0,
+      lastWatchedAt: null,
+      cachedAt: new Date().toISOString(),
+    });
+
+    const plexClient = {
+      // First getShowSeasons (the cached, now-stale key) comes back empty —
+      // triggers the live-search retry path.
+      getShowSeasons: async (
+        ratingKey: string,
+      ): Promise<PlexSeasonSummary[]> =>
+        ratingKey === 'stale-key'
+          ? []
+          : [{ ratingKey: 's1', seasonNumber: 1, episodeCount: 1 }],
+      searchShows: async (): Promise<PlexSearchResult[]> => [
+        { ratingKey: 'fresh-key', title: 'Star Trek: Strange New Worlds' },
+      ],
+      getSeasonEpisodes: async (): Promise<PlexEpisodeSummary[]> => [
+        { episodeNumber: 1 },
+      ],
+    } as unknown as PlexHttpClient;
+
+    const lines: string[] = [];
+    await buildShowEpisodeStatus(
+      showFixture(1),
+      {
+        tmdb,
+        plex: { client: plexClient, cache: plexCache },
+        manualGrabs: new ManualGrabsStore(db),
+        log: (message) => lines.push(message),
+      },
+      { season: 1 },
+    );
+
+    expect(lines).toHaveLength(1);
+    // The point of this test: retry_search_ms exists as its own field, and
+    // the walk recovers via the retry (season 1 gets found under the fresh
+    // key) — regression coverage for the retry path itself and for keeping
+    // its cost in a separate counter from show_seasons_ms, not a claim
+    // about the fake client's near-instant timing.
+    expect(lines[0]).toMatch(/retry_search_ms=\d+/);
+    expect(lines[0]).toContain('seasons=1');
+    expect(lines[0]).toContain('outcome=ok');
+  });
+
   it('does not flag a mismatch just because TMDB lists unaired future episodes (real Stuart Fails to Save the Universe reproduction)', async () => {
     // Confirmed live: TMDB's season endpoint lists the full planned season
     // up front, most with a future air_date — for a currently-airing show,

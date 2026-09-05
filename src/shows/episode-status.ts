@@ -147,6 +147,16 @@ export type EpisodeStatusDeps = {
    * stalled-detection existed, and a Transmission-lookup failure shouldn't
    * take the rest of the page down with it. */
   transmissionConfig?: TransmissionConfig;
+  /** Optional: without it, loadPlexPresence's per-phase timing (roadmap item
+   * 22) is measured but never surfaces anywhere. Wired up in api.ts so this
+   * module itself stays agnostic of console vs. any other log sink. */
+  log?: (message: string) => void;
+  /** Optional: the same `x-request-id` the web layer stamps on the outbound
+   * call and the daemon's [route] middleware echoes (roadmap item 9) — carried
+   * this one level deeper so a slow [plex-match] line can be grepped by the
+   * exact same id as the [route] line it happened inside, instead of
+   * correlating by timestamp the way §11 originally had to. */
+  requestId?: string;
 };
 
 /** A torrent counts as stalled when it's sat in Transmission's downloading
@@ -262,7 +272,13 @@ export async function buildShowEpisodeStatus(
   }
 
   const plexPresence: PlexPresence = needsLiveWalk
-    ? await loadPlexPresence(show, deps.plex, targetSeason)
+    ? await loadPlexPresence(
+        show,
+        deps.plex,
+        targetSeason,
+        deps.log,
+        deps.requestId,
+      )
     : { reachable: false, seasons: new Map() };
 
   const seasonResults = seasonNumbers.map((seasonNumber) => {
@@ -494,84 +510,155 @@ type PlexPresence = {
   seasons: Map<number, PlexSeasonPresence>;
 };
 
+/**
+ * Roadmap item 22: item 18's event-loop-lag probe found real multi-second
+ * stalls correlated with concurrent /shows/*\/episodes requests, not
+ * reconcile — but that's a correlation, not yet a cause (and a fresh 2026-
+ * 09-05 sample taken while writing this instrumentation did NOT reproduce
+ * that correlation — see roadmap item 22's status note). This is the
+ * targeted timing that decides it either way: four phases (ratingKey
+ * resolution/matching, the show's own season list, a stale-cache retry
+ * search — kept separate from the seasons phase because resolveRatingKey's
+ * own doc comment calls /library/search the most expensive of the three PMS
+ * calls this module makes, and folding it in would hide that call behind
+ * the wrong phase — and the per-season episode walk) each measured with
+ * performance.now() (monotonic — same reasoning as event-loop-lag.ts, not
+ * repeated here) and logged in one line regardless of which early-return or
+ * throw path this call takes, via try/catch/finally. If one phase's ms
+ * consistently dominates and lines up with an [event-loop] SEVERE line at
+ * the same wall-clock moment, that phase is the next fix's actual target —
+ * not a second guess replacing this one.
+ */
 async function loadPlexPresence(
   show: ShowBreakdown,
   plex: EpisodeStatusDeps['plex'],
   targetSeason?: number,
+  log?: (message: string) => void,
+  requestId?: string,
 ): Promise<PlexPresence> {
   const empty: PlexPresence = { reachable: false, seasons: new Map() };
   if (!plex) {
     return empty;
   }
 
-  const resolved = await resolveRatingKey(show, plex);
-  if (resolved.ratingKey === undefined) {
-    // Neither the cache nor a live search could confirm anything right now.
-    return empty;
-  }
-  if (resolved.ratingKey === null) {
-    // Confidently not in Plex — confident "missing" territory, not
-    // "unknown". reachable:true with an empty seasons map means every
-    // episode resolves to 'missing' below.
-    return { reachable: true, seasons: new Map() };
-  }
+  const walkStartedAt = performance.now();
+  let ratingKeyMs = 0;
+  let showSeasonsMs = 0;
+  // Its own counter, not folded into showSeasonsMs: resolveRatingKey's own
+  // doc comment calls /library/search "by far the most expensive of the
+  // three PMS calls this module makes" — burying its retry inside the
+  // seasons phase would hide the most expensive call in the module behind
+  // the one phase this item exists to rule *out* as the matching-work
+  // suspect.
+  let retrySearchMs = 0;
+  let seasonEpisodesMs = 0;
+  let outcome:
+    | 'unconfirmed'
+    | 'not_in_library'
+    | 'walk_failed'
+    | 'ok'
+    | 'threw' = 'unconfirmed';
+  let seasonCount = 0;
 
-  let allPlexSeasons = await plex.client.getShowSeasons(resolved.ratingKey);
-  // The optimistically-used cached ratingKey didn't pan out — the show may
-  // have been removed and re-added in Plex (new ratingKey), or the key may
-  // have been reused by an unrelated item after a library rebuild. Pay for
-  // the live search we skipped rather than trusting a key we now doubt.
-  //
-  // Empty counts as "didn't pan out" alongside null, not just null: a key
-  // pointing at a live-but-wrong item (a movie, some other entry) answers
-  // 200 with zero season children, and treating that as a real answer would
-  // report every episode of a fully-owned show as `missing` and invite a
-  // full re-grab. `null` alone would miss that case entirely.
-  if (
-    resolved.fromCache &&
-    (allPlexSeasons === null || allPlexSeasons.length === 0)
-  ) {
-    const live = await liveSearchRatingKey(show, plex);
-    if (live !== undefined && live !== resolved.ratingKey) {
-      const retried = await plex.client.getShowSeasons(live);
-      // Only take the retry when it actually found something — a show
-      // legitimately having zero seasons must not be turned into
-      // "unreachable" by a fallback that also came back empty.
-      if (retried !== null && retried.length > 0) {
-        allPlexSeasons = retried;
-      }
+  try {
+    const ratingKeyStartedAt = performance.now();
+    const resolved = await resolveRatingKey(show, plex);
+    ratingKeyMs = Math.round(performance.now() - ratingKeyStartedAt);
+    if (resolved.ratingKey === undefined) {
+      // Neither the cache nor a live search could confirm anything right now.
+      return empty;
     }
-  }
-  if (allPlexSeasons === null) {
-    // Have a ratingKey, but the live walk failed just now — transient,
-    // not "this show isn't in Plex".
-    return empty;
-  }
-  // getShowSeasons is one cheap PMS call returning every season's metadata
-  // (no per-episode walk yet) — filtering here only skips the *heavier*
-  // per-season getSeasonEpisodes call below, one per season, for whichever
-  // seasons the caller didn't ask for.
-  const plexSeasons =
-    targetSeason === undefined
-      ? allPlexSeasons
-      : allPlexSeasons.filter((s) => s.seasonNumber === targetSeason);
+    if (resolved.ratingKey === null) {
+      // Confidently not in Plex — confident "missing" territory, not
+      // "unknown". reachable:true with an empty seasons map means every
+      // episode resolves to 'missing' below.
+      outcome = 'not_in_library';
+      return { reachable: true, seasons: new Map() };
+    }
 
-  // Same reasoning as the TMDB season loop above — one PMS round trip per
-  // season, independent of the others, so run them concurrently.
-  const entries = await Promise.all(
-    plexSeasons.map(async (season) => {
-      const episodes = await plex.client.getSeasonEpisodes(season.ratingKey);
-      const presence: PlexSeasonPresence = {
-        episodeCount: season.episodeCount,
-        episodeNumbers:
-          episodes === null
-            ? undefined
-            : new Set(episodes.map((e) => e.episodeNumber)),
-      };
-      return [season.seasonNumber, presence] as const;
-    }),
-  );
-  return { reachable: true, seasons: new Map(entries) };
+    const showSeasonsStartedAt = performance.now();
+    let allPlexSeasons = await plex.client.getShowSeasons(resolved.ratingKey);
+    showSeasonsMs = Math.round(performance.now() - showSeasonsStartedAt);
+    // The optimistically-used cached ratingKey didn't pan out — the show may
+    // have been removed and re-added in Plex (new ratingKey), or the key may
+    // have been reused by an unrelated item after a library rebuild. Pay for
+    // the live search we skipped rather than trusting a key we now doubt.
+    //
+    // Empty counts as "didn't pan out" alongside null, not just null: a key
+    // pointing at a live-but-wrong item (a movie, some other entry) answers
+    // 200 with zero season children, and treating that as a real answer would
+    // report every episode of a fully-owned show as `missing` and invite a
+    // full re-grab. `null` alone would miss that case entirely.
+    if (
+      resolved.fromCache &&
+      (allPlexSeasons === null || allPlexSeasons.length === 0)
+    ) {
+      const retrySearchStartedAt = performance.now();
+      const live = await liveSearchRatingKey(show, plex);
+      if (live !== undefined && live !== resolved.ratingKey) {
+        const retried = await plex.client.getShowSeasons(live);
+        // Only take the retry when it actually found something — a show
+        // legitimately having zero seasons must not be turned into
+        // "unreachable" by a fallback that also came back empty.
+        if (retried !== null && retried.length > 0) {
+          allPlexSeasons = retried;
+        }
+      }
+      retrySearchMs = Math.round(performance.now() - retrySearchStartedAt);
+    }
+    if (allPlexSeasons === null) {
+      // Have a ratingKey, but the live walk failed just now — transient,
+      // not "this show isn't in Plex".
+      outcome = 'walk_failed';
+      return empty;
+    }
+    // getShowSeasons is one cheap PMS call returning every season's metadata
+    // (no per-episode walk yet) — filtering here only skips the *heavier*
+    // per-season getSeasonEpisodes call below, one per season, for whichever
+    // seasons the caller didn't ask for.
+    const plexSeasons =
+      targetSeason === undefined
+        ? allPlexSeasons
+        : allPlexSeasons.filter((s) => s.seasonNumber === targetSeason);
+    seasonCount = plexSeasons.length;
+
+    // Same reasoning as the TMDB season loop above — one PMS round trip per
+    // season, independent of the others, so run them concurrently.
+    const seasonEpisodesStartedAt = performance.now();
+    const entries = await Promise.all(
+      plexSeasons.map(async (season) => {
+        const episodes = await plex.client.getSeasonEpisodes(season.ratingKey);
+        const presence: PlexSeasonPresence = {
+          episodeCount: season.episodeCount,
+          episodeNumbers:
+            episodes === null
+              ? undefined
+              : new Set(episodes.map((e) => e.episodeNumber)),
+        };
+        return [season.seasonNumber, presence] as const;
+      }),
+    );
+    seasonEpisodesMs = Math.round(performance.now() - seasonEpisodesStartedAt);
+    outcome = 'ok';
+    return { reachable: true, seasons: new Map(entries) };
+  } catch (error) {
+    // Without this, a throw mid-walk leaves outcome at its initial
+    // 'unconfirmed' — indistinguishable in the log from "nothing could
+    // confirm this show one way or the other," when it's actually "this
+    // blew up." Re-thrown unchanged; the caller's own try/catch (see
+    // buildShowEpisodeStatus's callers in api.ts) still owns the response.
+    outcome = 'threw';
+    throw error;
+  } finally {
+    const totalMs = Math.round(performance.now() - walkStartedAt);
+    const tag = requestId ? `[plex-match]:${requestId}` : '[plex-match]';
+    log?.(
+      `${tag} show=${JSON.stringify(show.normalizedTitle)} outcome=${outcome} ` +
+        `seasons=${seasonCount} rating_key_ms=${ratingKeyMs} ` +
+        `show_seasons_ms=${showSeasonsMs} retry_search_ms=${retrySearchMs} ` +
+        `season_episodes_ms=${seasonEpisodesMs} total_ms=${totalMs}`,
+    );
+  }
 }
 
 /**

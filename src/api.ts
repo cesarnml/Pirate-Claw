@@ -3591,6 +3591,11 @@ export function createApiFetch(
                 tmdb: tmdbShows,
                 plex: { client: plexShows.client, cache: plexShows.cache },
                 manualGrabs: new ManualGrabsStore(database),
+                // Roadmap item 22 — this is the heavier of the two callers
+                // (forceLivePlex walks every season), so it's worth timing
+                // too, not just the passive per-page-view path below.
+                log: console.log,
+                requestId: request.headers.get('x-request-id') ?? undefined,
               },
               // The whole point of this action is re-verification — never
               // answer it from the very completion cache it exists to rewrite.
@@ -3660,6 +3665,11 @@ export function createApiFetch(
               : undefined,
             manualGrabs: new ManualGrabsStore(database),
             transmissionConfig: activeConfig.transmission,
+            // Roadmap item 22 — same x-request-id the [route] middleware
+            // below already echoes, so a slow [plex-match] line greps
+            // against the exact [route] SLOW line it happened inside.
+            log: console.log,
+            requestId: request.headers.get('x-request-id') ?? undefined,
           },
           { season },
         );
