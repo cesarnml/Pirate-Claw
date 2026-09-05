@@ -15,6 +15,23 @@ import type {
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
+// A background refresh (idle poll, post-action invalidateAll()) re-runs this
+// load() from scratch. When one of several independent daemon calls times
+// out under contention, that must not read as "confirmed empty" and wipe a
+// section the user was just looking at — see the dashboard-load-path review,
+// roadmap item #1. Each field falls back to the last value we successfully
+// loaded (this process is a single long-running instance, so this survives
+// across requests) instead of being coerced to null. The very first load has
+// nothing to fall back to yet, so it behaves exactly as before.
+let lastGoodHealth: DaemonHealth | null = null;
+let lastGoodTransmissionTorrents: TorrentStatSnapshot[] | null = null;
+let lastGoodCandidates: CandidateStateRecord[] | null = null;
+let lastGoodRunSummaries: RunSummaryRecord[] | null = null;
+let lastGoodOutcomes: ReviewOutcomeRecord[] | null = null;
+let lastGoodOnboarding: OnboardingStatus | null = null;
+let lastGoodManualGrabArchive: ManualGrabArchiveEntry[] | null = null;
+let lastGoodManualGrabsTracked: ManualGrabTrackedEntry[] | null = null;
+
 export const load: PageServerLoad = async () => {
 	const canWrite = !!env.PIRATE_CLAW_API_WRITE_TOKEN;
 	const [
@@ -40,22 +57,59 @@ export const load: PageServerLoad = async () => {
 		navApiFetch<{ items: ManualGrabTrackedEntry[] }>('/api/manual-grabs/tracked')
 	]);
 
-	const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
+	if (healthResult.status === 'fulfilled') lastGoodHealth = healthResult.value;
+	const health = healthResult.status === 'fulfilled' ? healthResult.value : lastGoodHealth;
+
+	if (torrentsResult.status === 'fulfilled') {
+		lastGoodTransmissionTorrents = torrentsResult.value.torrents;
+	}
 	const transmissionTorrents =
-		torrentsResult.status === 'fulfilled' ? torrentsResult.value.torrents : null;
+		torrentsResult.status === 'fulfilled'
+			? torrentsResult.value.torrents
+			: lastGoodTransmissionTorrents;
+
+	if (candidatesResult.status === 'fulfilled')
+		lastGoodCandidates = candidatesResult.value.candidates;
 	const candidates =
-		candidatesResult.status === 'fulfilled' ? candidatesResult.value.candidates : null;
-	const runSummaries = statusResult.status === 'fulfilled' ? statusResult.value.runs : null;
-	const outcomes = outcomesResult.status === 'fulfilled' ? outcomesResult.value.outcomes : null;
+		candidatesResult.status === 'fulfilled'
+			? candidatesResult.value.candidates
+			: lastGoodCandidates;
+
+	if (statusResult.status === 'fulfilled') lastGoodRunSummaries = statusResult.value.runs;
+	const runSummaries =
+		statusResult.status === 'fulfilled' ? statusResult.value.runs : lastGoodRunSummaries;
+
+	if (outcomesResult.status === 'fulfilled') lastGoodOutcomes = outcomesResult.value.outcomes;
+	const outcomes =
+		outcomesResult.status === 'fulfilled' ? outcomesResult.value.outcomes : lastGoodOutcomes;
+
+	if (manualGrabArchiveResult.status === 'fulfilled') {
+		lastGoodManualGrabArchive = manualGrabArchiveResult.value.items;
+	}
 	const manualGrabArchive =
-		manualGrabArchiveResult.status === 'fulfilled' ? manualGrabArchiveResult.value.items : null;
+		manualGrabArchiveResult.status === 'fulfilled'
+			? manualGrabArchiveResult.value.items
+			: lastGoodManualGrabArchive;
+
+	if (manualGrabsTrackedResult.status === 'fulfilled') {
+		lastGoodManualGrabsTracked = manualGrabsTrackedResult.value.items;
+	}
 	const manualGrabsTracked =
-		manualGrabsTrackedResult.status === 'fulfilled' ? manualGrabsTrackedResult.value.items : null;
+		manualGrabsTrackedResult.status === 'fulfilled'
+			? manualGrabsTrackedResult.value.items
+			: lastGoodManualGrabsTracked;
+
+	if (configResult.status === 'fulfilled') {
+		lastGoodOnboarding = deriveOnboardingStatus(configResult.value, canWrite);
+	}
 	const onboarding: OnboardingStatus | null =
 		configResult.status === 'fulfilled'
 			? deriveOnboardingStatus(configResult.value, canWrite)
-			: null;
+			: lastGoodOnboarding;
 
+	// Only the initial load — nothing to fall back to yet — should be able to
+	// blank the whole page; a poll that fails with a good previous value on
+	// hand must not re-trigger the page-level error gate.
 	const error = health === null ? 'Could not reach the API.' : null;
 
 	if (health === null) {
