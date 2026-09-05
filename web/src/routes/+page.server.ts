@@ -107,10 +107,35 @@ export const load: PageServerLoad = async () => {
 			? deriveOnboardingStatus(configResult.value, canWrite)
 			: lastGoodOnboarding;
 
-	// Only the initial load — nothing to fall back to yet — should be able to
-	// blank the whole page; a poll that fails with a good previous value on
-	// hand must not re-trigger the page-level error gate.
-	const error = health === null ? 'Could not reach the API.' : null;
+	// The page-level error gate hides every section ({#if data.error} in
+	// +page.svelte), so it must only fire when there is genuinely nothing to
+	// render. /api/health is the cheapest of the 8 calls above and, under
+	// daemon contention, one of the more likely to time out on its own — a
+	// lone health miss is closer to queue contention than an outage, and
+	// blanking sections that loaded fine in the same request was the
+	// highest-visibility flicker in the dashboard-load-path review (roadmap
+	// item #2). Only blank the page when health has no value *and* every
+	// section the page actually renders also has nothing to show (no fresh
+	// value, no last-good fallback) — i.e. this really is the first load and
+	// the daemon is unreachable, not one call among several that happened to
+	// miss. `onboarding` is deliberately excluded: it's derived from
+	// /api/config, the cheapest in-memory read of the set (§14 of the
+	// review) and near-certain to succeed even during a real outage — if it
+	// counted here, one lucky config fetch could suppress the error banner
+	// while every actual dashboard section (torrents, candidates, outcomes,
+	// …) has nothing to render.
+	const contentFields = [
+		transmissionTorrents,
+		candidates,
+		runSummaries,
+		outcomes,
+		manualGrabArchive,
+		manualGrabsTracked
+	];
+	const error =
+		health === null && contentFields.every((field) => field === null)
+			? 'Could not reach the API.'
+			: null;
 
 	if (health === null) {
 		console.error('[dashboard] failed to load /api/health');

@@ -130,4 +130,65 @@ describe('dashboard page server load', () => {
 		);
 		expect((second as { error: string | null }).error).toBeNull();
 	});
+
+	it('does not blank the page when only /api/health fails and other calls have data (roadmap item #2)', async () => {
+		vi.doMock('$env/dynamic/private', () => ({
+			env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+		}));
+		const { load } = await import('../../src/routes/+page.server');
+
+		const candidates = [{ id: 1, title: 'Some Show S01E01' }];
+		apiFetchMock
+			.mockRejectedValueOnce(new Error('timed out after 12000ms'))
+			.mockResolvedValueOnce({ torrents: [] })
+			.mockResolvedValueOnce({ candidates })
+			.mockResolvedValueOnce({ runs: [] })
+			.mockResolvedValueOnce({ outcomes: [] })
+			.mockResolvedValueOnce(emptyConfig)
+			.mockResolvedValueOnce({ items: [] })
+			.mockResolvedValueOnce({ items: [] });
+
+		const result = await load({} as never);
+		expect((result as { error: string | null }).error).toBeNull();
+		expect((result as { candidates: unknown[] | null }).candidates).toEqual(candidates);
+		expect((result as { health: unknown }).health).toBeNull();
+	});
+
+	it('blanks the page when everything but the config fetch fails, even though onboarding resolves', async () => {
+		// /api/config is the cheapest call and near-certain to succeed even
+		// during a real outage — it must not count toward the quorum that
+		// keeps the error gate closed (roadmap item #2 follow-up).
+		vi.doMock('$env/dynamic/private', () => ({
+			env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+		}));
+		const { load } = await import('../../src/routes/+page.server');
+
+		apiFetchMock
+			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // health
+			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // torrents
+			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // candidates
+			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // status
+			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // outcomes
+			.mockResolvedValueOnce(emptyConfig) // config — succeeds
+			.mockRejectedValueOnce(new Error('timed out after 12000ms')) // manual-grabs/completed
+			.mockRejectedValueOnce(new Error('timed out after 12000ms')); // manual-grabs/tracked
+
+		const result = await load({} as never);
+		expect((result as { error: string | null }).error).toBe('Could not reach the API.');
+		expect((result as { onboarding: { state: string } | null }).onboarding?.state).toBe(
+			'initial_empty'
+		);
+	});
+
+	it('blanks the page on a genuine first-load outage where every call fails', async () => {
+		vi.doMock('$env/dynamic/private', () => ({
+			env: { PIRATE_CLAW_API_WRITE_TOKEN: 'write-token' }
+		}));
+		const { load } = await import('../../src/routes/+page.server');
+
+		apiFetchMock.mockRejectedValue(new Error('timed out after 12000ms'));
+
+		const result = await load({} as never);
+		expect((result as { error: string | null }).error).toBe('Could not reach the API.');
+	});
 });

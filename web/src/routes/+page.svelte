@@ -161,7 +161,10 @@
 			.slice(0, 6)
 	);
 
-	const totalTracked = $derived(candidates.length);
+	// null (not 0) when data.candidates itself is null, so a candidates fetch
+	// with no last-good value reads as "unavailable" like Failures/Skipped
+	// below, instead of misreporting a real outage as "nothing tracked".
+	const totalTracked = $derived(data.candidates === null ? null : candidates.length);
 	const criticalFailures = $derived(sumRunCounts(runSummaries, 'failed'));
 	const filteredSkipped = $derived(
 		runSummaries === null
@@ -172,10 +175,13 @@
 
 	const oneWeekAgo = $derived(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
 	const completedThisWeek = $derived(
-		candidates.filter((candidate) => {
-			if (candidate.transmissionPercentDone !== 1 || !candidate.transmissionDoneDate) return false;
-			return new Date(candidate.transmissionDoneDate) >= oneWeekAgo;
-		}).length
+		data.candidates === null
+			? null
+			: candidates.filter((candidate) => {
+					if (candidate.transmissionPercentDone !== 1 || !candidate.transmissionDoneDate)
+						return false;
+					return new Date(candidate.transmissionDoneDate) >= oneWeekAgo;
+				}).length
 	);
 
 	$effect(() => {
@@ -262,13 +268,19 @@
 		{
 			label: 'Total',
 			value: totalTracked,
-			detail: `${activeDownloads.filter(({ torrent }) => torrent.status === 'downloading' || torrent.status === 'seeding').length} active torrents`,
+			detail:
+				totalTracked === null
+					? 'Candidate data unavailable'
+					: `${activeDownloads.filter(({ torrent }) => torrent.status === 'downloading' || torrent.status === 'seeding').length} active torrents`,
 			icon: LibraryBigIcon
 		},
 		{
 			label: 'Weekly',
 			value: completedThisWeek,
-			detail: 'Finished during the last 7 days',
+			detail:
+				completedThisWeek === null
+					? 'Candidate data unavailable'
+					: 'Finished during the last 7 days',
 			icon: ArrowDownToLineIcon
 		},
 		{
