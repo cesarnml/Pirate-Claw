@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import {
 	initSessionSecret,
 	getSessionSecret,
@@ -8,7 +8,7 @@ import {
 } from '$lib/server/session';
 import { apiRequest } from '$lib/server/api';
 import { logTimedRequest } from '$lib/server/route-timing';
-import { runWithRequestId } from '$lib/server/request-context';
+import { currentRequestId, runWithRequestId } from '$lib/server/request-context';
 
 const PUBLIC_PATHS = new Set(['/setup', '/login', '/logout']);
 
@@ -99,6 +99,30 @@ export const handle: Handle = async ({ event, resolve }) => {
 		process.env.PIRATE_CLAW_API_WRITE_TOKEN
 	);
 	redirect(302, destination);
+};
+
+// The one thing this app had no answer for (dashboard-load-path review §05):
+// a throw that escapes a route's own Promise.allSettled boundaries — every
+// page/layout load() in this app wraps its daemon calls in allSettled, but
+// nothing caught a throw from outside those blocks, so it fell all the way
+// through to SvelteKit's bare, unstyled default error page (no project
+// +error.svelte existed either). This hook is the log line that would
+// otherwise have been missing entirely — the request id ties it to whatever
+// [route]/[api] lines led up to it — and the returned object is deliberately
+// generic: `error` here can be anything a load()/render call throws,
+// including something with a message not meant for a browser to see; the
+// real detail lives in this log line, not on the page. See +error.svelte for
+// the page it renders into.
+export const handleError: HandleServerError = ({ error, event, status }) => {
+	const reqId = currentRequestId();
+	const message = error instanceof Error ? error.message : String(error);
+	console.error(
+		`[error]${reqId ? `:${reqId}` : ''} unhandled ${status} on ${event.url.pathname}: ${message}`,
+		error instanceof Error ? error.stack : ''
+	);
+	return {
+		message: 'The dashboard hit an unexpected error loading this page.'
+	};
 };
 
 export async function resolveUnauthenticatedPageRedirect(
