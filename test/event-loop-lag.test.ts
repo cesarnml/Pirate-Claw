@@ -161,6 +161,32 @@ describe('startEventLoopLagProbe', () => {
     probe.stop();
   });
 
+  it('rounds a fractional-millisecond lag to a whole number before logging', () => {
+    // performance.now() (the real default clock) has sub-millisecond
+    // precision; a raw fractional value in the log line is noise nobody
+    // reading it at a glance needs. Observed live: an unrounded first draft
+    // logged "14164.374036000001ms".
+    const clock = createFakeScheduler();
+    const lines: string[] = [];
+    const probe = startEventLoopLagProbe({
+      checkMs: 500,
+      log: (message) => lines.push(message),
+      // A constant sub-ms offset on a monotonic clock cancels out of any
+      // duration measurement; the only way a fraction could still reach the
+      // log line is if lagMs itself weren't rounded before formatting.
+      now: () => clock.now() + 0.374036,
+      schedule: clock.schedule,
+      clearScheduled: clock.clearScheduled,
+    });
+
+    clock.advance(5_000);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('lag 4500ms');
+    expect(lines[0]).not.toContain('4500.');
+    probe.stop();
+  });
+
   it('reports one honest gap rather than a burst of catch-up ticks after a stall', () => {
     const clock = createFakeScheduler();
     const lines: string[] = [];

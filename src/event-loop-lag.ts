@@ -138,7 +138,10 @@ export function startEventLoopLagProbe(input: {
   function tick(): void {
     if (stopped) return;
     const firedAtMs = now();
-    const lagMs = Math.max(0, firedAtMs - expectedAtMs);
+    // Rounded once, here — performance.now() (the real default clock) has
+    // sub-millisecond precision, and that precision is noise for a value
+    // whose whole point is being read at a glance in a log line.
+    const lagMs = Math.round(Math.max(0, firedAtMs - expectedAtMs));
     const level = classifyEventLoopLag(lagMs, thresholds);
     if (level !== 'ok') {
       // Wall-clock timestamps for the log line are derived from the
